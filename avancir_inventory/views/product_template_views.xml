@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Extend Product Template Form View -->
+    <record id="product_template_form_view_avancir" model="ir.ui.view">
+        <field name="name">product.template.form.inherit.avancir</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='sales']" position="after">
+                <page string="Avancir" name="avancir">
+                    <group>
+                        <group string="Avancir Sync Status">
+                            <field name="avancir_item_id" readonly="1"/>
+                            <field name="avancir_last_sync" readonly="1"/>
+                        </group>
+                        <group string="Actions">
+                            <button name="action_sync_to_avancir"
+                                    type="object"
+                                    string="Sync to Avancir"
+                                    class="btn-primary"/>
+                        </group>
+                    </group>
+                    <group string="Sync Errors" invisible="not avancir_sync_error">
+                        <field name="avancir_sync_error" readonly="1" nolabel="1"/>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Extend Product Template Tree View -->
+    <record id="product_template_tree_view_avancir" model="ir.ui.view">
+        <field name="name">product.template.tree.inherit.avancir</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_tree_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='list_price']" position="after">
+                <field name="avancir_last_sync" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Avancir Sync History View -->
+    <record id="avancir_sync_tree_view" model="ir.ui.view">
+        <field name="name">avancir.sync.tree</field>
+        <field name="model">avancir.sync</field>
+        <field name="arch" type="xml">
+            <tree string="Avancir Sync History">
+                <field name="name"/>
+                <field name="sync_type"/>
+                <field name="state"/>
+                <field name="start_time"/>
+                <field name="end_time"/>
+                <field name="products_created"/>
+                <field name="products_updated"/>
+                <field name="errors"/>
+                <field name="company_id"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="avancir_sync_form_view" model="ir.ui.view">
+        <field name="name">avancir.sync.form</field>
+        <field name="model">avancir.sync</field>
+        <field name="arch" type="xml">
+            <form string="Avancir Sync">
+                <header>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="sync_type"/>
+                            <field name="company_id"/>
+                        </group>
+                        <group>
+                            <field name="start_time"/>
+                            <field name="end_time"/>
+                        </group>
+                    </group>
+                    <group string="Results">
+                        <group>
+                            <field name="products_created"/>
+                            <field name="products_updated"/>
+                            <field name="errors"/>
+                        </group>
+                    </group>
+                    <group string="Error Log" invisible="not error_log">
+                        <field name="error_log" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action for Sync History -->
+    <record id="avancir_sync_action" model="ir.actions.act_window">
+        <field name="name">Avancir Sync History</field>
+        <field name="res_model">avancir.sync</field>
+        <field name="view_mode">tree,form</field>
+        <field name="context">{}</field>
+    </record>
+
+    <!-- Menu Item -->
+    <menuitem id="avancir_sync_menu"
+              name="Avancir Sync"
+              parent="stock.menu_stock_inventory_control"
+              action="avancir_sync_action"
+              sequence="99"/>
+</odoo>

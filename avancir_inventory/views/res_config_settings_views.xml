@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_avancir" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.avancir</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="Avancir" string="Avancir" name="avancir_inventory">
+                    <block title="Avancir API Configuration">
+                        <setting string="API Settings" help="Configure connection to Avancir inventory system">
+                            <div class="content-group">
+                                <div class="row mt16">
+                                    <label for="avancir_api_url" class="col-lg-3"/>
+                                    <field name="avancir_api_url" class="col-lg-9"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="avancir_username" class="col-lg-3"/>
+                                    <field name="avancir_username" class="col-lg-9"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="avancir_password" class="col-lg-3"/>
+                                    <field name="avancir_password" class="col-lg-9" password="True"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="avancir_workspace_key" class="col-lg-3"/>
+                                    <field name="avancir_workspace_key" class="col-lg-9"/>
+                                </div>
+                                <div class="row mt16">
+                                    <div class="col-lg-12">
+                                        <button name="action_test_avancir_connection"
+                                                type="object"
+                                                string="Test Connection"
+                                                class="btn-primary"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+                    <block title="Item Mapping">
+                        <setting string="Default Item Settings" help="Configure how Odoo products map to Avancir items">
+                            <div class="content-group">
+                                <div class="row mt16">
+                                    <label for="avancir_item_type" class="col-lg-3"/>
+                                    <field name="avancir_item_type" class="col-lg-9"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="avancir_default_status" class="col-lg-3"/>
+                                    <field name="avancir_default_status" class="col-lg-9"/>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+                    <block title="Sync Settings">
+                        <setting string="Automatic Sync" help="Enable and configure automatic synchronization">
+                            <field name="avancir_sync_enabled"/>
+                            <div class="content-group" invisible="not avancir_sync_enabled">
+                                <div class="row mt16">
+                                    <label for="avancir_sync_interval" class="col-lg-3"/>
+                                    <field name="avancir_sync_interval" class="col-lg-3"/>
+                                    <span class="col-lg-6"> hours</span>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting string="Manual Sync" help="Manually trigger product synchronization">
+                            <div class="content-group">
+                                <div class="row mt16">
+                                    <div class="col-lg-12">
+                                        <button name="action_sync_products_to_avancir"
+                                                type="object"
+                                                string="Sync All Products Now"
+                                                class="btn-secondary"
+                                                confirm="This will sync all active products to Avancir. Continue?"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+</odoo>

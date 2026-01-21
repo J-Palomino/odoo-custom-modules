@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_avancir_sync_user,avancir.sync.user,model_avancir_sync,stock.group_stock_user,1,0,0,0
+access_avancir_sync_manager,avancir.sync.manager,model_avancir_sync,stock.group_stock_manager,1,1,1,1
