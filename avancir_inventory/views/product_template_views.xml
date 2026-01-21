@@ -45,7 +45,7 @@
         <field name="name">avancir.sync.tree</field>
         <field name="model">avancir.sync</field>
         <field name="arch" type="xml">
-            <tree string="Avancir Sync History">
+            <list string="Avancir Sync History">
                 <field name="name"/>
                 <field name="sync_type"/>
                 <field name="state"/>
@@ -55,7 +55,7 @@
                 <field name="products_updated"/>
                 <field name="errors"/>
                 <field name="company_id"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -98,7 +98,7 @@
     <record id="avancir_sync_action" model="ir.actions.act_window">
         <field name="name">Avancir Sync History</field>
         <field name="res_model">avancir.sync</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
         <field name="context">{}</field>
     </record>
 
