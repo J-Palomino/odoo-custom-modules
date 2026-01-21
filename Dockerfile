@@ -6,17 +6,14 @@ USER root
 # Create extra-addons if it doesn't exist
 RUN mkdir -p /mnt/extra-addons
 
-# Cache bust: 2026-01-21
-ARG CACHE_BUST=1
+# Copy custom addons - use ADD with checksum instead of COPY to invalidate cache
+ADD avancir_inventory /mnt/extra-addons/avancir_inventory
 
-# Copy custom addons
-COPY avancir_inventory /mnt/extra-addons/avancir_inventory
-
-# Set permissions and verify
+# Set permissions and verify ir_cron.xml content
 RUN chown -R odoo:odoo /mnt/extra-addons && \
-    echo "=== Contents of /mnt/extra-addons ===" && \
-    ls -la /mnt/extra-addons/ && \
-    echo "=== Contents of avancir_inventory ===" && \
-    ls -la /mnt/extra-addons/avancir_inventory/
+    echo "=== ir_cron.xml content ===" && \
+    cat /mnt/extra-addons/avancir_inventory/data/ir_cron.xml && \
+    echo "=== Checking for numbercall ===" && \
+    grep -c "numbercall" /mnt/extra-addons/avancir_inventory/data/ir_cron.xml || echo "numbercall NOT found (good!)"
 
 USER odoo
