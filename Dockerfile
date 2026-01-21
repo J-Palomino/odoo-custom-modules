@@ -6,6 +6,9 @@ USER root
 # Create extra-addons if it doesn't exist
 RUN mkdir -p /mnt/extra-addons
 
+# Cache bust: 2026-01-21
+ARG CACHE_BUST=1
+
 # Copy custom addons
 COPY avancir_inventory /mnt/extra-addons/avancir_inventory
 
