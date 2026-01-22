@@ -60,14 +60,15 @@ class AvancirSync(models.Model):
         try:
             response = requests.post(
                 f'{api_url}/auth/login',
-                json={'email': username, 'password': password},
+                json={'identifier': username, 'password': password},
                 headers={'Content-Type': 'application/json'},
                 timeout=30,
             )
             response.raise_for_status()
             data = response.json()
 
-            self._session_token = data.get('data', {}).get('sessionToken') or data.get('sessionToken')
+            # Avancir returns idToken in data.idToken
+            self._session_token = data.get('data', {}).get('idToken') or data.get('idToken')
             # Token valid for 1 hour, refresh at 50 minutes
             self._token_expiry = datetime.now() + timedelta(minutes=50)
 
