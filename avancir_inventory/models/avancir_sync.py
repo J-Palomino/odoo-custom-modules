@@ -10,6 +10,12 @@ from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
+# Module-level token cache (avoid Odoo ORM attribute restrictions)
+_avancir_token_cache = {
+    'token': None,
+    'expiry': None,
+}
+
 
 class AvancirSync(models.Model):
     _name = 'avancir.sync'
@@ -35,10 +41,6 @@ class AvancirSync(models.Model):
     error_log = fields.Text(string='Error Log')
     company_id = fields.Many2one('res.company', string='Company')
 
-    # Session token cache
-    _session_token = None
-    _token_expiry = None
-
     def _get_config(self, key, default=None):
         """Get configuration parameter."""
         param = self.env['ir.config_parameter'].sudo()
@@ -46,9 +48,13 @@ class AvancirSync(models.Model):
 
     def _get_auth_token(self):
         """Get or refresh Avancir session token."""
+        global _avancir_token_cache
+
         # Check if we have a valid cached token
-        if self._session_token and self._token_expiry and datetime.now() < self._token_expiry:
-            return self._session_token
+        cached_token = _avancir_token_cache.get('token')
+        cached_expiry = _avancir_token_cache.get('expiry')
+        if cached_token and cached_expiry and datetime.now() < cached_expiry:
+            return cached_token
 
         api_url = self._get_config('api_url', 'https://avancir.app/api/v1')
         username = self._get_config('username')
@@ -68,11 +74,12 @@ class AvancirSync(models.Model):
             data = response.json()
 
             # Avancir returns idToken in data.idToken
-            self._session_token = data.get('data', {}).get('idToken') or data.get('idToken')
+            token = data.get('data', {}).get('idToken') or data.get('idToken')
             # Token valid for 1 hour, refresh at 50 minutes
-            self._token_expiry = datetime.now() + timedelta(minutes=50)
+            _avancir_token_cache['token'] = token
+            _avancir_token_cache['expiry'] = datetime.now() + timedelta(minutes=50)
 
-            return self._session_token
+            return token
         except requests.exceptions.RequestException as e:
             _logger.error(f'Avancir auth failed: {e}')
             raise UserError(f'Failed to authenticate with Avancir: {e}')
