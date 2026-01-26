@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Avancir Inventory Integration',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Inventory',
     'summary': 'Sync inventory with Avancir API',
     'description': """
@@ -16,6 +16,8 @@
         - Automatic scheduled sync
         - Manual sync from product form
         - Per-company/warehouse sync support
+        - Inter-store inventory transfers
+        - End-of-day POS reconciliation
 
         Configuration:
         - Set Avancir API credentials in Settings > Inventory > Avancir

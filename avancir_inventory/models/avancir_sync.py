@@ -26,6 +26,8 @@ class AvancirSync(models.Model):
         ('products', 'Products'),
         ('inventory', 'Inventory'),
         ('full', 'Full Sync'),
+        ('transfer', 'Store Transfer'),
+        ('reconciliation', 'POS Reconciliation'),
     ], string='Sync Type', default='products')
     state = fields.Selection([
         ('draft', 'Draft'),
@@ -248,3 +250,280 @@ class AvancirSync(models.Model):
         """Cron job to sync products to Avancir."""
         _logger.info('Running scheduled Avancir product sync')
         return self.sync_all_products()
+
+    # ================================================================
+    # INVENTORY TRANSFERS BETWEEN STORES
+    # ================================================================
+
+    def transfer_inventory(self, source_warehouse_id, dest_warehouse_id, product_ids, quantities=None):
+        """
+        Transfer inventory between stores.
+        Creates Odoo stock.picking and updates Avancir item locations.
+
+        Args:
+            source_warehouse_id: ID of source stock.warehouse
+            dest_warehouse_id: ID of destination stock.warehouse
+            product_ids: List of product.template IDs to transfer
+            quantities: Optional dict {product_id: qty}, defaults to 1 each
+
+        Returns:
+            dict with transfer_id, items_transferred, avancir_updated
+        """
+        if quantities is None:
+            quantities = {pid: 1 for pid in product_ids}
+
+        source_wh = self.env['stock.warehouse'].browse(source_warehouse_id)
+        dest_wh = self.env['stock.warehouse'].browse(dest_warehouse_id)
+
+        if not source_wh.exists() or not dest_wh.exists():
+            raise UserError('Invalid warehouse IDs provided')
+
+        _logger.info(f'Starting inventory transfer: {source_wh.name} -> {dest_wh.name}')
+
+        # Create internal transfer picking
+        picking_type = self.env['stock.picking.type'].search([
+            ('code', '=', 'internal'),
+            ('warehouse_id', '=', source_wh.id),
+        ], limit=1)
+
+        if not picking_type:
+            # Fallback to any internal transfer type
+            picking_type = self.env['stock.picking.type'].search([
+                ('code', '=', 'internal'),
+            ], limit=1)
+
+        picking_vals = {
+            'picking_type_id': picking_type.id,
+            'location_id': source_wh.lot_stock_id.id,
+            'location_dest_id': dest_wh.lot_stock_id.id,
+            'origin': f'Avancir Transfer {datetime.now().strftime("%Y-%m-%d %H:%M")}',
+        }
+
+        picking = self.env['stock.picking'].create(picking_vals)
+        products = self.env['product.template'].browse(product_ids)
+        items_transferred = 0
+        avancir_updated = 0
+        errors = []
+
+        for product in products:
+            qty = quantities.get(product.id, 1)
+            # Get product variant
+            variant = product.product_variant_id
+            if not variant:
+                continue
+
+            # Create stock move
+            move_vals = {
+                'name': product.name,
+                'product_id': variant.id,
+                'product_uom_qty': qty,
+                'product_uom': product.uom_id.id,
+                'picking_id': picking.id,
+                'location_id': source_wh.lot_stock_id.id,
+                'location_dest_id': dest_wh.lot_stock_id.id,
+            }
+            self.env['stock.move'].create(move_vals)
+            items_transferred += 1
+
+            # Update Avancir location
+            if product.avancir_item_id:
+                try:
+                    self._make_request('PATCH', f'/items/{product.avancir_item_id}', {
+                        'location': {'display_name': dest_wh.name}
+                    })
+                    avancir_updated += 1
+                except Exception as e:
+                    errors.append(f'Avancir update failed for {product.name}: {e}')
+                    _logger.error(f'Avancir location update failed: {e}')
+
+        # Confirm the picking
+        picking.action_confirm()
+        picking.action_assign()
+
+        _logger.info(f'Transfer complete: {items_transferred} items, {avancir_updated} Avancir updates')
+
+        return {
+            'transfer_id': picking.id,
+            'transfer_name': picking.name,
+            'source_warehouse': source_wh.name,
+            'dest_warehouse': dest_wh.name,
+            'items_transferred': items_transferred,
+            'avancir_updated': avancir_updated,
+            'errors': errors,
+        }
+
+    # ================================================================
+    # END-OF-DAY POS RECONCILIATION
+    # ================================================================
+
+    def reconcile_pos_inventory(self, warehouse_id, pos_sales_data=None):
+        """
+        Reconcile end-of-day POS sales with Avancir physical inventory.
+
+        Args:
+            warehouse_id: ID of stock.warehouse to reconcile
+            pos_sales_data: Optional dict of {sku: qty_sold} from POS
+                           If not provided, will attempt to fetch from Avancir
+
+        Returns:
+            dict with reconciliation results
+        """
+        warehouse = self.env['stock.warehouse'].browse(warehouse_id)
+        if not warehouse.exists():
+            raise UserError('Invalid warehouse ID')
+
+        _logger.info(f'Starting POS reconciliation for {warehouse.name}')
+
+        # Create sync record for tracking
+        sync_record = self.create({
+            'name': f'POS Reconciliation {warehouse.name} {datetime.now().strftime("%Y-%m-%d")}',
+            'sync_type': 'reconciliation',
+            'state': 'running',
+            'start_time': fields.Datetime.now(),
+            'company_id': warehouse.company_id.id,
+        })
+
+        # Get current Avancir inventory for this location
+        try:
+            avancir_items = self._make_request('GET', '/items', params={
+                'location': warehouse.name,
+                'limit': 1000,
+            })
+        except Exception as e:
+            sync_record.write({'state': 'error', 'error_log': str(e)})
+            raise UserError(f'Failed to fetch Avancir inventory: {e}')
+
+        items_data = avancir_items.get('data', [])
+        _logger.info(f'Fetched {len(items_data)} items from Avancir for {warehouse.name}')
+
+        # Build Avancir inventory map by SKU
+        avancir_by_sku = {}
+        for item in items_data:
+            sku = item.get('sku')
+            if sku:
+                avancir_by_sku[sku] = {
+                    'avancir_id': item.get('id'),
+                    'name': item.get('name'),
+                    'status': item.get('status', {}).get('display_name'),
+                    'rfid_tag': item.get('rfid_tag'),
+                    'last_scan': item.get('last_scanned_at'),
+                }
+
+        # Get Odoo products for this warehouse's company
+        products = self.env['product.template'].search([
+            ('company_id', '=', warehouse.company_id.id),
+            ('active', '=', True),
+            ('default_code', '!=', False),
+        ])
+
+        # Build Odoo inventory map
+        odoo_by_sku = {}
+        for product in products:
+            if product.default_code:
+                odoo_by_sku[product.default_code] = {
+                    'product_id': product.id,
+                    'name': product.name,
+                    'qty_available': product.qty_available,
+                }
+
+        # Compare and find discrepancies
+        discrepancies = []
+        matched = 0
+        missing_in_avancir = []
+        missing_in_odoo = []
+
+        for sku, odoo_data in odoo_by_sku.items():
+            if sku in avancir_by_sku:
+                matched += 1
+                avancir_data = avancir_by_sku[sku]
+                # Check if item was sold (status changed or missing RFID scan today)
+                if pos_sales_data and sku in pos_sales_data:
+                    qty_sold = pos_sales_data[sku]
+                    discrepancies.append({
+                        'sku': sku,
+                        'name': odoo_data['name'],
+                        'odoo_qty': odoo_data['qty_available'],
+                        'pos_sold': qty_sold,
+                        'avancir_status': avancir_data['status'],
+                        'last_scan': avancir_data['last_scan'],
+                    })
+            else:
+                missing_in_avancir.append({
+                    'sku': sku,
+                    'name': odoo_data['name'],
+                    'product_id': odoo_data['product_id'],
+                })
+
+        for sku, avancir_data in avancir_by_sku.items():
+            if sku not in odoo_by_sku:
+                missing_in_odoo.append({
+                    'sku': sku,
+                    'name': avancir_data['name'],
+                    'avancir_id': avancir_data['avancir_id'],
+                })
+
+        # Update sync record
+        sync_record.write({
+            'state': 'done',
+            'end_time': fields.Datetime.now(),
+            'products_created': matched,
+            'products_updated': len(discrepancies),
+            'errors': len(missing_in_avancir) + len(missing_in_odoo),
+            'error_log': json.dumps({
+                'missing_in_avancir': missing_in_avancir[:50],
+                'missing_in_odoo': missing_in_odoo[:50],
+            }, indent=2) if missing_in_avancir or missing_in_odoo else False,
+        })
+
+        result = {
+            'warehouse': warehouse.name,
+            'total_odoo_products': len(odoo_by_sku),
+            'total_avancir_items': len(avancir_by_sku),
+            'matched': matched,
+            'discrepancies': discrepancies,
+            'missing_in_avancir': missing_in_avancir,
+            'missing_in_odoo': missing_in_odoo,
+            'sync_record_id': sync_record.id,
+        }
+
+        _logger.info(f'Reconciliation complete: {matched} matched, '
+                    f'{len(discrepancies)} discrepancies, '
+                    f'{len(missing_in_avancir)} missing in Avancir')
+
+        return result
+
+    def get_avancir_inventory_by_location(self, location_name, status_filter=None):
+        """
+        Get all Avancir items for a specific location.
+
+        Args:
+            location_name: Name of the location/warehouse
+            status_filter: Optional status to filter by (e.g., 'Active', 'Needs Tags')
+
+        Returns:
+            List of items from Avancir
+        """
+        params = {
+            'location': location_name,
+            'limit': 1000,
+        }
+        if status_filter:
+            params['status'] = status_filter
+
+        result = self._make_request('GET', '/items', params=params)
+        return result.get('data', [])
+
+    def update_avancir_item_status(self, avancir_item_id, new_status):
+        """
+        Update the status of an item in Avancir.
+
+        Args:
+            avancir_item_id: ID of the item in Avancir
+            new_status: New status display name (e.g., 'Sold', 'Transferred', 'Active')
+
+        Returns:
+            Updated item data
+        """
+        return self._make_request('PATCH', f'/items/{avancir_item_id}', {
+            'status': {'display_name': new_status}
+        })
