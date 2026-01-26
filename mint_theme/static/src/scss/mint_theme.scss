@@ -1,0 +1,435 @@
+/**
+ * Mint Green Theme for Odoo
+ * ========================
+ * Changes the default purple to dark green
+ */
+
+// Dark Green Color Palette (replacing mint green)
+$green-primary: #15803D;        // Dark green (primary)
+$green-dark: #166534;           // Darker green for hover
+$green-darker: #14532D;         // Even darker for active states
+$green-light: #22C55E;          // Light green for highlights
+$green-bg: #DCFCE7;             // Very light green for backgrounds
+
+// Override ALL Odoo color variables
+:root {
+  // Brand colors
+  --o-brand-odoo: #{$green-primary} !important;
+  --o-brand-primary: #{$green-primary} !important;
+  --o-enterprise-color: #{$green-primary} !important;
+
+  // THE PURPLE CULPRITS - override these!
+  --o-cc4-bg: #{$green-primary} !important;
+  --o-color-1: #{$green-primary} !important;
+  --o-color-2: #{$green-dark} !important;
+  --o-color-3: #{$green-darker} !important;
+  --o-color-4: #{$green-primary} !important;
+  --o-color-5: #{$green-light} !important;
+
+  // Action colors
+  --o-action-color: #{$green-primary} !important;
+  --o-action-color-hover: #{$green-dark} !important;
+
+  // Navbar colors
+  --o-navbar-badge-bg: #{$green-dark} !important;
+  --o-navbar-entry-active-bg: #{$green-darker} !important;
+  --o-main-color: #{$green-primary} !important;
+  --NavBar-entry-bg--active: #{$green-darker} !important;
+  --NavBar-entry-bg--hover: #{$green-dark} !important;
+
+  // Form colors
+  --o-form-lightsecondary: #{$green-bg} !important;
+
+  // Button colors
+  --btn-primary-bg: #{$green-primary} !important;
+  --btn-primary-border-color: #{$green-primary} !important;
+  --btn-primary-hover-bg: #{$green-dark} !important;
+  --btn-primary-hover-border-color: #{$green-dark} !important;
+  --btn-primary-active-bg: #{$green-darker} !important;
+  --btn-primary-active-border-color: #{$green-darker} !important;
+}
+
+// Force override on all elements that might have purple
+* {
+  --o-cc4-bg: #{$green-primary} !important;
+  --o-color-1: #{$green-primary} !important;
+}
+
+// ============================================
+// NAVBAR / TOP BAR - Complete override
+// ============================================
+.o_main_navbar {
+  background-color: $green-primary !important;
+
+  // All navbar items
+  .o_menu_toggle,
+  .o_menu_brand,
+  .o_menu_sections,
+  .o_menu_systray {
+    background-color: transparent !important;
+  }
+
+  // Dropdown menus in navbar
+  .dropdown-menu {
+    .dropdown-item:hover,
+    .dropdown-item:focus,
+    .dropdown-item.active {
+      background-color: $green-primary !important;
+      color: white !important;
+    }
+  }
+
+  // Active/selected menu items (THIS FIXES THE PURPLE)
+  .o_menu_sections {
+    .o_nav_entry.active,
+    .o_nav_entry:hover,
+    .o_nav_entry:focus,
+    .o_nav_entry.show,
+    .nav-link.active,
+    .nav-link:hover,
+    .dropdown-toggle.show {
+      background-color: $green-darker !important;
+      color: white !important;
+    }
+
+    // Dropdown in menu sections
+    .dropdown-menu {
+      background-color: white !important;
+
+      .dropdown-item {
+        color: #333 !important;
+
+        &:hover, &:focus, &.active {
+          background-color: $green-primary !important;
+          color: white !important;
+        }
+      }
+    }
+  }
+
+  // Systray (right side icons)
+  .o_menu_systray {
+    .o-dropdown,
+    .dropdown-toggle,
+    > div {
+      &:hover, &.show, &:focus {
+        background-color: $green-darker !important;
+      }
+    }
+
+    .o_MessagingMenu,
+    .o_ActivityMenu {
+      &.o-dropdown.show,
+      &:hover {
+        background-color: $green-darker !important;
+      }
+    }
+  }
+
+  // App switcher button
+  .o_menu_toggle {
+    &:hover, &:focus {
+      background-color: $green-darker !important;
+    }
+  }
+
+  // Breadcrumb area
+  .o_menu_brand:hover {
+    background-color: $green-darker !important;
+  }
+}
+
+// ============================================
+// APP SWITCHER / HOME MENU
+// ============================================
+.o_home_menu {
+  .o_app {
+    &:hover, &:focus {
+      background-color: rgba($green-primary, 0.15) !important;
+    }
+  }
+
+  .o_menuitem.o_focused,
+  .o_menuitem:hover {
+    background-color: rgba($green-primary, 0.15) !important;
+  }
+}
+
+// App icons hover
+.o_apps .o_app:hover {
+  background-color: rgba($green-primary, 0.1) !important;
+}
+
+// ============================================
+// BUTTONS
+// ============================================
+.o_web_client {
+  .btn-primary,
+  .btn-primary.disabled,
+  .btn-primary:disabled {
+    background-color: $green-primary !important;
+    border-color: $green-primary !important;
+    color: white !important;
+
+    &:hover, &:focus {
+      background-color: $green-dark !important;
+      border-color: $green-dark !important;
+    }
+
+    &:active, &.active {
+      background-color: $green-darker !important;
+      border-color: $green-darker !important;
+    }
+  }
+
+  .btn-outline-primary {
+    color: $green-primary !important;
+    border-color: $green-primary !important;
+
+    &:hover, &:focus {
+      background-color: $green-primary !important;
+      border-color: $green-primary !important;
+      color: white !important;
+    }
+  }
+
+  .btn-link {
+    color: $green-primary !important;
+
+    &:hover {
+      color: $green-dark !important;
+    }
+  }
+}
+
+// ============================================
+// LINKS
+// ============================================
+.o_web_client {
+  a:not(.btn):not(.nav-link):not(.dropdown-item) {
+    color: $green-primary !important;
+
+    &:hover, &:focus {
+      color: $green-dark !important;
+    }
+  }
+}
+
+// ============================================
+// FORM ELEMENTS
+// ============================================
+.o_web_client {
+  // Tabs
+  .nav-tabs .nav-link.active,
+  .nav-tabs .nav-link:hover {
+    border-bottom-color: $green-primary !important;
+    color: $green-primary !important;
+  }
+
+  // Checkboxes
+  .form-check-input:checked,
+  .o_checkbox input:checked + span {
+    background-color: $green-primary !important;
+    border-color: $green-primary !important;
+  }
+
+  // Radio buttons
+  .form-check-input[type="radio"]:checked {
+    border-color: $green-primary !important;
+    background-color: $green-primary !important;
+  }
+
+  // Focus states
+  .form-control:focus,
+  .form-select:focus {
+    border-color: $green-primary !important;
+    box-shadow: 0 0 0 0.2rem rgba($green-primary, 0.25) !important;
+  }
+
+  // Switch toggle
+  .form-switch .form-check-input:checked {
+    background-color: $green-primary !important;
+    border-color: $green-primary !important;
+  }
+}
+
+// ============================================
+// KANBAN & LIST VIEWS
+// ============================================
+.o_web_client {
+  // Kanban record hover
+  .o_kanban_record:hover {
+    border-color: $green-primary !important;
+  }
+
+  // List view selected row
+  .o_list_view .o_data_row.o_data_row_selected,
+  .o_list_view .o_data_row:focus-within {
+    background-color: $green-bg !important;
+  }
+
+  // Kanban column header
+  .o_kanban_header .o_kanban_title {
+    &:hover {
+      color: $green-primary !important;
+    }
+  }
+}
+
+// ============================================
+// STATUSBAR
+// ============================================
+.o_web_client {
+  .o_statusbar_status {
+    button.btn-primary,
+    button.o_arrow_button.btn-primary {
+      background-color: $green-primary !important;
+      border-color: $green-primary !important;
+
+      &:hover {
+        background-color: $green-dark !important;
+      }
+    }
+
+    // Current status indicator
+    .o_arrow_button.o_arrow_button_current {
+      background-color: $green-primary !important;
+
+      &::after {
+        border-left-color: $green-primary !important;
+      }
+    }
+  }
+}
+
+// ============================================
+// BADGES & PILLS
+// ============================================
+.badge-primary,
+.badge.bg-primary,
+.bg-primary {
+  background-color: $green-primary !important;
+}
+
+.badge.text-bg-primary {
+  background-color: $green-primary !important;
+  color: white !important;
+}
+
+// ============================================
+// PROGRESS BARS
+// ============================================
+.progress-bar,
+.o_progressbar .o_progressbar_complete {
+  background-color: $green-primary !important;
+}
+
+// ============================================
+// CALENDAR
+// ============================================
+.o_calendar_renderer {
+  .fc-event,
+  .fc-event-dot {
+    background-color: $green-primary !important;
+    border-color: $green-dark !important;
+  }
+
+  .fc-button-primary {
+    background-color: $green-primary !important;
+    border-color: $green-primary !important;
+
+    &:hover, &:focus {
+      background-color: $green-dark !important;
+    }
+  }
+}
+
+// ============================================
+// CHATTER
+// ============================================
+.o_Chatter {
+  .btn-primary {
+    background-color: $green-primary !important;
+    border-color: $green-primary !important;
+  }
+
+  .o_Chatter_sendButton {
+    background-color: $green-primary !important;
+  }
+}
+
+// ============================================
+// MODALS / DIALOGS
+// ============================================
+.modal {
+  .btn-primary {
+    background-color: $green-primary !important;
+    border-color: $green-primary !important;
+
+    &:hover, &:focus {
+      background-color: $green-dark !important;
+      border-color: $green-dark !important;
+    }
+  }
+
+  .modal-header {
+    .btn-close:focus {
+      box-shadow: 0 0 0 0.2rem rgba($green-primary, 0.25) !important;
+    }
+  }
+}
+
+// ============================================
+// CONTROL PANEL
+// ============================================
+.o_control_panel {
+  .btn-primary {
+    background-color: $green-primary !important;
+    border-color: $green-primary !important;
+  }
+
+  .o_searchview_input:focus {
+    border-color: $green-primary !important;
+  }
+}
+
+// ============================================
+// BREADCRUMB
+// ============================================
+.breadcrumb-item a {
+  color: $green-primary !important;
+
+  &:hover {
+    color: $green-dark !important;
+  }
+}
+
+// ============================================
+// MISC OVERRIDES
+// ============================================
+
+// Loading indicator
+.o_loading_indicator {
+  background-color: $green-primary !important;
+}
+
+// Tooltip
+.tooltip.bs-tooltip-top .tooltip-arrow::before,
+.tooltip.bs-tooltip-bottom .tooltip-arrow::before {
+  border-top-color: $green-primary !important;
+}
+
+// Selection highlight
+::selection {
+  background-color: rgba($green-primary, 0.3) !important;
+}
+
+// Scrollbar (webkit)
+::-webkit-scrollbar-thumb:hover {
+  background-color: $green-primary !important;
+}
+
+// Focus outline
+*:focus-visible {
+  outline-color: $green-primary !important;
+}
