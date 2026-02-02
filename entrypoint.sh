@@ -12,7 +12,6 @@ fi
 # If installing modules, do it now as odoo user
 if [ -n "$ODOO_INSTALL_MODULES" ]; then
     echo "Installing modules: $ODOO_INSTALL_MODULES"
-    # Run module installation, then continue to normal startup
     su - odoo -c "odoo -d ${ODOO_DATABASE:-odoo} -i $ODOO_INSTALL_MODULES --stop-after-init" || {
         echo "Module installation failed, but continuing startup..."
     }
