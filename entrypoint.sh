@@ -12,7 +12,7 @@ fi
 # If installing modules, do it now as odoo user
 if [ -n "$ODOO_INSTALL_MODULES" ]; then
     echo "Installing modules: $ODOO_INSTALL_MODULES"
-    su - odoo -c "odoo -d ${ODOO_DATABASE:-odoo} -i $ODOO_INSTALL_MODULES --stop-after-init" || {
+    gosu odoo odoo -d "${ODOO_DATABASE:-odoo}" -i "$ODOO_INSTALL_MODULES" --stop-after-init || {
         echo "Module installation failed, but continuing startup..."
     }
 fi
@@ -20,7 +20,7 @@ fi
 # If updating modules, do it now as odoo user
 if [ -n "$ODOO_UPDATE_MODULES" ]; then
     echo "Updating modules: $ODOO_UPDATE_MODULES"
-    su - odoo -c "odoo -d ${ODOO_DATABASE:-odoo} -u $ODOO_UPDATE_MODULES --stop-after-init" || {
+    gosu odoo odoo -d "${ODOO_DATABASE:-odoo}" -u "$ODOO_UPDATE_MODULES" --stop-after-init || {
         echo "Module update failed, but continuing startup..."
     }
 fi
