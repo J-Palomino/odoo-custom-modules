@@ -1,27 +1,28 @@
 # -*- coding: utf-8 -*-
 {
-    'name': 'Avancir Inventory Integration',
-    'version': '19.0.2.0.0',
+    'name': 'RFID Inventory Integration',
+    'version': '19.0.3.0.0',
     'category': 'Inventory',
-    'summary': 'Sync inventory with Avancir API',
+    'summary': 'RFID-based inventory sync and tracking',
     'description': """
-        Avancir Inventory Integration
-        =============================
+        RFID Inventory Integration
+        ==========================
 
-        This module provides integration between Odoo and Avancir inventory management system.
+        This module provides RFID-based inventory management and synchronization.
 
         Features:
-        - Bulk sync products to Avancir
+        - Bulk sync products via RFID
         - Bulk sync inventory quantities
         - Automatic scheduled sync
         - Manual sync from product form
         - Per-company/warehouse sync support
         - Inter-store inventory transfers
         - End-of-day POS reconciliation
+        - RFID tag tracking and management
 
         Configuration:
-        - Set Avancir API credentials in Settings > Inventory > Avancir
-        - Map Odoo fields to Avancir item types
+        - Set RFID API credentials in Settings > Inventory > RFID
+        - Map Odoo fields to RFID item types
         - Configure sync schedule
     """,
     'author': 'MintDeals',
