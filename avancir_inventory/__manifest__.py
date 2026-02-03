@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'RFID Inventory Integration',
-    'version': '19.0.3.0.0',
+    'version': '19.0.5.0.0',
     'category': 'Inventory',
     'summary': 'RFID-based inventory sync and tracking',
     'description': """
@@ -18,7 +18,7 @@
         - Per-company/warehouse sync support
         - Inter-store inventory transfers
         - End-of-day POS reconciliation
-        - RFID tag tracking and management
+        - Fetch activity history from Avancir API
 
         Configuration:
         - Set RFID API credentials in Settings > Inventory > RFID
@@ -43,4 +43,3 @@
     'application': False,
     'auto_install': False,
 }
-# Build cache bust: 1769454700

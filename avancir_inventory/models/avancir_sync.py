@@ -527,3 +527,77 @@ class AvancirSync(models.Model):
         return self._make_request('PATCH', f'/items/{avancir_item_id}', {
             'status': {'display_name': new_status}
         })
+
+    # ================================================================
+    # ITEM HISTORY / ACTIVITY FETCHING
+    # ================================================================
+
+    def get_item_history(self, item_ids):
+        """
+        Fetch activity history from Avancir for given items.
+
+        Args:
+            item_ids: List of Avancir item IDs
+
+        Returns:
+            List of history/activity records from Avancir
+        """
+        if not item_ids:
+            return []
+
+        try:
+            result = self._make_request('POST', '/items/history/batch', {
+                'itemIds': item_ids
+            })
+            return result.get('data', []) if isinstance(result, dict) else result
+        except Exception as e:
+            _logger.error(f'Failed to fetch item history: {e}')
+            return []
+
+    def get_item_history_single(self, item_id):
+        """
+        Fetch activity history for a single item from Avancir.
+
+        Args:
+            item_id: Avancir item ID
+
+        Returns:
+            List of history records for this item
+        """
+        if not item_id:
+            return []
+
+        try:
+            result = self._make_request('GET', f'/items/{item_id}/history')
+            return result.get('data', []) if isinstance(result, dict) else result
+        except Exception as e:
+            _logger.error(f'Failed to fetch history for item {item_id}: {e}')
+            return []
+
+    def get_item_history_by_location(self, location_name, limit=50):
+        """
+        Get history for all items at a location.
+
+        Args:
+            location_name: Name of the location/warehouse
+            limit: Maximum number of items to fetch history for
+
+        Returns:
+            List of history records from Avancir
+        """
+        # First get items at location
+        items = self.get_avancir_inventory_by_location(location_name)
+        if not items:
+            return []
+
+        # Extract item IDs (handle both 'id' and '_id' formats)
+        item_ids = []
+        for item in items[:limit]:
+            item_id = item.get('_id') or item.get('id')
+            if item_id:
+                item_ids.append(item_id)
+
+        if not item_ids:
+            return []
+
+        return self.get_item_history(item_ids)
