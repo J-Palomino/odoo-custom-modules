@@ -9,10 +9,17 @@ if [ -d /var/lib/odoo ]; then
     chmod -R 755 /var/lib/odoo
 fi
 
+# Use config file if ODOO_RC is set
+ODOO_CONFIG_FLAG=""
+if [ -n "$ODOO_RC" ] && [ -f "$ODOO_RC" ]; then
+    ODOO_CONFIG_FLAG="-c $ODOO_RC"
+fi
+
 # If installing modules, do it now as odoo user
 if [ -n "$ODOO_INSTALL_MODULES" ]; then
     echo "Installing modules: $ODOO_INSTALL_MODULES"
-    gosu odoo odoo -d "${ODOO_DATABASE:-odoo}" -i "$ODOO_INSTALL_MODULES" --stop-after-init || {
+    echo "Using config: ${ODOO_RC:-default}"
+    gosu odoo odoo $ODOO_CONFIG_FLAG -d "${ODOO_DATABASE:-odoo}" -i "$ODOO_INSTALL_MODULES" --stop-after-init || {
         echo "Module installation failed, but continuing startup..."
     }
 fi
@@ -20,7 +27,8 @@ fi
 # If updating modules, do it now as odoo user
 if [ -n "$ODOO_UPDATE_MODULES" ]; then
     echo "Updating modules: $ODOO_UPDATE_MODULES"
-    gosu odoo odoo -d "${ODOO_DATABASE:-odoo}" -u "$ODOO_UPDATE_MODULES" --stop-after-init || {
+    echo "Using config: ${ODOO_RC:-default}"
+    gosu odoo odoo $ODOO_CONFIG_FLAG -d "${ODOO_DATABASE:-odoo}" -u "$ODOO_UPDATE_MODULES" --stop-after-init || {
         echo "Module update failed, but continuing startup..."
     }
 fi
