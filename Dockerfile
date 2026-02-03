@@ -2,7 +2,7 @@
 FROM odoo:19
 
 # Bust all caches
-ARG CACHEBUST=1
+ARG CACHEBUST=2
 RUN echo "Build timestamp: $(date)" > /tmp/build-info.txt
 
 USER root
