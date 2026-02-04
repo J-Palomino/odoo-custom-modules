@@ -84,7 +84,22 @@ $green-bg: #DCFCE7;             // Very light green for backgrounds
   // These are the purple buttons that need green override
   // ============================================
   .o_menu_sections {
-    // ALL possible submenu item selectors
+    // DEFAULT STATE - make background same green as navbar (not purple!)
+    background-color: $green-primary !important;
+
+    .o_nav_entry,
+    .nav-item,
+    > a,
+    > button,
+    > .dropdown,
+    .o-dropdown,
+    .nav-link,
+    .dropdown-toggle {
+      background-color: $green-primary !important;
+      color: white !important;
+    }
+
+    // ALL possible submenu item selectors - HOVER/ACTIVE states
     .o_nav_entry,
     .nav-item,
     > a,
