@@ -17,6 +17,9 @@ $green-bg: #DCFCE7;             // Very light green for backgrounds
 // ============================================
 
 // DIRECT NAVBAR OVERRIDE - target the actual navbar structure
+// Target span[data-section] which is what Odoo 19 uses for menu items
+.o_main_navbar .o_menu_sections [data-section],
+.o_main_navbar .o_menu_sections span[data-section],
 .o_main_navbar .o_menu_sections .dropdown-toggle,
 .o_main_navbar .o_menu_sections .nav-link,
 .o_main_navbar .o_menu_sections > .dropdown,
@@ -32,6 +35,22 @@ nav.o_main_navbar .o_menu_sections *,
   color: white !important;
 
   &:hover, &:focus, &.show, &.active, &[aria-expanded="true"] {
+    background: $green-darker !important;
+    background-color: $green-darker !important;
+  }
+}
+
+// Specifically target data-section spans and their parent elements
+.o_menu_sections [data-section] {
+  background: $green-primary !important;
+  background-color: $green-primary !important;
+}
+
+.o_menu_sections > *:has([data-section]) {
+  background: $green-primary !important;
+  background-color: $green-primary !important;
+
+  &:hover {
     background: $green-darker !important;
     background-color: $green-darker !important;
   }
