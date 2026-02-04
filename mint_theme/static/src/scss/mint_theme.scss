@@ -16,6 +16,27 @@ $green-bg: #DCFCE7;             // Very light green for backgrounds
 // Odoo 19 purple values: #714B67, #7C3AED, #875A7B, #7C7BAD
 // ============================================
 
+// DIRECT NAVBAR OVERRIDE - target the actual navbar structure
+.o_main_navbar .o_menu_sections .dropdown-toggle,
+.o_main_navbar .o_menu_sections .nav-link,
+.o_main_navbar .o_menu_sections > .dropdown,
+.o_main_navbar .o_menu_sections > a,
+.o_main_navbar .o_menu_sections > button,
+.o_main_navbar .o_menu_sections .o-dropdown,
+.o_main_navbar .o_menu_sections .o-dropdown-toggler,
+.o_main_navbar .o_menu_sections [data-menu-xmlid],
+nav.o_main_navbar .o_menu_sections *,
+.o_web_client .o_main_navbar .o_menu_sections * {
+  background: $green-primary !important;
+  background-color: $green-primary !important;
+  color: white !important;
+
+  &:hover, &:focus, &.show, &.active, &[aria-expanded="true"] {
+    background: $green-darker !important;
+    background-color: $green-darker !important;
+  }
+}
+
 // Override at html/body level with highest specificity
 html, body, .o_web_client {
   --o-brand-odoo: #{$green-primary} !important;

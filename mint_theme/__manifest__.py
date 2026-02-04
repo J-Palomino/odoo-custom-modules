@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint Green Theme',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.0.1',
     'category': 'Themes',
     'summary': 'Changes Odoo UI color from purple to mint green',
     'description': """
