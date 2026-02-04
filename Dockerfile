@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=6
+ARG CACHEBUST=7
 
 USER root
 
@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
 RUN mkdir -p /mnt/extra-addons && rm -rf /mnt/extra-addons/*
 
 # Clone OCA Knowledge modules (wiki/document pages)
-RUN git clone --depth 1 --branch 18.0 https://github.com/OCA/knowledge.git /tmp/oca-knowledge && \
+RUN git clone --depth 1 --branch 19.0 https://github.com/OCA/knowledge.git /tmp/oca-knowledge && \
     cp -r /tmp/oca-knowledge/document_page /mnt/extra-addons/ && \
     cp -r /tmp/oca-knowledge/document_page_approval /mnt/extra-addons/ && \
     cp -r /tmp/oca-knowledge/document_page_tag /mnt/extra-addons/ && \
