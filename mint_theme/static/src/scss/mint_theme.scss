@@ -56,6 +56,54 @@ nav.o_main_navbar .o_menu_sections *,
   }
 }
 
+// OVERRIDE THE PURPLE #71639e DIRECTLY
+// This is Odoo 19's purple color for menu items
+[style*="71639e"],
+[style*="background-color: rgb(113, 99, 158)"],
+[style*="background: rgb(113, 99, 158)"] {
+  background: $green-primary !important;
+  background-color: $green-primary !important;
+}
+
+// Override ALL Odoo color class variables that use purple #71639e
+:root, html, body, .o_web_client, .o_action_manager {
+  --AppMenu-section-bg: #{$green-primary} !important;
+  --AppMenu-section-bg-hover: #{$green-darker} !important;
+  --o-webclient-color-accent: #{$green-primary} !important;
+
+  // Color class backgrounds
+  --o-cc1-bg: #{$green-primary} !important;
+  --o-cc2-bg: #{$green-primary} !important;
+  --o-cc3-bg: #{$green-primary} !important;
+  --o-cc4-bg: #{$green-primary} !important;
+  --o-cc5-bg: #{$green-primary} !important;
+
+  // CC1 buttons (was #71639e)
+  --o-cc1-btn-primary: #{$green-primary} !important;
+  --o-cc1-btn-primary-border: #{$green-primary} !important;
+  --o-cc1-link: #{$green-primary} !important;
+
+  // CC2 buttons (was #71639e)
+  --o-cc2-btn-primary: #{$green-primary} !important;
+  --o-cc2-btn-primary-border: #{$green-primary} !important;
+  --o-cc2-link: #{$green-primary} !important;
+
+  // CC3 buttons (was #71639e)
+  --o-cc3-btn-primary: #{$green-primary} !important;
+  --o-cc3-btn-primary-border: #{$green-primary} !important;
+  --o-cc3-link: #{$green-primary} !important;
+
+  // CC4 buttons
+  --o-cc4-btn-primary: #{$green-primary} !important;
+  --o-cc4-btn-primary-border: #{$green-primary} !important;
+  --o-cc4-link: #{$green-light} !important;
+
+  // CC5 buttons (was #71639e)
+  --o-cc5-btn-primary: #{$green-primary} !important;
+  --o-cc5-btn-primary-border: #{$green-primary} !important;
+  --o-cc5-link: #{$green-light} !important;
+}
+
 // Override at html/body level with highest specificity
 html, body, .o_web_client {
   --o-brand-odoo: #{$green-primary} !important;
