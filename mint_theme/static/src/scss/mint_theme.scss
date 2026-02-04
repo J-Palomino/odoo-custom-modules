@@ -17,7 +17,15 @@ $green-bg: #DCFCE7;             // Very light green for backgrounds
 // ============================================
 
 // DIRECT NAVBAR OVERRIDE - target the actual navbar structure
-// Target span[data-section] which is what Odoo 19 uses for menu items
+// The purple is on: a.o-dropdown-item.dropdown-item with data-section
+.o_main_navbar .o-dropdown-item,
+.o_main_navbar .dropdown-item,
+.o_main_navbar a.o-dropdown-item,
+.o_main_navbar a.dropdown-item,
+.o_main_navbar .o_menu_sections .o-dropdown-item,
+.o_main_navbar .o_menu_sections .dropdown-item,
+.o_main_navbar .o_menu_sections a[data-section],
+.o_main_navbar .o_menu_sections a[data-menu-xmlid],
 .o_main_navbar .o_menu_sections [data-section],
 .o_main_navbar .o_menu_sections span[data-section],
 .o_main_navbar .o_menu_sections .dropdown-toggle,
@@ -35,6 +43,21 @@ nav.o_main_navbar .o_menu_sections *,
   color: white !important;
 
   &:hover, &:focus, &.show, &.active, &[aria-expanded="true"] {
+    background: $green-darker !important;
+    background-color: $green-darker !important;
+  }
+}
+
+// SPECIFIC: Target the exact element with purple
+a.o-dropdown-item.dropdown-item[data-section],
+a.o-dropdown-item.dropdown-item[data-menu-xmlid],
+.o_main_navbar a.o-dropdown-item,
+.o_main_navbar a.dropdown-item[data-section] {
+  background: $green-primary !important;
+  background-color: $green-primary !important;
+  color: white !important;
+
+  &:hover, &:focus {
     background: $green-darker !important;
     background-color: $green-darker !important;
   }
