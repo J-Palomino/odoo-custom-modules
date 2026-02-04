@@ -79,17 +79,58 @@ $green-bg: #DCFCE7;             // Very light green for backgrounds
     }
   }
 
-  // Active/selected menu items (THIS FIXES THE PURPLE)
+  // ============================================
+  // APP SUBMENU - Projects, Tasks, Reporting, Configuration
+  // These are the purple buttons that need green override
+  // ============================================
   .o_menu_sections {
-    .o_nav_entry.active,
-    .o_nav_entry:hover,
-    .o_nav_entry:focus,
-    .o_nav_entry.show,
-    .nav-link.active,
-    .nav-link:hover,
-    .dropdown-toggle.show {
+    // ALL possible submenu item selectors
+    .o_nav_entry,
+    .nav-item,
+    > a,
+    > button,
+    > .dropdown,
+    .o-dropdown {
+      &.active,
+      &:hover,
+      &:focus,
+      &.show,
+      &[aria-expanded="true"] {
+        background-color: $green-darker !important;
+        color: white !important;
+      }
+    }
+
+    // Nav links inside menu sections
+    .nav-link,
+    .dropdown-toggle,
+    a[data-menu-xmlid],
+    button[data-menu-xmlid] {
+      &.active,
+      &:hover,
+      &:focus,
+      &.show {
+        background-color: $green-darker !important;
+        color: white !important;
+      }
+    }
+
+    // Odoo 19 specific - app menu entries
+    [data-section],
+    .o-dropdown-item,
+    .o_menu_entry_lvl_1,
+    .o_menu_entry_lvl_2 {
+      &:hover,
+      &:focus,
+      &.active {
+        background-color: $green-darker !important;
+        color: white !important;
+      }
+    }
+
+    // Force override any purple background
+    *[style*="background"] {
       background-color: $green-darker !important;
-      color: white !important;
     }
 
     // Dropdown in menu sections
@@ -432,4 +473,56 @@ $green-bg: #DCFCE7;             // Very light green for backgrounds
 // Focus outline
 *:focus-visible {
   outline-color: $green-primary !important;
+}
+
+// ============================================
+// AGGRESSIVE PURPLE OVERRIDE FOR ODOO 19
+// Target any remaining purple (#714B67, #7C3A85, etc.)
+// ============================================
+
+// Override Odoo 19 CSS variables that might still be purple
+.o_web_client,
+.o_action_manager,
+.o_main_navbar,
+body {
+  --o-brand-odoo: #{$green-primary} !important;
+  --o-brand-primary: #{$green-primary} !important;
+  --primary: #{$green-primary} !important;
+  --bs-primary: #{$green-primary} !important;
+  --bs-primary-rgb: 21, 128, 61 !important;
+
+  // Odoo 19 specific app menu variables
+  --o-navbar-entry-bg-hover: #{$green-darker} !important;
+  --o-navbar-entry-bg-active: #{$green-darker} !important;
+  --NavBar-menuSections-entry-bg--hover: #{$green-darker} !important;
+  --NavBar-menuSections-entry-bg--active: #{$green-darker} !important;
+  --o-menu-sections-link-bg-active: #{$green-darker} !important;
+}
+
+// Force override on navbar menu sections specifically
+.o_main_navbar .o_menu_sections {
+  // Target elements with inline styles or computed purple backgrounds
+  > * {
+    &:hover,
+    &.active,
+    &:focus,
+    &.show {
+      background-color: $green-darker !important;
+      background: $green-darker !important;
+    }
+  }
+
+  // Specifically target the submenu buttons/links
+  .nav-link:hover,
+  .nav-link.active,
+  .nav-link:focus,
+  .nav-link.show,
+  button:hover,
+  button.active,
+  a:hover,
+  a.active {
+    background-color: $green-darker !important;
+    background: $green-darker !important;
+    color: white !important;
+  }
 }
