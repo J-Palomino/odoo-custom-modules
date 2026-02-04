@@ -11,6 +11,34 @@ $green-darker: #14532D;         // Even darker for active states
 $green-light: #22C55E;          // Light green for highlights
 $green-bg: #DCFCE7;             // Very light green for backgrounds
 
+// ============================================
+// NUCLEAR OPTION: Override Odoo's purple at the source
+// Odoo 19 purple values: #714B67, #7C3AED, #875A7B, #7C7BAD
+// ============================================
+
+// Override at html/body level with highest specificity
+html, body, .o_web_client {
+  --o-brand-odoo: #{$green-primary} !important;
+  --o-brand-primary: #{$green-primary} !important;
+  --o-enterprise-color: #{$green-primary} !important;
+  --primary: #{$green-primary} !important;
+  --bs-primary: #{$green-primary} !important;
+  --o-main-color: #{$green-primary} !important;
+
+  // Odoo 19 navbar specific variables
+  --o-navbar-bg: #{$green-primary} !important;
+  --o-navbar-color: white !important;
+  --o-navbar-brand-color: white !important;
+  --NavBar-background: #{$green-primary} !important;
+  --NavBar-entry-bg: #{$green-primary} !important;
+  --NavBar-entry-bg--hover: #{$green-darker} !important;
+  --NavBar-entry-bg--active: #{$green-darker} !important;
+  --NavBar-menuSections-bg: #{$green-primary} !important;
+  --NavBar-menuSections-entry-bg: #{$green-primary} !important;
+  --NavBar-menuSections-entry-bg--hover: #{$green-darker} !important;
+  --NavBar-menuSections-entry-bg--active: #{$green-darker} !important;
+}
+
 // Override ALL Odoo color variables
 :root {
   // Brand colors
