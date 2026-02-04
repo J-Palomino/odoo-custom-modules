@@ -1,12 +1,26 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=5
+ARG CACHEBUST=6
 
 USER root
 
+# Install git for cloning OCA modules
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Prepare extra-addons directory
 RUN mkdir -p /mnt/extra-addons && rm -rf /mnt/extra-addons/*
+
+# Clone OCA Knowledge modules (wiki/document pages)
+RUN git clone --depth 1 --branch 18.0 https://github.com/OCA/knowledge.git /tmp/oca-knowledge && \
+    cp -r /tmp/oca-knowledge/document_page /mnt/extra-addons/ && \
+    cp -r /tmp/oca-knowledge/document_page_approval /mnt/extra-addons/ && \
+    cp -r /tmp/oca-knowledge/document_page_tag /mnt/extra-addons/ && \
+    cp -r /tmp/oca-knowledge/document_page_project /mnt/extra-addons/ && \
+    cp -r /tmp/oca-knowledge/document_knowledge /mnt/extra-addons/ && \
+    cp -r /tmp/oca-knowledge/document_page_access_group /mnt/extra-addons/ && \
+    rm -rf /tmp/oca-knowledge && \
+    chown -R odoo:odoo /mnt/extra-addons/document_*
 
 # Copy custom modules
 COPY --chown=odoo:odoo avancir_inventory /mnt/extra-addons/avancir_inventory
