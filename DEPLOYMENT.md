@@ -17,9 +17,62 @@ odoo-custom-modules/
 ├── Dockerfile              # Docker build configuration
 ├── fix-config.sh           # Startup script to fix volume config
 ├── odoo.conf               # Backup Odoo configuration
-├── avancir_inventory/      # Custom module
-└── mint_api_v2/            # Custom REST API module
+├── avancir_inventory/      # Inventory sync module
+├── mint_api_v2/            # Custom REST API module
+└── mint_theme/             # Custom branding theme
+    ├── __manifest__.py     # Module manifest
+    ├── generate-theme.sh   # Theme color generator script
+    ├── static/src/
+    │   ├── scss/mint_theme.scss  # Templatized SCSS
+    │   ├── js/mintask.js         # Browser title changer
+    │   └── img/                  # Favicon images
+    └── views/templates.xml       # Odoo view templates
 ```
+
+## mint_theme Module
+
+The `mint_theme` module provides customizable branding for Odoo 19:
+- Replaces default purple accent with configurable brand colors
+- Changes browser tab title to "MinTask"
+- Includes 7 color presets
+
+### Changing Theme Colors
+
+**Method 1: Edit SCSS directly**
+
+Edit `mint_theme/static/src/scss/mint_theme.scss` and change the variables at the top:
+
+```scss
+$theme-primary: #15803D;           // Main brand color
+$theme-primary-hover: #166534;     // Hover state
+$theme-primary-active: #14532D;    // Active/pressed state
+$theme-accent: #22C55E;            // Highlights
+$theme-bg-light: #DCFCE7;          // Light backgrounds
+```
+
+**Method 2: Use the generator script**
+
+```bash
+# Use a preset
+./mint_theme/generate-theme.sh --preset blue
+
+# Custom colors
+./mint_theme/generate-theme.sh --primary "#FF5722" --name "Custom Orange"
+
+# List available presets
+./mint_theme/generate-theme.sh --list
+```
+
+Available presets: `green`, `blue`, `orange`, `purple`, `charcoal`, `teal`, `rose`
+
+### Deploying Theme Changes
+
+After changing colors:
+1. Commit and push changes
+2. Rebuild Docker: `docker build -t odoo-custom . --build-arg CACHEBUST=$(date +%s)`
+3. Deploy to Railway: `railway up`
+4. In Odoo: Apps > mint_theme > Upgrade
+5. Clear browser cache (Cmd+Shift+R)
 
 ## Key Challenges and Solutions
 
