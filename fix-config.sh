@@ -36,5 +36,15 @@ fi
 echo "=== End debugging ==="
 echo ""
 
+# Generate brand theme from environment variables
+THEME_GENERATOR="/mnt/extra-addons/mint_theme/generate-theme.sh"
+if [ -f "$THEME_GENERATOR" ]; then
+    echo "=== Generating brand theme ==="
+    bash "$THEME_GENERATOR"
+    echo ""
+else
+    echo "Theme generator not found at $THEME_GENERATOR"
+fi
+
 # Execute the original entrypoint
 exec /entrypoint.sh "$@"

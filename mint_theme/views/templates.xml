@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Simple test: Create a basic template to see if data loading works -->
+    <record id="mint_theme_test" model="ir.ui.view">
+        <field name="name">MinTask Test View</field>
+        <field name="type">qweb</field>
+        <field name="arch" type="xml">
+            <t t-name="mint_theme.test">
+                <div>MinTask Theme Loaded</div>
+            </t>
+        </field>
+    </record>
+</odoo>

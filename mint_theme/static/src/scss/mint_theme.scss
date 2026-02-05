@@ -1,206 +1,188 @@
 /**
- * Mint Green Theme for Odoo
- * ========================
- * Changes the default purple to dark green
+ * ============================================================
+ * ODOO 19 CUSTOM THEME TEMPLATE
+ * ============================================================
+ *
+ * This theme module allows you to customize Odoo's color scheme.
+ * Edit the configuration variables below to change the theme.
+ *
+ * Module: mint_theme
+ * Version: 19.0.1.0.4
+ * License: LGPL-3
  */
 
-// Dark Green Color Palette (replacing mint green)
-$green-primary: #15803D;        // Dark green (primary)
-$green-dark: #166534;           // Darker green for hover
-$green-darker: #14532D;         // Even darker for active states
-$green-light: #22C55E;          // Light green for highlights
-$green-bg: #DCFCE7;             // Very light green for backgrounds
+// ============================================================
+// THEME CONFIGURATION
+// ============================================================
+// Change these variables to customize your theme colors.
+// All other styles will automatically use these values.
 
-// ============================================
-// NUCLEAR OPTION: Override Odoo's purple at the source
-// Odoo 19 purple values: #714B67, #7C3AED, #875A7B, #7C7BAD
-// ============================================
+// Primary brand color (main accent color)
+$theme-primary: #15803D;           // Dark green - change this to your brand color
 
-// DIRECT NAVBAR OVERRIDE - target the actual navbar structure
-// The purple is on: a.o-dropdown-item.dropdown-item with data-section
-.o_main_navbar .o-dropdown-item,
-.o_main_navbar .dropdown-item,
-.o_main_navbar a.o-dropdown-item,
-.o_main_navbar a.dropdown-item,
-.o_main_navbar .o_menu_sections .o-dropdown-item,
-.o_main_navbar .o_menu_sections .dropdown-item,
-.o_main_navbar .o_menu_sections a[data-section],
-.o_main_navbar .o_menu_sections a[data-menu-xmlid],
-.o_main_navbar .o_menu_sections [data-section],
-.o_main_navbar .o_menu_sections span[data-section],
-.o_main_navbar .o_menu_sections .dropdown-toggle,
-.o_main_navbar .o_menu_sections .nav-link,
-.o_main_navbar .o_menu_sections > .dropdown,
-.o_main_navbar .o_menu_sections > a,
-.o_main_navbar .o_menu_sections > button,
-.o_main_navbar .o_menu_sections .o-dropdown,
-.o_main_navbar .o_menu_sections .o-dropdown-toggler,
-.o_main_navbar .o_menu_sections [data-menu-xmlid],
-nav.o_main_navbar .o_menu_sections *,
-.o_web_client .o_main_navbar .o_menu_sections * {
-  background: $green-primary !important;
-  background-color: $green-primary !important;
-  color: white !important;
+// Hover state (slightly darker than primary)
+$theme-primary-hover: #166534;     // Used for hover effects
 
-  &:hover, &:focus, &.show, &.active, &[aria-expanded="true"] {
-    background: $green-darker !important;
-    background-color: $green-darker !important;
-  }
-}
+// Active/pressed state (darkest shade)
+$theme-primary-active: #14532D;    // Used for active/pressed states
 
-// SPECIFIC: Target the exact element with purple
-a.o-dropdown-item.dropdown-item[data-section],
-a.o-dropdown-item.dropdown-item[data-menu-xmlid],
-.o_main_navbar a.o-dropdown-item,
-.o_main_navbar a.dropdown-item[data-section] {
-  background: $green-primary !important;
-  background-color: $green-primary !important;
-  color: white !important;
+// Accent color (for highlights and secondary elements)
+$theme-accent: #22C55E;            // Light green - used for highlights
 
-  &:hover, &:focus {
-    background: $green-darker !important;
-    background-color: $green-darker !important;
-  }
-}
+// Light background (for subtle backgrounds)
+$theme-bg-light: #DCFCE7;          // Very light shade of primary
 
-// Specifically target data-section spans and their parent elements
-.o_menu_sections [data-section] {
-  background: $green-primary !important;
-  background-color: $green-primary !important;
-}
+// Text color on primary background
+$theme-text-on-primary: white;
 
-.o_menu_sections > *:has([data-section]) {
-  background: $green-primary !important;
-  background-color: $green-primary !important;
+// ============================================================
+// COLOR PRESETS (Uncomment one to use a different theme)
+// ============================================================
 
-  &:hover {
-    background: $green-darker !important;
-    background-color: $green-darker !important;
-  }
-}
+// --- MINT GREEN (Default) ---
+// Already configured above
 
-// OVERRIDE THE PURPLE #71639e DIRECTLY
-// This is Odoo 19's purple color for menu items
-[style*="71639e"],
-[style*="background-color: rgb(113, 99, 158)"],
-[style*="background: rgb(113, 99, 158)"] {
-  background: $green-primary !important;
-  background-color: $green-primary !important;
-}
+// --- OCEAN BLUE ---
+// $theme-primary: #1D4ED8;
+// $theme-primary-hover: #1E40AF;
+// $theme-primary-active: #1E3A8A;
+// $theme-accent: #3B82F6;
+// $theme-bg-light: #DBEAFE;
 
-// Override ALL Odoo color class variables that use purple #71639e
-:root, html, body, .o_web_client, .o_action_manager {
-  --AppMenu-section-bg: #{$green-primary} !important;
-  --AppMenu-section-bg-hover: #{$green-darker} !important;
-  --o-webclient-color-accent: #{$green-primary} !important;
+// --- CORAL ORANGE ---
+// $theme-primary: #EA580C;
+// $theme-primary-hover: #C2410C;
+// $theme-primary-active: #9A3412;
+// $theme-accent: #FB923C;
+// $theme-bg-light: #FFEDD5;
 
-  // Color class backgrounds
-  --o-cc1-bg: #{$green-primary} !important;
-  --o-cc2-bg: #{$green-primary} !important;
-  --o-cc3-bg: #{$green-primary} !important;
-  --o-cc4-bg: #{$green-primary} !important;
-  --o-cc5-bg: #{$green-primary} !important;
+// --- BERRY PURPLE ---
+// $theme-primary: #7C3AED;
+// $theme-primary-hover: #6D28D9;
+// $theme-primary-active: #5B21B6;
+// $theme-accent: #A78BFA;
+// $theme-bg-light: #EDE9FE;
 
-  // CC1 buttons (was #71639e)
-  --o-cc1-btn-primary: #{$green-primary} !important;
-  --o-cc1-btn-primary-border: #{$green-primary} !important;
-  --o-cc1-link: #{$green-primary} !important;
+// --- CHARCOAL (Dark Mode) ---
+// $theme-primary: #374151;
+// $theme-primary-hover: #1F2937;
+// $theme-primary-active: #111827;
+// $theme-accent: #6B7280;
+// $theme-bg-light: #F3F4F6;
 
-  // CC2 buttons (was #71639e)
-  --o-cc2-btn-primary: #{$green-primary} !important;
-  --o-cc2-btn-primary-border: #{$green-primary} !important;
-  --o-cc2-link: #{$green-primary} !important;
+// ============================================================
+// END CONFIGURATION - Do not edit below unless you know SCSS
+// ============================================================
 
-  // CC3 buttons (was #71639e)
-  --o-cc3-btn-primary: #{$green-primary} !important;
-  --o-cc3-btn-primary-border: #{$green-primary} !important;
-  --o-cc3-link: #{$green-primary} !important;
 
-  // CC4 buttons
-  --o-cc4-btn-primary: #{$green-primary} !important;
-  --o-cc4-btn-primary-border: #{$green-primary} !important;
-  --o-cc4-link: #{$green-light} !important;
+// ============================================================
+// CSS CUSTOM PROPERTIES (CSS Variables)
+// ============================================================
+// These override Odoo's default purple color scheme
 
-  // CC5 buttons (was #71639e)
-  --o-cc5-btn-primary: #{$green-primary} !important;
-  --o-cc5-btn-primary-border: #{$green-primary} !important;
-  --o-cc5-link: #{$green-light} !important;
-}
-
-// Override at html/body level with highest specificity
-html, body, .o_web_client {
-  --o-brand-odoo: #{$green-primary} !important;
-  --o-brand-primary: #{$green-primary} !important;
-  --o-enterprise-color: #{$green-primary} !important;
-  --primary: #{$green-primary} !important;
-  --bs-primary: #{$green-primary} !important;
-  --o-main-color: #{$green-primary} !important;
-
-  // Odoo 19 navbar specific variables
-  --o-navbar-bg: #{$green-primary} !important;
-  --o-navbar-color: white !important;
-  --o-navbar-brand-color: white !important;
-  --NavBar-background: #{$green-primary} !important;
-  --NavBar-entry-bg: #{$green-primary} !important;
-  --NavBar-entry-bg--hover: #{$green-darker} !important;
-  --NavBar-entry-bg--active: #{$green-darker} !important;
-  --NavBar-menuSections-bg: #{$green-primary} !important;
-  --NavBar-menuSections-entry-bg: #{$green-primary} !important;
-  --NavBar-menuSections-entry-bg--hover: #{$green-darker} !important;
-  --NavBar-menuSections-entry-bg--active: #{$green-darker} !important;
-}
-
-// Override ALL Odoo color variables
 :root {
-  // Brand colors
-  --o-brand-odoo: #{$green-primary} !important;
-  --o-brand-primary: #{$green-primary} !important;
-  --o-enterprise-color: #{$green-primary} !important;
-
-  // THE PURPLE CULPRITS - override these!
-  --o-cc4-bg: #{$green-primary} !important;
-  --o-color-1: #{$green-primary} !important;
-  --o-color-2: #{$green-dark} !important;
-  --o-color-3: #{$green-darker} !important;
-  --o-color-4: #{$green-primary} !important;
-  --o-color-5: #{$green-light} !important;
-
-  // Action colors
-  --o-action-color: #{$green-primary} !important;
-  --o-action-color-hover: #{$green-dark} !important;
+  // Core brand colors
+  --o-brand-odoo: #{$theme-primary} !important;
+  --o-brand-primary: #{$theme-primary} !important;
+  --o-enterprise-color: #{$theme-primary} !important;
+  --primary: #{$theme-primary} !important;
+  --bs-primary: #{$theme-primary} !important;
+  --bs-primary-rgb: #{red($theme-primary)}, #{green($theme-primary)}, #{blue($theme-primary)} !important;
+  --o-main-color: #{$theme-primary} !important;
 
   // Navbar colors
-  --o-navbar-badge-bg: #{$green-dark} !important;
-  --o-navbar-entry-active-bg: #{$green-darker} !important;
-  --o-main-color: #{$green-primary} !important;
-  --NavBar-entry-bg--active: #{$green-darker} !important;
-  --NavBar-entry-bg--hover: #{$green-dark} !important;
+  --o-navbar-bg: #{$theme-primary} !important;
+  --o-navbar-color: #{$theme-text-on-primary} !important;
+  --o-navbar-brand-color: #{$theme-text-on-primary} !important;
+  --o-navbar-badge-bg: #{$theme-primary-hover} !important;
+  --o-navbar-entry-active-bg: #{$theme-primary-active} !important;
+  --o-navbar-entry-bg-hover: #{$theme-primary-active} !important;
+  --o-navbar-entry-bg-active: #{$theme-primary-active} !important;
+
+  // THE KEY NAVBAR VARIABLE - controls menu button backgrounds
+  --NavBar-entry-backgroundColor: #{$theme-primary} !important;
+  --NavBar-entry-backgroundColor--hover: #{$theme-primary-active} !important;
+  --NavBar-entry-backgroundColor--active: #{$theme-primary-active} !important;
+  --NavBar-background: #{$theme-primary} !important;
+  --NavBar-entry-bg: #{$theme-primary} !important;
+  --NavBar-entry-bg--hover: #{$theme-primary-active} !important;
+  --NavBar-entry-bg--active: #{$theme-primary-active} !important;
+  --NavBar-menuSections-bg: #{$theme-primary} !important;
+  --NavBar-menuSections-entry-bg: #{$theme-primary} !important;
+  --NavBar-menuSections-entry-bg--hover: #{$theme-primary-active} !important;
+  --NavBar-menuSections-entry-bg--active: #{$theme-primary-active} !important;
+  --o-menu-sections-link-bg-active: #{$theme-primary-active} !important;
+
+  // App menu section colors
+  --AppMenu-section-bg: #{$theme-primary} !important;
+  --AppMenu-section-bg-hover: #{$theme-primary-active} !important;
+  --o-webclient-color-accent: #{$theme-primary} !important;
+
+  // Action colors
+  --o-action-color: #{$theme-primary} !important;
+  --o-action-color-hover: #{$theme-primary-hover} !important;
 
   // Form colors
-  --o-form-lightsecondary: #{$green-bg} !important;
+  --o-form-lightsecondary: #{$theme-bg-light} !important;
 
   // Button colors
-  --btn-primary-bg: #{$green-primary} !important;
-  --btn-primary-border-color: #{$green-primary} !important;
-  --btn-primary-hover-bg: #{$green-dark} !important;
-  --btn-primary-hover-border-color: #{$green-dark} !important;
-  --btn-primary-active-bg: #{$green-darker} !important;
-  --btn-primary-active-border-color: #{$green-darker} !important;
+  --btn-primary-bg: #{$theme-primary} !important;
+  --btn-primary-border-color: #{$theme-primary} !important;
+  --btn-primary-hover-bg: #{$theme-primary-hover} !important;
+  --btn-primary-hover-border-color: #{$theme-primary-hover} !important;
+  --btn-primary-active-bg: #{$theme-primary-active} !important;
+  --btn-primary-active-border-color: #{$theme-primary-active} !important;
+
+  // Color class overrides (Odoo uses these for theming)
+  --o-color-1: #{$theme-primary} !important;
+  --o-color-2: #{$theme-primary-hover} !important;
+  --o-color-3: #{$theme-primary-active} !important;
+  --o-color-4: #{$theme-primary} !important;
+  --o-color-5: #{$theme-accent} !important;
+
+  // CC (Color Class) backgrounds
+  --o-cc1-bg: #{$theme-primary} !important;
+  --o-cc2-bg: #{$theme-primary} !important;
+  --o-cc3-bg: #{$theme-primary} !important;
+  --o-cc4-bg: #{$theme-primary} !important;
+  --o-cc5-bg: #{$theme-primary} !important;
+
+  // CC buttons
+  --o-cc1-btn-primary: #{$theme-primary} !important;
+  --o-cc1-btn-primary-border: #{$theme-primary} !important;
+  --o-cc1-link: #{$theme-primary} !important;
+  --o-cc2-btn-primary: #{$theme-primary} !important;
+  --o-cc2-btn-primary-border: #{$theme-primary} !important;
+  --o-cc2-link: #{$theme-primary} !important;
+  --o-cc3-btn-primary: #{$theme-primary} !important;
+  --o-cc3-btn-primary-border: #{$theme-primary} !important;
+  --o-cc3-link: #{$theme-primary} !important;
+  --o-cc4-btn-primary: #{$theme-primary} !important;
+  --o-cc4-btn-primary-border: #{$theme-primary} !important;
+  --o-cc4-link: #{$theme-accent} !important;
+  --o-cc5-btn-primary: #{$theme-primary} !important;
+  --o-cc5-btn-primary-border: #{$theme-primary} !important;
+  --o-cc5-link: #{$theme-accent} !important;
 }
 
-// Force override on all elements that might have purple
-* {
-  --o-cc4-bg: #{$green-primary} !important;
-  --o-color-1: #{$green-primary} !important;
+// Ensure CSS variables are set on key elements
+html, body, .o_web_client, .o_action_manager, .o_main_navbar {
+  --o-brand-odoo: #{$theme-primary} !important;
+  --o-brand-primary: #{$theme-primary} !important;
+  --NavBar-entry-backgroundColor: #{$theme-primary} !important;
+  --NavBar-entry-backgroundColor--hover: #{$theme-primary-active} !important;
+  --NavBar-entry-backgroundColor--active: #{$theme-primary-active} !important;
 }
 
-// ============================================
-// NAVBAR / TOP BAR - Complete override
-// ============================================
+
+// ============================================================
+// NAVBAR STYLES
+// ============================================================
+
 .o_main_navbar {
-  background-color: $green-primary !important;
+  background-color: $theme-primary !important;
 
-  // All navbar items
+  // Transparent containers
   .o_menu_toggle,
   .o_menu_brand,
   .o_menu_sections,
@@ -208,475 +190,448 @@ html, body, .o_web_client {
     background-color: transparent !important;
   }
 
-  // Dropdown menus in navbar
-  .dropdown-menu {
-    .dropdown-item:hover,
-    .dropdown-item:focus,
-    .dropdown-item.active {
-      background-color: $green-primary !important;
-      color: white !important;
-    }
+  // App switcher hover
+  .o_menu_toggle:hover,
+  .o_menu_toggle:focus {
+    background-color: $theme-primary-active !important;
   }
 
-  // ============================================
-  // APP SUBMENU - Projects, Tasks, Reporting, Configuration
-  // These are the purple buttons that need green override
-  // ============================================
-  .o_menu_sections {
-    // DEFAULT STATE - make background same green as navbar (not purple!)
-    background-color: $green-primary !important;
-
-    .o_nav_entry,
-    .nav-item,
-    > a,
-    > button,
-    > .dropdown,
-    .o-dropdown,
-    .nav-link,
-    .dropdown-toggle {
-      background-color: $green-primary !important;
-      color: white !important;
-    }
-
-    // ALL possible submenu item selectors - HOVER/ACTIVE states
-    .o_nav_entry,
-    .nav-item,
-    > a,
-    > button,
-    > .dropdown,
-    .o-dropdown {
-      &.active,
-      &:hover,
-      &:focus,
-      &.show,
-      &[aria-expanded="true"] {
-        background-color: $green-darker !important;
-        color: white !important;
-      }
-    }
-
-    // Nav links inside menu sections
-    .nav-link,
-    .dropdown-toggle,
-    a[data-menu-xmlid],
-    button[data-menu-xmlid] {
-      &.active,
-      &:hover,
-      &:focus,
-      &.show {
-        background-color: $green-darker !important;
-        color: white !important;
-      }
-    }
-
-    // Odoo 19 specific - app menu entries
-    [data-section],
-    .o-dropdown-item,
-    .o_menu_entry_lvl_1,
-    .o_menu_entry_lvl_2 {
-      &:hover,
-      &:focus,
-      &.active {
-        background-color: $green-darker !important;
-        color: white !important;
-      }
-    }
-
-    // Force override any purple background
-    *[style*="background"] {
-      background-color: $green-darker !important;
-    }
-
-    // Dropdown in menu sections
-    .dropdown-menu {
-      background-color: white !important;
-
-      .dropdown-item {
-        color: #333 !important;
-
-        &:hover, &:focus, &.active {
-          background-color: $green-primary !important;
-          color: white !important;
-        }
-      }
-    }
-  }
-
-  // Systray (right side icons)
-  .o_menu_systray {
-    .o-dropdown,
-    .dropdown-toggle,
-    > div {
-      &:hover, &.show, &:focus {
-        background-color: $green-darker !important;
-      }
-    }
-
-    .o_MessagingMenu,
-    .o_ActivityMenu {
-      &.o-dropdown.show,
-      &:hover {
-        background-color: $green-darker !important;
-      }
-    }
-  }
-
-  // App switcher button
-  .o_menu_toggle {
-    &:hover, &:focus {
-      background-color: $green-darker !important;
-    }
-  }
-
-  // Breadcrumb area
+  // Brand hover
   .o_menu_brand:hover {
-    background-color: $green-darker !important;
+    background-color: $theme-primary-active !important;
   }
 }
 
-// ============================================
-// APP SWITCHER / HOME MENU
-// ============================================
-.o_home_menu {
-  .o_app {
-    &:hover, &:focus {
-      background-color: rgba($green-primary, 0.15) !important;
+// Apps menu button (hamburger)
+.o_navbar_apps_menu,
+.o_navbar_apps_menu button,
+.o_navbar_apps_menu .o-dropdown,
+.o_navbar_apps_menu .dropdown-toggle {
+  background: transparent !important;
+
+  &:hover, &:focus, &.show, &[aria-expanded="true"] {
+    background: $theme-primary-active !important;
+  }
+}
+
+
+// ============================================================
+// NAVBAR MENU SECTIONS (App submenu - Projects, Tasks, etc.)
+// ============================================================
+
+.o_menu_sections {
+  background-color: $theme-primary !important;
+
+  // All menu items
+  > button,
+  > a,
+  > .dropdown,
+  > .o-dropdown,
+  button.o-dropdown,
+  button.dropdown-toggle,
+  button[data-menu-xmlid],
+  button[data-hotkey],
+  a.o-dropdown-item,
+  a.dropdown-item,
+  a.o_nav_entry,
+  a[data-menu-xmlid],
+  [data-menu-xmlid],
+  [data-hotkey],
+  [data-section] {
+    background: $theme-primary !important;
+    color: $theme-text-on-primary !important;
+
+    &:hover, &:focus, &.show, &.active, &[aria-expanded="true"] {
+      background: $theme-primary-active !important;
+      color: $theme-text-on-primary !important;
+    }
+
+    span {
+      background: transparent !important;
+      color: $theme-text-on-primary !important;
+    }
+  }
+}
+
+// High-specificity overrides for stubborn elements
+.o_main_navbar .o_menu_sections *,
+.o_web_client .o_main_navbar .o_menu_sections *,
+nav.o_main_navbar .o_menu_sections * {
+  background: $theme-primary !important;
+  color: $theme-text-on-primary !important;
+
+  &:hover, &:focus, &.show, &.active, &[aria-expanded="true"] {
+    background: $theme-primary-active !important;
+  }
+}
+
+// ID-level specificity boost
+html body .o_web_client .o_main_navbar .o_menu_sections button,
+html body .o_web_client .o_main_navbar .o_menu_sections a {
+  background: $theme-primary !important;
+  color: $theme-text-on-primary !important;
+
+  &:hover, &:focus, &.show, &[aria-expanded="true"] {
+    background: $theme-primary-active !important;
+  }
+}
+
+
+// ============================================================
+// NAVBAR SYSTRAY (Right side - Messages, Activities, User)
+// ============================================================
+
+.o_main_navbar .o_menu_systray {
+  .o-dropdown,
+  .dropdown-toggle,
+  > div {
+    &:hover, &.show, &:focus {
+      background-color: $theme-primary-active !important;
     }
   }
 
-  .o_menuitem.o_focused,
-  .o_menuitem:hover {
-    background-color: rgba($green-primary, 0.15) !important;
+  .o_MessagingMenu,
+  .o_ActivityMenu {
+    &.o-dropdown.show,
+    &:hover {
+      background-color: $theme-primary-active !important;
+    }
   }
 }
 
-// App icons hover
-.o_apps .o_app:hover {
-  background-color: rgba($green-primary, 0.1) !important;
+
+// ============================================================
+// DROPDOWN MENUS
+// ============================================================
+
+.o_main_navbar .dropdown-menu {
+  .dropdown-item:hover,
+  .dropdown-item:focus,
+  .dropdown-item.active {
+    background-color: $theme-primary !important;
+    color: $theme-text-on-primary !important;
+  }
 }
 
-// ============================================
+.o_menu_sections .dropdown-menu {
+  background-color: white !important;
+
+  .dropdown-item {
+    color: #333 !important;
+
+    &:hover, &:focus, &.active {
+      background-color: $theme-primary !important;
+      color: $theme-text-on-primary !important;
+    }
+  }
+}
+
+
+// ============================================================
 // BUTTONS
-// ============================================
+// ============================================================
+
 .o_web_client {
   .btn-primary,
   .btn-primary.disabled,
   .btn-primary:disabled {
-    background-color: $green-primary !important;
-    border-color: $green-primary !important;
-    color: white !important;
+    background-color: $theme-primary !important;
+    border-color: $theme-primary !important;
+    color: $theme-text-on-primary !important;
 
     &:hover, &:focus {
-      background-color: $green-dark !important;
-      border-color: $green-dark !important;
+      background-color: $theme-primary-hover !important;
+      border-color: $theme-primary-hover !important;
     }
 
     &:active, &.active {
-      background-color: $green-darker !important;
-      border-color: $green-darker !important;
+      background-color: $theme-primary-active !important;
+      border-color: $theme-primary-active !important;
     }
   }
 
   .btn-outline-primary {
-    color: $green-primary !important;
-    border-color: $green-primary !important;
+    color: $theme-primary !important;
+    border-color: $theme-primary !important;
 
     &:hover, &:focus {
-      background-color: $green-primary !important;
-      border-color: $green-primary !important;
-      color: white !important;
+      background-color: $theme-primary !important;
+      border-color: $theme-primary !important;
+      color: $theme-text-on-primary !important;
     }
   }
 
   .btn-link {
-    color: $green-primary !important;
+    color: $theme-primary !important;
 
     &:hover {
-      color: $green-dark !important;
+      color: $theme-primary-hover !important;
     }
   }
 }
 
-// ============================================
+
+// ============================================================
 // LINKS
-// ============================================
-.o_web_client {
-  a:not(.btn):not(.nav-link):not(.dropdown-item) {
-    color: $green-primary !important;
+// ============================================================
 
-    &:hover, &:focus {
-      color: $green-dark !important;
-    }
+.o_web_client a:not(.btn):not(.nav-link):not(.dropdown-item) {
+  color: $theme-primary !important;
+
+  &:hover, &:focus {
+    color: $theme-primary-hover !important;
   }
 }
 
-// ============================================
+
+// ============================================================
 // FORM ELEMENTS
-// ============================================
+// ============================================================
+
 .o_web_client {
   // Tabs
   .nav-tabs .nav-link.active,
   .nav-tabs .nav-link:hover {
-    border-bottom-color: $green-primary !important;
-    color: $green-primary !important;
+    border-bottom-color: $theme-primary !important;
+    color: $theme-primary !important;
   }
 
   // Checkboxes
   .form-check-input:checked,
   .o_checkbox input:checked + span {
-    background-color: $green-primary !important;
-    border-color: $green-primary !important;
+    background-color: $theme-primary !important;
+    border-color: $theme-primary !important;
   }
 
   // Radio buttons
   .form-check-input[type="radio"]:checked {
-    border-color: $green-primary !important;
-    background-color: $green-primary !important;
+    border-color: $theme-primary !important;
+    background-color: $theme-primary !important;
   }
 
   // Focus states
   .form-control:focus,
   .form-select:focus {
-    border-color: $green-primary !important;
-    box-shadow: 0 0 0 0.2rem rgba($green-primary, 0.25) !important;
+    border-color: $theme-primary !important;
+    box-shadow: 0 0 0 0.2rem rgba($theme-primary, 0.25) !important;
   }
 
   // Switch toggle
   .form-switch .form-check-input:checked {
-    background-color: $green-primary !important;
-    border-color: $green-primary !important;
+    background-color: $theme-primary !important;
+    border-color: $theme-primary !important;
   }
 }
 
-// ============================================
-// KANBAN & LIST VIEWS
-// ============================================
+
+// ============================================================
+// LIST & KANBAN VIEWS
+// ============================================================
+
 .o_web_client {
-  // Kanban record hover
   .o_kanban_record:hover {
-    border-color: $green-primary !important;
+    border-color: $theme-primary !important;
   }
 
-  // List view selected row
   .o_list_view .o_data_row.o_data_row_selected,
   .o_list_view .o_data_row:focus-within {
-    background-color: $green-bg !important;
+    background-color: $theme-bg-light !important;
   }
 
-  // Kanban column header
-  .o_kanban_header .o_kanban_title {
-    &:hover {
-      color: $green-primary !important;
-    }
+  .o_kanban_header .o_kanban_title:hover {
+    color: $theme-primary !important;
   }
 }
 
-// ============================================
+
+// ============================================================
 // STATUSBAR
-// ============================================
-.o_web_client {
-  .o_statusbar_status {
-    button.btn-primary,
-    button.o_arrow_button.btn-primary {
-      background-color: $green-primary !important;
-      border-color: $green-primary !important;
+// ============================================================
 
-      &:hover {
-        background-color: $green-dark !important;
-      }
+.o_web_client .o_statusbar_status {
+  button.btn-primary,
+  button.o_arrow_button.btn-primary {
+    background-color: $theme-primary !important;
+    border-color: $theme-primary !important;
+
+    &:hover {
+      background-color: $theme-primary-hover !important;
     }
+  }
 
-    // Current status indicator
-    .o_arrow_button.o_arrow_button_current {
-      background-color: $green-primary !important;
+  .o_arrow_button.o_arrow_button_current {
+    background-color: $theme-primary !important;
 
-      &::after {
-        border-left-color: $green-primary !important;
-      }
+    &::after {
+      border-left-color: $theme-primary !important;
     }
   }
 }
 
-// ============================================
-// BADGES & PILLS
-// ============================================
+
+// ============================================================
+// BADGES & PROGRESS
+// ============================================================
+
 .badge-primary,
 .badge.bg-primary,
 .bg-primary {
-  background-color: $green-primary !important;
+  background-color: $theme-primary !important;
 }
 
 .badge.text-bg-primary {
-  background-color: $green-primary !important;
-  color: white !important;
+  background-color: $theme-primary !important;
+  color: $theme-text-on-primary !important;
 }
 
-// ============================================
-// PROGRESS BARS
-// ============================================
 .progress-bar,
 .o_progressbar .o_progressbar_complete {
-  background-color: $green-primary !important;
+  background-color: $theme-primary !important;
 }
 
-// ============================================
+
+// ============================================================
 // CALENDAR
-// ============================================
+// ============================================================
+
 .o_calendar_renderer {
   .fc-event,
   .fc-event-dot {
-    background-color: $green-primary !important;
-    border-color: $green-dark !important;
+    background-color: $theme-primary !important;
+    border-color: $theme-primary-hover !important;
   }
 
   .fc-button-primary {
-    background-color: $green-primary !important;
-    border-color: $green-primary !important;
+    background-color: $theme-primary !important;
+    border-color: $theme-primary !important;
 
     &:hover, &:focus {
-      background-color: $green-dark !important;
+      background-color: $theme-primary-hover !important;
     }
   }
 }
 
-// ============================================
+
+// ============================================================
 // CHATTER
-// ============================================
+// ============================================================
+
 .o_Chatter {
   .btn-primary {
-    background-color: $green-primary !important;
-    border-color: $green-primary !important;
+    background-color: $theme-primary !important;
+    border-color: $theme-primary !important;
   }
 
   .o_Chatter_sendButton {
-    background-color: $green-primary !important;
+    background-color: $theme-primary !important;
   }
 }
 
-// ============================================
-// MODALS / DIALOGS
-// ============================================
+
+// ============================================================
+// MODALS
+// ============================================================
+
 .modal {
   .btn-primary {
-    background-color: $green-primary !important;
-    border-color: $green-primary !important;
+    background-color: $theme-primary !important;
+    border-color: $theme-primary !important;
 
     &:hover, &:focus {
-      background-color: $green-dark !important;
-      border-color: $green-dark !important;
+      background-color: $theme-primary-hover !important;
+      border-color: $theme-primary-hover !important;
     }
   }
 
-  .modal-header {
-    .btn-close:focus {
-      box-shadow: 0 0 0 0.2rem rgba($green-primary, 0.25) !important;
-    }
+  .modal-header .btn-close:focus {
+    box-shadow: 0 0 0 0.2rem rgba($theme-primary, 0.25) !important;
   }
 }
 
-// ============================================
+
+// ============================================================
 // CONTROL PANEL
-// ============================================
+// ============================================================
+
 .o_control_panel {
   .btn-primary {
-    background-color: $green-primary !important;
-    border-color: $green-primary !important;
+    background-color: $theme-primary !important;
+    border-color: $theme-primary !important;
   }
 
   .o_searchview_input:focus {
-    border-color: $green-primary !important;
+    border-color: $theme-primary !important;
   }
 }
 
-// ============================================
-// BREADCRUMB
-// ============================================
+
+// ============================================================
+// HOME MENU / APP SWITCHER
+// ============================================================
+
+.o_home_menu {
+  .o_app:hover,
+  .o_app:focus {
+    background-color: rgba($theme-primary, 0.15) !important;
+  }
+
+  .o_menuitem.o_focused,
+  .o_menuitem:hover {
+    background-color: rgba($theme-primary, 0.15) !important;
+  }
+}
+
+.o_apps .o_app:hover {
+  background-color: rgba($theme-primary, 0.1) !important;
+}
+
+
+// ============================================================
+// BREADCRUMBS
+// ============================================================
+
 .breadcrumb-item a {
-  color: $green-primary !important;
+  color: $theme-primary !important;
 
   &:hover {
-    color: $green-dark !important;
+    color: $theme-primary-hover !important;
   }
 }
 
-// ============================================
-// MISC OVERRIDES
-// ============================================
+
+// ============================================================
+// MISCELLANEOUS
+// ============================================================
 
 // Loading indicator
 .o_loading_indicator {
-  background-color: $green-primary !important;
-}
-
-// Tooltip
-.tooltip.bs-tooltip-top .tooltip-arrow::before,
-.tooltip.bs-tooltip-bottom .tooltip-arrow::before {
-  border-top-color: $green-primary !important;
+  background-color: $theme-primary !important;
 }
 
 // Selection highlight
 ::selection {
-  background-color: rgba($green-primary, 0.3) !important;
+  background-color: rgba($theme-primary, 0.3) !important;
 }
 
-// Scrollbar (webkit)
+// Scrollbar (webkit browsers)
 ::-webkit-scrollbar-thumb:hover {
-  background-color: $green-primary !important;
+  background-color: $theme-primary !important;
 }
 
 // Focus outline
 *:focus-visible {
-  outline-color: $green-primary !important;
+  outline-color: $theme-primary !important;
 }
 
-// ============================================
-// AGGRESSIVE PURPLE OVERRIDE FOR ODOO 19
-// Target any remaining purple (#714B67, #7C3A85, etc.)
-// ============================================
 
-// Override Odoo 19 CSS variables that might still be purple
-.o_web_client,
-.o_action_manager,
-.o_main_navbar,
-body {
-  --o-brand-odoo: #{$green-primary} !important;
-  --o-brand-primary: #{$green-primary} !important;
-  --primary: #{$green-primary} !important;
-  --bs-primary: #{$green-primary} !important;
-  --bs-primary-rgb: 21, 128, 61 !important;
+// ============================================================
+// INLINE STYLE OVERRIDES
+// ============================================================
+// For elements with inline purple styles
 
-  // Odoo 19 specific app menu variables
-  --o-navbar-entry-bg-hover: #{$green-darker} !important;
-  --o-navbar-entry-bg-active: #{$green-darker} !important;
-  --NavBar-menuSections-entry-bg--hover: #{$green-darker} !important;
-  --NavBar-menuSections-entry-bg--active: #{$green-darker} !important;
-  --o-menu-sections-link-bg-active: #{$green-darker} !important;
-}
-
-// Force override on navbar menu sections specifically
-.o_main_navbar .o_menu_sections {
-  // Target elements with inline styles or computed purple backgrounds
-  > * {
-    &:hover,
-    &.active,
-    &:focus,
-    &.show {
-      background-color: $green-darker !important;
-      background: $green-darker !important;
-    }
-  }
-
-  // Specifically target the submenu buttons/links
-  .nav-link:hover,
-  .nav-link.active,
-  .nav-link:focus,
-  .nav-link.show,
-  button:hover,
-  button.active,
-  a:hover,
-  a.active {
-    background-color: $green-darker !important;
-    background: $green-darker !important;
-    color: white !important;
-  }
+[style*="71639e"],
+[style*="background-color: rgb(113, 99, 158)"],
+[style*="background: rgb(113, 99, 158)"] {
+  background: $theme-primary !important;
+  background-color: $theme-primary !important;
 }
