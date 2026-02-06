@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=23
+ARG CACHEBUST=24
 
 USER root
 
@@ -36,7 +36,7 @@ COPY --chown=odoo:odoo oca/account-financial-tools/account_usability /mnt/extra-
 # OCA Priority 3: Account Closing, Analytic, Credit Control
 COPY --chown=odoo:odoo oca/account-closing/account_invoice_start_end_dates /mnt/extra-addons/account_invoice_start_end_dates
 COPY --chown=odoo:odoo oca/account-analytic/account_analytic_tag /mnt/extra-addons/account_analytic_tag
-COPY --chown=odoo:odoo oca/credit-control/account_financial_risk /mnt/extra-addons/account_financial_risk
+COPY --chown=odoo:odoo account_financial_risk /mnt/extra-addons/account_financial_risk
 
 # Verify custom modules are present
 RUN grep -q "identifier" /mnt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
