@@ -19,14 +19,49 @@ odoo-custom-modules/
 ├── odoo.conf               # Backup Odoo configuration
 ├── avancir_inventory/      # Inventory sync module
 ├── mint_api_v2/            # Custom REST API module
-└── mint_theme/             # Custom branding theme
-    ├── __manifest__.py     # Module manifest
-    ├── generate-theme.sh   # Theme color generator script
-    ├── static/src/
-    │   ├── scss/mint_theme.scss  # Templatized SCSS
-    │   ├── js/mintask.js         # Browser title changer
-    │   └── img/                  # Favicon images
-    └── views/templates.xml       # Odoo view templates
+├── mint_theme/             # Custom branding theme
+└── oca/                    # OCA community modules (git submodules, 19.0 branch)
+    ├── server-ux/          # date_range
+    ├── reporting-engine/   # report_xlsx
+    ├── account-financial-reporting/  # account_financial_report, account_tax_balance, partner_statement
+    ├── account-reconcile/  # account_statement_base
+    ├── account-financial-tools/  # account_usability, account_move_name_sequence, etc.
+    ├── account-closing/    # account_invoice_start_end_dates
+    ├── account-analytic/   # account_analytic_tag
+    └── credit-control/     # account_financial_risk
+```
+
+## OCA Accounting Modules
+
+15 OCA modules are included as git submodules (all on 19.0 branch):
+
+**Dependencies:** `date_range`, `report_xlsx`
+**Priority 1 (Financial Reporting):** `account_financial_report`, `account_tax_balance`, `partner_statement`
+**Priority 2 (Bank Statements):** `account_statement_base`
+**Priority 3 (Tools):** `account_account_tag_code`, `account_journal_restrict_mode`, `account_move_name_sequence`, `account_move_post_date_user`, `account_move_print`, `account_usability`, `account_invoice_start_end_dates`, `account_analytic_tag`, `account_financial_risk`
+
+### Installing OCA Modules
+
+After deployment, install via `ODOO_INSTALL_MODULES` env var:
+```bash
+# Install dependencies first, then main modules
+ODOO_INSTALL_MODULES=date_range,report_xlsx,account_financial_report,account_tax_balance,partner_statement
+```
+
+### Cloning with Submodules
+
+```bash
+git clone --recurse-submodules https://github.com/J-Palomino/odoo-custom-modules.git
+
+# Or if already cloned:
+git submodule update --init --recursive
+```
+
+### Railway Submodule Support
+
+Set this env var in Railway for automatic submodule initialization:
+```
+RAILWAY_GIT_CLONE_FLAGS=--recurse-submodules
 ```
 
 ## mint_theme Module
