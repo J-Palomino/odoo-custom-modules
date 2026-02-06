@@ -1,0 +1,32 @@
+[submodule "oca/server-ux"]
+	path = oca/server-ux
+	url = https://github.com/OCA/server-ux.git
+	branch = 19.0
+[submodule "oca/reporting-engine"]
+	path = oca/reporting-engine
+	url = https://github.com/OCA/reporting-engine.git
+	branch = 19.0
+[submodule "oca/account-financial-reporting"]
+	path = oca/account-financial-reporting
+	url = https://github.com/OCA/account-financial-reporting.git
+	branch = 19.0
+[submodule "oca/account-reconcile"]
+	path = oca/account-reconcile
+	url = https://github.com/OCA/account-reconcile.git
+	branch = 19.0
+[submodule "oca/account-financial-tools"]
+	path = oca/account-financial-tools
+	url = https://github.com/OCA/account-financial-tools.git
+	branch = 19.0
+[submodule "oca/account-closing"]
+	path = oca/account-closing
+	url = https://github.com/OCA/account-closing.git
+	branch = 19.0
+[submodule "oca/account-analytic"]
+	path = oca/account-analytic
+	url = https://github.com/OCA/account-analytic.git
+	branch = 19.0
+[submodule "oca/credit-control"]
+	path = oca/credit-control
+	url = https://github.com/OCA/credit-control.git
+	branch = 19.0
