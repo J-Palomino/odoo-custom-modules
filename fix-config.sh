@@ -46,5 +46,12 @@ else
     echo "Theme generator not found at $THEME_GENERATOR"
 fi
 
+# Build extra args from environment variables
+EXTRA_ARGS=""
+if [ -n "$ODOO_UPDATE_MODULES" ]; then
+    echo "=== Updating modules: $ODOO_UPDATE_MODULES ==="
+    EXTRA_ARGS="$EXTRA_ARGS --update $ODOO_UPDATE_MODULES"
+fi
+
 # Execute the original entrypoint
-exec /entrypoint.sh "$@"
+exec /entrypoint.sh "$@" $EXTRA_ARGS
