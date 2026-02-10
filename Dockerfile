@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=25
+ARG CACHEBUST=24
 
 USER root
 
