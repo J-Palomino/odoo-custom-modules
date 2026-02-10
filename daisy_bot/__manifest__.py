@@ -1,6 +1,6 @@
 {
     'name': 'Daisy Bot',
-    'version': '19.0.1.3.0',
+    'version': '19.0.1.4.0',
     'category': 'Discuss',
     'summary': 'AI assistant powered by Daisy+ in Odoo Discuss',
     'description': """
