@@ -46,6 +46,14 @@ else
     echo "Theme generator not found at $THEME_GENERATOR"
 fi
 
+# Remove stale base_import_module copies from persistent volume
+# (base_import_module installs to /var/lib/odoo/addons/19.0/ which
+# is scanned before /mnt/extra-addons/ — we need the Docker version)
+if [ -d "/var/lib/odoo/addons/19.0/daisy_bot" ]; then
+    echo "=== Removing stale daisy_bot from persistent volume ==="
+    rm -rf /var/lib/odoo/addons/19.0/daisy_bot
+fi
+
 # Build extra args from environment variables
 EXTRA_ARGS=""
 if [ -n "$ODOO_UPDATE_MODULES" ]; then
