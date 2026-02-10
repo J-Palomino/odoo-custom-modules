@@ -12,7 +12,6 @@ RUN mkdir -p /mnt/extra-addons && rm -rf /mnt/extra-addons/*
 COPY --chown=odoo:odoo avancir_inventory /mnt/extra-addons/avancir_inventory
 COPY --chown=odoo:odoo mint_api_v2 /mnt/extra-addons/mint_api_v2
 COPY --chown=odoo:odoo mint_theme /mnt/extra-addons/mint_theme
-COPY --chown=odoo:odoo daisy_bot /mnt/extra-addons/daisy_bot
 
 # OCA Dependencies (install first)
 COPY --chown=odoo:odoo oca/server-ux/date_range /mnt/extra-addons/date_range
@@ -38,6 +37,9 @@ COPY --chown=odoo:odoo oca/account-financial-tools/account_usability /mnt/extra-
 COPY --chown=odoo:odoo oca/account-closing/account_invoice_start_end_dates /mnt/extra-addons/account_invoice_start_end_dates
 COPY --chown=odoo:odoo oca/account-analytic/account_analytic_tag /mnt/extra-addons/account_analytic_tag
 COPY --chown=odoo:odoo account_financial_risk /mnt/extra-addons/account_financial_risk
+
+# Daisy Bot - AI assistant in Discuss
+COPY --chown=odoo:odoo daisy_bot /mnt/extra-addons/daisy_bot
 
 # Verify custom modules are present
 RUN grep -q "identifier" /mnt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
