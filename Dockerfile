@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=24
+ARG CACHEBUST=25
 
 USER root
 
@@ -12,6 +12,7 @@ RUN mkdir -p /mnt/extra-addons && rm -rf /mnt/extra-addons/*
 COPY --chown=odoo:odoo avancir_inventory /mnt/extra-addons/avancir_inventory
 COPY --chown=odoo:odoo mint_api_v2 /mnt/extra-addons/mint_api_v2
 COPY --chown=odoo:odoo mint_theme /mnt/extra-addons/mint_theme
+COPY --chown=odoo:odoo daisy_bot /mnt/extra-addons/daisy_bot
 
 # OCA Dependencies (install first)
 COPY --chown=odoo:odoo oca/server-ux/date_range /mnt/extra-addons/date_range
@@ -43,6 +44,7 @@ RUN grep -q "identifier" /mnt/extra-addons/avancir_inventory/models/avancir_sync
 RUN test -f /mnt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
 RUN test -f /mnt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MODULE VERIFIED" || (echo "MINT_THEME MODULE MISSING" && exit 1)
 RUN grep "version" /mnt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
+RUN test -f /mnt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 
 # Verify OCA dependencies are present
 RUN test -f /mnt/extra-addons/date_range/__manifest__.py && echo "DATE_RANGE MODULE VERIFIED" || (echo "DATE_RANGE MODULE MISSING" && exit 1)
