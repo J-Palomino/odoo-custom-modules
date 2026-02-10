@@ -16,17 +16,10 @@ class DiscussChannel(models.Model):
     _inherit = 'discuss.channel'
 
     def message_post(self, **kwargs):
-        import sys
-        print(f"*** DAISY message_post called channel={self.id} ***", file=sys.stderr, flush=True)
-        _logger.warning("*** DAISY message_post called channel=%s body=%s ***",
-                         self.id, str(kwargs.get('body', ''))[:60])
-        # Definitive test: if this channel is 38, write a marker file
-        if self.id == 38:
-            try:
-                with open('/tmp/daisy_test_marker.txt', 'w') as f:
-                    f.write(f"message_post called at {__import__('datetime').datetime.now()}")
-            except Exception:
-                pass
+        _logger.warning("*** DAISY message_post v1.5 channel=%s ***", self.id)
+        if self.id == 38 and 'DAISY_CONFIRM' in str(kwargs.get('body', '')):
+            from odoo.exceptions import UserError
+            raise UserError("DAISY BOT v1.5 IS ACTIVE - this confirms the override works")
         result = super().message_post(**kwargs)
         return result
 
