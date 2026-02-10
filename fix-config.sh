@@ -62,6 +62,10 @@ if [ -n "$ODOO_UPDATE_MODULES" ]; then
     echo "=== Updating modules: $ODOO_UPDATE_MODULES ==="
     EXTRA_ARGS="$EXTRA_ARGS --update $ODOO_UPDATE_MODULES"
 fi
+if [ -n "$ODOO_INIT_MODULES" ]; then
+    echo "=== Installing modules: $ODOO_INIT_MODULES ==="
+    EXTRA_ARGS="$EXTRA_ARGS --init $ODOO_INIT_MODULES"
+fi
 
 # Execute the original entrypoint
 exec /entrypoint.sh "$@" $EXTRA_ARGS
