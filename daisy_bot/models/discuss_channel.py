@@ -9,7 +9,7 @@ from odoo import api, models, SUPERUSER_ID
 import odoo
 
 _logger = logging.getLogger(__name__)
-_logger.info("*** DAISY BOT MODULE LOADED ***")
+_logger.warning("*** DAISY BOT v1.5 LOADED from %s ***", __file__)
 
 
 class DiscussChannel(models.Model):
