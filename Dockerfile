@@ -33,9 +33,9 @@ COPY --chown=odoo:odoo oca/account-financial-tools/account_move_post_date_user /
 COPY --chown=odoo:odoo oca/account-financial-tools/account_move_print /mnt/extra-addons/account_move_print
 COPY --chown=odoo:odoo oca/account-financial-tools/account_usability /mnt/extra-addons/account_usability
 
-# OCA Priority 3: Account Closing, Analytic, Credit Control
+# OCA Priority 3: Account Closing, Credit Control
 COPY --chown=odoo:odoo oca/account-closing/account_invoice_start_end_dates /mnt/extra-addons/account_invoice_start_end_dates
-COPY --chown=odoo:odoo oca/account-analytic/account_analytic_tag /mnt/extra-addons/account_analytic_tag
+# account_analytic_tag submodule broken/empty — removed
 COPY --chown=odoo:odoo account_financial_risk /mnt/extra-addons/account_financial_risk
 
 # Daisy Bot - AI assistant in Discuss
