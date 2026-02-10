@@ -15,9 +15,18 @@ _logger.info("*** DAISY BOT MODULE LOADED ***")
 class DiscussChannel(models.Model):
     _inherit = 'discuss.channel'
 
+    def message_post(self, **kwargs):
+        _logger.info("*** DAISY message_post called channel=%s body=%s ***",
+                      self.id, str(kwargs.get('body', ''))[:60])
+        result = super().message_post(**kwargs)
+        _logger.info("*** DAISY message_post done channel=%s result=%s ***",
+                      self.id, result)
+        return result
+
     def _message_post_after_hook(self, message, msg_vals):
         """Hook after message_post — same pattern as OdooBot."""
-        _logger.info("*** DAISY _message_post_after_hook channel=%s ***", self.id)
+        _logger.info("*** DAISY _message_post_after_hook channel=%s author=%s ***",
+                      self.id, msg_vals.get('author_id') if msg_vals else 'N/A')
         self._daisy_handle_message(msg_vals)
         return super()._message_post_after_hook(message, msg_vals)
 
