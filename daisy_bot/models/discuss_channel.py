@@ -5,7 +5,7 @@ import threading
 import requests
 from markupsafe import Markup
 
-from odoo import api, models, SUPERUSER_ID
+from odoo import api, fields, models, SUPERUSER_ID
 import odoo
 
 _logger = logging.getLogger(__name__)
@@ -14,6 +14,8 @@ _logger.warning("*** DAISY BOT v1.5 LOADED from %s ***", __file__)
 
 class DiscussChannel(models.Model):
     _inherit = 'discuss.channel'
+
+    x_daisy_active = fields.Boolean(string="Daisy Active", default=False)
 
     def message_post(self, **kwargs):
         _logger.warning("*** DAISY message_post v1.5 channel=%s ***", self.id)
