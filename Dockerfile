@@ -61,6 +61,6 @@ COPY odoo.conf /etc/odoo/odoo.conf
 COPY fix-config.sh /fix-config.sh
 RUN chmod +x /fix-config.sh
 
-USER odoo
+# Run as root — fix-config.sh handles user switch via /entrypoint.sh
 ENTRYPOINT ["/fix-config.sh"]
 CMD ["odoo"]
