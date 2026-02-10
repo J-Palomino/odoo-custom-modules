@@ -15,57 +15,57 @@ _logger.info("*** DAISY BOT MODULE LOADED ***")
 class DiscussChannel(models.Model):
     _inherit = 'discuss.channel'
 
-    def _notify_thread(self, message, msg_vals=False, **kwargs):
-        _logger.info("*** DAISY _notify_thread called channel=%s ***", self.id)
-        rdata = super()._notify_thread(message, msg_vals=msg_vals, **kwargs)
+    def _message_post_after_hook(self, message, msg_vals):
+        """Hook after message_post — same pattern as OdooBot."""
+        _logger.info("*** DAISY _message_post_after_hook channel=%s ***", self.id)
+        self._daisy_handle_message(msg_vals)
+        return super()._message_post_after_hook(message, msg_vals)
+
+    def _daisy_handle_message(self, msg_vals):
+        """Check if Daisy should respond and spawn async API call."""
+        self.ensure_one()
 
         daisy_partner = self.env.ref('daisy_bot.partner_daisy', raise_if_not_found=False)
         if not daisy_partner:
-            return rdata
+            _logger.warning("Daisy Bot: partner_daisy not found")
+            return
 
         # Ignore messages from Daisy herself
-        author_id = msg_vals.get('author_id') if msg_vals else message.author_id.id
+        author_id = msg_vals.get('author_id')
         if author_id == daisy_partner.id:
-            return rdata
+            return
 
         # Only respond to user comments, not system notifications
-        msg_type = msg_vals.get('message_type', '') if msg_vals else message.message_type
-        if msg_type != 'comment':
-            return rdata
+        if msg_vals.get('message_type') != 'comment':
+            return
 
         # Check if Daisy is a member of this channel
-        daisy_is_member = self.env['discuss.channel.member'].search_count([
-            ('channel_id', '=', self.id),
-            ('partner_id', '=', daisy_partner.id),
-        ], limit=1)
-        if not daisy_is_member:
-            return rdata
+        if daisy_partner.id not in self.channel_member_ids.partner_id.ids:
+            return
 
         # In group/public channels, only respond when @mentioned
         if self.channel_type not in ('chat', 'group'):
             mentioned_partners = []
-            if msg_vals:
-                # partner_ids in msg_vals is a list of (4, id) or (6, 0, [ids]) commands
-                raw = msg_vals.get('partner_ids', [])
-                for cmd in raw:
-                    if isinstance(cmd, (list, tuple)):
-                        if cmd[0] == 4:
-                            mentioned_partners.append(cmd[1])
-                        elif cmd[0] == 6:
-                            mentioned_partners.extend(cmd[2])
-                    elif isinstance(cmd, int):
-                        mentioned_partners.append(cmd)
-            else:
-                mentioned_partners = message.partner_ids.ids
+            raw = msg_vals.get('partner_ids', [])
+            for cmd in raw:
+                if isinstance(cmd, (list, tuple)):
+                    if cmd[0] == 4:
+                        mentioned_partners.append(cmd[1])
+                    elif cmd[0] == 6:
+                        mentioned_partners.extend(cmd[2])
+                elif isinstance(cmd, int):
+                    mentioned_partners.append(cmd)
 
             if daisy_partner.id not in mentioned_partners:
-                return rdata
+                return
 
         # Extract clean text from HTML body
-        body = msg_vals.get('body', '') if msg_vals else message.body
+        body = msg_vals.get('body', '')
         clean_text = re.sub(r'<[^>]+>', '', str(body)).strip()
         if not clean_text:
-            return rdata
+            return
+
+        _logger.info("Daisy Bot: processing message from author %s: %s", author_id, clean_text[:80])
 
         # Fire off API call in background thread so we don't block the user
         dbname = self.env.cr.dbname
@@ -78,8 +78,6 @@ class DiscussChannel(models.Model):
             daemon=True,
         )
         thread.start()
-
-        return rdata
 
     @staticmethod
     def _daisy_respond_async(dbname, channel_id, daisy_partner_id, author_id, question):
@@ -131,6 +129,7 @@ class DiscussChannel(models.Model):
                     message_type='comment',
                     subtype_xmlid='mail.mt_comment',
                     author_id=daisy_partner_id,
+                    silent=True,
                 )
 
                 _logger.info("Daisy Bot: replied in channel %s (session %s)", channel_id, session_id)
