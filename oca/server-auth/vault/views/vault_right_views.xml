@@ -55,7 +55,7 @@
             <search>
                 <field name="user_id" operator="ilike" />
                 <field name="vault_id" operator="ilike" />
-                <group expand="0" string="Grouped">
+                <group>
                     <filter
                         name="user_id"
                         string="By user"
