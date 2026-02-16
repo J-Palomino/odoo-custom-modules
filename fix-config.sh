@@ -58,10 +58,25 @@ else
     echo "Theme generator not found at $THEME_GENERATOR"
 fi
 
+# Diagnostic: show what's in the persistent addons directory
+echo "=== Persistent addons directories ==="
+ls -la /var/lib/odoo/addons/ 2>/dev/null || echo "No /var/lib/odoo/addons/"
+ls -la /var/lib/odoo/addons/19.0/ 2>/dev/null || echo "No /var/lib/odoo/addons/19.0/"
+find /var/lib/odoo/addons -name "__manifest__.py" -path "*/mint_theme/*" 2>/dev/null | while read f; do
+    echo "=== FOUND stale manifest at: $f ==="
+    head -5 "$f"
+done
+
+# Diagnostic: show Docker image manifest
+echo "=== Docker image manifest ==="
+head -5 /mnt/extra-addons/mint_theme/__manifest__.py
+echo "=== Docker image SCSS files ==="
+ls -la /mnt/extra-addons/mint_theme/static/src/scss/
+
 # Remove stale base_import_module copies from persistent volume
 # (base_import_module installs to persistent volume paths which are
 # scanned before /mnt/extra-addons/ — we need the Docker version)
-for mod in daisy_bot mint_theme; do
+for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory; do
     for d in /var/lib/odoo/addons/*/$mod /var/lib/odoo/addons/$mod; do
         if [ -d "$d" ]; then
             echo "=== Removing stale $mod at $d ==="
