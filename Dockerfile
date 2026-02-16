@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=24
+ARG CACHEBUST=25
 
 USER root
 
@@ -38,6 +38,9 @@ COPY --chown=odoo:odoo oca/account-closing/account_invoice_start_end_dates /mnt/
 COPY --chown=odoo:odoo oca/account-analytic/account_analytic_tag /mnt/extra-addons/account_analytic_tag
 COPY --chown=odoo:odoo account_financial_risk /mnt/extra-addons/account_financial_risk
 
+# OCA Vault - End-to-end encrypted password vault
+COPY --chown=odoo:odoo oca/server-auth/vault /mnt/extra-addons/vault
+
 # Daisy Bot - AI assistant in Discuss
 COPY --chown=odoo:odoo daisy_bot /mnt/extra-addons/daisy_bot
 
@@ -47,6 +50,7 @@ RUN test -f /mnt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 M
 RUN test -f /mnt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MODULE VERIFIED" || (echo "MINT_THEME MODULE MISSING" && exit 1)
 RUN grep "version" /mnt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
 RUN test -f /mnt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
+RUN test -f /mnt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
 
 # Verify OCA dependencies are present
 RUN test -f /mnt/extra-addons/date_range/__manifest__.py && echo "DATE_RANGE MODULE VERIFIED" || (echo "DATE_RANGE MODULE MISSING" && exit 1)
