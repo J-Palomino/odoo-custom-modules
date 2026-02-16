@@ -70,16 +70,25 @@ for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault; do
     done
 done
 
-# Remove broken/non-installable modules from persistent volume
+# Remove broken/non-installable modules from ALL addons paths
 # slack_sync causes "inconsistent states" errors and blocks module finalization
+echo "=== Scanning for broken modules to remove ==="
 for mod in slack_sync; do
-    for d in /var/lib/odoo/addons/*/$mod /var/lib/odoo/addons/$mod; do
-        if [ -d "$d" ]; then
-            echo "=== Removing broken module $mod at $d ==="
-            rm -rf "$d"
-        fi
+    # Search all known addons paths recursively
+    find /var/lib/odoo/addons -name "$mod" -type d 2>/dev/null | while read d; do
+        echo "=== Removing broken module $mod at $d ==="
+        rm -rf "$d"
     done
+    # Also check /usr/lib/python3/dist-packages/addons (writable runtime paths)
+    if [ -d "/usr/lib/python3/dist-packages/addons/$mod" ]; then
+        echo "=== Removing broken module $mod at /usr/lib/python3/dist-packages/addons/$mod ==="
+        rm -rf "/usr/lib/python3/dist-packages/addons/$mod"
+    fi
 done
+# List remaining contents of persistent addons for debugging
+echo "=== Persistent volume addons contents ==="
+ls -la /var/lib/odoo/addons/ 2>/dev/null || echo "No addons dir"
+ls -la /var/lib/odoo/addons/19.0/ 2>/dev/null || echo "No 19.0 dir"
 
 # Build extra args from environment variables
 EXTRA_ARGS=""
