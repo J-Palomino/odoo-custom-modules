@@ -1,0 +1,10 @@
+// Mint brand SCSS variable overrides
+// Loaded in web._assets_primary_variables BEFORE Odoo core SCSS compilation
+// This ensures all 164+ derived colors use our brand green instead of default purple
+
+$o-brand-odoo: #00954c;
+$o-brand-primary: #00954c;
+$o-brand-secondary: #d9a752;
+
+$o-enterprise-color: #00954c;
+$o-community-color: #00954c;
