@@ -61,11 +61,13 @@ fi
 # Remove stale base_import_module copies from persistent volume
 # (base_import_module installs to persistent volume paths which are
 # scanned before /mnt/extra-addons/ — we need the Docker version)
-for d in /var/lib/odoo/addons/*/daisy_bot /var/lib/odoo/addons/daisy_bot; do
-    if [ -d "$d" ]; then
-        echo "=== Removing stale daisy_bot at $d ==="
-        rm -rf "$d"
-    fi
+for mod in daisy_bot mint_theme; do
+    for d in /var/lib/odoo/addons/*/$mod /var/lib/odoo/addons/$mod; do
+        if [ -d "$d" ]; then
+            echo "=== Removing stale $mod at $d ==="
+            rm -rf "$d"
+        fi
+    done
 done
 
 # Build extra args from environment variables
