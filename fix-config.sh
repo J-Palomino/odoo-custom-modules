@@ -61,10 +61,21 @@ fi
 # Remove stale base_import_module copies from persistent volume
 # (base_import_module installs to persistent volume paths which are
 # scanned before /mnt/extra-addons/ — we need the Docker version)
-for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory; do
+for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault; do
     for d in /var/lib/odoo/addons/*/$mod /var/lib/odoo/addons/$mod; do
         if [ -d "$d" ]; then
             echo "=== Removing stale $mod at $d ==="
+            rm -rf "$d"
+        fi
+    done
+done
+
+# Remove broken/non-installable modules from persistent volume
+# slack_sync causes "inconsistent states" errors and blocks module finalization
+for mod in slack_sync; do
+    for d in /var/lib/odoo/addons/*/$mod /var/lib/odoo/addons/$mod; do
+        if [ -d "$d" ]; then
+            echo "=== Removing broken module $mod at $d ==="
             rm -rf "$d"
         fi
     done
