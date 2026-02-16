@@ -52,12 +52,10 @@ class Vault(models.Model):
     name = fields.Char(required=True)
     note = fields.Text()
 
-    _constraints = [
-        models.Constraint(
-            "UNIQUE(uuid)",
-            "The UUID must be unique.",
-        ),
-    ]
+    _uuid_uniq = models.Constraint(
+        "UNIQUE(uuid)",
+        "The UUID must be unique.",
+    )
 
     @api.depends("right_ids.user_id")
     def _compute_access(self):

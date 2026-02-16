@@ -11,9 +11,7 @@ class VaultTag(models.Model):
 
     name = fields.Char(required=True)
 
-    _constraints = [
-        models.Constraint(
-            "unique(name)",
-            "The tag must be unique!",
-        ),
-    ]
+    _name_uniq = models.Constraint(
+        "unique(name)",
+        "The tag must be unique!",
+    )

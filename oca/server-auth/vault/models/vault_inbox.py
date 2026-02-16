@@ -44,12 +44,10 @@ class VaultInbox(models.Model):
     )
     log_ids = fields.One2many("vault.inbox.log", "inbox_id", "Log", readonly=True)
 
-    _constraints = [
-        models.Constraint(
-            "CHECK(secret IS NOT NULL OR secret_file IS NOT NULL)",
-            "No value found",
-        ),
-    ]
+    _value_check = models.Constraint(
+        "CHECK(secret IS NOT NULL OR secret_file IS NOT NULL)",
+        "No value found",
+    )
 
     @api.depends("token")
     def _compute_inbox_link(self):
