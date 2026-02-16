@@ -26,9 +26,21 @@ if [ -f "$CONFIG_FILE" ]; then
         sed -i "s/db_host\s*=\s*.*/db_host = $HOST/g" "$CONFIG_FILE"
     fi
 
+    # Fix addons_path to ensure /mnt/extra-addons is included
+    EXPECTED_ADDONS="/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons"
+    if grep -q "addons_path" "$CONFIG_FILE"; then
+        sed -i "s|addons_path\s*=\s*.*|addons_path = $EXPECTED_ADDONS|g" "$CONFIG_FILE"
+        echo "Fixed addons_path to: $EXPECTED_ADDONS"
+    else
+        echo "addons_path = $EXPECTED_ADDONS" >> "$CONFIG_FILE"
+        echo "Added addons_path to config"
+    fi
+
     echo ""
     echo "Fixed config (db-related lines):"
     grep -i "db_\|port" "$CONFIG_FILE" || echo "No db_ or port lines found"
+    echo "Addons path:"
+    grep "addons_path" "$CONFIG_FILE"
 else
     echo "Config file not found at $CONFIG_FILE"
 fi
