@@ -58,8 +58,11 @@ class VaultEntry(models.Model):
         store=False,
     )
 
-    _sql_constraints = [
-        ("vault_uuid_uniq", "UNIQUE(vault_id, uuid)", "The UUID must be unique."),
+    _constraints = [
+        models.Constraint(
+            "UNIQUE(vault_id, uuid)",
+            "The UUID must be unique.",
+        ),
     ]
 
     @api.constrains("parent_id")
