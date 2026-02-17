@@ -76,8 +76,10 @@ class Controller(http.Controller):
         return request.render("vault.inbox", ctx)
 
     @http.route("/vault/public", type="jsonrpc")
-    def vault_public(self, user_id):
+    def vault_public(self, user_id=None):
         """Get the public key of a specific user"""
+        if not user_id:
+            return {}
         user = request.env["res.users"].sudo().browse(user_id).exists()
         if not user or not user.keys:
             return {}

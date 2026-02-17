@@ -46,6 +46,10 @@ COPY --chown=odoo:odoo oca/reporting-engine/report_xlsx_helper /mnt/extra-addons
 COPY --chown=odoo:odoo oca/reporting-engine/report_xml /mnt/extra-addons/report_xml
 COPY --chown=odoo:odoo oca/reporting-engine/sql_request_abstract /mnt/extra-addons/sql_request_abstract
 
+# ── OCA: spreadsheet (18.0 port) ──────────────────────────────────
+COPY --chown=odoo:odoo oca/spreadsheet/spreadsheet_oca /mnt/extra-addons/spreadsheet_oca
+COPY --chown=odoo:odoo oca/spreadsheet/spreadsheet_dashboard_oca /mnt/extra-addons/spreadsheet_dashboard_oca
+
 # ── OCA: account-analytic ───────────────────────────────────────────
 COPY --chown=odoo:odoo oca/account-analytic/account_analytic_tag /mnt/extra-addons/account_analytic_tag
 
@@ -92,7 +96,8 @@ RUN for mod in base_accounting_kit base_account_budget; do \
     done
 
 # Verify OCA modules
-RUN for mod in sign_oca base_cancel_confirm base_substate base_technical_features date_range \
+RUN for mod in sign_oca spreadsheet_oca spreadsheet_dashboard_oca \
+      base_cancel_confirm base_substate base_technical_features date_range \
       bi_sql_editor report_qweb_element_page_visibility report_xlsx report_xlsx_helper report_xml sql_request_abstract \
       account_analytic_tag account_invoice_start_end_dates \
       account_financial_report account_tax_balance partner_statement \

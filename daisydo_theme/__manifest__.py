@@ -7,7 +7,7 @@
     "description": "Replaces Odoo branding with DaisyERP yellow daisy theme.",
     "author": "DaisyERP",
     "license": "LGPL-3",
-    "depends": ["web", "base", "mail_bot", "website", "auth_oauth"],
+    "depends": ["web", "base", "mail_bot", "website", "auth_oauth", "daisy_bot"],
     "data": [
         "data/res_partner_data.xml",
         "views/webclient_templates.xml",
@@ -15,6 +15,7 @@
     "assets": {
         "web.assets_backend": [
             "daisydo_theme/static/src/scss/theme.scss",
+            "daisydo_theme/static/src/js/error_reporter.esm.js",
         ],
         "web.assets_frontend": [
             "daisydo_theme/static/src/scss/theme.scss",
