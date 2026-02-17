@@ -35,6 +35,10 @@ COPY --chown=odoo:odoo mint_theme /mnt/extra-addons/mint_theme
 # Directly tracked modules (not submodules)
 COPY --chown=odoo:odoo account_financial_risk /mnt/extra-addons/account_financial_risk
 
+# Full Accounting Kit for Community (Cybrosys) — journal entries, reports, budget
+COPY --chown=odoo:odoo base_account_budget /mnt/extra-addons/base_account_budget
+COPY --chown=odoo:odoo base_accounting_kit /mnt/extra-addons/base_accounting_kit
+
 # OCA Vault - End-to-end encrypted password vault
 COPY --chown=odoo:odoo oca/server-auth/vault /mnt/extra-addons/vault
 
@@ -48,6 +52,8 @@ RUN test -f /mnt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MOD
 RUN grep "version" /mnt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
 RUN test -f /mnt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /mnt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
+RUN test -f /mnt/extra-addons/base_account_budget/__manifest__.py && echo "BASE_ACCOUNT_BUDGET VERIFIED" || (echo "BASE_ACCOUNT_BUDGET MISSING" && exit 1)
+RUN test -f /mnt/extra-addons/base_accounting_kit/__manifest__.py && echo "BASE_ACCOUNTING_KIT VERIFIED" || (echo "BASE_ACCOUNTING_KIT MISSING" && exit 1)
 
 # Verify OCA dependencies are present (submodule-based modules disabled for now)
 # RUN test -f /mnt/extra-addons/date_range/__manifest__.py && echo "DATE_RANGE MODULE VERIFIED" || (echo "DATE_RANGE MODULE MISSING" && exit 1)
