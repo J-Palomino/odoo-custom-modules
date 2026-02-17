@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ WIZARD FORM ============ -->
+    <record id="daisy_agent_import_view_form" model="ir.ui.view">
+        <field name="name">daisy.agent.import.form</field>
+        <field name="model">daisy.agent.import</field>
+        <field name="arch" type="xml">
+            <form string="Sync from Daisy+">
+
+                <!-- Step 1: Enter API Key -->
+                <group invisible="state != 'key'">
+                    <group>
+                        <field name="daisy_api_key" password="True"
+                               placeholder="Paste your Daisy+ API key"/>
+                    </group>
+                    <p class="text-muted">
+                        Enter your Daisy+ API key to fetch available chatflows and
+                        import them as agents.
+                    </p>
+                </group>
+
+                <!-- Step 2: Select Agents -->
+                <group invisible="state != 'select'">
+                    <div class="alert alert-info mb-3" role="alert">
+                        <strong>
+                            <field name="import_count" class="d-inline"/> agent(s) selected for import,
+                            <field name="skip_count" class="d-inline"/> already imported.
+                        </strong>
+                    </div>
+                    <field name="line_ids" nolabel="1">
+                        <list editable="bottom" create="false" delete="false">
+                            <field name="selected" widget="boolean_toggle"
+                                   readonly="already_imported"/>
+                            <field name="name"/>
+                            <field name="chatflow_id"/>
+                            <field name="description" optional="hide"/>
+                            <field name="already_imported" column_invisible="True"/>
+                        </list>
+                    </field>
+                </group>
+
+                <field name="state" invisible="1"/>
+
+                <footer>
+                    <!-- Step 1 buttons -->
+                    <button name="action_fetch_agents" string="Fetch Agents"
+                            type="object" class="btn-primary"
+                            invisible="state != 'key'"/>
+
+                    <!-- Step 2 buttons -->
+                    <button name="action_select_all" string="Select All"
+                            type="object" class="btn-secondary"
+                            invisible="state != 'select'"/>
+                    <button name="action_deselect_all" string="Deselect All"
+                            type="object" class="btn-secondary"
+                            invisible="state != 'select'"/>
+                    <button name="action_import_selected" string="Import Selected"
+                            type="object" class="btn-primary"
+                            invisible="state != 'select'"/>
+
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ WIZARD ACTION ============ -->
+    <record id="daisy_agent_import_action" model="ir.actions.act_window">
+        <field name="name">Sync from Daisy+</field>
+        <field name="res_model">daisy.agent.import</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

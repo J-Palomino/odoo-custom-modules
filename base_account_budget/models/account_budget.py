@@ -32,13 +32,11 @@ class AccountBudgetPost(models.Model):
     name = fields.Char('Name', required=True)
     account_ids = fields.Many2many('account.account', 'account_budget_rel',
                                    'budget_id', 'account_id', 'Accounts',
-                                   domain=[('deprecated', '=', False)])
+                                   )
     budget_line = fields.One2many('budget.lines', 'general_budget_id',
                                   'Budget Lines')
     company_id = fields.Many2one('res.company', 'Company', required=True,
-                                 default=lambda self: self.env[
-                                     'res.company']._company_default_get(
-                                     'account.budget.post'))
+                                 default=lambda self: self.env.company)
 
     def _check_account_ids(self, vals):
         if 'account_ids' in vals:
@@ -80,9 +78,7 @@ class Budget(models.Model):
     budget_line = fields.One2many('budget.lines', 'budget_id', 'Budget Lines',
                                   copy=True)
     company_id = fields.Many2one('res.company', 'Company', required=True,
-                                 default=lambda self: self.env[
-                                     'res.company']._company_default_get(
-                                     'account.budget.post'))
+                                 default=lambda self: self.env.company)
 
     def action_budget_confirm(self):
         self.write({'state': 'confirm'})
@@ -148,29 +144,29 @@ class BudgetLines(models.Model):
             line.practical_amount = result
 
     def _compute_theoretical_amount(self):
-        today = fields.Datetime.now()
+        today = fields.Date.today()
         for line in self:
             if self.env.context.get(
                     'wizard_date_from') and self.env.context.get(
                 'wizard_date_to'):
-                date_from = fields.Datetime.from_string(
+                date_from = fields.Date.from_string(
                     self.env.context.get('wizard_date_from'))
-                date_to = fields.Datetime.from_string(
+                date_to = fields.Date.from_string(
                     self.env.context.get('wizard_date_to'))
-                if date_from < fields.Datetime.from_string(line.date_from):
-                    date_from = fields.Datetime.from_string(line.date_from)
-                elif date_from > fields.Datetime.from_string(line.date_to):
+                if date_from < fields.Date.from_string(line.date_from):
+                    date_from = fields.Date.from_string(line.date_from)
+                elif date_from > fields.Date.from_string(line.date_to):
                     date_from = False
 
-                if date_to > fields.Datetime.from_string(line.date_to):
-                    date_to = fields.Datetime.from_string(line.date_to)
-                elif date_to < fields.Datetime.from_string(line.date_from):
+                if date_to > fields.Date.from_string(line.date_to):
+                    date_to = fields.Date.from_string(line.date_to)
+                elif date_to < fields.Date.from_string(line.date_from):
                     date_to = False
 
                 theo_amt = 0.00
                 if date_from and date_to:
-                    line_timedelta = fields.Datetime.from_string(
-                        line.date_to) - fields.Datetime.from_string(
+                    line_timedelta = fields.Date.from_string(
+                        line.date_to) - fields.Date.from_string(
                         line.date_from)
                     elapsed_timedelta = date_to - date_from
                     if elapsed_timedelta.days > 0:
@@ -178,23 +174,23 @@ class BudgetLines(models.Model):
                                                elapsed_timedelta.total_seconds() / line_timedelta.total_seconds()) * line.planned_amount
             else:
                 if line.paid_date:
-                    if fields.Datetime.from_string(
-                            line.date_to) <= fields.Datetime.from_string(
+                    if fields.Date.from_string(
+                            line.date_to) <= fields.Date.from_string(
                         line.paid_date):
                         theo_amt = 0.00
                     else:
                         theo_amt = line.planned_amount
                 else:
-                    line_timedelta = fields.Datetime.from_string(
-                        line.date_to) - fields.Datetime.from_string(
+                    line_timedelta = fields.Date.from_string(
+                        line.date_to) - fields.Date.from_string(
                         line.date_from)
-                    elapsed_timedelta = fields.Datetime.from_string(today) - (
-                        fields.Datetime.from_string(line.date_from))
+                    elapsed_timedelta = fields.Date.from_string(today) - (
+                        fields.Date.from_string(line.date_from))
                     if elapsed_timedelta.days < 0:
                         # If the budget line has not started yet, theoretical amount should be zero
                         theo_amt = 0.00
-                    elif line_timedelta.days > 0 and fields.Datetime.from_string(
-                            today) < fields.Datetime.from_string(line.date_to):
+                    elif line_timedelta.days > 0 and fields.Date.from_string(
+                            today) < fields.Date.from_string(line.date_to):
                         total_days = (line.date_to - line.date_from).days + 1
                         days_over = (
                                                 fields.Date.today() - line.date_from).days + 1

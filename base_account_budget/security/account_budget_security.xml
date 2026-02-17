@@ -24,7 +24,7 @@
         </record>
         
         <record model="res.users" id="base.user_root">
-            <field eval="[(4,ref('analytic.group_analytic_accounting'))]" name="groups_id"/>
+            <field eval="[(4,ref('analytic.group_analytic_accounting'))]" name="group_ids"/>
         </record>
 
     </data>

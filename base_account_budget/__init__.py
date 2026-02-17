@@ -27,4 +27,4 @@ def enable_analytic_accounting(env):
     if group:
         users = env['res.users'].search([('share', '=', False)])
         for user in users:
-            user.write({'groups_id': [(4, group.id)]})
+            user.write({'group_ids': [(4, group.id)]})

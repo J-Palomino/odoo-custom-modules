@@ -34,8 +34,8 @@
     </record>
 
     <menuitem action="open_budget_post_form" id="menu_budget_post_form"
-              parent="account.account_management_menu"
-              sequence="5"/>
+              parent="account.account_account_menu"
+              sequence="10"/>
 
     <record model="ir.ui.view" id="view_budget_post_form">
         <field name="name">account.budget.post.form</field>
@@ -220,7 +220,7 @@
                                     </strong>
                                 </div>
                                 <div class="col-4">
-                                    <span class="float-right">
+                                    <span class="float-end">
                                         <field name="state"
                                                widget="label_selection"
                                                options="{'classes': {'draft': 'default', 'done': 'success'}}"/>
@@ -233,13 +233,13 @@
                                     <t t-esc="record.date_from.value"/>-
                                     <t t-esc="record.date_to.value"/>
                                 </div>
-                                <div class="col-xs-2">
-                                    <span class="float-right">
+                                <div class="col-2">
+                                    <span class="float-end">
                                         <img alt=""
-                                             t-att-src="kanban_image('res.users', 'image_small', record.creating_user_id.raw_value)"
+                                             t-att-src="kanban_image('res.users', 'avatar_128', record.creating_user_id.raw_value)"
                                              t-att-title="record.creating_user_id.value"
                                              width="24" height="24"
-                                             class="oe_kanban_avatar float-right"/>
+                                             class="oe_kanban_avatar float-end"/>
                                     </span>
                                 </div>
                             </div>

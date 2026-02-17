@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Embed code snippet template -->
+    <template id="daisy_chat_embed_instructions" name="Daisy+ Chat Embed Instructions">
+        <div class="daisy-embed-instructions">
+            <h4>Embed Daisy+ Chat on Your Website</h4>
+            <p>Add this code snippet before the closing <code>&lt;/body&gt;</code> tag:</p>
+            <pre><code>&lt;script src="<t t-esc="base_url"/>/daisy/chat/widget.js?channel_uuid=<t t-esc="channel.uuid"/>"&gt;&lt;/script&gt;</code></pre>
+
+            <h5>Advanced Configuration</h5>
+            <pre><code>&lt;script&gt;
+window.DAISY_CHAT_CONFIG = {
+    position: '<t t-esc="channel.widget_position"/>',
+    primaryColor: '<t t-esc="channel.widget_primary_color"/>',
+    headerText: '<t t-esc="channel.widget_header_text"/>',
+    autoGreet: <t t-esc="'true' if channel.auto_greet_enabled else 'false'"/>,
+};
+&lt;/script&gt;
+&lt;script src="<t t-esc="base_url"/>/daisy/chat/widget.js?channel_uuid=<t t-esc="channel.uuid"/>"&gt;&lt;/script&gt;</code></pre>
+        </div>
+    </template>
+
+    <!-- Replace "Powered by Odoo" on the livechat support page -->
+    <template id="daisy_support_page" inherit_id="im_livechat.support_page" name="DaisyERP Support Page Override">
+        <!-- Replace purple gradient with DaisyERP yellow -->
+        <xpath expr="//style" position="replace">
+            <style type="text/css">
+                body {
+                    height: 100%;
+                    font-size: 16px;
+                    font-weight: 400;
+                    font-family: "Lato", "Lucida Grande", "Helvetica neue", "Helvetica", "Verdana", "Arial", sans-serif;
+                    overflow: hidden;
+                    overflow-y: auto;
+                    display: block;
+                    margin: 0;
+                    padding: 0;
+                    border: none;
+                    width: 100%;
+                    height: 100%;
+                    background: #FFD400;
+                    background-image: linear-gradient(to bottom, #E5BF00, #FFF3B0);
+                    background-size: cover;
+                    background-repeat: no-repeat;
+                    background-attachment: fixed;
+                }
+                .main {
+                    position: absolute;
+                    top: 50%;
+                    width: 100%;
+                    margin-top: -150px;
+                    color: #1a1a1a;
+                    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+                    text-align: center;
+                }
+                .channel_name {
+                    font-size: clamp(2.5rem, 6vw, 3.5rem);
+                    overflow-wrap: break-word;
+                }
+                .main div {
+                    font-style: italic;
+                    font-size: 1rem;
+                }
+            </style>
+        </xpath>
+        <!-- Replace "Powered by Odoo" text -->
+        <xpath expr="//div[hasclass('main')]/div" position="replace">
+            <div>Grown with <strong>Daisy</strong> 🌼</div>
+        </xpath>
+    </template>
+</odoo>

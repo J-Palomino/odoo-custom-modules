@@ -6,7 +6,7 @@ import { kanbanView } from "@web/views/kanban/kanban_view";
 import { KanbanController } from "@web/views/kanban/kanban_controller";
 import { KanbanRenderer } from "@web/views/kanban/kanban_renderer";
 import { KanbanRecord } from "@web/views/kanban/kanban_record";
-const { useState } = owl;
+import { useState } from "@odoo/owl";
 
 class CustomKanbanController extends KanbanController {
     async setup(){

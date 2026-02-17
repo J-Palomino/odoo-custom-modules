@@ -1,0 +1,177 @@
+// DaisyDo Website — Frontend page styles
+// Hero sections, cards, tables, CTAs, responsive layout
+
+// Custom CSS vars for website sections
+:root {
+    --daisy-light-bg: #FFFBEA;
+    --daisy-gradient: linear-gradient(135deg, #FFD400 0%, #E5BF00 100%);
+}
+
+// Section base: consistent spacing, full-width sections
+section {
+    padding: 80px 0;
+}
+
+// Hero sections: gradient bg, white text, centered
+.s_cover,
+.s_hero {
+    background: var(--daisy-gradient);
+    color: #fff;
+
+    h1, h2, h3, p, .lead {
+        color: #fff;
+    }
+}
+
+// Light background utility
+.bg-light-daisy {
+    background: var(--daisy-light-bg);
+}
+
+// Card enhancements: shadows, rounded, equal-height, hover lift
+.s_card.card,
+.card.shadow-sm {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, .08);
+    transition: transform .2s, box-shadow .2s;
+}
+
+.s_card.card:hover,
+.card.shadow-sm:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+}
+
+// Icon styling in cards
+.s_card .fa,
+.card .fa.fa-3x {
+    color: #FFD400;
+}
+
+// Table improvements
+.table-comparison {
+    thead {
+        background: var(--daisy-light-bg);
+    }
+
+    td, th {
+        padding: 12px 16px;
+        vertical-align: middle;
+    }
+
+    .fa-check {
+        color: #28a745;
+    }
+
+    .fa-times {
+        color: #dc3545;
+    }
+}
+
+// CTA dark sections
+.bg-dark-section {
+    background: #1a1a1a;
+    color: #fff;
+
+    h2, h3, p, .lead {
+        color: #fff;
+    }
+}
+
+// Badge pills
+.badge-feature {
+    background: #FFD400;
+    color: #1a1a1a;
+    padding: 10px 20px;
+    font-size: .95rem;
+    font-weight: 600;
+    border-radius: 50px;
+    display: inline-block;
+}
+
+// Button outline variant
+.btn-outline-light {
+    border-color: rgba(255, 255, 255, .5);
+    color: #fff;
+
+    &:hover {
+        background: rgba(255, 255, 255, .15);
+        color: #fff;
+    }
+}
+
+// Code blocks in download sections
+.bg-dark-section pre,
+.bg-dark-section code {
+    background: #2d2d2d;
+    color: #f8f8f2;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: .9rem;
+}
+
+// eLearning / Courses (website_slides): replace purple #875A7B with dark grey
+.o_wslides_gradient {
+    background-image: linear-gradient(120deg, #2d2d2d, #1a1a1a) !important;
+    background-color: #2d2d2d !important;
+}
+
+.o_wslides_course_header {
+    background-color: #2d2d2d !important;
+}
+
+.o_wslides_course_nav,
+.o_wslides_course_nav .breadcrumb {
+    background-color: #333333 !important;
+}
+
+.o_wslides_course_nav a,
+.o_wslides_course_nav .breadcrumb-item,
+.o_wslides_course_nav .breadcrumb-item a,
+.o_wslides_course_nav .breadcrumb-item.active {
+    color: #FFD400 !important;
+}
+
+.o_wslides_fs_sidebar_header {
+    background-color: #2d2d2d !important;
+}
+
+.o_wslides_fs_sidebar {
+    background-color: #1a1a1a !important;
+}
+
+.o_wslides_quiz_modal .tooltip-inner {
+    background-color: #2d2d2d !important;
+}
+
+.o_wslides_slide_list_header {
+    background-color: #f5f5f5 !important;
+    color: #1a1a1a !important;
+}
+
+.o_wslides_channel_completion .progress-bar,
+.o_wslides_progress .progress-bar {
+    background-color: #FFD400 !important;
+}
+
+.o_wslides_slides_list .badge.text-bg-info,
+.o_wslides_slides_list .badge.bg-info {
+    background-color: #FFD400 !important;
+    color: #1a1a1a !important;
+}
+
+// Responsive: stack cards on mobile
+@media (max-width: 767px) {
+    section {
+        padding: 48px 0;
+    }
+
+    .display-3 {
+        font-size: 2rem;
+    }
+
+    .display-4 {
+        font-size: 1.75rem;
+    }
+}

@@ -130,14 +130,14 @@
 
                     <div class="col-6 text-right mb4">
                         <h4 class="mt0" t-field="company.report_header"/>
-                        <div name="company_address" class="float-right mb4">
+                        <div name="company_address" class="float-end mb4">
                             <span t-if="company.company_details"
                                   t-field="company.company_details"/>
                             <!--Header-->
                             <t t-if="mi_type == 'text'">
                                 <t t-if="txt_position == 'header'">
                                     <div t-if="txt_align == 'right'"
-                                         class="float-right mb4">
+                                         class="float-end mb4">
                                         <span t-esc="mi.copy_name"
                                               style="font-size: 25px;"/>
                                     </div>
@@ -313,7 +313,7 @@
                 </div>
                 <div class="col-1">
                     <ul t-if="report_type == 'pdf'"
-                        class="list-inline pagenumber float-right text-center">
+                        class="list-inline pagenumber float-end text-center">
                         <li class="list-inline-item">
                             <strong>
                                 <span class="page"/>
@@ -329,13 +329,13 @@
         <div t-attf-class="o_company_#{company.id}_layout header"
              t-att-style="report_header_style">
             <div class="o_background_header">
-                <div class="float-right">
+                <div class="float-end">
                     <h3 class="mt0 text-right" t-field="company.report_header"/>
                 </div>
                 <img t-if="company.logo"
-                     t-att-src="image_data_uri(company.logo)" class="float-left"
+                     t-att-src="image_data_uri(company.logo)" class="float-start"
                      alt="Logo"/>
-                <div class="float-left company_address">
+                <div class="float-start company_address">
                     <span t-if="company.company_details"
                           t-field="company.company_details"></span>
                 </div>

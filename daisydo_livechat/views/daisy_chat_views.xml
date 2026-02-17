@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Extended Livechat Channel Form View -->
+    <record id="view_im_livechat_channel_form_daisy" model="ir.ui.view">
+        <field name="name">im_livechat.channel.form.daisy</field>
+        <field name="model">im_livechat.channel</field>
+        <field name="inherit_id" ref="im_livechat.im_livechat_channel_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <!-- Daisy+ API Configuration Tab -->
+                <page string="Daisy+ AI" name="daisy_config">
+                    <group>
+                        <group string="Daisy+ Connection">
+                            <field name="ai_enabled"/>
+                            <field name="daisy_api_key" password="True" invisible="not ai_enabled"
+                                   placeholder="Enter your Daisy+ API key"/>
+                            <field name="daisy_agency_id"
+                                   invisible="not ai_enabled or not daisy_available_agencies"/>
+                            <field name="daisy_agency_name" readonly="1"
+                                   invisible="not daisy_agency_id"/>
+                            <field name="daisy_available_agencies" invisible="1"/>
+                        </group>
+                        <group string="AI Behavior" invisible="not ai_enabled">
+                            <field name="ai_system_prompt" widget="text"
+                                   placeholder="Optional: Add custom instructions for the AI assistant..."/>
+                            <field name="ai_handoff_threshold" widget="float"/>
+                        </group>
+                    </group>
+                    <group invisible="not ai_enabled">
+                        <div class="alert alert-info" role="alert">
+                            <strong>Setup:</strong> Enter your Daisy+ API key above, then select a chatflow. The API base URL can be configured in Settings → Technical → Parameters → System Parameters (key: <code>daisy.api_base_url</code>).
+                        </div>
+                    </group>
+                </page>
+
+                <!-- Auto-Greeting Tab -->
+                <page string="Auto Greeting" name="auto_greet">
+                    <group>
+                        <group string="Greeting Settings">
+                            <field name="auto_greet_enabled"/>
+                            <field name="auto_greet_delay" invisible="not auto_greet_enabled"/>
+                        </group>
+                        <group string="Greeting Message">
+                            <field name="auto_greet_message" widget="text" invisible="not auto_greet_enabled"/>
+                        </group>
+                    </group>
+                </page>
+
+                <!-- Widget Customization Tab -->
+                <page string="Widget Style" name="widget_style">
+                    <group>
+                        <group string="Appearance">
+                            <field name="widget_position"/>
+                            <field name="widget_primary_color" widget="color"/>
+                            <field name="widget_header_text"/>
+                            <field name="widget_placeholder"/>
+                        </group>
+                        <group string="Preview">
+                            <div class="daisy-widget-preview">
+                                <div class="preview-title">Widget Preview</div>
+                                <div class="preview-widget" style="background-color: #FFD400; width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                                    <span style="font-size: 24px;">💬</span>
+                                </div>
+                            </div>
+                        </group>
+                    </group>
+                </page>
+
+                <!-- Analytics Tab -->
+                <page string="Analytics" name="analytics">
+                    <group>
+                        <group string="AI Performance">
+                            <field name="total_ai_conversations" readonly="1"/>
+                            <field name="ai_resolution_rate" widget="percentage" readonly="1"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Livechat Channel Kanban View - add AI indicator -->
+    <record id="view_im_livechat_channel_kanban_daisy" model="ir.ui.view">
+        <field name="name">im_livechat.channel.kanban.daisy</field>
+        <field name="model">im_livechat.channel</field>
+        <field name="inherit_id" ref="im_livechat.im_livechat_channel_view_kanban"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='name']" position="after">
+                <field name="ai_enabled"/>
+                <field name="daisy_agency_name"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

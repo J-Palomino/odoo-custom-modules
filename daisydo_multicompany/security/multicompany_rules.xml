@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Multi-Company Record Rules
+        ==========================
+        Global rules that restrict records to the user's allowed companies.
+        Domain: [('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]
+          - Daisy+ users (company 1 in their list): see their records + unassigned records
+          - Other company users: see ONLY their company's records (no unassigned)
+          - Admin (has all companies including 1): unchanged, sees everything
+
+        These are global rules (no group_id) so they apply to ALL users including admins.
+        Superuser (uid=1) bypasses all record rules automatically.
+    -->
+
+    <!-- ============================================================ -->
+    <!-- SALES                                                        -->
+    <!-- ============================================================ -->
+
+    <record id="rule_sale_order_company" model="ir.rule">
+        <field name="name">Sale Order: multi-company isolation</field>
+        <field name="model_id" ref="sale.model_sale_order"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_sale_order_line_company" model="ir.rule">
+        <field name="name">Sale Order Line: multi-company isolation</field>
+        <field name="model_id" ref="sale.model_sale_order_line"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- PURCHASE                                                     -->
+    <!-- ============================================================ -->
+
+    <record id="rule_purchase_order_company" model="ir.rule">
+        <field name="name">Purchase Order: multi-company isolation</field>
+        <field name="model_id" ref="purchase.model_purchase_order"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_purchase_order_line_company" model="ir.rule">
+        <field name="name">Purchase Order Line: multi-company isolation</field>
+        <field name="model_id" ref="purchase.model_purchase_order_line"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- ACCOUNTING                                                   -->
+    <!-- ============================================================ -->
+
+    <record id="rule_account_move_company" model="ir.rule">
+        <field name="name">Journal Entry / Invoice: multi-company isolation</field>
+        <field name="model_id" ref="account.model_account_move"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_account_move_line_company" model="ir.rule">
+        <field name="name">Journal Item: multi-company isolation</field>
+        <field name="model_id" ref="account.model_account_move_line"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_account_journal_company" model="ir.rule">
+        <field name="name">Journal: multi-company isolation</field>
+        <field name="model_id" ref="account.model_account_journal"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- account.account uses company_ids (M2M) in Odoo 19 — shared by design, no rule needed -->
+
+    <record id="rule_account_tax_company" model="ir.rule">
+        <field name="name">Tax: multi-company isolation</field>
+        <field name="model_id" ref="account.model_account_tax"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_account_payment_company" model="ir.rule">
+        <field name="name">Payment: multi-company isolation</field>
+        <field name="model_id" ref="account.model_account_payment"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- INVENTORY / STOCK                                            -->
+    <!-- ============================================================ -->
+
+    <record id="rule_stock_picking_company" model="ir.rule">
+        <field name="name">Transfer: multi-company isolation</field>
+        <field name="model_id" ref="stock.model_stock_picking"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_stock_move_company" model="ir.rule">
+        <field name="name">Stock Move: multi-company isolation</field>
+        <field name="model_id" ref="stock.model_stock_move"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_stock_move_line_company" model="ir.rule">
+        <field name="name">Stock Move Line: multi-company isolation</field>
+        <field name="model_id" ref="stock.model_stock_move_line"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_stock_warehouse_company" model="ir.rule">
+        <field name="name">Warehouse: multi-company isolation</field>
+        <field name="model_id" ref="stock.model_stock_warehouse"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_stock_location_company" model="ir.rule">
+        <field name="name">Stock Location: multi-company isolation</field>
+        <field name="model_id" ref="stock.model_stock_location"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_stock_quant_company" model="ir.rule">
+        <field name="name">Stock Quant: multi-company isolation</field>
+        <field name="model_id" ref="stock.model_stock_quant"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- CRM                                                          -->
+    <!-- ============================================================ -->
+
+    <record id="rule_crm_lead_company" model="ir.rule">
+        <field name="name">Lead / Opportunity: multi-company isolation</field>
+        <field name="model_id" ref="crm.model_crm_lead"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- PROJECT                                                      -->
+    <!-- ============================================================ -->
+
+    <record id="rule_project_project_company" model="ir.rule">
+        <field name="name">Project: multi-company isolation</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_project_task_company" model="ir.rule">
+        <field name="name">Task: multi-company isolation</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- WEBSITE                                                      -->
+    <!-- ============================================================ -->
+
+    <record id="rule_website_company" model="ir.rule">
+        <field name="name">Website: multi-company isolation</field>
+        <field name="model_id" ref="website.model_website"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- discuss.channel and im_livechat.channel have no company_id in Odoo 19 — skipped -->
+
+    <!-- ============================================================ -->
+    <!-- USERS (res.users)                                            -->
+    <!-- Uses company_ids (M2M) — each user has explicit assignments. -->
+    <!-- Replaces Odoo's default rule that exposes all internal users. -->
+    <!-- ============================================================ -->
+
+    <record id="rule_res_users_company" model="ir.rule">
+        <field name="name">User: multi-company isolation</field>
+        <field name="model_id" ref="base.model_res_users"/>
+        <field name="domain_force">[('company_ids', 'in', company_ids)]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- CONTACTS (res.partner)                                       -->
+    <!-- Partners are often shared across companies (customers,       -->
+    <!-- vendors). This rule allows shared partners (no company)      -->
+    <!-- while isolating company-specific ones.                       -->
+    <!-- ============================================================ -->
+
+    <record id="rule_res_partner_company" model="ir.rule">
+        <field name="name">Contact: multi-company isolation</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- PRODUCTS                                                     -->
+    <!-- Products are typically shared across companies (same         -->
+    <!-- catalog). Only restrict product.supplierinfo which is        -->
+    <!-- company-specific.                                            -->
+    <!-- ============================================================ -->
+
+    <record id="rule_product_supplierinfo_company" model="ir.rule">
+        <field name="name">Vendor Pricelist: multi-company isolation</field>
+        <field name="model_id" ref="product.model_product_supplierinfo"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <record id="rule_product_pricelist_company" model="ir.rule">
+        <field name="name">Pricelist: multi-company isolation</field>
+        <field name="model_id" ref="product.model_product_pricelist"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- SIGNATURES (sign_oca)                                        -->
+    <!-- ============================================================ -->
+
+    <record id="rule_sign_oca_request_company" model="ir.rule">
+        <field name="name">Sign Request: multi-company isolation</field>
+        <field name="model_id" ref="sign_oca.model_sign_oca_request"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- eLEARNING (website_slides)                                   -->
+    <!-- ============================================================ -->
+
+    <record id="rule_slide_channel_company" model="ir.rule">
+        <field name="name">Course: multi-company isolation</field>
+        <field name="model_id" ref="website_slides.model_slide_channel"/>
+        <field name="domain_force">[('website_id.company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
+        <field name="global" eval="True"/>
+    </record>
+
+</odoo>

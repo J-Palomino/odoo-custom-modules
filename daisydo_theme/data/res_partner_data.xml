@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="0">
+    <!-- Rebrand OdooBot → DaisyBot with daisy logo avatar -->
+    <record id="base.partner_root" model="res.partner">
+        <field name="name">DaisyBot</field>
+        <field name="image_1920" type="base64" file="daisydo_theme/static/src/img/logo.png"/>
+    </record>
+
+    <!-- Set main company logo to daisy icon -->
+    <record id="base.main_company" model="res.company">
+        <field name="logo" type="base64" file="daisydo_theme/static/src/img/logo.png"/>
+    </record>
+    <record id="base.main_partner" model="res.partner">
+        <field name="image_1920" type="base64" file="daisydo_theme/static/src/img/logo.png"/>
+    </record>
+</odoo>

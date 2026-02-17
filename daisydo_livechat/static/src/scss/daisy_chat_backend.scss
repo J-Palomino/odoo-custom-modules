@@ -1,0 +1,112 @@
+// Daisy+ Chat Backend Styles
+// Styling for the Odoo backend configuration views
+
+.daisy-chat-config {
+    // AI Configuration section
+    .daisy-ai-section {
+        background-color: #fefce8;
+        border: 1px solid #fef08a;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+
+        .section-title {
+            color: #854d0e;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+
+            &::before {
+                content: "🤖";
+            }
+        }
+    }
+
+    // Widget preview
+    .daisy-widget-preview {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+
+        .preview-title {
+            font-size: 12px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .preview-widget {
+            display: inline-block;
+            background-color: var(--daisy-primary, #FFD400);
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+
+            .preview-icon {
+                line-height: 56px;
+                font-size: 24px;
+            }
+        }
+    }
+
+    // Color picker enhancement
+    .daisy-color-picker {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        input[type="color"] {
+            width: 48px;
+            height: 48px;
+            padding: 0;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            cursor: pointer;
+
+            &::-webkit-color-swatch-wrapper {
+                padding: 4px;
+            }
+
+            &::-webkit-color-swatch {
+                border-radius: 4px;
+            }
+        }
+
+        .color-value {
+            font-family: monospace;
+            font-size: 14px;
+            color: #64748b;
+        }
+    }
+}
+
+// Stats dashboard
+.daisy-chat-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+
+    .stat-card {
+        background: linear-gradient(135deg, #FFD400 0%, #E5BF00 100%);
+        border-radius: 12px;
+        padding: 20px;
+        color: #1a1a1a;
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+    }
+}

@@ -1,0 +1,183 @@
+// DaisyDo Yellow Theme — Component Styles
+// Variable overrides are in primary_variables.scss (loaded before Odoo's)
+
+// CSS Custom Properties (runtime overrides)
+// These ensure brand colors apply even when SCSS variable compilation
+// doesn't pick up primary_variables.scss (asset pipeline timing issues).
+:root {
+    --o-brand-odoo: #FFD400;
+    --o-brand-primary: #FFD400;
+    --primary: #FFD400;
+    --primary-rgb: 255, 212, 0;
+    --o-brand-secondary: #E5BF00;
+    --o-brand-primary-text: #1a1a1a;
+
+    // Navbar CSS custom properties (Odoo 19 reads these at runtime)
+    --NavBar-entry-color: rgba(26, 26, 26, 0.9);
+    --NavBar-entry-color--hover: #000000;
+    --NavBar-entry-color--active: #000000;
+    --NavBar-entry-backgroundColor: #FFD400;
+    --NavBar-entry-backgroundColor--hover: rgba(0, 0, 0, 0.08);
+    --NavBar-entry-backgroundColor--active: rgba(0, 0, 0, 0.08);
+    --NavBar-entry-backgroundColor--focus: rgba(0, 0, 0, 0.08);
+    --NavBar-brand-color: rgba(26, 26, 26, 0.9);
+}
+
+// Backend navbar styling
+.o_main_navbar {
+    background-color: #FFD400 !important;
+    border-bottom-color: #E5BF00 !important;
+
+    &, * {
+        color: #1a1a1a !important;
+    }
+
+    .o_menu_brand:hover,
+    .o_menu_toggle:hover,
+    .dropdown-toggle:hover,
+    .nav-link:hover {
+        color: #000 !important;
+        background-color: rgba(0, 0, 0, 0.1) !important;
+    }
+
+    // Menu section entries — these use CSS custom properties that can carry purple
+    .o_menu_sections .o_nav_entry,
+    .o_menu_sections .dropdown-toggle {
+        background: #FFD400 !important;
+        color: rgba(26, 26, 26, 0.9) !important;
+
+        &:hover {
+            background: rgba(0, 0, 0, 0.08) !important;
+        }
+    }
+}
+
+// Frontend website navbar - force black text on yellow
+header#top nav.navbar {
+    background-color: #FFD400 !important;
+
+    &, a, span, .nav-link, .navbar-brand, .dropdown-toggle,
+    .o_navlink_background, .fa {
+        color: #1a1a1a !important;
+    }
+
+    a:hover, .nav-link:hover, .dropdown-toggle:hover {
+        color: #000 !important;
+    }
+}
+
+// Primary buttons
+.btn-primary {
+    background-color: #FFD400 !important;
+    border-color: #E5BF00 !important;
+    color: #1a1a1a !important;
+
+    &:hover, &:focus, &:active {
+        background-color: #E5BF00 !important;
+        border-color: #CCAA00 !important;
+        color: #1a1a1a !important;
+    }
+}
+
+// Links
+a.text-primary,
+.text-primary {
+    color: #CCAA00 !important;
+}
+
+// Selection and focus highlights
+.o_form_view .o_field_widget.o_field_highlight {
+    background-color: rgba(255, 212, 0, 0.1);
+}
+
+// Kanban headers and highlights
+.o_kanban_header {
+    border-color: #FFD400;
+}
+
+// Progress bars
+.progress-bar {
+    background-color: #FFD400;
+}
+
+// Login page
+.oe_login_form .btn-primary {
+    background-color: #FFD400 !important;
+    border-color: #E5BF00 !important;
+    color: #1a1a1a !important;
+}
+
+// Replace Odoo logo in navbar with DaisyERP
+.o_main_navbar .o_menu_brand {
+    &::before {
+        content: "";
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        background-image: url("/daisydo_theme/static/src/img/logo.png");
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+}
+
+// Hide Odoo branding text and Enterprise upsell elements
+.o_brand_promotion,
+.o_badge_remove,
+[data-menu-xmlid="base.menu_management"] .o_menu_brand_icon {
+    display: none !important;
+}
+
+// Enterprise upsell banners, upgrade buttons, and feature teasers
+.o_enterprise_upsell,
+.o_enterprise_upgrade,
+.o_ee_cta,
+.oe_database_expiration_panel,
+.o_field_upgrade_boolean,
+.o_upgrade_star,
+.o_upgrade_extra,
+[data-upgrade],
+.o_upsell_bar {
+    display: none !important;
+}
+
+// Settings page Enterprise feature labels and upgrade links
+.o_settings_container .o_enterprise_label,
+.o_settings_container .badge.text-bg-enterprise,
+.o_settings_container a[href*='odoo.com'] {
+    display: none !important;
+}
+
+// App switcher Enterprise labels
+.o_home_menu .o_enterprise_label,
+.o_app .badge.text-bg-enterprise {
+    display: none !important;
+}
+
+// Login page logo styling
+.oe_login_form img,
+.o_login_box img {
+    max-height: 100px;
+    margin-bottom: 16px;
+}
+
+// Home menu app icons — daisy yellow tint
+.o_home_menu .o_app .o_app_icon {
+    border-radius: 12px;
+    filter: hue-rotate(200deg) saturate(1.5) brightness(1.1);
+}
+
+// Company logo replacements across the web client
+.o_company_logo img,
+.o_menu_systray img.o_company_logo_img {
+    content: url("/daisydo_theme/static/src/img/logo.png");
+    object-fit: contain;
+}
+
+// Replace "Odoo" text in about dialog
+.o_dialog .o_about_content .o_logo {
+    content: url("/daisydo_theme/static/src/img/logo.png");
+    max-width: 120px;
+}

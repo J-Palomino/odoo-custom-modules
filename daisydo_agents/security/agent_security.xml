@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ MODULE PRIVILEGE (Odoo 19: ir.module.category → res.groups.privilege) ============ -->
+    <record id="privilege_daisy_agency" model="res.groups.privilege">
+        <field name="name">Daisy Agency</field>
+        <field name="sequence">30</field>
+    </record>
+
+    <!-- ============ GROUPS (3-tier like Employees) ============ -->
+    <record id="group_daisy_user" model="res.groups">
+        <field name="name">User</field>
+        <field name="privilege_id" ref="privilege_daisy_agency"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <record id="group_daisy_officer" model="res.groups">
+        <field name="name">Officer</field>
+        <field name="privilege_id" ref="privilege_daisy_agency"/>
+        <field name="implied_ids" eval="[(4, ref('group_daisy_user'))]"/>
+    </record>
+
+    <record id="group_daisy_admin" model="res.groups">
+        <field name="name">Administrator</field>
+        <field name="privilege_id" ref="privilege_daisy_agency"/>
+        <field name="implied_ids" eval="[(4, ref('group_daisy_officer'))]"/>
+    </record>
+
+    <!-- Grant admin users the Administrator group by default -->
+    <record id="base.group_system" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_daisy_admin'))]"/>
+    </record>
+
+    <!-- ============ RECORD RULES ============ -->
+    <record id="daisy_agent_rule_admin" model="ir.rule">
+        <field name="name">Daisy Agency: Administrator Full Access</field>
+        <field name="model_id" ref="model_daisy_agent"/>
+        <field name="groups" eval="[(4, ref('group_daisy_admin'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+    <record id="daisy_agent_rule_officer" model="ir.rule">
+        <field name="name">Daisy Agency: Officer Full Access</field>
+        <field name="model_id" ref="model_daisy_agent"/>
+        <field name="groups" eval="[(4, ref('group_daisy_officer'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+    <record id="daisy_agent_rule_user" model="ir.rule">
+        <field name="name">Daisy Agency: User Read Only</field>
+        <field name="model_id" ref="model_daisy_agent"/>
+        <field name="groups" eval="[(4, ref('group_daisy_user'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+</odoo>

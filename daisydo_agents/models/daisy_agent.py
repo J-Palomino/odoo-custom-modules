@@ -1,0 +1,307 @@
+import logging
+import os
+import threading
+
+import odoo
+from odoo import models, fields, api, SUPERUSER_ID
+from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
+
+_AGENT_EMAIL_DOMAIN = os.environ.get('BRAND_AGENT_EMAIL_DOMAIN', 'daisy.plus')
+
+
+class DaisyAgent(models.Model):
+    _name = "daisy.agent"
+    _description = "Daisy Agent"
+    _order = "name"
+    _inherit = ["mail.thread"]
+
+    # --- Identity ---
+    name = fields.Char(required=True, tracking=True)
+    code = fields.Char(
+        string="Code",
+        required=True,
+        help="Unique identifier, used as login/email prefix",
+    )
+    avatar = fields.Image(max_width=256, max_height=256)
+    role = fields.Char(help="e.g. Support Agent, Sales Rep")
+    bio = fields.Text()
+
+    # --- Linked Odoo user ---
+    user_id = fields.Many2one("res.users", string="Odoo User", readonly=True, ondelete="restrict")
+    partner_id = fields.Many2one("res.partner", related="user_id.partner_id", string="Partner", store=True)
+    user_group_ids = fields.Many2many(related="user_id.group_ids", string="User Groups", readonly=True)
+    email = fields.Char(compute="_compute_email", store=True)
+
+    # --- Daisy+ AI config ---
+    daisy_api_key = fields.Char(string="Daisy+ API Key")
+    daisy_agency_id = fields.Char(string="Agency ID")
+    ai_system_prompt = fields.Text(string="System Prompt")
+    ai_personality = fields.Selection(
+        [
+            ("professional", "Professional"),
+            ("friendly", "Friendly"),
+            ("technical", "Technical"),
+            ("empathetic", "Empathetic"),
+            ("concise", "Concise"),
+        ],
+        default="friendly",
+    )
+    ai_handoff_threshold = fields.Float(default=0.7, help="Confidence below this triggers human handoff (0-1)")
+    ai_max_turns = fields.Integer(default=20, help="Max back-and-forth messages before auto-handoff")
+    ai_greeting = fields.Char(default="Hi! I'm here to help. What can I do for you?")
+
+    # --- Lifecycle ---
+    state = fields.Selection(
+        [
+            ("draft", "Draft"),
+            ("active", "Active"),
+            ("suspended", "Suspended"),
+            ("terminated", "Terminated"),
+        ],
+        default="draft",
+        required=True,
+        tracking=True,
+    )
+    hire_date = fields.Datetime(readonly=True)
+    termination_date = fields.Datetime(readonly=True)
+
+    # --- Email Project ---
+    mail_project_id = fields.Many2one("project.project", string="Email Project", readonly=True)
+
+    # --- Livechat ---
+    livechat_channel_ids = fields.Many2many("im_livechat.channel", string="Livechat Channels")
+    max_concurrent_chats = fields.Integer(default=10)
+
+    # --- Metrics ---
+    active_conversations = fields.Integer(compute="_compute_conversation_stats")
+    total_conversations = fields.Integer(compute="_compute_conversation_stats")
+    total_messages_sent = fields.Integer(compute="_compute_message_stats")
+    metric_ids = fields.One2many("daisy.agent.metric", "agent_id", string="Daily Metrics")
+
+    _sql_constraints = [
+        ("code_unique", "UNIQUE(code)", "Agent code must be unique."),
+    ]
+
+    @api.depends("code")
+    def _compute_email(self):
+        for agent in self:
+            agent.email = f"{agent.code}@{_AGENT_EMAIL_DOMAIN}" if agent.code else False
+
+    def _compute_conversation_stats(self):
+        for agent in self:
+            if not agent.partner_id:
+                agent.active_conversations = 0
+                agent.total_conversations = 0
+                continue
+            channels = self.env["discuss.channel"].search([
+                ("channel_member_ids.partner_id", "=", agent.partner_id.id),
+                ("channel_type", "=", "livechat"),
+            ])
+            agent.total_conversations = len(channels)
+            # Active = channels with a message in the last 24 hours
+            cutoff = fields.Datetime.subtract(fields.Datetime.now(), hours=24)
+            active = channels.filtered(
+                lambda c: c.message_ids[:1].date >= cutoff if c.message_ids else False
+            )
+            agent.active_conversations = len(active)
+
+    def _compute_message_stats(self):
+        for agent in self:
+            if not agent.partner_id:
+                agent.total_messages_sent = 0
+                continue
+            agent.total_messages_sent = self.env["mail.message"].search_count([
+                ("author_id", "=", agent.partner_id.id),
+                ("daisy_ai_generated", "=", True),
+            ])
+
+    # ---- Lifecycle actions ----
+
+    def action_hire(self):
+        self.ensure_one()
+        if self.state != "draft":
+            raise UserError("Can only hire agents in Draft state.")
+        if not self.daisy_api_key:
+            raise UserError("Set a Daisy+ API Key before hiring.")
+
+        # Validate API key
+        ai_svc = self.env["daisy.ai.service"]
+        result = ai_svc.validate_api_key(self.daisy_api_key)
+        if not result.get("valid"):
+            raise UserError(f"Invalid API key: {result.get('error', 'unknown error')}")
+
+        # Create Odoo user for the agent
+        if not self.user_id:
+            user = self.env["res.users"].sudo().create({
+                "name": self.name,
+                "login": self.email,
+                "email": self.email,
+                "image_1920": self.avatar,
+                "active": True,
+                "group_ids": [(6, 0, [self.env.ref("base.group_user").id])],
+            })
+            self.user_id = user
+
+        # Add agent's partner to livechat channels as operator
+        if self.partner_id:
+            for channel in self.livechat_channel_ids:
+                if self.partner_id not in channel.user_ids.partner_id:
+                    channel.sudo().write({"user_ids": [(4, self.user_id.id)]})
+
+        # Create email project with mail alias for catchall routing
+        if not self.mail_project_id:
+            project = self.env["project.project"].sudo().create({
+                "name": f"{self.name} - Email",
+                "alias_name": self.code,
+            })
+            self.mail_project_id = project
+
+        self.write({
+            "state": "active",
+            "hire_date": fields.Datetime.now(),
+        })
+        _logger.info("Agent %s hired", self.name)
+
+    def action_suspend(self):
+        self.ensure_one()
+        if self.state != "active":
+            raise UserError("Can only suspend active agents.")
+        # Remove from livechat channels
+        for channel in self.livechat_channel_ids:
+            channel.sudo().write({"user_ids": [(3, self.user_id.id)]})
+        self.state = "suspended"
+        _logger.info("Agent %s suspended", self.name)
+
+    def action_reactivate(self):
+        self.ensure_one()
+        if self.state != "suspended":
+            raise UserError("Can only reactivate suspended agents.")
+        if self.partner_id:
+            for channel in self.livechat_channel_ids:
+                if self.partner_id not in channel.user_ids.partner_id:
+                    channel.sudo().write({"user_ids": [(4, self.user_id.id)]})
+        if self.mail_project_id:
+            self.mail_project_id.sudo().active = True
+        self.state = "active"
+        _logger.info("Agent %s reactivated", self.name)
+
+    def action_terminate(self):
+        self.ensure_one()
+        if self.state in ("draft", "terminated"):
+            raise UserError("Cannot terminate an agent in this state.")
+        for channel in self.livechat_channel_ids:
+            channel.sudo().write({"user_ids": [(3, self.user_id.id)]})
+        if self.mail_project_id:
+            self.mail_project_id.sudo().active = False
+        if self.user_id:
+            self.user_id.sudo().active = False
+        self.write({
+            "state": "terminated",
+            "termination_date": fields.Datetime.now(),
+        })
+        _logger.info("Agent %s terminated", self.name)
+
+    def action_view_conversations(self):
+        self.ensure_one()
+        return {
+            "type": "ir.actions.act_window",
+            "name": f"{self.name} — Conversations",
+            "res_model": "discuss.channel",
+            "view_mode": "list,form",
+            "domain": [
+                ("channel_member_ids.partner_id", "=", self.partner_id.id),
+                ("channel_type", "=", "livechat"),
+            ],
+        }
+
+    def action_view_messages(self):
+        self.ensure_one()
+        return {
+            "type": "ir.actions.act_window",
+            "name": f"{self.name} — AI Messages",
+            "res_model": "mail.message",
+            "view_mode": "list",
+            "domain": [
+                ("author_id", "=", self.partner_id.id),
+                ("daisy_ai_generated", "=", True),
+            ],
+        }
+
+    def action_open_user_settings(self):
+        """Open the linked Odoo user form to manage permissions."""
+        self.ensure_one()
+        if not self.user_id:
+            raise UserError("This agent has no linked Odoo user yet. Hire the agent first.")
+        return {
+            "type": "ir.actions.act_window",
+            "name": f"{self.name} — User Settings",
+            "res_model": "res.users",
+            "res_id": self.user_id.id,
+            "view_mode": "form",
+            "target": "current",
+        }
+
+    def _respond_async(self, channel_model, channel_id, user_text, history, conversation_id, context_prefix=""):
+        """Schedule AI response in a background thread after current transaction commits."""
+        self.ensure_one()
+        db_name = self.env.cr.dbname
+        agent_id = self.id
+
+        def _after_commit():
+            def _run():
+                try:
+                    registry = odoo.registry(db_name)
+                    with registry.cursor() as cr:
+                        env = api.Environment(cr, SUPERUSER_ID, {})
+                        agent = env["daisy.agent"].browse(agent_id)
+                        target = env[channel_model].browse(channel_id)
+                        if not agent.exists() or not target.exists():
+                            return
+
+                        full_text = context_prefix + user_text if context_prefix else user_text
+                        ai_result = agent.get_ai_response(full_text, history, conversation_id)
+
+                        if not ai_result.get("response"):
+                            return
+
+                        if ai_result.get("should_handoff"):
+                            _logger.info(
+                                "Agent %s handing off on %s/%s",
+                                agent.name, channel_model, channel_id,
+                            )
+                            target.with_user(agent.user_id).message_post(
+                                body="Let me connect you with a team member who can help further.",
+                                message_type="comment",
+                                subtype_xmlid="mail.mt_comment",
+                            )
+                            return
+
+                        ai_msg = target.with_user(agent.user_id).message_post(
+                            body=ai_result["response"],
+                            message_type="comment",
+                            subtype_xmlid="mail.mt_comment",
+                        )
+                        ai_msg.sudo().write({
+                            "daisy_ai_generated": True,
+                            "daisy_ai_confidence": ai_result.get("confidence", 0),
+                            "daisy_intent": ai_result.get("intent", ""),
+                            "daisy_conversation_id": ai_result.get("conversation_id", ""),
+                        })
+                except Exception:
+                    _logger.exception(
+                        "Async AI response failed for agent %s on %s/%s",
+                        agent_id, channel_model, channel_id,
+                    )
+
+            thread = threading.Thread(target=_run, daemon=True)
+            thread.start()
+
+        self.env.cr.postcommit.add(_after_commit)
+
+    def get_ai_response(self, message, conversation_history=None, conversation_id=None, override_config=None):
+        """Call Daisy+ API using this agent's own credentials."""
+        self.ensure_one()
+        ai_svc = self.env["daisy.ai.service"]
+        return ai_svc._call_daisy_api_for_agent(self, message, conversation_history, conversation_id, override_config)

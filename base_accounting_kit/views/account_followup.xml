@@ -83,6 +83,6 @@
     </record>
 <!--  FollowUp MenuItem  -->
     <menuitem action="action_account_followup_definition_form" id="account_followup_menu"
-              parent="account.account_management_menu" name="Follow-up Levels"
-              groups="account.group_account_manager" sequence="2"/>
+              parent="account.account_account_menu" name="Follow-up Levels"
+              groups="account.group_account_manager" sequence="12"/>
 </odoo>

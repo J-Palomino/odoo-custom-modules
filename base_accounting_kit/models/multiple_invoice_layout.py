@@ -20,7 +20,7 @@
 #
 #############################################################################
 from odoo import api, fields, models
-from odoo.modules import get_resource_path
+from odoo.tools.misc import file_path
 
 try:
     import sass as libsass
@@ -122,8 +122,7 @@ class MultipleInvoiceLayout(models.TransientModel):
 
         precision = 8
         output_style = 'expanded'
-        bootstrap_path = get_resource_path('web', 'static', 'lib', 'bootstrap',
-                                           'scss')
+        bootstrap_path = file_path('web/static/lib/bootstrap/scss')
         try:
             return libsass.compile(
                 string=scss_source,

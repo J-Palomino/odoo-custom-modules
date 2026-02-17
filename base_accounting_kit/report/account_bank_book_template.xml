@@ -11,11 +11,11 @@
                         <h2><span t-esc="env.company.name"/>: Bank Book Report</h2>
                     </div>
                     <div class="row">
-                        <div class="col-xs-4" style="width:40%;">
+                        <div class="col-4" style="width:40%;">
                             <strong>Journals:</strong>
                             <p t-esc="', '.join([ lt or '' for lt in print_journal ])"/>
                         </div>
-                        <div class="col-xs-4" style="width:30%;">
+                        <div class="col-4" style="width:30%;">
                             <strong>Display Account</strong>
                             <p>
                                 <span t-if="data['display_account'] == 'all'">All accounts'</span>
@@ -23,7 +23,7 @@
                                 <span t-if="data['display_account'] == 'not_zero'">With balance not equal to zero</span>
                             </p>
                         </div>
-                        <div class="col-xs-4" style="width:30%;">
+                        <div class="col-4" style="width:30%;">
                             <strong>Target Moves:</strong>
                             <p t-if="data['target_move'] == 'all'">All Entries</p>
                             <p t-if="data['target_move'] == 'posted'">All Posted Entries</p>

@@ -61,7 +61,17 @@ fi
 # Remove stale base_import_module copies from persistent volume
 # (base_import_module installs to persistent volume paths which are
 # scanned before /mnt/extra-addons/ — we need the Docker version)
-for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault; do
+for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_financial_risk \
+    daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
+    base_accounting_kit base_account_budget sign_oca \
+    base_cancel_confirm base_substate base_technical_features date_range \
+    bi_sql_editor report_qweb_element_page_visibility report_xlsx report_xlsx_helper report_xml sql_request_abstract \
+    account_analytic_tag account_invoice_start_end_dates \
+    account_financial_report account_tax_balance partner_statement \
+    account_account_tag_code account_journal_restrict_mode account_move_name_sequence \
+    account_move_post_date_user account_move_print account_usability \
+    account_invoice_fixed_discount account_invoice_pricelist account_invoice_pricelist_sale \
+    account_statement_base; do
     for d in /var/lib/odoo/addons/*/$mod /var/lib/odoo/addons/$mod; do
         if [ -d "$d" ]; then
             echo "=== Removing stale $mod at $d ==="

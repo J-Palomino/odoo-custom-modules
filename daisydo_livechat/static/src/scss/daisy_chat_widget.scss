@@ -1,0 +1,245 @@
+// Daisy+ Chat Widget Styles
+// Custom styling for the embeddable chat widget
+
+:root {
+    --daisy-primary: #FFD400;
+    --daisy-primary-dark: #E5BF00;
+    --daisy-text-on-primary: #1a1a1a;
+    --daisy-bg: #ffffff;
+    --daisy-text: #333333;
+    --daisy-border: #e0e0e0;
+    --daisy-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+// Chat button (floating action button)
+.o_livechat_button,
+.daisy-chat-button {
+    background-color: var(--daisy-primary) !important;
+    border: none !important;
+    box-shadow: var(--daisy-shadow) !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+
+    &:hover {
+        background-color: var(--daisy-primary-dark) !important;
+        transform: scale(1.05);
+        box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2) !important;
+    }
+
+    // Daisy icon styling
+    .fa, .oi {
+        color: var(--daisy-text-on-primary) !important;
+    }
+}
+
+// Chat window
+.o_thread_window,
+.daisy-chat-window {
+    border-radius: 16px !important;
+    box-shadow: var(--daisy-shadow) !important;
+    overflow: hidden;
+    border: none !important;
+
+    // Header
+    .o_thread_window_header,
+    .o_composer_thread_window_header {
+        background: linear-gradient(135deg, var(--daisy-primary) 0%, var(--daisy-primary-dark) 100%) !important;
+        color: var(--daisy-text-on-primary) !important;
+        padding: 16px !important;
+        border-bottom: none !important;
+
+        .o_thread_window_title {
+            font-weight: 600 !important;
+            font-size: 16px !important;
+        }
+
+        // Close button
+        .o_thread_window_close {
+            color: var(--daisy-text-on-primary) !important;
+            opacity: 0.8;
+
+            &:hover {
+                opacity: 1;
+            }
+        }
+    }
+
+    // Messages area
+    .o_thread_content,
+    .o_mail_thread {
+        background-color: var(--daisy-bg) !important;
+        padding: 12px !important;
+    }
+
+    // Individual messages
+    .o_mail_message {
+        margin-bottom: 12px !important;
+
+        // User messages
+        &.o_mail_message_from_self {
+            .o_mail_message_content {
+                background-color: var(--daisy-primary) !important;
+                color: var(--daisy-text-on-primary) !important;
+                border-radius: 18px 18px 4px 18px !important;
+                padding: 10px 16px !important;
+            }
+        }
+
+        // Bot/operator messages
+        &:not(.o_mail_message_from_self) {
+            .o_mail_message_content {
+                background-color: #f0f0f0 !important;
+                color: var(--daisy-text) !important;
+                border-radius: 18px 18px 18px 4px !important;
+                padding: 10px 16px !important;
+            }
+        }
+    }
+
+    // Composer (input area)
+    .o_composer,
+    .o_thread_composer {
+        border-top: 1px solid var(--daisy-border) !important;
+        padding: 12px !important;
+        background-color: var(--daisy-bg) !important;
+
+        .o_composer_input {
+            border-radius: 24px !important;
+            border: 1px solid var(--daisy-border) !important;
+            padding: 10px 16px !important;
+            transition: border-color 0.2s ease !important;
+
+            &:focus {
+                border-color: var(--daisy-primary) !important;
+                box-shadow: 0 0 0 3px rgba(255, 212, 0, 0.2) !important;
+            }
+        }
+
+        // Send button
+        .o_composer_button_send {
+            background-color: var(--daisy-primary) !important;
+            border-color: var(--daisy-primary) !important;
+            color: var(--daisy-text-on-primary) !important;
+            border-radius: 50% !important;
+            width: 36px !important;
+            height: 36px !important;
+            padding: 0 !important;
+            margin-left: 8px !important;
+
+            &:hover {
+                background-color: var(--daisy-primary-dark) !important;
+            }
+        }
+    }
+}
+
+// Suggested actions / quick replies
+.daisy-suggested-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 0 12px;
+
+    .daisy-action-btn {
+        background-color: transparent;
+        border: 1px solid var(--daisy-primary);
+        color: var(--daisy-primary-dark);
+        padding: 6px 14px;
+        border-radius: 16px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover {
+            background-color: var(--daisy-primary);
+            color: var(--daisy-text-on-primary);
+        }
+    }
+}
+
+// AI typing indicator
+.daisy-typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+
+    .dot {
+        width: 8px;
+        height: 8px;
+        background-color: var(--daisy-primary);
+        border-radius: 50%;
+        animation: daisy-bounce 1.4s infinite ease-in-out both;
+
+        &:nth-child(1) { animation-delay: -0.32s; }
+        &:nth-child(2) { animation-delay: -0.16s; }
+        &:nth-child(3) { animation-delay: 0s; }
+    }
+}
+
+@keyframes daisy-bounce {
+    0%, 80%, 100% {
+        transform: scale(0);
+    }
+    40% {
+        transform: scale(1);
+    }
+}
+
+// Auto-greet notification bubble
+.daisy-auto-greet {
+    position: fixed;
+    bottom: 100px;
+    right: 20px;
+    background-color: var(--daisy-bg);
+    border-radius: 12px;
+    padding: 12px 16px;
+    box-shadow: var(--daisy-shadow);
+    max-width: 280px;
+    animation: daisy-slide-in 0.3s ease;
+    z-index: 9999;
+
+    &::after {
+        content: "";
+        position: absolute;
+        bottom: -8px;
+        right: 24px;
+        width: 0;
+        height: 0;
+        border-left: 8px solid transparent;
+        border-right: 8px solid transparent;
+        border-top: 8px solid var(--daisy-bg);
+    }
+
+    .daisy-greet-text {
+        color: var(--daisy-text);
+        font-size: 14px;
+        line-height: 1.4;
+    }
+
+    .daisy-greet-close {
+        position: absolute;
+        top: 4px;
+        right: 8px;
+        background: none;
+        border: none;
+        color: #999;
+        cursor: pointer;
+        font-size: 18px;
+
+        &:hover {
+            color: #666;
+        }
+    }
+}
+
+@keyframes daisy-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

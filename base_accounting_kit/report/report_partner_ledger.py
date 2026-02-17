@@ -125,8 +125,7 @@ class ReportPartnerLedger(models.AbstractModel):
         self.env.cr.execute("""
             SELECT a.id
             FROM account_account a
-            WHERE a.account_type IN %s
-            AND NOT a.deprecated""",
+            WHERE a.account_type IN %s""",
                             (tuple(data['computed']['ACCOUNT_TYPE']),))
         data['computed']['account_ids'] = [a for (a,) in
                                            self.env.cr.fetchall()]
@@ -142,7 +141,6 @@ class ReportPartnerLedger(models.AbstractModel):
                 AND am.id = "account_move_line".move_id
                 AND am.state IN %s
                 AND "account_move_line".account_id IN %s
-                AND NOT account.deprecated
                 AND """ + query_get_data[1] + reconcile_clause
         self.env.cr.execute(query, tuple(params))
         partner_ids = [res['partner_id'] for res in self.env.cr.dictfetchall()]

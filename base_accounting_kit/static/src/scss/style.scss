@@ -23,7 +23,7 @@
 
 
 .accounts-dashboard-wrap .ct-series-e .ct-slice-pie {
-    fill: #7b2138 !important;
+    fill: #B8860B !important;
 }
 
 .accounts-dashboard-wrap .ct-series-a .ct-bar,
@@ -438,12 +438,12 @@ body {
 }
 
 .accounts-dashboard-wrap .box-3 .main-title {
-    background: #8067dc;
+    background: #FFD400;
     color: #fff;
 }
 
 .accounts-dashboard-wrap .box-4 .main-title {
-    background: #c767dc;
+    background: #E5A000;
     color: #fff;
 }
 
@@ -546,7 +546,7 @@ body {
 .accounts-dashboard-wrap .ct-series-a .ct-point,
 .accounts-dashboard-wrap .ct-series-a .ct-slice-donut,
 .accounts-dashboard-wrap .ct-series-a .ct-slice-pie {
-    stroke: rgb(132, 60, 247) !important;
+    stroke: rgb(255, 212, 0) !important;
 }
 
 .accounts-dashboard-wrap canvas#salesChart,
@@ -580,7 +580,7 @@ body {
     width: auto;
     height: 20px;
     color: #fff;
-    background-color: #843cf7 !important;
+    background-color: #E5BF00 !important;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -724,7 +724,7 @@ body {
     justify-content: center;
     align-content: center;
     padding: .3rem;
-    background: #843cf7;
+    background: #E5BF00;
     color: #fff;
     border-radius: 10px;
     width: auto !important;
@@ -744,7 +744,7 @@ body {
     align-content: center;
     padding: .3rem;
     background:
-        #843cf7;
+        #E5BF00;
     color:
         #fff;
     border-radius: 10px;
@@ -764,7 +764,7 @@ body {
     align-content: center;
     padding: .3rem;
     background:
-        #843cf7;
+        #E5BF00;
     color:
         #fff;
     border-radius: 10px;
@@ -785,7 +785,7 @@ body {
     align-content: center;
     padding: .3rem;
     background:
-        #843cf7;
+        #E5BF00;
     color:
         #fff;
     border-radius: 10px;
@@ -934,7 +934,7 @@ body {
     background-size: auto;
     height: 20px;
     width: 100%;
-    background-color: #8067dc;
+    background-color: #FFD400;
 }
 
 // The unordered list
@@ -965,11 +965,11 @@ body {
 
 // Style the bar colors
 .accounts-dashboard-wrap .skill-1::-webkit-progress-value {
-    background: #c767dc;
+    background: #E5A000;
 }
 
 .accounts-dashboard-wrap .skill-1::-moz-progress-bar {
-    background: #c767dc;
+    background: #E5A000;
 }
 
 // Animation Keyframes
@@ -1123,9 +1123,9 @@ progress::-moz-progress-bar {
 
 .accounts-dashboard-wrap .btn-primary {
 
-    color: #FFFFFF;
-    background-color: #7C7BAD;
-    border-color: #7C7BAD;
+    color: #1a1a1a;
+    background-color: #FFD400;
+    border-color: #E5BF00;
 
 }
 
@@ -1265,7 +1265,7 @@ width: 33.33333333% !important;
     margin-left: 195px;
 }
 .new-div{
-    background-color: #71639e;
+    background-color: #E5BF00;
     height: 70px;
     width: 7px;
     margin-left: 500px;

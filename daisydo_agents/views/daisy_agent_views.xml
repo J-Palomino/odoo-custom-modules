@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ FORM ============ -->
+    <record id="daisy_agent_view_form" model="ir.ui.view">
+        <field name="name">daisy.agent.form</field>
+        <field name="model">daisy.agent</field>
+        <field name="arch" type="xml">
+            <form string="Agent">
+                <header>
+                    <button name="action_hire" string="Hire" type="object"
+                            class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_suspend" string="Suspend" type="object"
+                            class="btn-warning"
+                            invisible="state != 'active'"/>
+                    <button name="action_reactivate" string="Reactivate" type="object"
+                            class="btn-success"
+                            invisible="state != 'suspended'"/>
+                    <button name="action_terminate" string="Terminate" type="object"
+                            class="btn-danger"
+                            invisible="state in ('draft', 'terminated')"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,active,suspended,terminated"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button" icon="fa-comments"
+                                type="object" name="action_view_conversations">
+                            <field name="total_conversations" widget="statinfo" string="Conversations"/>
+                        </button>
+                        <button class="oe_stat_button" icon="fa-envelope"
+                                type="object" name="action_view_messages">
+                            <field name="total_messages_sent" widget="statinfo" string="AI Messages"/>
+                        </button>
+                        <button class="oe_stat_button" icon="fa-lock"
+                                type="object" name="action_open_user_settings"
+                                string="Permissions"
+                                invisible="not user_id"/>
+                    </div>
+                    <field name="avatar" widget="image" class="oe_avatar"
+                           options="{'preview_image': 'avatar'}"/>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Agent Name"/></h1>
+                        <field name="role" placeholder="Role (e.g. Support Agent)"/>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="code"/>
+                            <field name="email"/>
+                            <field name="mail_project_id" invisible="state == 'draft'"/>
+                            <field name="user_id" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="hire_date"/>
+                            <field name="termination_date"/>
+                            <field name="active_conversations"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="AI Configuration" name="ai_config">
+                            <group>
+                                <group string="AI Connection">
+                                    <field name="daisy_api_key" password="True"/>
+                                    <field name="daisy_agency_id" string="Chatflow ID"/>
+                                </group>
+                                <group string="Behavior">
+                                    <field name="ai_personality"/>
+                                    <field name="ai_handoff_threshold"/>
+                                    <field name="ai_max_turns"/>
+                                    <field name="ai_greeting"/>
+                                </group>
+                            </group>
+                            <group string="System Prompt">
+                                <field name="ai_system_prompt" nolabel="1"
+                                       placeholder="Custom instructions for this agent..."/>
+                            </group>
+                        </page>
+                        <page string="Livechat Channels" name="channels">
+                            <group>
+                                <field name="max_concurrent_chats"/>
+                            </group>
+                            <field name="livechat_channel_ids" widget="many2many_tags"/>
+                        </page>
+                        <page string="About" name="about">
+                            <field name="bio" placeholder="Background, skills, personality notes..."/>
+                        </page>
+                        <page string="Permissions" name="permissions"
+                              invisible="not user_id">
+                            <div class="alert alert-info mb-3" role="alert">
+                                <strong>Manage what this agent can access in Odoo.</strong>
+                                Click <b>Permissions</b> in the button bar above to open the full
+                                user settings — same form used for employees.
+                            </div>
+                            <group string="Current Access Groups">
+                                <field name="user_group_ids" widget="many2many_tags" nolabel="1"/>
+                            </group>
+                            <group>
+                                <field name="user_id" string="Linked User" readonly="1"/>
+                            </group>
+                        </page>
+                        <page string="Metrics" name="metrics">
+                            <field name="metric_ids" readonly="1" context="{'default_agent_id': id}">
+                                <list>
+                                    <field name="date"/>
+                                    <field name="conversations_handled"/>
+                                    <field name="conversations_resolved"/>
+                                    <field name="conversations_handed_off"/>
+                                    <field name="messages_sent"/>
+                                    <field name="avg_confidence"/>
+                                    <field name="resolution_rate"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ LIST ============ -->
+    <record id="daisy_agent_view_list" model="ir.ui.view">
+        <field name="name">daisy.agent.list</field>
+        <field name="model">daisy.agent</field>
+        <field name="arch" type="xml">
+            <list string="Agents" decoration-muted="state == 'terminated'"
+                  decoration-warning="state == 'suspended'">
+                <header>
+                    <button name="%(daisy_agent_import_action)d" string="Sync from Daisy+"
+                            type="action" class="btn-primary" icon="fa-cloud-download"/>
+                </header>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="role"/>
+                <field name="ai_personality"/>
+                <field name="active_conversations"/>
+                <field name="total_conversations"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'active'"
+                       decoration-warning="state == 'suspended'"
+                       decoration-danger="state == 'terminated'"
+                       decoration-info="state == 'draft'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============ KANBAN ============ -->
+    <record id="daisy_agent_view_kanban" model="ir.ui.view">
+        <field name="name">daisy.agent.kanban</field>
+        <field name="model">daisy.agent</field>
+        <field name="arch" type="xml">
+            <kanban string="Agents" default_group_by="state">
+                <header>
+                    <button name="%(daisy_agent_import_action)d" string="Sync from Daisy+"
+                            type="action" class="btn-primary" icon="fa-cloud-download"/>
+                </header>
+                <field name="name"/>
+                <field name="role"/>
+                <field name="state"/>
+                <field name="avatar"/>
+                <field name="active_conversations"/>
+                <field name="total_messages_sent"/>
+                <templates>
+                    <t t-name="card">
+                        <aside>
+                            <field name="avatar" widget="image" options="{'preview_image': 'avatar'}"/>
+                        </aside>
+                        <main>
+                            <field name="name" class="fw-bolder fs-5"/>
+                            <field name="role" class="text-muted"/>
+                            <div class="mt-1">
+                                <span class="badge rounded-pill bg-primary me-1">
+                                    <i class="fa fa-comments"/> <field name="active_conversations"/>
+                                </span>
+                                <span class="badge rounded-pill bg-secondary">
+                                    <i class="fa fa-envelope"/> <field name="total_messages_sent"/>
+                                </span>
+                            </div>
+                        </main>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- ============ SEARCH ============ -->
+    <record id="daisy_agent_view_search" model="ir.ui.view">
+        <field name="name">daisy.agent.search</field>
+        <field name="model">daisy.agent</field>
+        <field name="arch" type="xml">
+            <search string="Agents">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="role"/>
+                <filter string="Active" name="active" domain="[('state', '=', 'active')]"/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Suspended" name="suspended" domain="[('state', '=', 'suspended')]"/>
+                <separator/>
+                <filter string="State" name="group_state" context="{'group_by': 'state'}"/>
+                <filter string="Personality" name="group_personality" context="{'group_by': 'ai_personality'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ============ ACTIONS ============ -->
+    <record id="daisy_agent_action" model="ir.actions.act_window">
+        <field name="name">Agents</field>
+        <field name="res_model">daisy.agent</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="daisy_agent_view_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Sync your first agent from Daisy+
+            </p>
+            <p>
+                Agents are AI-powered assistants that handle livechat conversations
+                as real Odoo users. Use the <b>Sync from Daisy+</b> menu to get started.
+            </p>
+        </field>
+    </record>
+
+    <record id="daisy_agent_metric_action" model="ir.actions.act_window">
+        <field name="name">Agent Metrics</field>
+        <field name="res_model">daisy.agent.metric</field>
+        <field name="view_mode">list</field>
+    </record>
+
+    <!-- ============ LIVECHAT CHANNEL EXTENSION ============ -->
+    <record id="im_livechat_channel_view_form_agents" model="ir.ui.view">
+        <field name="name">im_livechat.channel.form.agents</field>
+        <field name="model">im_livechat.channel</field>
+        <field name="inherit_id" ref="im_livechat.im_livechat_channel_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="AI Agents" name="digital_employees">
+                    <group>
+                        <field name="ai_first"/>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

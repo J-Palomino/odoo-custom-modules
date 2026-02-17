@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Smart menu action: wizard if 0 agents, otherwise kanban -->
+    <record id="daisy_agent_smart_action" model="ir.actions.server">
+        <field name="name">Agents (Smart)</field>
+        <field name="model_id" ref="model_daisy_agent"/>
+        <field name="state">code</field>
+        <field name="code">
+if env["daisy.agent"].search_count([]) == 0:
+    action = env.ref("daisydo_agents.daisy_agent_import_action").sudo().read()[0]
+else:
+    action = env.ref("daisydo_agents.daisy_agent_action").sudo().read()[0]
+        </field>
+    </record>
+
+    <!-- Top-level menu -->
+    <menuitem id="menu_digital_employees_root"
+              name="Daisy Agency"
+              web_icon="daisydo_agents,static/description/icon.png"
+              sequence="25"/>
+
+    <menuitem id="menu_digital_employees_agents"
+              name="Agents"
+              parent="menu_digital_employees_root"
+              action="daisy_agent_smart_action"
+              sequence="10"/>
+
+    <menuitem id="menu_digital_employees_metrics"
+              name="Metrics"
+              parent="menu_digital_employees_root"
+              action="daisy_agent_metric_action"
+              sequence="20"/>
+
+    <menuitem id="menu_digital_employees_sync"
+              name="Sync from Daisy+"
+              parent="menu_digital_employees_root"
+              action="daisy_agent_import_action"
+              sequence="30"/>
+</odoo>

@@ -1,0 +1,298 @@
+/*
+ * Daisy+ Chat Embed Styles
+ * Standalone CSS for the embeddable chat widget on external sites.
+ * Loaded by /daisy/chat/widget.js bootstrap script.
+ */
+
+:root {
+    --daisy-embed-primary: #FFD400;
+    --daisy-embed-primary-dark: #E5BF00;
+    --daisy-embed-text-on-primary: #1a1a1a;
+    --daisy-embed-bg: #ffffff;
+    --daisy-embed-text: #333333;
+    --daisy-embed-border: #e0e0e0;
+    --daisy-embed-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Toggle button */
+.daisy-embed-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    background-color: var(--daisy-embed-primary);
+    color: var(--daisy-embed-text-on-primary);
+    box-shadow: var(--daisy-embed-shadow);
+    cursor: pointer;
+    z-index: 99998;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.daisy-embed-toggle:hover {
+    background-color: var(--daisy-embed-primary-dark);
+    transform: scale(1.08);
+    box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2);
+}
+
+/* Chat container */
+.daisy-embed-container {
+    position: fixed;
+    bottom: 90px;
+    right: 20px;
+    width: 370px;
+    height: 520px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--daisy-embed-shadow);
+    display: flex;
+    flex-direction: column;
+    z-index: 99999;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    background-color: var(--daisy-embed-bg);
+}
+
+.daisy-embed-container.daisy-embed-hidden {
+    display: none;
+}
+
+/* Header */
+.daisy-embed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, var(--daisy-embed-primary) 0%, var(--daisy-embed-primary-dark) 100%);
+    color: var(--daisy-embed-text-on-primary);
+    padding: 14px 16px;
+    flex-shrink: 0;
+}
+
+.daisy-embed-header-text {
+    font-weight: 600;
+    font-size: 16px;
+}
+
+.daisy-embed-close {
+    background: none;
+    border: none;
+    font-size: 22px;
+    color: var(--daisy-embed-text-on-primary);
+    cursor: pointer;
+    opacity: 0.8;
+    line-height: 1;
+}
+
+.daisy-embed-close:hover {
+    opacity: 1;
+}
+
+/* Messages area */
+.daisy-embed-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Individual messages */
+.daisy-embed-msg {
+    max-width: 80%;
+    padding: 10px 16px;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+.daisy-embed-msg-user {
+    align-self: flex-end;
+    background-color: var(--daisy-embed-primary);
+    color: var(--daisy-embed-text-on-primary);
+    border-radius: 18px 18px 4px 18px;
+}
+
+.daisy-embed-msg-assistant {
+    align-self: flex-start;
+    background-color: #f0f0f0;
+    color: var(--daisy-embed-text);
+    border-radius: 18px 18px 18px 4px;
+}
+
+.daisy-embed-msg-system {
+    align-self: center;
+    color: #888;
+    font-size: 12px;
+    font-style: italic;
+    text-align: center;
+}
+
+/* Typing indicator */
+.daisy-embed-typing {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 16px;
+    align-self: flex-start;
+    background-color: #f0f0f0;
+    border-radius: 18px 18px 18px 4px;
+}
+
+.daisy-embed-typing .dot {
+    width: 8px;
+    height: 8px;
+    background-color: var(--daisy-embed-primary-dark);
+    border-radius: 50%;
+    display: inline-block;
+    animation: daisy-embed-bounce 1.4s infinite ease-in-out both;
+}
+
+.daisy-embed-typing .dot:nth-child(1) { animation-delay: -0.32s; }
+.daisy-embed-typing .dot:nth-child(2) { animation-delay: -0.16s; }
+.daisy-embed-typing .dot:nth-child(3) { animation-delay: 0s; }
+
+@keyframes daisy-embed-bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+
+/* Suggested actions */
+.daisy-embed-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 0;
+}
+
+.daisy-embed-action-btn {
+    background-color: transparent;
+    border: 1px solid var(--daisy-embed-primary);
+    color: var(--daisy-embed-primary-dark);
+    padding: 5px 12px;
+    border-radius: 16px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.daisy-embed-action-btn:hover {
+    background-color: var(--daisy-embed-primary);
+    color: var(--daisy-embed-text-on-primary);
+}
+
+/* Composer */
+.daisy-embed-composer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid var(--daisy-embed-border);
+    flex-shrink: 0;
+}
+
+.daisy-embed-input {
+    flex: 1;
+    border: 1px solid var(--daisy-embed-border);
+    border-radius: 24px;
+    padding: 10px 16px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s ease;
+    font-family: inherit;
+}
+
+.daisy-embed-input:focus {
+    border-color: var(--daisy-embed-primary);
+    box-shadow: 0 0 0 3px rgba(255, 212, 0, 0.2);
+}
+
+.daisy-embed-send {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background-color: var(--daisy-embed-primary);
+    color: var(--daisy-embed-text-on-primary);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease;
+}
+
+.daisy-embed-send:hover {
+    background-color: var(--daisy-embed-primary-dark);
+}
+
+/* Auto-greet bubble */
+.daisy-embed-greet {
+    position: fixed;
+    bottom: 90px;
+    right: 20px;
+    background-color: var(--daisy-embed-bg);
+    border-radius: 12px;
+    padding: 12px 16px;
+    box-shadow: var(--daisy-embed-shadow);
+    max-width: 280px;
+    z-index: 99997;
+    animation: daisy-embed-slide-in 0.3s ease;
+    cursor: pointer;
+}
+
+.daisy-embed-greet::after {
+    content: "";
+    position: absolute;
+    bottom: -8px;
+    right: 24px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid var(--daisy-embed-bg);
+}
+
+.daisy-embed-greet-text {
+    color: var(--daisy-embed-text);
+    font-size: 14px;
+    line-height: 1.4;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.daisy-embed-greet-close {
+    position: absolute;
+    top: 2px;
+    right: 6px;
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.daisy-embed-greet-close:hover {
+    color: #666;
+}
+
+@keyframes daisy-embed-slide-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+    .daisy-embed-container {
+        width: calc(100vw - 20px);
+        height: calc(100vh - 120px);
+        bottom: 80px;
+        right: 10px;
+        border-radius: 12px;
+    }
+}
