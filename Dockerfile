@@ -5,6 +5,9 @@ ARG CACHEBUST=29
 
 USER root
 
+# Install Python dependencies for base_accounting_kit
+RUN pip3 install --no-cache-dir openpyxl ofxparse qifparse
+
 # Prepare extra-addons directory
 RUN mkdir -p /mnt/extra-addons && rm -rf /mnt/extra-addons/*
 
