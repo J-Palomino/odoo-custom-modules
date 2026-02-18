@@ -3,7 +3,20 @@
 
 CONFIG_FILE="/var/lib/odoo/odoo.conf"
 
+# Map ODOO_DB_* env vars to what the official Odoo entrypoint expects
+[ -n "$ODOO_DB_HOST" ] && [ -z "$HOST" ] && export HOST="$ODOO_DB_HOST"
+[ -n "$ODOO_DB_PORT" ] && [ -z "$PORT" ] && export PORT="$ODOO_DB_PORT"
+[ -n "$ODOO_DB_USER" ] && [ -z "$USER" ] && export USER="$ODOO_DB_USER"
+[ -n "$ODOO_DB_PASSWORD" ] && [ -z "$PASSWORD" ] && export PASSWORD="$ODOO_DB_PASSWORD"
+
 echo "=== Debugging config fix ==="
+
+# If config missing on persistent volume, seed from Docker image backup
+if [ ! -f "$CONFIG_FILE" ] && [ -f "/etc/odoo/odoo.conf" ]; then
+    echo "Config file not found, seeding from /etc/odoo/odoo.conf"
+    cp /etc/odoo/odoo.conf "$CONFIG_FILE"
+    chown odoo:odoo "$CONFIG_FILE" 2>/dev/null || true
+fi
 
 if [ -f "$CONFIG_FILE" ]; then
     echo "Original config (db-related lines):"
@@ -21,9 +34,23 @@ if [ -f "$CONFIG_FILE" ]; then
         echo "Added db_port = 5432 to config"
     fi
 
-    # Fix HOST if present
+    # Fix db_host if HOST env var is present
     if [ -n "$HOST" ]; then
-        sed -i "s/db_host\s*=\s*.*/db_host = $HOST/g" "$CONFIG_FILE"
+        if grep -q "db_host" "$CONFIG_FILE"; then
+            sed -i "s/db_host\s*=\s*.*/db_host = $HOST/g" "$CONFIG_FILE"
+        else
+            echo "db_host = $HOST" >> "$CONFIG_FILE"
+        fi
+        echo "Set db_host = $HOST"
+    fi
+
+    # Fix db_name if ODOO_DB_NAME env var is present
+    if [ -n "$ODOO_DB_NAME" ]; then
+        if grep -q "db_name" "$CONFIG_FILE"; then
+            sed -i "s/db_name\s*=\s*.*/db_name = $ODOO_DB_NAME/g" "$CONFIG_FILE"
+        else
+            echo "db_name = $ODOO_DB_NAME" >> "$CONFIG_FILE"
+        fi
     fi
 
     # Fix addons_path to ensure /mnt/extra-addons is included
