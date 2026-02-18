@@ -49,9 +49,9 @@ COPY --chown=odoo:odoo oca/reporting-engine/report_xlsx_helper /mnt/extra-addons
 COPY --chown=odoo:odoo oca/reporting-engine/report_xml /mnt/extra-addons/report_xml
 COPY --chown=odoo:odoo oca/reporting-engine/sql_request_abstract /mnt/extra-addons/sql_request_abstract
 
-# ── OCA: spreadsheet (18.0 port) ──────────────────────────────────
-COPY --chown=odoo:odoo oca/spreadsheet/spreadsheet_oca /mnt/extra-addons/spreadsheet_oca
-COPY --chown=odoo:odoo oca/spreadsheet/spreadsheet_dashboard_oca /mnt/extra-addons/spreadsheet_dashboard_oca
+# ── OCA: spreadsheet (ported to 19.0) ─────────────────────────────
+COPY --chown=odoo:odoo spreadsheet_oca /mnt/extra-addons/spreadsheet_oca
+COPY --chown=odoo:odoo spreadsheet_dashboard_oca /mnt/extra-addons/spreadsheet_dashboard_oca
 
 # ── OCA: account-analytic ───────────────────────────────────────────
 COPY --chown=odoo:odoo oca/account-analytic/account_analytic_tag /mnt/extra-addons/account_analytic_tag
