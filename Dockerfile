@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=31
+ARG CACHEBUST=32
 
 USER root
 
@@ -29,56 +29,36 @@ COPY --chown=odoo:odoo daisydo_webhook /opt/extra-addons/daisydo_webhook
 COPY --chown=odoo:odoo base_accounting_kit /opt/extra-addons/base_accounting_kit
 COPY --chown=odoo:odoo base_account_budget /opt/extra-addons/base_account_budget
 
-# ── OCA: server-auth ────────────────────────────────────────────────
-COPY --chown=odoo:odoo oca/server-auth/vault /opt/extra-addons/vault
-
-# ── OCA: sign (18.0 port — already installed on instance) ───────────
-COPY --chown=odoo:odoo oca/sign/sign_oca /opt/extra-addons/sign_oca
-
-# ── OCA: server-ux ──────────────────────────────────────────────────
-COPY --chown=odoo:odoo oca/server-ux/base_cancel_confirm /opt/extra-addons/base_cancel_confirm
-COPY --chown=odoo:odoo oca/server-ux/base_substate /opt/extra-addons/base_substate
-COPY --chown=odoo:odoo oca/server-ux/base_technical_features /opt/extra-addons/base_technical_features
-COPY --chown=odoo:odoo oca/server-ux/date_range /opt/extra-addons/date_range
-
-# ── OCA: reporting-engine ───────────────────────────────────────────
-COPY --chown=odoo:odoo oca/reporting-engine/bi_sql_editor /opt/extra-addons/bi_sql_editor
-COPY --chown=odoo:odoo oca/reporting-engine/report_qweb_element_page_visibility /opt/extra-addons/report_qweb_element_page_visibility
-COPY --chown=odoo:odoo oca/reporting-engine/report_xlsx /opt/extra-addons/report_xlsx
-COPY --chown=odoo:odoo oca/reporting-engine/report_xlsx_helper /opt/extra-addons/report_xlsx_helper
-COPY --chown=odoo:odoo oca/reporting-engine/report_xml /opt/extra-addons/report_xml
-COPY --chown=odoo:odoo oca/reporting-engine/sql_request_abstract /opt/extra-addons/sql_request_abstract
-
-# ── OCA: spreadsheet (ported to 19.0) ─────────────────────────────
+# ── OCA modules (flattened from submodules) ──────────────────────────
+COPY --chown=odoo:odoo vault /opt/extra-addons/vault
+COPY --chown=odoo:odoo sign_oca /opt/extra-addons/sign_oca
+COPY --chown=odoo:odoo base_cancel_confirm /opt/extra-addons/base_cancel_confirm
+COPY --chown=odoo:odoo base_substate /opt/extra-addons/base_substate
+COPY --chown=odoo:odoo base_technical_features /opt/extra-addons/base_technical_features
+COPY --chown=odoo:odoo date_range /opt/extra-addons/date_range
+COPY --chown=odoo:odoo bi_sql_editor /opt/extra-addons/bi_sql_editor
+COPY --chown=odoo:odoo report_qweb_element_page_visibility /opt/extra-addons/report_qweb_element_page_visibility
+COPY --chown=odoo:odoo report_xlsx /opt/extra-addons/report_xlsx
+COPY --chown=odoo:odoo report_xlsx_helper /opt/extra-addons/report_xlsx_helper
+COPY --chown=odoo:odoo report_xml /opt/extra-addons/report_xml
+COPY --chown=odoo:odoo sql_request_abstract /opt/extra-addons/sql_request_abstract
 COPY --chown=odoo:odoo spreadsheet_oca /opt/extra-addons/spreadsheet_oca
 COPY --chown=odoo:odoo spreadsheet_dashboard_oca /opt/extra-addons/spreadsheet_dashboard_oca
-
-# ── OCA: account-analytic ───────────────────────────────────────────
-COPY --chown=odoo:odoo oca/account-analytic/account_analytic_tag /opt/extra-addons/account_analytic_tag
-
-# ── OCA: account-closing ────────────────────────────────────────────
-COPY --chown=odoo:odoo oca/account-closing/account_invoice_start_end_dates /opt/extra-addons/account_invoice_start_end_dates
-
-# ── OCA: account-financial-reporting ────────────────────────────────
-COPY --chown=odoo:odoo oca/account-financial-reporting/account_financial_report /opt/extra-addons/account_financial_report
-COPY --chown=odoo:odoo oca/account-financial-reporting/account_tax_balance /opt/extra-addons/account_tax_balance
-COPY --chown=odoo:odoo oca/account-financial-reporting/partner_statement /opt/extra-addons/partner_statement
-
-# ── OCA: account-financial-tools ────────────────────────────────────
-COPY --chown=odoo:odoo oca/account-financial-tools/account_account_tag_code /opt/extra-addons/account_account_tag_code
-COPY --chown=odoo:odoo oca/account-financial-tools/account_journal_restrict_mode /opt/extra-addons/account_journal_restrict_mode
-COPY --chown=odoo:odoo oca/account-financial-tools/account_move_name_sequence /opt/extra-addons/account_move_name_sequence
-COPY --chown=odoo:odoo oca/account-financial-tools/account_move_post_date_user /opt/extra-addons/account_move_post_date_user
-COPY --chown=odoo:odoo oca/account-financial-tools/account_move_print /opt/extra-addons/account_move_print
-COPY --chown=odoo:odoo oca/account-financial-tools/account_usability /opt/extra-addons/account_usability
-
-# ── OCA: account-invoicing ──────────────────────────────────────────
-COPY --chown=odoo:odoo oca/account-invoicing/account_invoice_fixed_discount /opt/extra-addons/account_invoice_fixed_discount
-COPY --chown=odoo:odoo oca/account-invoicing/account_invoice_pricelist /opt/extra-addons/account_invoice_pricelist
-COPY --chown=odoo:odoo oca/account-invoicing/account_invoice_pricelist_sale /opt/extra-addons/account_invoice_pricelist_sale
-
-# ── OCA: account-reconcile ──────────────────────────────────────────
-COPY --chown=odoo:odoo oca/account-reconcile/account_statement_base /opt/extra-addons/account_statement_base
+COPY --chown=odoo:odoo account_analytic_tag /opt/extra-addons/account_analytic_tag
+COPY --chown=odoo:odoo account_invoice_start_end_dates /opt/extra-addons/account_invoice_start_end_dates
+COPY --chown=odoo:odoo account_financial_report /opt/extra-addons/account_financial_report
+COPY --chown=odoo:odoo account_tax_balance /opt/extra-addons/account_tax_balance
+COPY --chown=odoo:odoo partner_statement /opt/extra-addons/partner_statement
+COPY --chown=odoo:odoo account_account_tag_code /opt/extra-addons/account_account_tag_code
+COPY --chown=odoo:odoo account_journal_restrict_mode /opt/extra-addons/account_journal_restrict_mode
+COPY --chown=odoo:odoo account_move_name_sequence /opt/extra-addons/account_move_name_sequence
+COPY --chown=odoo:odoo account_move_post_date_user /opt/extra-addons/account_move_post_date_user
+COPY --chown=odoo:odoo account_move_print /opt/extra-addons/account_move_print
+COPY --chown=odoo:odoo account_usability /opt/extra-addons/account_usability
+COPY --chown=odoo:odoo account_invoice_fixed_discount /opt/extra-addons/account_invoice_fixed_discount
+COPY --chown=odoo:odoo account_invoice_pricelist /opt/extra-addons/account_invoice_pricelist
+COPY --chown=odoo:odoo account_invoice_pricelist_sale /opt/extra-addons/account_invoice_pricelist_sale
+COPY --chown=odoo:odoo account_statement_base /opt/extra-addons/account_statement_base
 
 # ── Verify critical modules ─────────────────────────────────────────
 RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
