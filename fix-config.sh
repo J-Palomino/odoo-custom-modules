@@ -53,8 +53,8 @@ if [ -f "$CONFIG_FILE" ]; then
         fi
     fi
 
-    # Fix addons_path to ensure /mnt/extra-addons is included
-    EXPECTED_ADDONS="/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons"
+    # Fix addons_path to ensure /opt/extra-addons is included
+    EXPECTED_ADDONS="/opt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons"
     if grep -q "addons_path" "$CONFIG_FILE"; then
         sed -i "s|addons_path\s*=\s*.*|addons_path = $EXPECTED_ADDONS|g" "$CONFIG_FILE"
         echo "Fixed addons_path to: $EXPECTED_ADDONS"
@@ -76,7 +76,7 @@ echo "=== End debugging ==="
 echo ""
 
 # Generate brand theme from environment variables
-THEME_GENERATOR="/mnt/extra-addons/mint_theme/generate-theme.sh"
+THEME_GENERATOR="/opt/extra-addons/mint_theme/generate-theme.sh"
 if [ -f "$THEME_GENERATOR" ]; then
     echo "=== Generating brand theme ==="
     bash "$THEME_GENERATOR"
@@ -87,7 +87,7 @@ fi
 
 # Remove stale base_import_module copies from persistent volume
 # (base_import_module installs to persistent volume paths which are
-# scanned before /mnt/extra-addons/ — we need the Docker version)
+# scanned before /opt/extra-addons/ — we need the Docker version)
 for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_financial_risk \
     daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
     base_accounting_kit base_account_budget sign_oca \
