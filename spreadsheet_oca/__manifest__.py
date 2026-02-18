@@ -38,14 +38,9 @@
         "spreadsheet.o_spreadsheet": [
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet.xml",
             "spreadsheet_oca/static/src/spreadsheet/bundle/image_file_store.esm.js",
-            "spreadsheet_oca/static/src/spreadsheet/bundle/filter.esm.js",
-            "spreadsheet_oca/static/src/spreadsheet/bundle/filter_panel_datasources.esm.js",
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet_renderer.esm.js",
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet_controlpanel.esm.js",
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet_action.esm.js",
-            "spreadsheet_oca/static/src/spreadsheet/bundle/odoo_panels.esm.js",
-            "spreadsheet_oca/static/src/spreadsheet/bundle/chart_panels.esm.js",
-            "spreadsheet_oca/static/src/spreadsheet/bundle/chart_panel.esm.js",
         ],
     },
 }

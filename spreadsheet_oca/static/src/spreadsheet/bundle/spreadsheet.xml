@@ -624,55 +624,5 @@
             </div>
         </xpath>
     </t>
-    <t t-inherit="o-spreadsheet-GenericChartConfigPanel" t-inherit-mode="extension">
-        <xpath expr="//div" position="inside">
-            <div class="o-section">
-                <div class="o-section-title">Link to Odoo menu</div>
-                <div class="o-section-value">
-                    <Many2XAutocomplete t-props="menuProps" />
-                </div>
-            </div>
-        </xpath>
-    </t>
-    <t t-inherit="o-spreadsheet-BarConfigPanel" t-inherit-mode="extension">
-        <xpath expr="//div" position="inside">
-            <div class="o-section">
-                <div class="o-section-title">Link to Odoo menu</div>
-                <div class="o-section-value">
-                    <Many2XAutocomplete t-props="menuProps" />
-                </div>
-            </div>
-        </xpath>
-    </t>
-    <t t-inherit="o-spreadsheet-LineConfigPanel" t-inherit-mode="extension">
-        <xpath expr="//div" position="inside">
-            <div class="o-section">
-                <div class="o-section-title">Link to Odoo menu</div>
-                <div class="o-section-value">
-                    <Many2XAutocomplete t-props="menuProps" />
-                </div>
-            </div>
-        </xpath>
-    </t>
-    <t t-inherit="o-spreadsheet-GaugeChartConfigPanel" t-inherit-mode="extension">
-        <xpath expr="//div" position="inside">
-            <div class="o-section">
-                <div class="o-section-title">Link to Odoo menu</div>
-                <div class="o-section-value">
-                    <Many2XAutocomplete t-props="menuProps" />
-                </div>
-            </div>
-        </xpath>
-    </t>
-    <t t-inherit="o-spreadsheet-ScorecardChartConfigPanel" t-inherit-mode="extension">
-        <xpath expr="//div" position="inside">
-            <div class="o-section">
-                <div class="o-section-title">Link to Odoo menu</div>
-                <div class="o-section-value">
-                    <Many2XAutocomplete t-props="menuProps" />
-                </div>
-            </div>
-        </xpath>
-    </t>
 
 </templates>
