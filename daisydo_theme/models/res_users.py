@@ -1,14 +1,52 @@
+import logging
 import os
 
 from markupsafe import Markup
 
 from odoo import models, _
+from odoo.exceptions import AccessDenied
 
+_logger = logging.getLogger(__name__)
 _BOT_NAME = os.environ.get('BRAND_BOT_NAME', 'DaisyBot')
 
 
 class ResUsersDaisy(models.Model):
     _inherit = 'res.users'
+
+    def _auth_oauth_signin(self, provider, validation, params):
+        """Override to link existing users by email on first OAuth login."""
+        oauth_uid = validation['user_id']
+        # First try the standard flow (find by oauth_uid)
+        oauth_user = self.search([
+            ("oauth_uid", "=", oauth_uid),
+            ('oauth_provider_id', '=', provider),
+        ])
+        if oauth_user:
+            oauth_user.write({'oauth_access_token': params['access_token']})
+            return oauth_user.login
+
+        # No user with this oauth_uid — look for existing user by email/login
+        email = validation.get('email', '').strip().lower()
+        if email:
+            existing_user = self.sudo().search([
+                ('login', '=ilike', email),
+                ('active', '=', True),
+            ], limit=1)
+            if existing_user:
+                # Link the existing user to this OAuth provider
+                existing_user.sudo().write({
+                    'oauth_provider_id': provider,
+                    'oauth_uid': oauth_uid,
+                    'oauth_access_token': params['access_token'],
+                })
+                _logger.info(
+                    "OAuth: linked existing user %s (id=%s) to provider %s",
+                    existing_user.login, existing_user.id, provider,
+                )
+                return existing_user.login
+
+        # Fall back to standard behavior (attempt signup or raise AccessDenied)
+        return super()._auth_oauth_signin(provider, validation, params)
 
     def _init_odoobot(self):
         self.ensure_one()
