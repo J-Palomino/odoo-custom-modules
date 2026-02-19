@@ -41,6 +41,7 @@
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet_renderer.esm.js",
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet_controlpanel.esm.js",
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet_action.esm.js",
+            "spreadsheet_oca/static/src/spreadsheet/bundle/file_menu_items.esm.js",
         ],
     },
 }
