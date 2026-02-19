@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Inject yellow branding CSS directly -->
+    <!-- Inject branding CSS directly — colors come from generated theme.scss via CSS vars -->
     <template id="daisydo_branding_css" inherit_id="web.layout" name="DaisyERP Branding CSS">
         <xpath expr="//head" position="inside">
             <style>
                 :root {
-                    --o-brand-odoo: #FFD400 !important;
-                    --o-brand-primary: #FFD400 !important;
-                    --primary: #FFD400 !important;
+                    --o-brand-odoo: var(--daisy-primary) !important;
+                    --o-brand-primary: var(--daisy-primary) !important;
+                    --primary: var(--daisy-primary) !important;
                 }
-                .o_main_navbar { background-color: #FFD400 !important; }
-                .o_main_navbar, .o_main_navbar * { color: #1a1a1a !important; }
-                header#top nav.navbar { background-color: #FFD400 !important; }
+                .o_main_navbar { background-color: var(--daisy-primary) !important; }
+                .o_main_navbar, .o_main_navbar * { color: var(--daisy-text-on-primary) !important; }
+                header#top nav.navbar { background-color: var(--daisy-primary) !important; }
                 header#top nav.navbar, header#top nav.navbar a,
                 header#top nav.navbar span, header#top nav.navbar .nav-link,
-                header#top nav.navbar .fa { color: #1a1a1a !important; }
-                .btn-primary { background-color: #FFD400 !important; border-color: #E5BF00 !important; color: #1a1a1a !important; }
-                .btn-primary:hover { background-color: #E5BF00 !important; }
+                header#top nav.navbar .fa { color: var(--daisy-text-on-primary) !important; }
+                .btn-primary { background-color: var(--daisy-primary) !important; border-color: var(--daisy-hover) !important; color: var(--daisy-text-on-primary) !important; }
+                .btn-primary:hover { background-color: var(--daisy-hover) !important; }
 
                 /* Login page background image */
                 .oe_website_login_container {
@@ -94,7 +94,7 @@
                     display: inline !important;
                 }
 
-                /* --- App Home Menu: tint module icons to daisy yellow --- */
+                /* --- App Home Menu: tint module icons --- */
                 .o_home_menu .o_app .o_app_icon,
                 .o_home_menu .o_draggable .o_app_icon {
                     filter: hue-rotate(200deg) saturate(1.5) brightness(1.1);
@@ -102,7 +102,7 @@
 
                 /* --- Loading screen: replace Odoo logo with daisy --- */
                 .o_loading_indicator,
-                .o_spinner_text::before { color: #FFD400 !important; }
+                .o_spinner_text::before { color: var(--daisy-primary) !important; }
                 .o_action_manager .o_loading img,
                 body > .o_loading img,
                 .o_home_menu_background::before {
@@ -125,16 +125,14 @@
                     content: url('/daisydo_theme/static/src/img/logo.png');
                 }
 
-                /* --- eLearning / Courses (website_slides): replace purple with dark grey --- */
+                /* --- eLearning / Courses (website_slides): dark grey sections --- */
                 .o_wslides_gradient {
                     background-image: linear-gradient(120deg, #2d2d2d, #1a1a1a) !important;
                     background-color: #2d2d2d !important;
                 }
-                /* Course header hero area */
                 .o_wslides_course_header {
                     background-color: #2d2d2d !important;
                 }
-                /* Breadcrumb/nav bar in slides */
                 .o_wslides_course_nav,
                 .o_wslides_course_nav .breadcrumb {
                     background-color: #333333 !important;
@@ -143,34 +141,31 @@
                 .o_wslides_course_nav .breadcrumb-item,
                 .o_wslides_course_nav .breadcrumb-item a,
                 .o_wslides_course_nav .breadcrumb-item.active {
-                    color: #FFD400 !important;
+                    color: var(--daisy-primary) !important;
                 }
-                /* Fullscreen slide mode */
                 .o_wslides_fs_sidebar_header {
                     background-color: #2d2d2d !important;
                 }
                 .o_wslides_fs_sidebar {
                     background-color: #1a1a1a !important;
                 }
-                /* Quiz / tooltip purple overrides */
                 .o_wslides_quiz_modal .tooltip-inner {
                     background-color: #2d2d2d !important;
                 }
-                /* Section headers in course content list */
                 .o_wslides_slide_list_header {
                     background-color: #f5f5f5 !important;
                     color: #1a1a1a !important;
                 }
-                /* Progress bars in courses — daisy yellow */
+                /* Progress bars in courses */
                 .o_wslides_channel_completion .progress-bar,
                 .o_wslides_progress .progress-bar {
-                    background-color: #FFD400 !important;
+                    background-color: var(--daisy-primary) !important;
                 }
-                /* "New" badges — use daisy yellow instead of default */
+                /* "New" badges */
                 .o_wslides_slides_list .badge.text-bg-info,
                 .o_wslides_slides_list .badge.bg-info {
-                    background-color: #FFD400 !important;
-                    color: #1a1a1a !important;
+                    background-color: var(--daisy-primary) !important;
+                    color: var(--daisy-text-on-primary) !important;
                 }
             </style>
         </xpath>
@@ -187,7 +182,7 @@
     <template id="daisydo_pwa_meta" inherit_id="web.layout" name="DaisyERP PWA Meta">
         <xpath expr="//head" position="inside">
             <link rel="manifest" href="/manifest.json"/>
-            <meta name="theme-color" content="#f5c518"/>
+            <meta name="theme-color" content="#00954c"/>
             <link rel="apple-touch-icon" href="/daisydo_theme/static/src/img/logo.png"/>
         </xpath>
     </template>

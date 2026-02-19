@@ -91,8 +91,9 @@ RUN for mod in sign_oca spreadsheet_oca spreadsheet_dashboard_oca \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
 
-# Make theme generator executable
+# Make theme generators executable
 RUN chmod +x /opt/extra-addons/mint_theme/generate-theme.sh
+RUN chmod +x /opt/extra-addons/daisydo_theme/generate-theme.sh
 
 # Copy config file as backup and fix script
 COPY odoo.conf /etc/odoo/odoo.conf

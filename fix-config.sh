@@ -85,6 +85,16 @@ else
     echo "Theme generator not found at $THEME_GENERATOR"
 fi
 
+# Generate DaisyDo theme from same environment variables
+DAISY_GENERATOR="/opt/extra-addons/daisydo_theme/generate-theme.sh"
+if [ -f "$DAISY_GENERATOR" ]; then
+    echo "=== Generating DaisyDo theme ==="
+    bash "$DAISY_GENERATOR"
+    echo ""
+else
+    echo "DaisyDo theme generator not found at $DAISY_GENERATOR"
+fi
+
 # Remove stale base_import_module copies from persistent volume
 # (base_import_module installs to persistent volume paths which are
 # scanned before /opt/extra-addons/ — we need the Docker version)

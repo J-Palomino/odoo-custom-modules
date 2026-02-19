@@ -135,9 +135,11 @@ def _rebrand_views(env):
 
 def _rebrand_colors(env):
     """Replace hardcoded color hex values in the branding CSS view."""
-    primary = os.environ.get('BRAND_PRIMARY_COLOR', '#FFD400')
-    secondary = os.environ.get('BRAND_SECONDARY_COLOR', '#E5BF00')
-    if primary == '#FFD400' and secondary == '#E5BF00':
+    primary = os.environ.get('ODOO_BRAND_PRIMARY',
+                             os.environ.get('BRAND_PRIMARY_COLOR', '#00954c'))
+    secondary = os.environ.get('ODOO_BRAND_ACCENT',
+                               os.environ.get('BRAND_SECONDARY_COLOR', '#dac554'))
+    if primary == '#00954c' and secondary == '#dac554':
         return  # Default colors — nothing to replace
 
     # Convert hex to RGB for rgba() values
