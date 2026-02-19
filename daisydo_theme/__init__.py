@@ -149,12 +149,35 @@ def _rebrand_colors(env):
 
     primary_rgb = hex_to_rgb(primary)
 
+    # Compute derived colors
+    def darken(h, pct):
+        h = h.lstrip('#')
+        r = int(int(h[0:2], 16) * (100 - pct) / 100)
+        g = int(int(h[2:4], 16) * (100 - pct) / 100)
+        b = int(int(h[4:6], 16) * (100 - pct) / 100)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    hover = darken(primary, 15)
+    active = darken(primary, 30)
+
+    # Luminance check for text color
+    ph = primary.lstrip('#')
+    lum = (int(ph[0:2], 16) * 299 + int(ph[2:4], 16) * 587 + int(ph[4:6], 16) * 114) // 1000
+    text_color = '#1a1a1a' if lum > 160 else '#ffffff'
+
     color_replacements = [
+        # Legacy yellow values (pre-existing views in DB)
         ('#FFD400', primary),
         ('#E5BF00', secondary),
         ('#CCAA00', secondary),
         ('#B8A000', secondary),
         ('255, 212, 0', primary_rgb),
+        # Default green fallbacks in inline CSS vars
+        ('--daisy-primary: #00954c', f'--daisy-primary: {primary}'),
+        ('--daisy-secondary: #dac554', f'--daisy-secondary: {secondary}'),
+        ('--daisy-hover: #007e40', f'--daisy-hover: {hover}'),
+        ('--daisy-active: #006835', f'--daisy-active: {active}'),
+        ('--daisy-text-on-primary: #ffffff', f'--daisy-text-on-primary: {text_color}'),
     ]
 
     views = env['ir.ui.view'].search([

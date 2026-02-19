@@ -5,6 +5,13 @@
         <xpath expr="//head" position="inside">
             <style>
                 :root {
+                    /* Fallback definitions — overridden by generated theme.scss when loaded */
+                    --daisy-primary: #00954c;
+                    --daisy-secondary: #dac554;
+                    --daisy-hover: #007e40;
+                    --daisy-active: #006835;
+                    --daisy-text-on-primary: #ffffff;
+
                     --o-brand-odoo: var(--daisy-primary) !important;
                     --o-brand-primary: var(--daisy-primary) !important;
                     --primary: var(--daisy-primary) !important;
