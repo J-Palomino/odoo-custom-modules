@@ -107,7 +107,6 @@
                             <field
                                 name="spreadsheet_binary_data"
                                 filename="filename"
-                                groups="base.group_no_one"
                             />
                             <field name="filename" invisible="1" />
                         </group>
