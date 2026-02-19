@@ -14,6 +14,12 @@ topbarMenuRegistry.addChild("save", ["file"], {
     execute: (env) => env.saveSpreadsheet(),
     icon: "o-spreadsheet-Icon.DOWNLOAD",
 });
+topbarMenuRegistry.addChild("import_xlsx", ["file"], {
+    name: _t("Import XLSX"),
+    sequence: 15,
+    execute: (env) => env.importXLSXFile(),
+    icon: "o-spreadsheet-Icon.EXPORT_XLSX",
+});
 topbarMenuRegistry.addChild("download", ["file"], {
     name: _t("Download XLSX"),
     sequence: 20,

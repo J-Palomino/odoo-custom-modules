@@ -165,6 +165,7 @@ export class SpreadsheetRenderer extends Component {
         useSubEnv({
             saveSpreadsheet: this.onSpreadsheetSaved.bind(this),
             downloadAsXLXS: this.downloadAsXLXS.bind(this),
+            importXLSXFile: this.importXLSXFile.bind(this),
         });
         onWillStart(async () => {
             await loadBundle("spreadsheet.o_spreadsheet");
@@ -199,6 +200,42 @@ export class SpreadsheetRenderer extends Component {
             },
         });
         this.ui.unblock();
+    }
+    async importXLSXFile() {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept =
+            ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        input.onchange = async (ev) => {
+            const file = ev.target.files[0];
+            if (!file) return;
+            this.ui.block();
+            try {
+                const base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result.split(",")[1]);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+                const [attId] = await this.orm.create("ir.attachment", [
+                    {name: file.name, mimetype: file.type, datas: base64},
+                ]);
+                const action = await this.orm.call(
+                    "spreadsheet.spreadsheet",
+                    "create_document_from_attachment",
+                    ["", [attId]]
+                );
+                await this.action.doAction(action);
+            } catch (err) {
+                this.notifications.add(
+                    _t("Failed to import XLSX: ") + (err.message || err),
+                    {type: "danger"}
+                );
+            } finally {
+                this.ui.unblock();
+            }
+        };
+        input.click();
     }
 }
 
