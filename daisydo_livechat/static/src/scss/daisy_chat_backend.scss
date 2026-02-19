@@ -42,7 +42,7 @@
 
         .preview-widget {
             display: inline-block;
-            background-color: var(--daisy-primary, #FFD400);
+            background-color: var(--daisy-primary, var(--daisy-primary, #00954c));
             width: 56px;
             height: 56px;
             border-radius: 50%;
@@ -94,7 +94,7 @@
     margin-bottom: 24px;
 
     .stat-card {
-        background: linear-gradient(135deg, #FFD400 0%, #E5BF00 100%);
+        background: linear-gradient(135deg, var(--daisy-primary, #00954c) 0%, var(--daisy-hover, #007e40) 100%);
         border-radius: 12px;
         padding: 20px;
         color: #1a1a1a;

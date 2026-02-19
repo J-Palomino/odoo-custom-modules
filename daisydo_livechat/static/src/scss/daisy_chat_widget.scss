@@ -2,9 +2,8 @@
 // Custom styling for the embeddable chat widget
 
 :root {
-    --daisy-primary: #FFD400;
-    --daisy-primary-dark: #E5BF00;
-    --daisy-text-on-primary: #1a1a1a;
+    // --daisy-primary, --daisy-text-on-primary inherited from daisydo_theme
+    --daisy-primary-dark: var(--daisy-hover, #007e40);
     --daisy-bg: #ffffff;
     --daisy-text: #333333;
     --daisy-border: #e0e0e0;
@@ -110,7 +109,7 @@
 
             &:focus {
                 border-color: var(--daisy-primary) !important;
-                box-shadow: 0 0 0 3px rgba(255, 212, 0, 0.2) !important;
+                box-shadow: 0 0 0 3px rgba(0, 149, 76, 0.2) !important;
             }
         }
 
