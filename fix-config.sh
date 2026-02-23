@@ -99,6 +99,7 @@ fi
 # (base_import_module installs to persistent volume paths which are
 # scanned before /opt/extra-addons/ — we need the Docker version)
 for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_financial_risk \
+    mint_maintenance_form \
     daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
     base_accounting_kit base_account_budget sign_oca \
     spreadsheet_oca spreadsheet_dashboard_oca \
@@ -121,8 +122,13 @@ done
 # Remove broken/non-installable modules from ALL addons paths
 # slack_sync causes "inconsistent states" errors and blocks module finalization
 echo "=== Scanning for broken modules to remove ==="
-for mod in slack_sync; do
-    # Search all known addons paths recursively
+for mod in slack_sync avancir_inventory spreadsheet_oca spreadsheet_dashboard_oca sign_oca; do
+    # Check /opt/extra-addons (Docker image baked-in modules)
+    if [ -d "/opt/extra-addons/$mod" ]; then
+        echo "=== Removing broken module $mod at /opt/extra-addons/$mod ==="
+        rm -rf "/opt/extra-addons/$mod"
+    fi
+    # Search persistent volume addons paths
     find /var/lib/odoo/addons -name "$mod" -type d 2>/dev/null | while read d; do
         echo "=== Removing broken module $mod at $d ==="
         rm -rf "$d"
