@@ -2,7 +2,7 @@ import logging
 from datetime import date
 
 from odoo import http
-from odoo.http import request, Response
+from odoo.http import request
 
 _logger = logging.getLogger(__name__)
 
@@ -20,11 +20,6 @@ MAINTENANCE_TYPES = [
 
 
 class MaintenanceFormController(http.Controller):
-
-    @http.route("/maintenance/ping", type="http", auth="none", cors="*", csrf=False)
-    def ping(self, **kw):
-        """Simple test endpoint - no website, no auth, no CSRF."""
-        return Response("pong", content_type="text/plain")
 
     def _form_context(self, **extra):
         teams = request.env["maintenance.team"].sudo().search([], order="name")
