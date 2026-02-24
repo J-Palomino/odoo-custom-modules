@@ -2,9 +2,10 @@ import logging
 from datetime import date
 
 from odoo import http
-from odoo.http import request
+from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
+_logger.warning("*** MINT MAINTENANCE FORM CONTROLLER LOADED ***")
 
 PRIORITY_OPTIONS = [
     ("0", "Very Low"),
@@ -20,6 +21,16 @@ MAINTENANCE_TYPES = [
 
 
 class MaintenanceFormController(http.Controller):
+
+    @http.route("/maintenance/ping", type="http", auth="none", cors="*", csrf=False)
+    def ping(self, **kw):
+        """Simple test endpoint - no website, no auth, no CSRF."""
+        return Response("pong", content_type="text/plain")
+
+    @http.route("/maintenance/test", type="http", auth="public", website=True)
+    def test_page(self, **kw):
+        """Test website route with minimal template."""
+        return request.render("mint_maintenance_form.request_form", self._form_context())
 
     def _form_context(self, **extra):
         teams = request.env["maintenance.team"].sudo().search([], order="name")
