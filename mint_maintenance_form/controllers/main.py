@@ -5,7 +5,7 @@ from odoo import http
 from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
-_logger.warning("*** MINT MAINTENANCE FORM CONTROLLER LOADED ***")
+_logger.warning("*** MINT MAINT CONTROLLER FILE LOADED, __name__=%s ***", __name__)
 
 PRIORITY_OPTIONS = [
     ("0", "Very Low"),
@@ -140,3 +140,27 @@ class MaintenanceFormController(http.Controller):
             )
 
         return request.render("mint_maintenance_form.request_form", ctx)
+
+
+# ── Diagnostic logging (runs at import time, after class definition) ──
+_logger.warning("*** Controller __module__ = %s ***", MaintenanceFormController.__module__)
+_logger.warning("*** Controller MRO = %s ***", [c.__name__ for c in MaintenanceFormController.__mro__])
+
+# Check if @http.route stored routing info on methods
+for _name in ('ping', 'test_page', 'maintenance_form'):
+    _method = getattr(MaintenanceFormController, _name, None)
+    if _method:
+        _routing = getattr(_method, 'routing', None)
+        _original = getattr(_method, 'original_routing', None)
+        _logger.warning("*** Method %s: routing=%s, original_routing=%s ***", _name, _routing, _original)
+    else:
+        _logger.warning("*** Method %s NOT FOUND ***", _name)
+
+# List all Controller subclasses
+try:
+    _all_ctrl = type.__subclasses__(http.Controller)
+    _logger.warning("*** Total Controller subclasses: %d ***", len(_all_ctrl))
+    _logger.warning("*** Controller subclass names: %s ***",
+                     [f"{c.__name__} ({c.__module__})" for c in _all_ctrl[:20]])
+except Exception as _e:
+    _logger.warning("*** Failed to list Controller subclasses: %s ***", _e)
