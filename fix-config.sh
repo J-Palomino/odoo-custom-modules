@@ -2,6 +2,7 @@
 # Fix the odoo.conf on the persistent volume
 
 CONFIG_FILE="/var/lib/odoo/odoo.conf"
+ACTIVE_CONFIG="/etc/odoo/odoo.conf"
 
 # Map ODOO_DB_* env vars to what the official Odoo entrypoint expects
 [ -n "$ODOO_DB_HOST" ] && [ -z "$HOST" ] && export HOST="$ODOO_DB_HOST"
@@ -12,65 +13,83 @@ CONFIG_FILE="/var/lib/odoo/odoo.conf"
 echo "=== Debugging config fix ==="
 
 # If config missing on persistent volume, seed from Docker image backup
-if [ ! -f "$CONFIG_FILE" ] && [ -f "/etc/odoo/odoo.conf" ]; then
-    echo "Config file not found, seeding from /etc/odoo/odoo.conf"
-    cp /etc/odoo/odoo.conf "$CONFIG_FILE"
+if [ ! -f "$CONFIG_FILE" ] && [ -f "$ACTIVE_CONFIG" ]; then
+    echo "Config file not found, seeding from $ACTIVE_CONFIG"
+    cp "$ACTIVE_CONFIG" "$CONFIG_FILE"
     chown odoo:odoo "$CONFIG_FILE" 2>/dev/null || true
 fi
 
-if [ -f "$CONFIG_FILE" ]; then
-    echo "Original config (db-related lines):"
-    grep -i "db_\|port" "$CONFIG_FILE" || echo "No db_ or port lines found"
+# Helper: apply config fixes to a given file
+fix_config() {
+    local cfg="$1"
+    if [ ! -f "$cfg" ]; then
+        echo "Config file not found at $cfg"
+        return
+    fi
 
-    echo ""
-    echo "Fixing db_port in $CONFIG_FILE..."
+    echo "Fixing $cfg ..."
+
+    # ── Railway single-port websocket fix ────────────────────────────
+    # Railway routes ALL traffic to one port (PORT env var, default 8069).
+    # Odoo multi-worker mode (workers > 0) spawns a separate gevent
+    # worker on port 8072 for websockets, which Railway cannot reach.
+    # Force workers=0 so Odoo runs single-process threaded mode where
+    # HTTP + websocket + cron all run on port 8069.
+    if grep -q "workers" "$cfg"; then
+        sed -i 's/workers\s*=\s*[0-9]*/workers = 0/g' "$cfg"
+    else
+        echo "workers = 0" >> "$cfg"
+    fi
 
     # Replace any db_port setting with 5432
-    sed -i 's/db_port\s*=\s*[0-9]*/db_port = 5432/g' "$CONFIG_FILE"
+    sed -i 's/db_port\s*=\s*[0-9]*/db_port = 5432/g' "$cfg"
 
     # If db_port doesn't exist, add it
-    if ! grep -q "db_port" "$CONFIG_FILE"; then
-        echo "db_port = 5432" >> "$CONFIG_FILE"
+    if ! grep -q "db_port" "$cfg"; then
+        echo "db_port = 5432" >> "$cfg"
         echo "Added db_port = 5432 to config"
     fi
 
     # Fix db_host if HOST env var is present
     if [ -n "$HOST" ]; then
-        if grep -q "db_host" "$CONFIG_FILE"; then
-            sed -i "s/db_host\s*=\s*.*/db_host = $HOST/g" "$CONFIG_FILE"
+        if grep -q "db_host" "$cfg"; then
+            sed -i "s/db_host\s*=\s*.*/db_host = $HOST/g" "$cfg"
         else
-            echo "db_host = $HOST" >> "$CONFIG_FILE"
+            echo "db_host = $HOST" >> "$cfg"
         fi
         echo "Set db_host = $HOST"
     fi
 
     # Fix db_name if ODOO_DB_NAME env var is present
     if [ -n "$ODOO_DB_NAME" ]; then
-        if grep -q "db_name" "$CONFIG_FILE"; then
-            sed -i "s/db_name\s*=\s*.*/db_name = $ODOO_DB_NAME/g" "$CONFIG_FILE"
+        if grep -q "db_name" "$cfg"; then
+            sed -i "s/db_name\s*=\s*.*/db_name = $ODOO_DB_NAME/g" "$cfg"
         else
-            echo "db_name = $ODOO_DB_NAME" >> "$CONFIG_FILE"
+            echo "db_name = $ODOO_DB_NAME" >> "$cfg"
         fi
     fi
 
     # Fix addons_path to ensure /opt/extra-addons is included
     EXPECTED_ADDONS="/opt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons"
-    if grep -q "addons_path" "$CONFIG_FILE"; then
-        sed -i "s|addons_path\s*=\s*.*|addons_path = $EXPECTED_ADDONS|g" "$CONFIG_FILE"
+    if grep -q "addons_path" "$cfg"; then
+        sed -i "s|addons_path\s*=\s*.*|addons_path = $EXPECTED_ADDONS|g" "$cfg"
         echo "Fixed addons_path to: $EXPECTED_ADDONS"
     else
-        echo "addons_path = $EXPECTED_ADDONS" >> "$CONFIG_FILE"
+        echo "addons_path = $EXPECTED_ADDONS" >> "$cfg"
         echo "Added addons_path to config"
     fi
+}
 
-    echo ""
-    echo "Fixed config (db-related lines):"
-    grep -i "db_\|port" "$CONFIG_FILE" || echo "No db_ or port lines found"
-    echo "Addons path:"
-    grep "addons_path" "$CONFIG_FILE"
-else
-    echo "Config file not found at $CONFIG_FILE"
-fi
+# Fix both the persistent-volume config and the active config that Odoo reads
+fix_config "$CONFIG_FILE"
+fix_config "$ACTIVE_CONFIG"
+
+echo ""
+echo "Active config ($ACTIVE_CONFIG):"
+grep -iE "db_|port|workers|addons_path" "$ACTIVE_CONFIG" || echo "(no matching lines)"
+echo ""
+echo "Persistent config ($CONFIG_FILE):"
+grep -iE "db_|port|workers|addons_path" "$CONFIG_FILE" || echo "(no matching lines)"
 
 echo "=== End debugging ==="
 echo ""
