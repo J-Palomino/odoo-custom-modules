@@ -9,7 +9,7 @@
     'author': 'MintDeals',
     'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
-    'depends': ['base'],
+    'depends': ['base', 'website'],
     'data': ['security/ir.model.access.csv'],
     'external_dependencies': {'python': ['pywebpush']},
     'installable': True,
