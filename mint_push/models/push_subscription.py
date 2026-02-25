@@ -52,7 +52,7 @@ class PushSubscription(models.Model):
                 subscription_info=subscription_info,
                 data=json.dumps(payload),
                 vapid_private_key=private_key,
-                vapid_claims={"sub": "mailto:admin@mintdeals.com"},
+                vapid_claims={"sub": "mailto:admin@letsgomint.us"},
             )
             return True
         except WebPushException as e:
@@ -71,7 +71,7 @@ class PushSubscription(models.Model):
         payload = {
             'title': title,
             'body': body,
-            'url': url or 'https://mintdeals.com',
+            'url': url or 'https://letsgomint.us',
             'icon': icon or '/favicon.png',
         }
         if image:

@@ -7,7 +7,7 @@
         Stores browser push subscriptions and sends Web Push notifications
         via VAPID/pywebpush. Exposes REST API at /api/v1/push/.""",
     'author': 'MintDeals',
-    'website': 'https://mintdeals.com',
+    'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
     'depends': ['base'],
     'data': ['security/ir.model.access.csv'],
