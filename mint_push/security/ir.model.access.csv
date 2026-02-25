@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_push_subscription_all,mint.push.subscription.all,model_mint_push_subscription,,1,0,0,0
+access_mint_push_subscription_user,mint.push.subscription.user,model_mint_push_subscription,base.group_user,1,1,1,1
