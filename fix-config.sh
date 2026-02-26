@@ -118,7 +118,7 @@ fi
 # (base_import_module installs to persistent volume paths which are
 # scanned before /opt/extra-addons/ — we need the Docker version)
 for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_financial_risk \
-    mint_maintenance_form mint_push \
+    mint_maintenance_form mint_push mint_command_center \
     daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
     base_accounting_kit base_account_budget sign_oca \
     spreadsheet_oca spreadsheet_dashboard_oca \
