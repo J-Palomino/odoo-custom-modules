@@ -12,6 +12,7 @@ _logger = logging.getLogger(__name__)
 EXTRA_CONTROLLER_MODULES = [
     'mint_maintenance_form',
     'mint_api_v2',
+    'mint_push',
     'mint_theme',
     'daisy_bot',
     'vault',

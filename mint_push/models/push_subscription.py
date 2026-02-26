@@ -12,6 +12,12 @@ except ImportError:
     webpush = None
     _logger.warning("pywebpush not installed — push notifications disabled")
 
+try:
+    from py_vapid import Vapid
+except ImportError:
+    Vapid = None
+    _logger.warning("py_vapid not installed — VAPID key auto-generation disabled")
+
 
 class PushSubscription(models.Model):
     _name = 'mint.push.subscription'
@@ -29,8 +35,46 @@ class PushSubscription(models.Model):
         ('endpoint_unique', 'UNIQUE(endpoint)', 'Subscription endpoint must be unique.'),
     ]
 
+    def _ensure_vapid_keys(self):
+        """Ensure VAPID keys exist, generating them on first use.
+
+        Returns the public key string.
+        """
+        ICP = self.env['ir.config_parameter'].sudo()
+        public_key = ICP.get_param('mint.vapid_public_key', '')
+        if public_key:
+            return public_key
+
+        if not Vapid:
+            _logger.error("py_vapid not available — cannot generate VAPID keys")
+            return ''
+
+        _logger.info("Generating new VAPID keypair...")
+        vapid = Vapid()
+        vapid.generate_keys()
+
+        # Export raw base64url-encoded keys
+        raw_priv = vapid.private_pem()
+        raw_pub = vapid.public_key
+
+        # vapid.public_key is a CryptoKey; encode to the uncompressed point
+        import base64
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding, PublicFormat,
+        )
+        pub_bytes = raw_pub.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+        pub_b64 = base64.urlsafe_b64encode(pub_bytes).rstrip(b'=').decode('ascii')
+
+        # Store PEM private key and base64url public key
+        priv_pem = raw_priv.decode('utf-8') if isinstance(raw_priv, bytes) else raw_priv
+        ICP.set_param('mint.vapid_private_key', priv_pem)
+        ICP.set_param('mint.vapid_public_key', pub_b64)
+        _logger.info("VAPID keys generated and stored (public: %s...)", pub_b64[:20])
+        return pub_b64
+
     def _get_vapid_keys(self):
-        """Read VAPID keys from system parameters."""
+        """Read VAPID keys from system parameters, auto-generating if needed."""
+        self._ensure_vapid_keys()
         ICP = self.env['ir.config_parameter'].sudo()
         private_key = ICP.get_param('mint.vapid_private_key', '')
         public_key = ICP.get_param('mint.vapid_public_key', '')

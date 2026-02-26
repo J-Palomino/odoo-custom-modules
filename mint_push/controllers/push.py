@@ -40,12 +40,15 @@ class MintPushAPI(http.Controller):
     @http.route('/api/v1/push/vapid-key', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
     def get_vapid_key(self):
-        """Return the public VAPID key for push subscription."""
-        ICP = request.env['ir.config_parameter'].sudo()
-        public_key = ICP.get_param('mint.vapid_public_key', '')
+        """Return the public VAPID key for push subscription.
+
+        Auto-generates VAPID keys on first request if they don't exist.
+        """
+        Sub = request.env['mint.push.subscription'].sudo()
+        public_key = Sub._ensure_vapid_keys()
 
         if not public_key:
-            return error_response('VAPID key not configured', 500)
+            return error_response('VAPID key generation failed', 500)
 
         return json_response({'publicKey': public_key})
 

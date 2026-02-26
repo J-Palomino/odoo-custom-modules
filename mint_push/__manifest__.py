@@ -11,7 +11,7 @@
     'license': 'LGPL-3',
     'depends': ['base', 'website'],
     'data': ['security/ir.model.access.csv'],
-    'external_dependencies': {'python': ['pywebpush']},
+    'external_dependencies': {'python': ['pywebpush', 'py_vapid']},
     'installable': True,
     'application': False,
     'auto_install': False,
