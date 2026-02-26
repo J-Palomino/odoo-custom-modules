@@ -25,6 +25,18 @@ else:
               action="daisy_agent_smart_action"
               sequence="10"/>
 
+    <menuitem id="menu_digital_employees_feeds"
+              name="Camera Feeds"
+              parent="menu_digital_employees_root"
+              action="daisy_agent_feed_action"
+              sequence="15"/>
+
+    <menuitem id="menu_digital_employees_jobs"
+              name="Jobs"
+              parent="menu_digital_employees_root"
+              action="daisy_agent_job_action"
+              sequence="17"/>
+
     <menuitem id="menu_digital_employees_metrics"
               name="Metrics"
               parent="menu_digital_employees_root"
@@ -36,4 +48,11 @@ else:
               parent="menu_digital_employees_root"
               action="daisy_agent_import_action"
               sequence="30"/>
+
+    <menuitem id="menu_digital_employees_config"
+              name="Configuration"
+              parent="menu_digital_employees_root"
+              action="base_setup.action_general_configuration"
+              sequence="99"
+              groups="daisydo_agents.group_daisy_admin"/>
 </odoo>

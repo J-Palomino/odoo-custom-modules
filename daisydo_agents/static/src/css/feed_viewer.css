@@ -1,0 +1,182 @@
+/* Feed Viewer Panel */
+.o_daisy_feed_viewer {
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    z-index: 1060;
+    width: 480px;
+    max-width: calc(100vw - 32px);
+    background: #1a1a2e;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    font-family: system-ui, sans-serif;
+}
+
+.o_daisy_feed_viewer .feed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #16213e;
+    color: #e0e0e0;
+}
+
+.o_daisy_feed_viewer .feed-header .feed-title {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.o_daisy_feed_viewer .feed-header .feed-status {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    background: #666;
+}
+
+.o_daisy_feed_viewer .feed-header .feed-status.live {
+    background: #4caf50;
+    animation: pulse-live 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.o_daisy_feed_viewer .feed-header .btn-close-feed {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 4px;
+    font-size: 16px;
+}
+
+.o_daisy_feed_viewer .feed-header .btn-close-feed:hover {
+    color: #fff;
+}
+
+.o_daisy_feed_viewer .feed-video-container {
+    position: relative;
+    background: #000;
+    aspect-ratio: 16 / 9;
+}
+
+.o_daisy_feed_viewer .feed-video-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.o_daisy_feed_viewer .feed-loading,
+.o_daisy_feed_viewer .feed-error {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: #999;
+    font-size: 14px;
+    gap: 8px;
+}
+
+.o_daisy_feed_viewer .feed-error {
+    color: #ef5350;
+}
+
+.o_daisy_feed_viewer .feed-loading .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #333;
+    border-top-color: #4caf50;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Feed selector dropdown */
+.o_daisy_feed_dropdown {
+    position: relative;
+}
+
+.o_daisy_feed_dropdown .dropdown-menu {
+    min-width: 280px;
+}
+
+.o_daisy_feed_dropdown .feed-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+}
+
+.o_daisy_feed_dropdown .feed-item:hover {
+    background: #f0f0f0;
+}
+
+.o_daisy_feed_dropdown .feed-item .fa-video-camera {
+    color: #4caf50;
+}
+
+.o_daisy_feed_dropdown .feed-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.o_daisy_feed_dropdown .feed-item-name {
+    font-weight: 500;
+    font-size: 13px;
+}
+
+.o_daisy_feed_dropdown .feed-item-meta {
+    font-size: 11px;
+    color: #888;
+}
+
+/* RTSP Out panel */
+.o_daisy_rtsp_out_panel {
+    padding: 8px 12px;
+    background: #0f3460;
+    color: #e0e0e0;
+    font-size: 12px;
+}
+
+.o_daisy_rtsp_out_panel .rtsp-url {
+    font-family: monospace;
+    font-size: 11px;
+    background: #1a1a2e;
+    padding: 4px 8px;
+    border-radius: 4px;
+    word-break: break-all;
+    user-select: all;
+    margin-top: 4px;
+}
+
+/* Multiple feed tiles layout */
+.o_daisy_feed_grid {
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    z-index: 1060;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+}
+
+.o_daisy_feed_grid .o_daisy_feed_viewer {
+    position: static;
+    width: 360px;
+}

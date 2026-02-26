@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="daisydo_agents.DaisyRtspOutPush">
+        <div class="o_daisy_feed_viewer">
+            <div class="feed-header">
+                <div class="d-flex align-items-center" style="min-width:0">
+                    <span t-attf-class="feed-status {{ state.status === 'broadcasting' ? 'live' : '' }}"/>
+                    <span class="feed-title">
+                        <i class="fa fa-podcast me-1"/>
+                        <t t-out="props.feedName"/>
+                    </span>
+                </div>
+                <button class="btn-close-feed" t-on-click="_onClose" title="Close">
+                    <i class="fa fa-times"/>
+                </button>
+            </div>
+
+            <div class="o_daisy_rtsp_out_panel">
+                <!-- Idle state -->
+                <div t-if="state.status === 'idle'" class="text-center py-3">
+                    <p class="mb-2">Push this call to a store display via RTSP.</p>
+                    <button class="btn btn-sm btn-success" t-on-click="startBroadcast">
+                        <i class="fa fa-play me-1"/> Start Broadcast
+                    </button>
+                </div>
+
+                <!-- Connecting -->
+                <div t-if="state.status === 'connecting'" class="text-center py-3">
+                    <i class="fa fa-spinner fa-spin me-1"/>
+                    Establishing broadcast...
+                </div>
+
+                <!-- Broadcasting -->
+                <div t-if="state.status === 'broadcasting'">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span>
+                            <i class="fa fa-circle text-success me-1" style="font-size: 8px;"/>
+                            Broadcasting
+                        </span>
+                        <button class="btn btn-sm btn-outline-warning" t-on-click="stopBroadcast">
+                            <i class="fa fa-stop me-1"/> Stop
+                        </button>
+                    </div>
+                    <div t-if="state.rtspUrl">
+                        <small class="text-muted">RTSP URL for store display:</small>
+                        <div class="rtsp-url" t-on-click="copyRtspUrl" title="Click to copy">
+                            <t t-out="state.rtspUrl"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error -->
+                <div t-if="state.status === 'error'" class="text-center py-3">
+                    <i class="fa fa-exclamation-triangle text-danger me-1"/>
+                    <span class="text-danger" t-out="state.errorMessage"/>
+                    <br/>
+                    <button class="btn btn-sm btn-outline-secondary mt-2" t-on-click="startBroadcast">
+                        Retry
+                    </button>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>

@@ -1,9 +1,8 @@
+import json
 import logging
 import os
-import threading
 
-import odoo
-from odoo import models, fields, api, SUPERUSER_ID
+from odoo import models, fields, api
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
@@ -74,6 +73,11 @@ class DaisyAgent(models.Model):
     livechat_channel_ids = fields.Many2many("im_livechat.channel", string="Livechat Channels")
     max_concurrent_chats = fields.Integer(default=10)
 
+    # --- Camera Feeds ---
+    feed_ids = fields.One2many("daisy.agent.feed", "agent_id", string="Camera Feeds")
+    feed_count = fields.Integer(compute="_compute_feed_count")
+    has_active_feeds = fields.Boolean(compute="_compute_feed_count")
+
     # --- Metrics ---
     active_conversations = fields.Integer(compute="_compute_conversation_stats")
     total_conversations = fields.Integer(compute="_compute_conversation_stats")
@@ -83,6 +87,12 @@ class DaisyAgent(models.Model):
     _sql_constraints = [
         ("code_unique", "UNIQUE(code)", "Agent code must be unique."),
     ]
+
+    def _compute_feed_count(self):
+        for agent in self:
+            feeds = agent.feed_ids
+            agent.feed_count = len(feeds)
+            agent.has_active_feeds = any(f.go2rtc_status == "active" for f in feeds)
 
     @api.depends("code")
     def _compute_email(self):
@@ -229,6 +239,17 @@ class DaisyAgent(models.Model):
             ],
         }
 
+    def action_view_feeds(self):
+        self.ensure_one()
+        return {
+            "type": "ir.actions.act_window",
+            "name": f"{self.name} — Camera Feeds",
+            "res_model": "daisy.agent.feed",
+            "view_mode": "list,form",
+            "domain": [("agent_id", "=", self.id)],
+            "context": {"default_agent_id": self.id},
+        }
+
     def action_open_user_settings(self):
         """Open the linked Odoo user form to manage permissions."""
         self.ensure_one()
@@ -243,62 +264,19 @@ class DaisyAgent(models.Model):
             "target": "current",
         }
 
-    def _respond_async(self, channel_model, channel_id, user_text, history, conversation_id, context_prefix=""):
-        """Schedule AI response in a background thread after current transaction commits."""
+    def _enqueue_response(self, channel_model, channel_id, user_text, history, conversation_id, context_prefix=""):
+        """Create a job record and trigger immediate cron processing."""
         self.ensure_one()
-        db_name = self.env.cr.dbname
-        agent_id = self.id
-
-        def _after_commit():
-            def _run():
-                try:
-                    registry = odoo.registry(db_name)
-                    with registry.cursor() as cr:
-                        env = api.Environment(cr, SUPERUSER_ID, {})
-                        agent = env["daisy.agent"].browse(agent_id)
-                        target = env[channel_model].browse(channel_id)
-                        if not agent.exists() or not target.exists():
-                            return
-
-                        full_text = context_prefix + user_text if context_prefix else user_text
-                        ai_result = agent.get_ai_response(full_text, history, conversation_id)
-
-                        if not ai_result.get("response"):
-                            return
-
-                        if ai_result.get("should_handoff"):
-                            _logger.info(
-                                "Agent %s handing off on %s/%s",
-                                agent.name, channel_model, channel_id,
-                            )
-                            target.with_user(agent.user_id).message_post(
-                                body="Let me connect you with a team member who can help further.",
-                                message_type="comment",
-                                subtype_xmlid="mail.mt_comment",
-                            )
-                            return
-
-                        ai_msg = target.with_user(agent.user_id).message_post(
-                            body=ai_result["response"],
-                            message_type="comment",
-                            subtype_xmlid="mail.mt_comment",
-                        )
-                        ai_msg.sudo().write({
-                            "daisy_ai_generated": True,
-                            "daisy_ai_confidence": ai_result.get("confidence", 0),
-                            "daisy_intent": ai_result.get("intent", ""),
-                            "daisy_conversation_id": ai_result.get("conversation_id", ""),
-                        })
-                except Exception:
-                    _logger.exception(
-                        "Async AI response failed for agent %s on %s/%s",
-                        agent_id, channel_model, channel_id,
-                    )
-
-            thread = threading.Thread(target=_run, daemon=True)
-            thread.start()
-
-        self.env.cr.postcommit.add(_after_commit)
+        self.env["daisy.agent.job"].sudo().create({
+            "agent_id": self.id,
+            "channel_model": channel_model,
+            "channel_id": channel_id,
+            "message_text": user_text,
+            "conversation_history": json.dumps(history) if history else False,
+            "conversation_id": conversation_id or False,
+            "context_prefix": context_prefix or False,
+        })
+        self.env.ref("daisydo_agents.ir_cron_process_agent_jobs")._trigger()
 
     def get_ai_response(self, message, conversation_history=None, conversation_id=None, override_config=None):
         """Call Daisy+ API using this agent's own credentials."""

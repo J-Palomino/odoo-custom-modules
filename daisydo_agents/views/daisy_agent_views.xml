@@ -33,6 +33,10 @@
                                 type="object" name="action_view_messages">
                             <field name="total_messages_sent" widget="statinfo" string="AI Messages"/>
                         </button>
+                        <button class="oe_stat_button" icon="fa-video-camera"
+                                type="object" name="action_view_feeds">
+                            <field name="feed_count" widget="statinfo" string="Feeds"/>
+                        </button>
                         <button class="oe_stat_button" icon="fa-lock"
                                 type="object" name="action_open_user_settings"
                                 string="Permissions"
@@ -98,6 +102,24 @@
                             <group>
                                 <field name="user_id" string="Linked User" readonly="1"/>
                             </group>
+                        </page>
+                        <page string="Camera Feeds" name="feeds">
+                            <field name="feed_ids" context="{'default_agent_id': id}">
+                                <list editable="bottom">
+                                    <field name="name"/>
+                                    <field name="company_id"/>
+                                    <field name="feed_type"/>
+                                    <field name="rtsp_url" invisible="feed_type != 'rtsp_in'"/>
+                                    <field name="go2rtc_status" widget="badge"
+                                           decoration-success="go2rtc_status == 'active'"
+                                           decoration-danger="go2rtc_status == 'error'"
+                                           decoration-muted="go2rtc_status == 'inactive'"/>
+                                    <field name="state" widget="badge"
+                                           decoration-success="state == 'live'"
+                                           decoration-info="state == 'ready'"
+                                           decoration-muted="state in ('draft', 'stopped')"/>
+                                </list>
+                            </field>
                         </page>
                         <page string="Metrics" name="metrics">
                             <field name="metric_ids" readonly="1" context="{'default_agent_id': id}">

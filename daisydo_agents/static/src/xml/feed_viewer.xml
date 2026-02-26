@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+
+    <!-- Reusable feed viewer component -->
+    <t t-name="daisydo_agents.Go2rtcFeedViewer">
+        <div class="o_daisy_feed_viewer">
+            <div class="feed-header">
+                <div class="d-flex align-items-center" style="min-width:0">
+                    <span t-attf-class="feed-status {{ state.status === 'live' ? 'live' : '' }}"/>
+                    <span class="feed-title" t-out="props.feedName"/>
+                </div>
+                <button class="btn-close-feed" t-on-click="_onClose" title="Close">
+                    <i class="fa fa-times"/>
+                </button>
+            </div>
+            <div class="feed-video-container">
+                <video t-ref="video" autoplay="true" playsinline="true" muted="true"/>
+
+                <div t-if="state.status === 'connecting'" class="feed-loading">
+                    <div class="spinner"/>
+                    <span>Connecting...</span>
+                </div>
+
+                <div t-if="state.status === 'error'" class="feed-error">
+                    <i class="fa fa-exclamation-triangle fa-2x"/>
+                    <span t-out="state.errorMessage"/>
+                </div>
+            </div>
+        </div>
+    </t>
+
+    <!-- Standalone client action wrapper -->
+    <t t-name="daisydo_agents.DaisyFeedViewerAction">
+        <div class="d-flex align-items-center justify-content-center" style="height: 80vh;">
+            <Go2rtcFeedViewer
+                t-if="state.wsUrl"
+                feedId="state.feedId"
+                feedName="state.feedName"
+                wsUrl="state.wsUrl"
+                onClose.bind="onClose"
+            />
+            <div t-else="" class="text-muted">
+                <i class="fa fa-video-camera fa-3x mb-3 d-block text-center"/>
+                <p>No feed URL configured.</p>
+            </div>
+        </div>
+    </t>
+
+</templates>

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+
+    <!-- Feed call button with dropdown -->
+    <t t-name="daisydo_agents.DaisyFeedCallButton">
+        <div class="o_daisy_feed_dropdown d-inline-block position-relative">
+            <!-- Toggle button -->
+            <button class="btn btn-sm btn-outline-secondary"
+                    t-on-click="toggleDropdown"
+                    title="Camera Feeds">
+                <i class="fa fa-video-camera me-1"/>
+                Cameras
+                <span t-if="openFeedCount > 0"
+                      class="badge bg-success ms-1"
+                      t-out="openFeedCount"/>
+            </button>
+
+            <!-- Dropdown list of available feeds -->
+            <div t-if="state.dropdownOpen"
+                 class="dropdown-menu show"
+                 style="position: absolute; top: 100%; right: 0; z-index: 1070;">
+                <div t-if="state.loading" class="px-3 py-2 text-muted">
+                    <i class="fa fa-spinner fa-spin me-1"/> Loading feeds...
+                </div>
+                <div t-elif="!hasFeeds" class="px-3 py-2 text-muted">
+                    No active camera feeds in this call.
+                </div>
+                <t t-else="">
+                    <t t-foreach="state.feeds" t-as="feed" t-key="feed.feed_id">
+                        <a class="dropdown-item feed-item"
+                           t-on-click="() => this.openFeed(feed)">
+                            <i class="fa fa-video-camera"/>
+                            <div class="feed-item-info">
+                                <div class="feed-item-name" t-out="feed.feed_name"/>
+                                <div class="feed-item-meta">
+                                    <t t-if="feed.company_name">
+                                        <span t-out="feed.company_name"/>
+                                        <span> · </span>
+                                    </t>
+                                    <span t-out="feed.agent_name"/>
+                                </div>
+                            </div>
+                        </a>
+                    </t>
+                </t>
+            </div>
+        </div>
+
+        <!-- Open feed viewers (floating panels) -->
+        <div t-if="openFeedCount > 0" class="o_daisy_feed_grid">
+            <t t-foreach="state.openFeeds" t-as="feed" t-key="feed.feed_id">
+                <Go2rtcFeedViewer
+                    feedId="feed.feed_id"
+                    feedName="feed.feed_name"
+                    wsUrl="feed.ws_url"
+                    streamName="feed.stream_name"
+                    onClose.bind="closeFeed"
+                />
+            </t>
+        </div>
+    </t>
+
+    <!-- Systray manager that shows the button during calls -->
+    <t t-name="daisydo_agents.DaisyFeedCallManager">
+        <DaisyFeedCallButton
+            t-if="isInCall"
+            channelId="state.activeChannelId"
+        />
+    </t>
+
+</templates>

@@ -1,4 +1,6 @@
 import logging
+import uuid
+
 import requests
 from odoo import models, api
 
@@ -19,6 +21,7 @@ class DaisyAIServiceAgent(models.AbstractModel):
             _logger.warning("No chatflow ID configured for agent %s", agent.name)
             return {"response": None, "should_handoff": True}
 
+        request_id = uuid.uuid4().hex[:12]
         try:
             base_url = self._get_daisy_api_base()
             agency_id = agent.daisy_agency_id
@@ -30,6 +33,11 @@ class DaisyAIServiceAgent(models.AbstractModel):
                 payload["chatId"] = conversation_id
             if override_config:
                 payload["overrideConfig"] = override_config
+
+            _logger.info(
+                "[%s] Daisy+ API request for agent %s → %s/prediction/%s",
+                request_id, agent.name, base_url, agency_id,
+            )
 
             response = requests.post(
                 f"{base_url}/prediction/{agency_id}",
@@ -43,7 +51,7 @@ class DaisyAIServiceAgent(models.AbstractModel):
             response.raise_for_status()
             data = response.json()
 
-            confidence = 0.9
+            confidence = data.get("confidence", 0.9)
             should_handoff = confidence < agent.ai_handoff_threshold
 
             return {
@@ -56,12 +64,12 @@ class DaisyAIServiceAgent(models.AbstractModel):
             }
 
         except requests.exceptions.Timeout:
-            _logger.error("Daisy+ API timeout for agent %s", agent.name)
+            _logger.error("[%s] Daisy+ API timeout for agent %s", request_id, agent.name)
             return {
                 "response": "I'm having trouble connecting right now. Let me get a human to help you.",
                 "confidence": 0,
                 "should_handoff": True,
             }
         except requests.exceptions.RequestException as e:
-            _logger.error("Daisy+ API error for agent %s: %s", agent.name, e)
+            _logger.error("[%s] Daisy+ API error for agent %s: %s", request_id, agent.name, e)
             return {"response": None, "should_handoff": True, "error": str(e)}

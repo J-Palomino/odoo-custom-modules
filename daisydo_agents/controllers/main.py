@@ -35,3 +35,109 @@ class DaisyAgentController(http.Controller):
             "total_conversations": agent.total_conversations,
             "total_messages_sent": agent.total_messages_sent,
         }
+
+    # ------------------------------------------------------------------
+    # Camera Feed Endpoints
+    # ------------------------------------------------------------------
+
+    @http.route("/daisy/feeds/<int:feed_id>/webrtc-url", auth="user", type="jsonrpc", methods=["POST"])
+    def feed_webrtc_url(self, feed_id, **kw):
+        """Return the Go2RTC WebSocket URL for a camera feed viewer."""
+        feed = request.env["daisy.agent.feed"].browse(feed_id)
+        if not feed.exists():
+            return {"error": "Feed not found"}
+        if feed.go2rtc_status != "active":
+            return {"error": "Feed is not active"}
+
+        svc = request.env["daisy.go2rtc.service"]
+        ws_url = svc.get_ws_url(feed.go2rtc_stream_name)
+        return {
+            "feed_id": feed.id,
+            "feed_name": feed.name,
+            "stream_name": feed.go2rtc_stream_name,
+            "ws_url": ws_url,
+            "feed_type": feed.feed_type,
+        }
+
+    @http.route("/daisy/feeds/by-channel/<int:channel_id>", auth="user", type="jsonrpc", methods=["POST"])
+    def feeds_by_channel(self, channel_id, **kw):
+        """Return all active camera feeds for agents in a Discuss channel.
+
+        Looks up agents that are members of the channel, then returns
+        their active feeds.
+        """
+        channel = request.env["discuss.channel"].browse(channel_id)
+        if not channel.exists():
+            return {"error": "Channel not found"}
+
+        # Find agent partners in this channel
+        member_partner_ids = channel.channel_member_ids.mapped("partner_id.id")
+        agents = request.env["daisy.agent"].search([
+            ("partner_id", "in", member_partner_ids),
+            ("state", "=", "active"),
+        ])
+
+        if not agents:
+            return {"feeds": []}
+
+        feeds = request.env["daisy.agent.feed"].search([
+            ("agent_id", "in", agents.ids),
+            ("go2rtc_status", "=", "active"),
+            ("state", "=", "live"),
+        ])
+
+        svc = request.env["daisy.go2rtc.service"]
+        result = []
+        for f in feeds:
+            result.append({
+                "feed_id": f.id,
+                "feed_name": f.name,
+                "agent_name": f.agent_id.name,
+                "company_name": f.company_id.name if f.company_id else None,
+                "feed_type": f.feed_type,
+                "stream_name": f.go2rtc_stream_name,
+                "ws_url": svc.get_ws_url(f.go2rtc_stream_name),
+            })
+        return {"feeds": result}
+
+    @http.route("/daisy/feeds/<int:feed_id>/push-webrtc", auth="user", type="jsonrpc", methods=["POST"])
+    def feed_push_webrtc(self, feed_id, sdp_offer=None, **kw):
+        """Push a WebRTC stream into Go2RTC for RTSP out broadcast.
+
+        Accepts an SDP offer from the browser, proxies it to Go2RTC's WHIP
+        endpoint, and returns the SDP answer + RTSP URL for store displays.
+        """
+        if not sdp_offer:
+            return {"error": "sdp_offer is required"}
+
+        feed = request.env["daisy.agent.feed"].browse(feed_id)
+        if not feed.exists():
+            return {"error": "Feed not found"}
+        if feed.feed_type != "rtsp_out":
+            return {"error": "Feed is not configured for broadcast (RTSP Out)"}
+
+        svc = request.env["daisy.go2rtc.service"]
+
+        # Register the output stream if not already active
+        if feed.go2rtc_status != "active":
+            svc.create_stream(feed.go2rtc_stream_name, "")
+            feed.sudo().write({
+                "go2rtc_status": "active",
+                "state": "live",
+            })
+
+        sdp_answer = svc.push_sdp_offer(feed.go2rtc_stream_name, sdp_offer)
+        if not sdp_answer:
+            return {"error": "Failed to negotiate WebRTC with Go2RTC"}
+
+        # Build the RTSP URL for store displays
+        api_url = svc._get_api_url()
+        # Replace http with rtsp and use the RTSP port
+        rtsp_host = api_url.replace("http://", "").replace("https://", "").split(":")[0]
+        rtsp_url = f"rtsp://{rtsp_host}:8554/{feed.go2rtc_stream_name}"
+
+        return {
+            "sdp_answer": sdp_answer,
+            "rtsp_url": rtsp_url,
+            "stream_name": feed.go2rtc_stream_name,
+        }

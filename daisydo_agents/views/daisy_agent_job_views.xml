@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ FORM ============ -->
+    <record id="daisy_agent_job_view_form" model="ir.ui.view">
+        <field name="name">daisy.agent.job.form</field>
+        <field name="model">daisy.agent.job</field>
+        <field name="arch" type="xml">
+            <form string="Agent Job" create="0">
+                <header>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="pending,processing,done"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Job">
+                            <field name="agent_id"/>
+                            <field name="channel_model"/>
+                            <field name="channel_id"/>
+                            <field name="create_date"/>
+                        </group>
+                        <group string="Status">
+                            <field name="state"/>
+                            <field name="attempts"/>
+                            <field name="max_attempts"/>
+                        </group>
+                    </group>
+                    <group string="Input">
+                        <field name="message_text"/>
+                        <field name="context_prefix" invisible="not context_prefix"/>
+                        <field name="conversation_id"/>
+                    </group>
+                    <group string="Output">
+                        <field name="response_text"/>
+                        <field name="error_message" invisible="not error_message"
+                               decoration-danger="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ LIST ============ -->
+    <record id="daisy_agent_job_view_list" model="ir.ui.view">
+        <field name="name">daisy.agent.job.list</field>
+        <field name="model">daisy.agent.job</field>
+        <field name="arch" type="xml">
+            <list string="Agent Jobs" create="0"
+                  decoration-success="state == 'done'"
+                  decoration-danger="state == 'error'"
+                  decoration-warning="state == 'processing'"
+                  decoration-muted="state == 'expired'">
+                <field name="create_date"/>
+                <field name="agent_id"/>
+                <field name="channel_model"/>
+                <field name="channel_id"/>
+                <field name="message_text" optional="show"/>
+                <field name="attempts"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'done'"
+                       decoration-danger="state == 'error'"
+                       decoration-warning="state == 'processing'"
+                       decoration-info="state == 'pending'"
+                       decoration-muted="state == 'expired'"/>
+                <field name="error_message" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============ SEARCH ============ -->
+    <record id="daisy_agent_job_view_search" model="ir.ui.view">
+        <field name="name">daisy.agent.job.search</field>
+        <field name="model">daisy.agent.job</field>
+        <field name="arch" type="xml">
+            <search string="Agent Jobs">
+                <field name="agent_id"/>
+                <field name="channel_model"/>
+                <field name="error_message"/>
+                <filter string="Pending" name="pending" domain="[('state', '=', 'pending')]"/>
+                <filter string="Processing" name="processing" domain="[('state', '=', 'processing')]"/>
+                <filter string="Done" name="done" domain="[('state', '=', 'done')]"/>
+                <filter string="Error" name="error" domain="[('state', '=', 'error')]"/>
+                <separator/>
+                <filter string="State" name="group_state" context="{'group_by': 'state'}"/>
+                <filter string="Agent" name="group_agent" context="{'group_by': 'agent_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ============ ACTION ============ -->
+    <record id="daisy_agent_job_action" model="ir.actions.act_window">
+        <field name="name">Jobs</field>
+        <field name="res_model">daisy.agent.job</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="daisy_agent_job_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No AI response jobs yet
+            </p>
+            <p>
+                Jobs are created automatically when users message an agent.
+                Check here to monitor processing status and debug errors.
+            </p>
+        </field>
+    </record>
+
+</odoo>

@@ -39,6 +39,10 @@ class MailThread(models.AbstractModel):
         if message.author_id == operator_partner:
             return result
 
+        # Skip AI-generated messages to prevent response loops
+        if getattr(message, 'daisy_ai_generated', False):
+            return result
+
         # Build conversation history from recent messages
         recent = self.env["mail.message"].search([
             ("res_id", "=", self.id),
@@ -74,9 +78,9 @@ class MailThread(models.AbstractModel):
             context_prefix += f" | {doc_desc}"
         context_prefix += "]\n\n"
 
-        # Schedule async AI response (runs after this transaction commits)
+        # Enqueue AI response job (processed by cron worker)
         user_text = html2plaintext(message.body) if message.body else ""
-        agent._respond_async(
+        agent._enqueue_response(
             self._name, self.id, user_text, history, conversation_id,
             context_prefix=context_prefix,
         )

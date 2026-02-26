@@ -42,6 +42,10 @@ class DiscussChannel(models.Model):
         if message.author_id == operator_partner:
             return result
 
+        # Skip AI-generated messages to prevent response loops
+        if getattr(message, 'daisy_ai_generated', False):
+            return result
+
         if not agent:
             return result
 
@@ -65,9 +69,9 @@ class DiscussChannel(models.Model):
         ], order="date desc", limit=1)
         conversation_id = last_ai_msg.daisy_conversation_id if last_ai_msg else None
 
-        # Schedule async AI response (runs after this transaction commits)
+        # Enqueue AI response job (processed by cron worker)
         user_text = html2plaintext(message.body) if message.body else ""
-        agent._respond_async(
+        agent._enqueue_response(
             "discuss.channel", self.id, user_text, history, conversation_id,
         )
 
