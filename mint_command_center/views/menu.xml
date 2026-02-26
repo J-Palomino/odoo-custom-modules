@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ Top-level App Menu ============ -->
+    <menuitem id="menu_command_center_root"
+              name="Command Center"
+              sequence="90"
+              web_icon="mint_command_center,static/description/icon.png"/>
+
+    <!-- ============ Push Notifications Section ============ -->
+    <menuitem id="menu_push_root"
+              name="Push Notifications"
+              parent="menu_command_center_root"
+              sequence="10"/>
+
+    <menuitem id="menu_push_send"
+              name="Send Notification"
+              parent="menu_push_root"
+              action="action_push_send_wizard"
+              sequence="10"/>
+
+    <menuitem id="menu_push_history"
+              name="Notification History"
+              parent="menu_push_root"
+              action="action_push_campaign"
+              sequence="20"/>
+
+</odoo>

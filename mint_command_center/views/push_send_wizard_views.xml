@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ Wizard Form ============ -->
+    <record id="mint_push_send_wizard_form" model="ir.ui.view">
+        <field name="name">mint.push.send.wizard.form</field>
+        <field name="model">mint.push.send.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Send Push Notification">
+                <group>
+                    <field name="url_template" widget="radio"/>
+                </group>
+                <group>
+                    <group>
+                        <field name="title" placeholder="Flash Sale — 30% off all edibles!"/>
+                        <field name="body" placeholder="Today only at all Mint locations..."
+                               widget="text"/>
+                    </group>
+                    <group>
+                        <field name="url" placeholder="https://letsgomint.us/deals"/>
+                        <field name="icon" placeholder="/favicon.png"/>
+                        <field name="image" placeholder="https://example.com/banner.jpg"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_send" type="object"
+                            string="Send Now" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ Wizard Action ============ -->
+    <record id="action_push_send_wizard" model="ir.actions.act_window">
+        <field name="name">Send Notification</field>
+        <field name="res_model">mint.push.send.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

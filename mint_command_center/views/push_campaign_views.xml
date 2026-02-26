@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ Tree View ============ -->
+    <record id="mint_push_campaign_tree" model="ir.ui.view">
+        <field name="name">mint.push.campaign.tree</field>
+        <field name="model">mint.push.campaign</field>
+        <field name="arch" type="xml">
+            <list decoration-success="state == 'sent'" decoration-danger="state == 'failed'">
+                <field name="name"/>
+                <field name="body" widget="char"/>
+                <field name="sent_count"/>
+                <field name="total_count"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'sent'"
+                       decoration-info="state == 'draft'"
+                       decoration-danger="state == 'failed'"/>
+                <field name="sent_at"/>
+                <field name="sent_by"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============ Form View ============ -->
+    <record id="mint_push_campaign_form" model="ir.ui.view">
+        <field name="name">mint.push.campaign.form</field>
+        <field name="model">mint.push.campaign</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="send_notification" type="object"
+                            string="Send Now" class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,sent"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name" readonly="state == 'sent'"/>
+                            <field name="body" readonly="state == 'sent'"/>
+                        </group>
+                        <group>
+                            <field name="url" readonly="state == 'sent'"/>
+                            <field name="icon" readonly="state == 'sent'"/>
+                            <field name="image" readonly="state == 'sent'"/>
+                        </group>
+                    </group>
+                    <group string="Delivery Results" invisible="state == 'draft'">
+                        <group>
+                            <field name="sent_count"/>
+                            <field name="total_count"/>
+                        </group>
+                        <group>
+                            <field name="sent_at"/>
+                            <field name="sent_by"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ Action ============ -->
+    <record id="action_push_campaign" model="ir.actions.act_window">
+        <field name="name">Notification History</field>
+        <field name="res_model">mint.push.campaign</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

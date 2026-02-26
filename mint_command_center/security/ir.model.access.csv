@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_push_campaign_user,mint.push.campaign.user,model_mint_push_campaign,base.group_user,1,0,0,0
+access_push_campaign_manager,mint.push.campaign.manager,model_mint_push_campaign,group_push_manager,1,1,1,0
+access_push_send_wizard_manager,mint.push.send.wizard.manager,model_mint_push_send_wizard,group_push_manager,1,1,1,1

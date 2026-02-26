@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ Module Category ============ -->
+    <record id="module_category_command_center" model="ir.module.category">
+        <field name="name">Command Center</field>
+        <field name="sequence">90</field>
+    </record>
+
+    <!-- ============ Push Notification Manager Group ============ -->
+    <record id="group_push_manager" model="res.groups">
+        <field name="name">Push Notification Manager</field>
+        <field name="category_id" ref="module_category_command_center"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">Can compose and send push notifications to all subscribers.</field>
+    </record>
+
+    <!-- Grant admin users the push manager group -->
+    <record id="base.group_system" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_push_manager'))]"/>
+    </record>
+
+</odoo>

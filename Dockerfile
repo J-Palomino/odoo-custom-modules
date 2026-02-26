@@ -18,6 +18,7 @@ COPY --chown=odoo:odoo mint_theme /opt/extra-addons/mint_theme
 COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financial_risk
 COPY --chown=odoo:odoo mint_maintenance_form /opt/extra-addons/mint_maintenance_form
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
+COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
@@ -69,6 +70,7 @@ RUN test -f /opt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MOD
 RUN grep "version" /opt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
 RUN test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MINT_MAINTENANCE_FORM MODULE VERIFIED" || (echo "MINT_MAINTENANCE_FORM MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER VERIFIED" || (echo "MINT_COMMAND_CENTER MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
 
