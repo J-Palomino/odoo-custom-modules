@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== Brand Ranking Views ==================== -->
+
+    <!-- Brand Ranking: Form View -->
+    <record id="view_brand_ranking_form" model="ir.ui.view">
+        <field name="name">mint.brand.ranking.form</field>
+        <field name="model">mint.brand.ranking</field>
+        <field name="arch" type="xml">
+            <form string="Brand Ranking">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="brand_id"/>
+                            <field name="company_id"/>
+                            <field name="rank"/>
+                        </group>
+                        <group>
+                            <field name="ranking_date"/>
+                            <field name="period"/>
+                            <field name="score"/>
+                        </group>
+                    </group>
+                    <group string="Notes">
+                        <field name="notes" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Brand Ranking: List View (editable) -->
+    <record id="view_brand_ranking_list" model="ir.ui.view">
+        <field name="name">mint.brand.ranking.list</field>
+        <field name="model">mint.brand.ranking</field>
+        <field name="arch" type="xml">
+            <list string="Brand Rankings" editable="bottom">
+                <field name="ranking_date"/>
+                <field name="period"/>
+                <field name="company_id"/>
+                <field name="brand_id"/>
+                <field name="rank"/>
+                <field name="score"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Brand Ranking: Pivot View -->
+    <record id="view_brand_ranking_pivot" model="ir.ui.view">
+        <field name="name">mint.brand.ranking.pivot</field>
+        <field name="model">mint.brand.ranking</field>
+        <field name="arch" type="xml">
+            <pivot string="Brand Rankings">
+                <field name="brand_id" type="row"/>
+                <field name="company_id" type="col"/>
+                <field name="rank" type="measure"/>
+                <field name="score" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Brand Ranking: Graph View -->
+    <record id="view_brand_ranking_graph" model="ir.ui.view">
+        <field name="name">mint.brand.ranking.graph</field>
+        <field name="model">mint.brand.ranking</field>
+        <field name="arch" type="xml">
+            <graph string="Brand Rankings" type="bar">
+                <field name="brand_id"/>
+                <field name="score" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- Brand Ranking: Search View -->
+    <record id="view_brand_ranking_search" model="ir.ui.view">
+        <field name="name">mint.brand.ranking.search</field>
+        <field name="model">mint.brand.ranking</field>
+        <field name="arch" type="xml">
+            <search string="Search Brand Rankings">
+                <field name="brand_id"/>
+                <field name="company_id"/>
+                <filter name="weekly" string="Weekly" domain="[('period', '=', 'weekly')]"/>
+                <filter name="monthly" string="Monthly" domain="[('period', '=', 'monthly')]"/>
+                <filter name="quarterly" string="Quarterly" domain="[('period', '=', 'quarterly')]"/>
+                <separator/>
+                <filter name="group_brand" string="Brand" context="{'group_by': 'brand_id'}"/>
+                <filter name="group_store" string="Store" context="{'group_by': 'company_id'}"/>
+                <filter name="group_period" string="Period" context="{'group_by': 'period'}"/>
+                <filter name="group_date" string="Date" context="{'group_by': 'ranking_date:month'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Brand Ranking: Action -->
+    <record id="action_brand_ranking" model="ir.actions.act_window">
+        <field name="name">Brand Rankings</field>
+        <field name="res_model">mint.brand.ranking</field>
+        <field name="view_mode">list,pivot,graph,form</field>
+        <field name="search_view_id" ref="view_brand_ranking_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add your first brand ranking
+            </p>
+            <p>
+                Track brand performance across stores with weekly, monthly, and quarterly rankings.
+            </p>
+        </field>
+    </record>
+
+</odoo>

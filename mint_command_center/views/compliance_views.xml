@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== Compliance Variance Views ==================== -->
+
+    <!-- Variance: Form View -->
+    <record id="view_compliance_variance_form" model="ir.ui.view">
+        <field name="name">mint.compliance.variance.form</field>
+        <field name="model">mint.compliance.variance</field>
+        <field name="arch" type="xml">
+            <form string="Compliance Variance">
+                <header>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,submitted,under_review,approved"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Details">
+                            <field name="reference"/>
+                            <field name="variance_type"/>
+                            <field name="company_ids" widget="many2many_tags"/>
+                            <field name="state_id"/>
+                            <field name="regulatory_body"/>
+                        </group>
+                        <group string="Dates &amp; Tracking">
+                            <field name="form_number"/>
+                            <field name="rule_reference"/>
+                            <field name="submission_date"/>
+                            <field name="approval_date"
+                                   invisible="state not in ('approved', 'expired')"/>
+                            <field name="expiration_date"
+                                   invisible="state not in ('approved', 'expired')"/>
+                            <field name="days_until_expiry"
+                                   invisible="state not in ('approved', 'expired')"/>
+                            <field name="denial_date"
+                                   invisible="state != 'denied'"/>
+                        </group>
+                    </group>
+                    <group invisible="variance_type not in ('social_media', 'website_url', 'mobile_app', 'paid_ads')">
+                        <group string="Platform">
+                            <field name="platform_name"/>
+                            <field name="platform_url" widget="url"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="Denial" name="denial"
+                              invisible="state != 'denied'">
+                            <field name="denial_reason"/>
+                        </page>
+                        <page string="Notes" name="notes">
+                            <field name="notes"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Variance: List View -->
+    <record id="view_compliance_variance_list" model="ir.ui.view">
+        <field name="name">mint.compliance.variance.list</field>
+        <field name="model">mint.compliance.variance</field>
+        <field name="arch" type="xml">
+            <list string="Compliance Variances"
+                  decoration-info="state == 'draft'"
+                  decoration-warning="state in ('submitted', 'under_review')"
+                  decoration-success="state == 'approved'"
+                  decoration-danger="state in ('denied', 'expired')">
+                <field name="reference"/>
+                <field name="variance_type"/>
+                <field name="state"/>
+                <field name="company_ids" widget="many2many_tags"/>
+                <field name="state_id"/>
+                <field name="regulatory_body"/>
+                <field name="submission_date"/>
+                <field name="expiration_date"/>
+                <field name="days_until_expiry"/>
+                <field name="platform_name" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Variance: Kanban View -->
+    <record id="view_compliance_variance_kanban" model="ir.ui.view">
+        <field name="name">mint.compliance.variance.kanban</field>
+        <field name="model">mint.compliance.variance</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state">
+                <field name="reference"/>
+                <field name="variance_type"/>
+                <field name="state"/>
+                <field name="company_ids"/>
+                <field name="expiration_date"/>
+                <field name="days_until_expiry"/>
+                <templates>
+                    <t t-name="card">
+                        <field name="reference" class="fw-bold"/>
+                        <field name="variance_type"/>
+                        <field name="company_ids" widget="many2many_tags"/>
+                        <div t-if="record.expiration_date.raw_value">
+                            <span class="text-muted">Expires: </span>
+                            <field name="expiration_date"/>
+                            <span class="ms-1 badge"
+                                  t-attf-class="#{record.days_until_expiry.raw_value &lt; 30 ? 'text-bg-warning' : 'text-bg-success'}">
+                                <field name="days_until_expiry"/>d
+                            </span>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Variance: Calendar View -->
+    <record id="view_compliance_variance_calendar" model="ir.ui.view">
+        <field name="name">mint.compliance.variance.calendar</field>
+        <field name="model">mint.compliance.variance</field>
+        <field name="arch" type="xml">
+            <calendar string="Variance Expirations"
+                      date_start="expiration_date"
+                      color="variance_type"
+                      quick_create="0">
+                <field name="reference"/>
+                <field name="variance_type"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- Variance: Search View -->
+    <record id="view_compliance_variance_search" model="ir.ui.view">
+        <field name="name">mint.compliance.variance.search</field>
+        <field name="model">mint.compliance.variance</field>
+        <field name="arch" type="xml">
+            <search string="Search Variances">
+                <field name="reference"/>
+                <field name="variance_type"/>
+                <field name="state_id"/>
+                <field name="regulatory_body"/>
+                <field name="platform_name"/>
+                <filter name="active" string="Active" domain="[('state', 'in', ('submitted', 'under_review', 'approved'))]"/>
+                <filter name="expired" string="Expired" domain="[('state', '=', 'expired')]"/>
+                <separator/>
+                <filter name="draft" string="Draft" domain="[('state', '=', 'draft')]"/>
+                <filter name="submitted" string="Submitted" domain="[('state', '=', 'submitted')]"/>
+                <filter name="under_review" string="Under Review" domain="[('state', '=', 'under_review')]"/>
+                <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
+                <filter name="denied" string="Denied" domain="[('state', '=', 'denied')]"/>
+                <separator/>
+                <filter name="group_type" string="Type" context="{'group_by': 'variance_type'}"/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_jurisdiction" string="Jurisdiction" context="{'group_by': 'state_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Variance: Window Action -->
+    <record id="action_compliance_variance" model="ir.actions.act_window">
+        <field name="name">Variances</field>
+        <field name="res_model">mint.compliance.variance</field>
+        <field name="view_mode">list,kanban,calendar,form</field>
+        <field name="search_view_id" ref="view_compliance_variance_search"/>
+        <field name="context">{}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first compliance variance
+            </p>
+            <p>
+                Track regulatory variance submissions, approvals, and expirations
+                for advertising and marketing activities across jurisdictions.
+            </p>
+        </field>
+    </record>
+
+</odoo>

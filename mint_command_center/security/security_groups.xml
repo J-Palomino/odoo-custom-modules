@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="0">
+
+        <!-- Viewer: read-only access to all CC modules -->
+        <record id="group_viewer" model="res.groups">
+            <field name="name">Command Center / Viewer</field>
+            <field name="comment">Read-only access to all Command Center data.</field>
+        </record>
+
+        <!-- PTL Manager: full CRUD on PTL Calendar and Hot Box -->
+        <record id="group_ptl_manager" model="res.groups">
+            <field name="name">Command Center / PTL Manager</field>
+            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
+            <field name="comment">Full PTL and Hot Box management access.</field>
+        </record>
+
+        <!-- Marketing: marketing tasks, requests, campaigns -->
+        <record id="group_marketing" model="res.groups">
+            <field name="name">Command Center / Marketing</field>
+            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
+            <field name="comment">Marketing tasks, requests, and campaign management.</field>
+        </record>
+
+        <!-- Vendor Manager: vendor relationships, brands -->
+        <record id="group_vendor_manager" model="res.groups">
+            <field name="name">Command Center / Vendor Manager</field>
+            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
+            <field name="comment">Vendor and brand relationship management.</field>
+        </record>
+
+        <!-- Operations: placements, billboards, taco day -->
+        <record id="group_operations" model="res.groups">
+            <field name="name">Command Center / Operations</field>
+            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
+            <field name="comment">Operational management for placements, billboards, events.</field>
+        </record>
+
+        <!-- Compliance: variance tracking, regulatory submissions -->
+        <record id="group_compliance" model="res.groups">
+            <field name="name">Command Center / Compliance</field>
+            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
+            <field name="comment">Compliance variance management and regulatory tracking.</field>
+        </record>
+
+        <!-- Push Notification Manager: compose and send push notifications -->
+        <record id="group_push_manager" model="res.groups">
+            <field name="name">Command Center / Push Manager</field>
+            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
+            <field name="comment">Can compose and send push notifications to all subscribers.</field>
+        </record>
+
+        <!-- Grant admin users all CC groups -->
+        <record id="base.group_system" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('group_ptl_manager')), (4, ref('group_marketing')), (4, ref('group_vendor_manager')), (4, ref('group_operations')), (4, ref('group_compliance')), (4, ref('group_push_manager'))]"/>
+        </record>
+
+    </data>
+</odoo>

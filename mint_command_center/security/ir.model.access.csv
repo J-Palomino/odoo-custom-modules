@@ -1,4 +1,14 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_push_campaign_user,mint.push.campaign.user,model_mint_push_campaign,base.group_user,1,0,0,0
+access_ptl_day_viewer,mint.ptl.day.viewer,model_mint_ptl_day,group_viewer,1,0,0,0
+access_ptl_day_manager,mint.ptl.day.manager,model_mint_ptl_day,group_ptl_manager,1,1,1,1
+access_ptl_deal_viewer,mint.ptl.deal.viewer,model_mint_ptl_deal,group_viewer,1,0,0,0
+access_ptl_deal_manager,mint.ptl.deal.manager,model_mint_ptl_deal,group_ptl_manager,1,1,1,1
+access_hotbox_deal_viewer,mint.hotbox.deal.viewer,model_mint_hotbox_deal,group_viewer,1,0,0,0
+access_hotbox_deal_manager,mint.hotbox.deal.manager,model_mint_hotbox_deal,group_ptl_manager,1,1,1,1
+access_brand_ranking_viewer,mint.brand.ranking.viewer,model_mint_brand_ranking,group_viewer,1,0,0,0
+access_brand_ranking_manager,mint.brand.ranking.manager,model_mint_brand_ranking,group_vendor_manager,1,1,1,1
+access_compliance_variance_viewer,mint.compliance.variance.viewer,model_mint_compliance_variance,group_viewer,1,0,0,0
+access_compliance_variance_manager,mint.compliance.variance.manager,model_mint_compliance_variance,group_compliance,1,1,1,1
+access_push_campaign_viewer,mint.push.campaign.viewer,model_mint_push_campaign,group_viewer,1,0,0,0
 access_push_campaign_manager,mint.push.campaign.manager,model_mint_push_campaign,group_push_manager,1,1,1,0
 access_push_send_wizard_manager,mint.push.send.wizard.manager,model_mint_push_send_wizard,group_push_manager,1,1,1,1

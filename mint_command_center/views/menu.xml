@@ -1,17 +1,61 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <odoo>
 
-    <!-- ============ Top-level App Menu ============ -->
+    <!-- ==================== Top-Level Command Center Menu ==================== -->
+
     <menuitem id="menu_command_center_root"
               name="Command Center"
-              sequence="90"
-              web_icon="mint_command_center,static/description/icon.png"/>
+              sequence="5"/>
 
-    <!-- ============ Push Notifications Section ============ -->
+    <!-- ── PTL Section ── -->
+    <menuitem id="menu_ptl"
+              name="PTL"
+              parent="menu_command_center_root"
+              sequence="10"/>
+
+    <menuitem id="menu_ptl_calendar"
+              name="PTL Calendar"
+              parent="menu_ptl"
+              action="action_ptl_day"
+              sequence="10"/>
+
+    <menuitem id="menu_ptl_deals"
+              name="All PTL Deals"
+              parent="menu_ptl"
+              action="action_ptl_deal"
+              sequence="20"/>
+
+    <!-- ── Hot Box Section ── -->
+    <menuitem id="menu_hotbox"
+              name="Hot Box"
+              parent="menu_command_center_root"
+              action="action_hotbox_deal"
+              sequence="20"/>
+
+    <!-- ── Brand Rankings ── -->
+    <menuitem id="menu_brand_rankings"
+              name="Brand Rankings"
+              parent="menu_command_center_root"
+              action="action_brand_ranking"
+              sequence="30"/>
+
+    <!-- ── Compliance Section ── -->
+    <menuitem id="menu_compliance"
+              name="Compliance"
+              parent="menu_command_center_root"
+              sequence="40"/>
+
+    <menuitem id="menu_compliance_variances"
+              name="Variances"
+              parent="menu_compliance"
+              action="action_compliance_variance"
+              sequence="10"/>
+
+    <!-- ── Push Notifications Section ── -->
     <menuitem id="menu_push_root"
               name="Push Notifications"
               parent="menu_command_center_root"
-              sequence="10"/>
+              sequence="50"/>
 
     <menuitem id="menu_push_send"
               name="Send Notification"
