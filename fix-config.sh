@@ -168,7 +168,7 @@ if [ -n "$ODOO_UPDATE_MODULES" ]; then
     echo "=== Updating modules: $ODOO_UPDATE_MODULES ==="
     EXTRA_ARGS="$EXTRA_ARGS --update $ODOO_UPDATE_MODULES"
 fi
-if [ -n "$ODOO_INIT_MODULES" ]; then
+if [ -n "$ODOO_INIT_MODULES" ] && [ "$ODOO_INIT_MODULES" != "none" ]; then
     echo "=== Installing modules: $ODOO_INIT_MODULES ==="
     EXTRA_ARGS="$EXTRA_ARGS --init $ODOO_INIT_MODULES"
 fi
@@ -183,12 +183,12 @@ if [ -n "${PORT:-}" ]; then
     nginx -g 'daemon off;' &
     NGINX_PID=$!
 
-    echo "Starting Odoo with gevent on port 8072..."
-    gosu odoo odoo \
+    echo "Starting Odoo (HTTP=8080, gevent=8072)..."
+    su -s /bin/bash odoo -c "odoo \
         -c /etc/odoo/odoo.conf \
-        --http-port=8069 \
+        --http-port=8080 \
         --gevent-port=8072 \
-        $EXTRA_ARGS &
+        $EXTRA_ARGS" &
     ODOO_PID=$!
 
     # If either process dies, kill the other and exit
