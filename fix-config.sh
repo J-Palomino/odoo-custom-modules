@@ -183,11 +183,18 @@ if [ -n "${PORT:-}" ]; then
     nginx -g 'daemon off;' &
     NGINX_PID=$!
 
+    # Build DB args (same as official entrypoint)
+    DB_ARGS=""
+    [ -n "$HOST" ] && DB_ARGS="$DB_ARGS --db_host=$HOST"
+    [ -n "$USER" ] && DB_ARGS="$DB_ARGS --db_user=$USER"
+    [ -n "$PASSWORD" ] && DB_ARGS="$DB_ARGS --db_password=$PASSWORD"
+
     echo "Starting Odoo (HTTP=8080, gevent=8072)..."
     su -s /bin/bash odoo -c "odoo \
         -c /etc/odoo/odoo.conf \
         --http-port=8080 \
         --gevent-port=8072 \
+        $DB_ARGS \
         $EXTRA_ARGS" &
     ODOO_PID=$!
 
