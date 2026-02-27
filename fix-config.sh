@@ -173,6 +173,11 @@ if [ -n "$ODOO_INIT_MODULES" ] && [ "$ODOO_INIT_MODULES" != "none" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --init $ODOO_INIT_MODULES"
 fi
 
+# ── Fix volume permissions (Railway mounts as ubuntu) ─────────────
+if [ -d /var/lib/odoo ]; then
+    chown -R odoo:odoo /var/lib/odoo 2>/dev/null || true
+fi
+
 # ── Start nginx + Odoo (Railway mode) or just Odoo (local) ────────
 if [ -n "${PORT:-}" ]; then
     # Railway mode: nginx proxies $PORT → 8069 (HTTP) + 8072 (websocket)
