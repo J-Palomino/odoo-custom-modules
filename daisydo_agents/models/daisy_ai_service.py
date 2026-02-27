@@ -31,11 +31,21 @@ class DaisyAIServiceAgent(models.AbstractModel):
             }
             if conversation_id:
                 payload["chatId"] = conversation_id
-            if override_config:
-                payload["overrideConfig"] = override_config
+
+            # Build overrideConfig from agent settings
+            ov = dict(override_config or {})
+            if agent.ai_system_prompt:
+                personality_prefix = ""
+                if agent.ai_personality:
+                    personality_prefix = f"Respond in a {agent.ai_personality} tone.\n\n"
+                ov["systemMessagePrompt"] = personality_prefix + agent.ai_system_prompt
+            elif agent.ai_personality:
+                ov["systemMessagePrompt"] = f"Respond in a {agent.ai_personality} tone."
+            if ov:
+                payload["overrideConfig"] = ov
 
             _logger.info(
-                "[%s] Daisy+ API request for agent %s → %s/prediction/%s",
+                "[%s] Daisy+ API request for agent %s -> %s/prediction/%s",
                 request_id, agent.name, base_url, agency_id,
             )
 

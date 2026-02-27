@@ -7,6 +7,7 @@ class DaisyAgentMetric(models.Model):
     _order = "date desc"
 
     agent_id = fields.Many2one("daisy.agent", required=True, ondelete="cascade", index=True)
+    company_id = fields.Many2one(related="agent_id.company_id", store=True)
     date = fields.Date(required=True, default=fields.Date.context_today, index=True)
 
     conversations_handled = fields.Integer()

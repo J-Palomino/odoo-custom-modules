@@ -32,6 +32,22 @@
     </record>
 
     <!-- ============ RECORD RULES ============ -->
+
+    <!-- Multi-company rule: users only see agents belonging to their company -->
+    <record id="daisy_agent_rule_multi_company" model="ir.rule">
+        <field name="name">Daisy Agent: Multi-Company</field>
+        <field name="model_id" ref="model_daisy_agent"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="daisy_agent_metric_rule_multi_company" model="ir.rule">
+        <field name="name">Daisy Agent Metric: Multi-Company</field>
+        <field name="model_id" ref="model_daisy_agent_metric"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
+
     <record id="daisy_agent_rule_admin" model="ir.rule">
         <field name="name">Daisy Agency: Administrator Full Access</field>
         <field name="model_id" ref="model_daisy_agent"/>

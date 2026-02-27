@@ -1,8 +1,10 @@
 import json
 import logging
 import os
+import threading
 
-from odoo import models, fields, api
+from odoo import models, fields, api, SUPERUSER_ID
+from odoo.modules.registry import Registry
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
@@ -50,6 +52,12 @@ class DaisyAgent(models.Model):
     ai_handoff_threshold = fields.Float(default=0.7, help="Confidence below this triggers human handoff (0-1)")
     ai_max_turns = fields.Integer(default=20, help="Max back-and-forth messages before auto-handoff")
     ai_greeting = fields.Char(default="Hi! I'm here to help. What can I do for you?")
+
+    # --- Company ---
+    company_id = fields.Many2one(
+        "res.company", string="Company", required=True,
+        default=lambda self: self.env.company,
+    )
 
     # --- Lifecycle ---
     state = fields.Selection(
@@ -142,7 +150,7 @@ class DaisyAgent(models.Model):
         if not result.get("valid"):
             raise UserError(f"Invalid API key: {result.get('error', 'unknown error')}")
 
-        # Create Odoo user for the agent
+        # Create Odoo user for the agent in the agent's company
         if not self.user_id:
             user = self.env["res.users"].sudo().create({
                 "name": self.name,
@@ -150,6 +158,8 @@ class DaisyAgent(models.Model):
                 "email": self.email,
                 "image_1920": self.avatar,
                 "active": True,
+                "company_id": self.company_id.id,
+                "company_ids": [(6, 0, [self.company_id.id])],
                 "group_ids": [(6, 0, [self.env.ref("base.group_user").id])],
             })
             self.user_id = user
@@ -165,6 +175,7 @@ class DaisyAgent(models.Model):
             project = self.env["project.project"].sudo().create({
                 "name": f"{self.name} - Email",
                 "alias_name": self.code,
+                "company_id": self.company_id.id,
             })
             self.mail_project_id = project
 
@@ -277,6 +288,105 @@ class DaisyAgent(models.Model):
             "context_prefix": context_prefix or False,
         })
         self.env.ref("daisydo_agents.ir_cron_process_agent_jobs")._trigger()
+
+    def _respond_async(self, channel_model, channel_id, user_text, history, conversation_id, context_prefix=""):
+        """Schedule AI response in a background thread after current transaction commits.
+
+        Uses separate DB cursors for each phase so bus notifications (typing
+        indicator, new message) are committed and delivered to clients
+        immediately rather than waiting for the entire AI round-trip.
+
+        Fallback method — prefer _enqueue_response() for cron-based processing.
+        """
+        self.ensure_one()
+        db_name = self.env.cr.dbname
+        agent_id = self.id
+
+        def _after_commit():
+            def _run():
+                try:
+                    registry = Registry(db_name)
+
+                    # --- Phase 1: show typing indicator (commits immediately) ---
+                    typing_member_id = None
+                    if channel_model == "discuss.channel":
+                        with registry.cursor() as cr:
+                            env = api.Environment(cr, SUPERUSER_ID, {})
+                            agent = env["daisy.agent"].browse(agent_id)
+                            if not agent.exists() or not agent.partner_id:
+                                return
+                            member = env["discuss.channel.member"].search([
+                                ("channel_id", "=", channel_id),
+                                ("partner_id", "=", agent.partner_id.id),
+                            ], limit=1)
+                            if member:
+                                member._notify_typing(True)
+                                typing_member_id = member.id
+                        # cursor commits here -> typing notification visible NOW
+
+                    # --- Phase 2: call AI service ---
+                    with registry.cursor() as cr:
+                        env = api.Environment(cr, SUPERUSER_ID, {})
+                        agent = env["daisy.agent"].browse(agent_id)
+                        target = env[channel_model].browse(channel_id)
+                        if not agent.exists() or not target.exists():
+                            return
+                        full_text = context_prefix + user_text if context_prefix else user_text
+                        ai_result = agent.get_ai_response(full_text, history, conversation_id)
+                    # cursor commits here (no writes, but releases the connection)
+
+                    # --- Phase 3: post message (commits immediately) ---
+                    with registry.cursor() as cr:
+                        env = api.Environment(cr, SUPERUSER_ID, {})
+                        agent = env["daisy.agent"].browse(agent_id)
+                        target = env[channel_model].browse(channel_id)
+                        if not agent.exists() or not target.exists():
+                            return
+
+                        # Clear typing indicator
+                        if typing_member_id:
+                            member = env["discuss.channel.member"].browse(typing_member_id)
+                            if member.exists():
+                                member._notify_typing(False)
+
+                        if not ai_result.get("response"):
+                            return
+
+                        if ai_result.get("should_handoff"):
+                            _logger.info(
+                                "Agent %s handing off on %s/%s",
+                                agent.name, channel_model, channel_id,
+                            )
+                            target.with_user(agent.user_id).message_post(
+                                body="Let me connect you with a team member who can help further.",
+                                message_type="comment",
+                                subtype_xmlid="mail.mt_comment",
+                            )
+                            return
+
+                        ai_msg = target.with_user(agent.user_id).message_post(
+                            body=ai_result["response"],
+                            message_type="comment",
+                            subtype_xmlid="mail.mt_comment",
+                        )
+                        ai_msg.sudo().write({
+                            "daisy_ai_generated": True,
+                            "daisy_ai_confidence": ai_result.get("confidence", 0),
+                            "daisy_intent": ai_result.get("intent", ""),
+                            "daisy_conversation_id": ai_result.get("conversation_id", ""),
+                        })
+                    # cursor commits here -> message notification visible NOW
+
+                except Exception:
+                    _logger.exception(
+                        "Async AI response failed for agent %s on %s/%s",
+                        agent_id, channel_model, channel_id,
+                    )
+
+            thread = threading.Thread(target=_run, daemon=True)
+            thread.start()
+
+        self.env.cr.postcommit.add(_after_commit)
 
     def get_ai_response(self, message, conversation_history=None, conversation_id=None, override_config=None):
         """Call Daisy+ API using this agent's own credentials."""

@@ -11,7 +11,7 @@
         <field name="active">True</field>
     </record>
 
-    <!-- Process pending AI response jobs (triggered on-demand via _trigger()) -->
+    <!-- AI response job processing cron -->
     <record id="ir_cron_process_agent_jobs" model="ir.cron">
         <field name="name">Daisy Agency: Process AI Response Jobs</field>
         <field name="model_id" ref="model_daisy_agent_job"/>
@@ -20,10 +20,9 @@
         <field name="interval_number">5</field>
         <field name="interval_type">minutes</field>
         <field name="active">True</field>
-        <field name="priority">1</field>
     </record>
 
-    <!-- Clean up old completed/error jobs weekly -->
+    <!-- Cleanup old jobs cron -->
     <record id="ir_cron_cleanup_agent_jobs" model="ir.cron">
         <field name="name">Daisy Agency: Cleanup Old Jobs</field>
         <field name="model_id" ref="model_daisy_agent_job"/>
@@ -34,7 +33,7 @@
         <field name="active">True</field>
     </record>
 
-    <!-- Go2RTC configuration parameters -->
+    <!-- Go2RTC config parameters -->
     <record id="go2rtc_api_url_param" model="ir.config_parameter">
         <field name="key">daisy.go2rtc_api_url</field>
         <field name="value">http://go2rtc-media.railway.internal:1984</field>

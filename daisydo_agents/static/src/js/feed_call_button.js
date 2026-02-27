@@ -7,7 +7,7 @@ import { useService } from "@web/core/utils/hooks";
 import { Go2rtcFeedViewer } from "./feed_viewer";
 
 /**
- * DaisyFeedCallButton — a component added to the Discuss call action bar
+ * DaisyFeedCallButton -- a component added to the Discuss call action bar
  * that shows a "Camera Feeds" dropdown. When a feed is selected, it opens
  * a Go2rtcFeedViewer panel alongside the call.
  */

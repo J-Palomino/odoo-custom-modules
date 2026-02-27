@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Graph View -->
+    <record id="mail_mail_report_view_graph" model="ir.ui.view">
+        <field name="name">mail.mail.report.graph</field>
+        <field name="model">mail.mail.report</field>
+        <field name="arch" type="xml">
+            <graph string="Email Statistics" type="bar" stacked="1">
+                <field name="date" type="row"/>
+                <field name="sent_count" type="measure"/>
+                <field name="exception_count" type="measure"/>
+                <field name="cancel_count" type="measure"/>
+                <field name="outgoing_count" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- Pivot View -->
+    <record id="mail_mail_report_view_pivot" model="ir.ui.view">
+        <field name="name">mail.mail.report.pivot</field>
+        <field name="model">mail.mail.report</field>
+        <field name="arch" type="xml">
+            <pivot string="Email Statistics">
+                <field name="date" type="row" interval="month"/>
+                <field name="total_count" type="measure"/>
+                <field name="sent_count" type="measure"/>
+                <field name="outgoing_count" type="measure"/>
+                <field name="exception_count" type="measure"/>
+                <field name="cancel_count" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="mail_mail_report_view_list" model="ir.ui.view">
+        <field name="name">mail.mail.report.list</field>
+        <field name="model">mail.mail.report</field>
+        <field name="arch" type="xml">
+            <list string="Email Statistics">
+                <field name="date"/>
+                <field name="total_count" sum="Total"/>
+                <field name="sent_count" sum="Sent"/>
+                <field name="outgoing_count" sum="Outgoing"/>
+                <field name="exception_count" sum="Failed"/>
+                <field name="cancel_count" sum="Cancelled"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="mail_mail_report_view_search" model="ir.ui.view">
+        <field name="name">mail.mail.report.search</field>
+        <field name="model">mail.mail.report</field>
+        <field name="arch" type="xml">
+            <search string="Email Statistics">
+                <field name="date"/>
+                <filter name="today" string="Today"
+                        domain="[('date', '=', context_today().strftime('%Y-%m-%d'))]"/>
+                <filter name="last_7_days" string="Last 7 Days"
+                        domain="[('date', '&gt;=', (context_today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'))]"/>
+                <filter name="last_30_days" string="Last 30 Days"
+                        domain="[('date', '&gt;=', (context_today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d'))]"/>
+                <separator/>
+                <filter name="has_failures" string="Has Failures"
+                        domain="[('exception_count', '&gt;', 0)]"/>
+                <filter name="has_cancelled" string="Blocked by Whitelist"
+                        domain="[('cancel_count', '&gt;', 0)]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="mail_mail_report_action" model="ir.actions.act_window">
+        <field name="name">Email Statistics</field>
+        <field name="res_model">mail.mail.report</field>
+        <field name="view_mode">graph,pivot,list</field>
+        <field name="search_view_id" ref="mail_mail_report_view_search"/>
+        <field name="context">{'search_default_last_30_days': 1}</field>
+    </record>
+
+</odoo>
