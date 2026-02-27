@@ -55,8 +55,13 @@ const vaultService = {
                 function waitAndCheck() {
                     if (!vault_utils.supported()) return null;
 
-                    if (odoo.isReady) self._initialize_keys();
-                    else setTimeout(waitAndCheck, 500);
+                    if (odoo.isReady) {
+                        self._initialize_keys().catch((err) => {
+                            console.warn("Vault: key initialization failed —", err.message || err);
+                        });
+                    } else {
+                        setTimeout(waitAndCheck, 500);
+                    }
                 }
 
                 setTimeout(waitAndCheck, 500);
@@ -138,8 +143,10 @@ const vaultService = {
                 store.clear();
 
                 // Import the keys from the database
-                if (!(await this._import_from_database()))
-                    throw Error(_t("Failed to import keys from database"));
+                if (!(await this._import_from_database())) {
+                    console.warn("Vault: could not import keys — vault features will be unavailable");
+                    return;
+                }
 
                 // Store the imported keys in the object store for the next calls
                 if (!(await this._export_to_store()))
@@ -339,37 +346,42 @@ const vaultService = {
             async _import_from_database() {
                 const params = await rpc("/vault/keys/get");
                 if (Object.keys(params).length) {
-                    this.salt = vault_utils.fromBase64(params.salt);
-                    this.iterations = params.iterations;
-                    this.version = params.version || 0;
+                    try {
+                        this.salt = vault_utils.fromBase64(params.salt);
+                        this.iterations = params.iterations;
+                        this.version = params.version || 0;
 
-                    // Request the password from the user and derive the user key
-                    const raw_password = await askpassword(false);
-                    let password = raw_password;
+                        // Request the password from the user and derive the user key
+                        const raw_password = await askpassword(false);
+                        let password = raw_password;
 
-                    // Compatibility
-                    if (!this.version) password = session.username + "|" + password;
+                        // Compatibility
+                        if (!this.version) password = session.username + "|" + password;
 
-                    const pass = await vault_utils.derive_key(
-                        password,
-                        this.salt,
-                        this.iterations
-                    );
+                        const pass = await vault_utils.derive_key(
+                            password,
+                            this.salt,
+                            this.iterations
+                        );
 
-                    this.keys = {
-                        publicKey: await vault_utils.load_public_key(params.public),
-                        privateKey: await vault_utils.load_private_key(
-                            params.private,
-                            pass,
-                            params.iv
-                        ),
-                    };
+                        this.keys = {
+                            publicKey: await vault_utils.load_public_key(params.public),
+                            privateKey: await vault_utils.load_private_key(
+                                params.private,
+                                pass,
+                                params.iv
+                            ),
+                        };
 
-                    this.time = new Date();
-                    this.uuid = params.uuid;
+                        this.time = new Date();
+                        this.uuid = params.uuid;
 
-                    this._check_key_migration(raw_password);
-                    return true;
+                        this._check_key_migration(raw_password);
+                        return true;
+                    } catch (err) {
+                        console.error("Vault: failed to import keys from database —", err.message || err);
+                        return false;
+                    }
                 }
                 return false;
             }
