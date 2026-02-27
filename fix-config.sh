@@ -29,17 +29,16 @@ fix_config() {
 
     echo "Fixing $cfg ..."
 
-    # ── Railway single-port websocket fix ────────────────────────────
-    # Railway routes ALL traffic to one port (PORT env var, default 8069).
-    # Odoo multi-worker mode (workers > 0) spawns a separate gevent
-    # worker on port 8072 for websockets, which Railway cannot reach.
-    # Force workers=0 so Odoo runs single-process threaded mode where
-    # HTTP + websocket + cron all run on port 8069.
+    # ── Workers ─────────────────────────────────────────────────────
+    # Nginx handles routing websocket traffic to port 8072 (gevent),
+    # so we can safely use multi-worker mode on Railway.
+    WORKERS="${ODOO_WORKERS:-4}"
     if grep -q "workers" "$cfg"; then
-        sed -i 's/workers\s*=\s*[0-9]*/workers = 0/g' "$cfg"
+        sed -i "s/workers\s*=\s*[0-9]*/workers = $WORKERS/g" "$cfg"
     else
-        echo "workers = 0" >> "$cfg"
+        echo "workers = $WORKERS" >> "$cfg"
     fi
+    echo "Set workers = $WORKERS"
 
     # Replace any db_port setting with 5432
     sed -i 's/db_port\s*=\s*[0-9]*/db_port = 5432/g' "$cfg"
@@ -174,5 +173,30 @@ if [ -n "$ODOO_INIT_MODULES" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --init $ODOO_INIT_MODULES"
 fi
 
-# Execute the original entrypoint
-exec /entrypoint.sh "$@" $EXTRA_ARGS
+# ── Start nginx + Odoo (Railway mode) or just Odoo (local) ────────
+if [ -n "${PORT:-}" ]; then
+    # Railway mode: nginx proxies $PORT → 8069 (HTTP) + 8072 (websocket)
+    mkdir -p /etc/nginx/conf.d
+    envsubst '${PORT}' < /etc/nginx/templates/odoo.conf.template > /etc/nginx/conf.d/default.conf
+    rm -f /etc/nginx/sites-enabled/default
+    echo "Starting nginx on port $PORT..."
+    nginx -g 'daemon off;' &
+    NGINX_PID=$!
+
+    echo "Starting Odoo with gevent on port 8072..."
+    gosu odoo odoo \
+        -c /etc/odoo/odoo.conf \
+        --http-port=8069 \
+        --gevent-port=8072 \
+        $EXTRA_ARGS &
+    ODOO_PID=$!
+
+    # If either process dies, kill the other and exit
+    wait -n "$ODOO_PID" "$NGINX_PID"
+    echo "Process exited, shutting down..."
+    kill "$ODOO_PID" "$NGINX_PID" 2>/dev/null || true
+    wait
+else
+    # Local dev: run Odoo directly (both ports accessible)
+    exec /entrypoint.sh "$@" $EXTRA_ARGS
+fi

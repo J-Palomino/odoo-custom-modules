@@ -5,7 +5,10 @@ ARG CACHEBUST=40
 
 USER root
 
-# Install Python dependencies for base_accounting_kit
+# Install nginx (reverse proxy for websocket routing) and Python deps
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nginx gettext-base \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip3 install --no-cache-dir --break-system-packages openpyxl ofxparse qifparse pywebpush py-vapid
 
 # Prepare extra-addons directory
@@ -101,8 +104,9 @@ RUN for mod in sign_oca spreadsheet_oca spreadsheet_dashboard_oca \
 RUN chmod +x /opt/extra-addons/mint_theme/generate-theme.sh
 RUN chmod +x /opt/extra-addons/daisydo_theme/generate-theme.sh
 
-# Copy config file as backup and fix script
+# Copy config, nginx template, and fix script
 COPY odoo.conf /etc/odoo/odoo.conf
+COPY nginx.conf.template /etc/nginx/templates/odoo.conf.template
 COPY fix-config.sh /fix-config.sh
 RUN chmod +x /fix-config.sh
 
