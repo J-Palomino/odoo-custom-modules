@@ -723,6 +723,41 @@ html body .o_web_client .o_main_navbar .o_menu_sections a {
   background: \$theme-primary !important;
   background-color: \$theme-primary !important;
 }
+
+
+// ============================================================
+// LOGIN PAGE — Google / Passkey only
+// ============================================================
+// Hide email/password fields so users sign in via OAuth or Passkey.
+
+.oe_login_form {
+  // Hide email + password fields
+  .field-login,
+  .o_caps_lock_warning {
+    display: none !important;
+  }
+
+  // Hide "Log in" submit button and "Don't have an account?" link
+  .oe_login_buttons > button[type="submit"],
+  .oe_login_buttons > a[href="/web/signup"] {
+    display: none !important;
+  }
+
+  // Hide the "- or -" separator (no longer needed)
+  .o_login_auth > em {
+    display: none !important;
+  }
+
+  // Make the OAuth/Passkey section prominent
+  .o_login_auth {
+    margin-top: 0 !important;
+
+    .list-group-item {
+      padding: 0.75rem 1rem !important;
+      font-size: 1.05rem;
+    }
+  }
+}
 SCSS
 
 # ============================================================
