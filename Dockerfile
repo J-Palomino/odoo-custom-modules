@@ -11,7 +11,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages openpyxl ofxparse qifparse pywebpush py-vapid "fsspec[s3]>=2025.3.0"
+RUN pip3 install --no-cache-dir --break-system-packages openpyxl ofxparse qifparse pywebpush py-vapid "fsspec[s3]>=2025.3.0" packaging
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
