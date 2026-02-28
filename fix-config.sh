@@ -120,6 +120,7 @@ for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_fina
     mint_maintenance_form mint_push mint_command_center \
     daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
     base_accounting_kit base_account_budget sign_oca \
+    fs_storage fs_attachment fs_attachment_s3 server_environment \
     spreadsheet_oca spreadsheet_dashboard_oca \
     base_cancel_confirm base_substate base_technical_features date_range \
     bi_sql_editor report_qweb_element_page_visibility report_xlsx report_xlsx_helper report_xml sql_request_abstract \

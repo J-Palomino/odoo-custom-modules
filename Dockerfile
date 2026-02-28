@@ -5,14 +5,28 @@ ARG CACHEBUST=50
 
 USER root
 
-# Install nginx (reverse proxy for websocket routing) and Python deps
+# Install nginx (reverse proxy for websocket routing) + git (OCA module cloning)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nginx gettext-base \
+    && apt-get install -y --no-install-recommends nginx gettext-base git \
     && rm -rf /var/lib/apt/lists/*
-RUN pip3 install --no-cache-dir --break-system-packages openpyxl ofxparse qifparse pywebpush py-vapid
+
+# Install Python dependencies + S3 storage
+RUN pip3 install --no-cache-dir --break-system-packages openpyxl ofxparse qifparse pywebpush py-vapid "fsspec[s3]>=2025.3.0"
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
+
+# ── OCA storage modules (S3 attachments) ──────────────────────────────
+RUN git clone --depth 1 --branch 19.0 https://github.com/OCA/storage.git /tmp/oca-storage \
+    && cp -r /tmp/oca-storage/fs_storage /opt/extra-addons/fs_storage \
+    && cp -r /tmp/oca-storage/fs_attachment /opt/extra-addons/fs_attachment \
+    && cp -r /tmp/oca-storage/fs_attachment_s3 /opt/extra-addons/fs_attachment_s3 \
+    && rm -rf /tmp/oca-storage \
+    && git clone --depth 1 --branch 19.0 https://github.com/OCA/server-env.git /tmp/oca-server-env \
+    && cp -r /tmp/oca-server-env/server_environment /opt/extra-addons/server_environment \
+    && rm -rf /tmp/oca-server-env \
+    && chown -R odoo:odoo /opt/extra-addons/fs_storage /opt/extra-addons/fs_attachment \
+       /opt/extra-addons/fs_attachment_s3 /opt/extra-addons/server_environment
 
 # ── Mint custom modules ──────────────────────────────────────────────
 COPY --chown=odoo:odoo avancir_inventory /opt/extra-addons/avancir_inventory
@@ -99,6 +113,11 @@ RUN for mod in sign_oca spreadsheet_oca spreadsheet_dashboard_oca \
       account_move_post_date_user account_move_print account_usability \
       account_invoice_fixed_discount account_invoice_pricelist account_invoice_pricelist_sale \
       account_statement_base account_financial_risk; do \
+      test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
+    done
+
+# Verify OCA storage modules
+RUN for mod in fs_storage fs_attachment fs_attachment_s3 server_environment; do \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
 
