@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=41
+ARG CACHEBUST=50
 
 USER root
 
@@ -71,6 +71,8 @@ RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync
 RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MODULE VERIFIED" || (echo "MINT_THEME MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
+RUN wc -l /opt/extra-addons/mint_theme/static/src/scss/mint_theme.scss && echo "SCSS LINE COUNT CHECK"
+RUN grep -c "field-login" /opt/extra-addons/mint_theme/static/src/scss/mint_theme.scss && echo "LOGIN HIDE RULES PRESENT" || (echo "ERROR: LOGIN HIDE RULES MISSING!" && exit 1)
 RUN test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MINT_MAINTENANCE_FORM MODULE VERIFIED" || (echo "MINT_MAINTENANCE_FORM MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER VERIFIED" || (echo "MINT_COMMAND_CENTER MISSING" && exit 1)
