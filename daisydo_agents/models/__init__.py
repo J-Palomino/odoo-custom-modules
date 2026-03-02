@@ -6,6 +6,7 @@ from . import daisy_ai_service
 from . import daisy_go2rtc_service
 from . import mail_mail
 from . import mail_mail_report
+from . import mail_message
 from . import discuss_channel
 from . import im_livechat_channel
 from . import mail_thread

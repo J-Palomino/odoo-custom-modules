@@ -164,9 +164,134 @@ echo "=== Persistent volume addons contents ==="
 ls -la /var/lib/odoo/addons/ 2>/dev/null || echo "No addons dir"
 ls -la /var/lib/odoo/addons/19.0/ 2>/dev/null || echo "No 19.0 dir"
 
+# Fix mail table primary keys and FK constraints (pre-existing DB issue)
+echo "=== Checking mail table primary keys ==="
+if [ -n "$HOST" ]; then
+    python3 << 'PYFIX' 2>&1
+import os, sys
+try:
+    import psycopg2
+except ImportError:
+    print("psycopg2 not available, skipping PK fix")
+    sys.exit(0)
+
+host = os.environ.get("HOST", "localhost")
+port = os.environ.get("PORT", "5432")
+user = os.environ.get("USER", "odoo")
+password = os.environ.get("PASSWORD", os.environ.get("ODOO_DB_PASSWORD", ""))
+dbname = os.environ.get("ODOO_DB_NAME", "odoo")
+
+try:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    for table in ("mail_message", "mail_mail"):
+        cur.execute("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = %s AND table_schema = 'public'
+        """, (table,))
+        if not cur.fetchone():
+            print(f"=== {table} table does not exist -- skipping ===")
+            continue
+
+        cur.execute("""
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = %s::regclass AND contype = 'p'
+        """, (table,))
+        if cur.fetchone():
+            print(f"=== {table} PK exists -- OK ===")
+        else:
+            print(f"=== {table} PK missing -- fixing ===")
+            cur.execute(f"""
+                DELETE FROM {table}
+                WHERE ctid IN (
+                    SELECT ctid FROM (
+                        SELECT ctid, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ctid) as rn
+                        FROM {table}
+                        WHERE id IN (SELECT id FROM {table} GROUP BY id HAVING COUNT(*) > 1)
+                    ) sub WHERE rn > 1
+                )
+            """)
+            print(f"Deleted {cur.rowcount} duplicate {table} rows")
+            cur.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (id)")
+            print(f"=== {table} PK restored successfully ===")
+
+    # Fix mail_mail_res_partner_rel FK constraint -- make it ON DELETE CASCADE
+    cur.execute("""
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'mail_mail_res_partner_rel' AND table_schema = 'public'
+    """)
+    if cur.fetchone():
+        cur.execute("""
+            DELETE FROM mail_mail_res_partner_rel
+            WHERE mail_mail_id NOT IN (SELECT id FROM mail_mail)
+        """)
+        if cur.rowcount > 0:
+            print(f"=== Cleaned {cur.rowcount} orphaned mail_mail_res_partner_rel rows ===")
+
+        cur.execute("""
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'mail_mail_res_partner_rel_mail_mail_id_fkey'
+        """)
+        if cur.fetchone():
+            cur.execute("""
+                ALTER TABLE mail_mail_res_partner_rel
+                DROP CONSTRAINT mail_mail_res_partner_rel_mail_mail_id_fkey
+            """)
+            cur.execute("""
+                ALTER TABLE mail_mail_res_partner_rel
+                ADD CONSTRAINT mail_mail_res_partner_rel_mail_mail_id_fkey
+                FOREIGN KEY (mail_mail_id) REFERENCES mail_mail(id) ON DELETE CASCADE
+            """)
+            print("=== mail_mail_res_partner_rel FK recreated with CASCADE ===")
+
+    # Check if daisydo_agents needs upgrading (version mismatch)
+    cur.execute("""
+        SELECT state, latest_version FROM ir_module_module
+        WHERE name = 'daisydo_agents'
+    """)
+    row = cur.fetchone()
+    if row:
+        state, db_ver = row
+        disk_ver = None
+        try:
+            import ast
+            with open('/opt/extra-addons/daisydo_agents/__manifest__.py') as f:
+                manifest = ast.literal_eval(f.read())
+            disk_ver = manifest.get('version', '')
+        except Exception:
+            pass
+
+        print(f"=== daisydo_agents: state={state}, db_ver={db_ver}, disk_ver={disk_ver} ===")
+        if disk_ver and db_ver != disk_ver and state == 'installed':
+            cur.execute("""
+                UPDATE ir_module_module SET state = 'to upgrade'
+                WHERE name = 'daisydo_agents'
+            """)
+            print(f"=== Set daisydo_agents to 'to upgrade' (db={db_ver} -> disk={disk_ver}) ===")
+            # Write a flag file so fix-config.sh knows to add --update
+            with open('/tmp/_need_upgrade_daisydo_agents', 'w') as f:
+                f.write(disk_ver)
+
+    cur.close()
+    conn.close()
+except Exception as e:
+    print(f"=== WARNING: DB fix failed: {e} ===")
+PYFIX
+fi
+
 # Build extra args from environment variables
 EXTRA_ARGS=""
-if [ -n "$ODOO_UPDATE_MODULES" ]; then
+
+# Auto-detect module upgrades needed (from DB version check above)
+if [ -f /tmp/_need_upgrade_daisydo_agents ]; then
+    echo "=== Auto-upgrade detected: daisydo_agents needs update ==="
+    EXTRA_ARGS="$EXTRA_ARGS --update daisydo_agents"
+    rm -f /tmp/_need_upgrade_daisydo_agents
+fi
+
+if [ -n "$ODOO_UPDATE_MODULES" ] && [ "$ODOO_UPDATE_MODULES" != "none" ]; then
     echo "=== Updating modules: $ODOO_UPDATE_MODULES ==="
     EXTRA_ARGS="$EXTRA_ARGS --update $ODOO_UPDATE_MODULES"
 fi
