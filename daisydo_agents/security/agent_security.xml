@@ -26,10 +26,8 @@
         <field name="implied_ids" eval="[(4, ref('group_daisy_officer'))]"/>
     </record>
 
-    <!-- Grant admin users the Administrator group by default -->
-    <record id="base.group_system" model="res.groups">
-        <field name="implied_ids" eval="[(4, ref('group_daisy_admin'))]"/>
-    </record>
+    <!-- NOTE: Daisy Agency access is NOT auto-granted to system admins.
+         Assign group_daisy_admin manually to specific users only. -->
 
     <!-- ============ RECORD RULES ============ -->
 
