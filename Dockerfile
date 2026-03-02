@@ -49,6 +49,11 @@ COPY --chown=odoo:odoo daisydo_webhook /opt/extra-addons/daisydo_webhook
 COPY --chown=odoo:odoo base_accounting_kit /opt/extra-addons/base_accounting_kit
 COPY --chown=odoo:odoo base_account_budget /opt/extra-addons/base_account_budget
 
+# ── OCA DMS modules (Document Management System) ─────────────────────
+COPY --chown=odoo:odoo dms /opt/extra-addons/dms
+COPY --chown=odoo:odoo dms_field /opt/extra-addons/dms_field
+COPY --chown=odoo:odoo hr_dms_field /opt/extra-addons/hr_dms_field
+
 # ── OCA modules (flattened from submodules) ──────────────────────────
 COPY --chown=odoo:odoo vault /opt/extra-addons/vault
 COPY --chown=odoo:odoo sign_oca /opt/extra-addons/sign_oca
@@ -118,6 +123,11 @@ RUN for mod in sign_oca spreadsheet_oca spreadsheet_dashboard_oca \
 
 # Verify OCA storage modules
 RUN for mod in fs_storage fs_attachment fs_attachment_s3 server_environment; do \
+      test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
+    done
+
+# Verify OCA DMS modules
+RUN for mod in dms dms_field hr_dms_field; do \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
 
