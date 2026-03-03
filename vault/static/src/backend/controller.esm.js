@@ -5,6 +5,7 @@ import {
     AlertDialog,
     ConfirmationDialog,
 } from "@web/core/confirmation_dialog/confirmation_dialog";
+import {ErrorDialog} from "@web/core/errors/error_dialogs";
 import {FormController} from "@web/views/form/form_controller";
 import {ListController} from "@web/views/list/list_controller";
 import {_t} from "@web/core/l10n/translation";
@@ -262,7 +263,13 @@ patch(FormController.prototype, {
         const params = {user_id: right.data.user_id[0]};
         const user = await rpc("/vault/public", params);
 
-        if (!user || !user.public_key) throw new TypeError("User has no public key");
+        if (!user || !user.public_key) {
+            const userName = right.data.user_id[1] || `User #${right.data.user_id[0]}`;
+            throw new TypeError(
+                `${userName} has no vault keypair. ` +
+                `They must open the Vault menu and set up their encryption keys first.`
+            );
+        }
 
         await right.update({
             key: await this.vault.share(root.data.master_key, user.public_key),
@@ -308,37 +315,50 @@ patch(FormController.prototype, {
             return false;
         }
 
-        const root = this.model.root;
-        switch (root.resModel) {
-            case "res.users":
-                if (button && button.name === "vault_generate_key") {
-                    await this._vaultRegenerateKey();
-                    return false;
-                }
-                break;
-            case "vault":
-                if (button && button.name === "vault_reencrypt") {
-                    await this._reencryptVault(false, true);
-                    return false;
-                } else if (button && button.name === "vault_verify") {
-                    await this._reencryptVault(true, false);
-                    return false;
-                }
+        try {
+            const root = this.model.root;
+            switch (root.resModel) {
+                case "res.users":
+                    if (button && button.name === "vault_generate_key") {
+                        await this._vaultRegenerateKey();
+                        return false;
+                    }
+                    break;
+                case "vault":
+                    if (button && button.name === "vault_reencrypt") {
+                        await this._reencryptVault(false, true);
+                        return false;
+                    } else if (button && button.name === "vault_verify") {
+                        await this._reencryptVault(true, false);
+                        return false;
+                    }
 
-                await this._vaultEnsureKeys();
-                break;
+                    await this._vaultEnsureKeys();
+                    break;
 
-            case "vault.send.wizard":
-                await this._vaultSendWizard();
-                break;
+                case "vault.send.wizard":
+                    await this._vaultSendWizard();
+                    break;
 
-            case "vault.store.wizard":
-                await this._vaultStoreWizard();
-                break;
+                case "vault.store.wizard":
+                    await this._vaultStoreWizard();
+                    break;
 
-            case "vault.import.wizard":
-                await this._vaultImportWizard();
-                break;
+                case "vault.import.wizard":
+                    await this._vaultImportWizard();
+                    break;
+            }
+        } catch (err) {
+            // Let the error propagate to Odoo's ErrorDialog so the
+            // daisy_error_handler module can intercept it and show
+            // an AI-assisted response instead of raw technical details.
+            this.dialogService.add(ErrorDialog, {
+                title: _t("Vault Error"),
+                name: err.name || "Error",
+                message: err.message || _t("An unexpected error occurred with vault encryption."),
+                traceback: err.stack || "",
+            });
+            return false;
         }
 
         return true;

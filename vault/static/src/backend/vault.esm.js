@@ -72,11 +72,17 @@ const vaultService = {
              */
             async generate_keys() {
                 this.keys = await vault_utils.generate_key_pair();
-                this.time = new Date();
 
-                if (!(await this._export_to_database()))
+                if (!(await this._export_to_database())) {
+                    // Clear in-memory keys so _ensure_keys() doesn't
+                    // think they're valid when the DB has nothing
+                    this.keys = null;
+                    this.time = null;
+                    this.uuid = null;
                     throw Error(_t("Failed to export the keys to the database"));
+                }
 
+                this.time = new Date();
                 await this._export_to_store();
             }
 
@@ -144,8 +150,10 @@ const vaultService = {
 
                 // Import the keys from the database
                 if (!(await this._import_from_database())) {
-                    console.warn("Vault: could not import keys — vault features will be unavailable");
-                    return;
+                    throw Error(
+                        _t("Could not load your vault encryption keys. ") +
+                        _t("Please refresh the page and enter your vault password when prompted.")
+                    );
                 }
 
                 // Store the imported keys in the object store for the next calls
@@ -162,6 +170,8 @@ const vaultService = {
              */
             async get_private_key() {
                 await this._ensure_keys();
+                if (!this.keys || !this.keys.privateKey)
+                    throw Error(_t("Vault encryption keys are not available. Please refresh and try again."));
                 return this.keys.privateKey;
             }
 
@@ -172,6 +182,8 @@ const vaultService = {
              */
             async get_public_key() {
                 await this._ensure_keys();
+                if (!this.keys || !this.keys.publicKey)
+                    throw Error(_t("Vault encryption keys are not available. Please refresh and try again."));
                 return this.keys.publicKey;
             }
 
