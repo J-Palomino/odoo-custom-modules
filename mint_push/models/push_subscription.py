@@ -27,6 +27,7 @@ class PushSubscription(models.Model):
     endpoint = fields.Text(string='Endpoint', required=True, index=True)
     key_p256dh = fields.Text(string='P256DH Key', required=True)
     key_auth = fields.Text(string='Auth Secret', required=True)
+    site_id = fields.Many2one('mint.push.site', string='Site', ondelete='set null', index=True)
     partner_id = fields.Many2one('res.partner', string='Partner', ondelete='set null')
     created_at = fields.Datetime(string='Created At', default=fields.Datetime.now)
     fail_count = fields.Integer(string='Consecutive Failures', default=0)
@@ -125,12 +126,18 @@ class PushSubscription(models.Model):
             payload['actions'] = actions
         return payload
 
-    def send_to_all(self, title, body, url=None, icon=None, image=None, actions=None):
-        """Send a notification to all active subscriptions."""
+    def send_to_all(self, title, body, url=None, icon=None, image=None,
+                    actions=None, site_id=None):
+        """Send a notification to all active subscriptions.
+
+        Args:
+            site_id: Optional mint.push.site ID to filter subscribers by site.
+        """
         payload = self._build_payload(title, body, url=url, icon=icon,
                                       image=image, actions=actions)
 
-        subscriptions = self.sudo().search([])
+        domain = [('site_id', '=', site_id)] if site_id else []
+        subscriptions = self.sudo().search(domain)
         to_delete = self.env['mint.push.subscription']
         to_reset = self.env['mint.push.subscription']
 
@@ -166,12 +173,15 @@ class PushSubscription(models.Model):
         return sent
 
     def send_to_partner(self, partner_id, title, body, url=None, icon=None,
-                        image=None, actions=None):
+                        image=None, actions=None, site_id=None):
         """Send a notification to a specific partner's subscriptions."""
         payload = self._build_payload(title, body, url=url, icon=icon,
                                       image=image, actions=actions)
 
-        subscriptions = self.sudo().search([('partner_id', '=', partner_id)])
+        domain = [('partner_id', '=', partner_id)]
+        if site_id:
+            domain.append(('site_id', '=', site_id))
+        subscriptions = self.sudo().search(domain)
         sent = 0
         for sub in subscriptions:
             sub_info = {

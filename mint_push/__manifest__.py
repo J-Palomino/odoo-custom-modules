@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Push Notifications',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Website',
     'summary': 'Web Push notification support for MintDeals PWA',
     'description': """MintDeals Push Notifications
@@ -10,7 +10,11 @@
     'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
     'depends': ['base', 'website'],
-    'data': ['security/ir.model.access.csv'],
+    'data': [
+        'security/ir.model.access.csv',
+        'data/push_site_data.xml',
+        'views/push_site_views.xml',
+    ],
     'external_dependencies': {'python': ['pywebpush', 'py_vapid']},
     'installable': True,
     'application': False,

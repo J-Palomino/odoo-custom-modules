@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ Site Tree ============ -->
+    <record id="view_push_site_tree" model="ir.ui.view">
+        <field name="name">mint.push.site.tree</field>
+        <field name="model">mint.push.site</field>
+        <field name="arch" type="xml">
+            <list string="Push Sites">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="url" widget="url"/>
+                <field name="subscription_count"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============ Site Form ============ -->
+    <record id="view_push_site_form" model="ir.ui.view">
+        <field name="name">mint.push.site.form</field>
+        <field name="model">mint.push.site</field>
+        <field name="arch" type="xml">
+            <form string="Push Site">
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="MintDeals PWA"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="code" placeholder="mintdeals"/>
+                            <field name="url" widget="url" placeholder="https://letsgomint.us"/>
+                        </group>
+                        <group>
+                            <field name="active"/>
+                            <field name="sequence"/>
+                            <field name="subscription_count"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Subscriptions" name="subscriptions">
+                            <field name="subscription_ids">
+                                <list>
+                                    <field name="endpoint" widget="char"/>
+                                    <field name="created_at"/>
+                                    <field name="fail_count"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Integration Guide" name="guide">
+                            <div class="alert alert-info" role="alert">
+                                <h4>How to connect a new frontend site</h4>
+                                <ol>
+                                    <li>Copy the <strong>Site Code</strong> above (e.g. <code>mintdeals</code>).</li>
+                                    <li>In your frontend, pass <code>site_code</code> when subscribing:
+                                        <pre style="background:#f8f8f8;padding:8px;margin:8px 0;">
+fetch('/api/push/subscribe', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    endpoint: subscription.endpoint,
+    keys: { p256dh: '...', auth: '...' },
+    site_code: 'YOUR_SITE_CODE'   // &lt;-- add this
+  })
+})</pre>
+                                    </li>
+                                    <li>Set <code>PUBLIC_VAPID_KEY</code> in your frontend env to the VAPID key from
+                                        <code>GET /api/v1/push/vapid-key</code>.</li>
+                                    <li>Register a service worker that handles <code>push</code> events
+                                        (see <code>public/sw.js</code> in the MintDeals repo for reference).</li>
+                                    <li>Subscriptions from this site will appear here and can be targeted
+                                        when composing push notifications.</li>
+                                </ol>
+                            </div>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ Sites Action ============ -->
+    <record id="action_push_sites" model="ir.actions.act_window">
+        <field name="name">Sites</field>
+        <field name="res_model">mint.push.site</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

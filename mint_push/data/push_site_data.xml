@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <record id="site_mintdeals" model="mint.push.site">
+            <field name="name">MintDeals PWA</field>
+            <field name="code">mintdeals</field>
+            <field name="url">https://letsgomint.us</field>
+            <field name="sequence">1</field>
+        </record>
+
+    </data>
+</odoo>

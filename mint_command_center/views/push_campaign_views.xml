@@ -7,6 +7,7 @@
         <field name="model">mint.push.campaign</field>
         <field name="arch" type="xml">
             <list decoration-success="state == 'sent'" decoration-danger="state == 'failed'">
+                <field name="site_id" optional="show"/>
                 <field name="name"/>
                 <field name="body" widget="char"/>
                 <field name="sent_count"/>
@@ -37,6 +38,9 @@
                 <sheet>
                     <group>
                         <group>
+                            <field name="site_id" readonly="state == 'sent'"
+                                   placeholder="All sites"
+                                   options="{'no_create': True}"/>
                             <field name="name" readonly="state == 'sent'"/>
                             <field name="body" readonly="state == 'sent'"/>
                         </group>

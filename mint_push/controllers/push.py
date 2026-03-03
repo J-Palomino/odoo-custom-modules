@@ -73,14 +73,26 @@ class MintPushAPI(http.Controller):
 
         Sub = request.env['mint.push.subscription'].sudo()
 
+        # Resolve site by code (optional)
+        site_id = False
+        site_code = data.get('site_code')
+        if site_code:
+            site = request.env['mint.push.site'].sudo().search(
+                [('code', '=', site_code)], limit=1)
+            if site:
+                site_id = site.id
+
         # Upsert: update existing or create new
         existing = Sub.search([('endpoint', '=', endpoint)], limit=1)
         if existing:
-            existing.write({
+            vals = {
                 'key_p256dh': p256dh,
                 'key_auth': auth,
                 'fail_count': 0,
-            })
+            }
+            if site_id:
+                vals['site_id'] = site_id
+            existing.write(vals)
             _logger.info("Updated push subscription: %s...", endpoint[:60])
             return json_response({'status': 'updated', 'id': existing.id})
 
@@ -88,6 +100,7 @@ class MintPushAPI(http.Controller):
             'endpoint': endpoint,
             'key_p256dh': p256dh,
             'key_auth': auth,
+            'site_id': site_id,
         })
         _logger.info("New push subscription: %s...", endpoint[:60])
         return json_response({'status': 'subscribed', 'id': sub.id})
@@ -137,8 +150,17 @@ class MintPushAPI(http.Controller):
         if not title or not body:
             return error_response('Missing required fields: title, body')
 
+        # Optional site filter
+        site_id = False
+        site_code = data.get('site_code')
+        if site_code:
+            site = request.env['mint.push.site'].sudo().search(
+                [('code', '=', site_code)], limit=1)
+            if site:
+                site_id = site.id
+
         Sub = request.env['mint.push.subscription'].sudo()
         sent = Sub.send_to_all(title, body, url=url, icon=icon,
-                               image=image, actions=actions)
+                               image=image, actions=actions, site_id=site_id)
 
         return json_response({'status': 'sent', 'delivered': sent})

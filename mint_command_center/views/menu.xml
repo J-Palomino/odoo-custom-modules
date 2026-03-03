@@ -69,4 +69,10 @@
               action="action_push_campaign"
               sequence="20"/>
 
+    <menuitem id="menu_push_sites"
+              name="Sites"
+              parent="menu_push_root"
+              action="mint_push.action_push_sites"
+              sequence="30"/>
+
 </odoo>

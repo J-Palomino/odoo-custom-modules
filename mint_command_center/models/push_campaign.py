@@ -13,6 +13,8 @@ class PushCampaign(models.Model):
     _inherit = ['mail.thread']
     _order = 'sent_at desc, id desc'
 
+    site_id = fields.Many2one('mint.push.site', string='Site', tracking=True,
+                              help='Target a specific site. Leave empty to send to all.')
     name = fields.Char(string='Title', required=True, tracking=True)
     body = fields.Text(string='Body', required=True, tracking=True)
     url = fields.Char(string='URL', tracking=True)
@@ -35,7 +37,9 @@ class PushCampaign(models.Model):
             raise UserError(_("This notification has already been sent."))
 
         Sub = self.env['mint.push.subscription'].sudo()
-        total = Sub.search_count([])
+        site_id = self.site_id.id if self.site_id else False
+        domain = [('site_id', '=', site_id)] if site_id else []
+        total = Sub.search_count(domain)
 
         try:
             sent = Sub.send_to_all(
@@ -44,6 +48,7 @@ class PushCampaign(models.Model):
                 url=self.url or None,
                 icon=self.icon or None,
                 image=self.image or None,
+                site_id=site_id,
             )
             self.write({
                 'sent_count': sent,
