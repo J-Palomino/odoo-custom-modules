@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=51
+ARG CACHEBUST=52
 
 USER root
 
@@ -36,6 +36,7 @@ COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financia
 COPY --chown=odoo:odoo mint_maintenance_form /opt/extra-addons/mint_maintenance_form
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
+COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
@@ -95,6 +96,7 @@ RUN grep -c "field-login" /opt/extra-addons/mint_theme/static/src/scss/mint_them
 RUN test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MINT_MAINTENANCE_FORM MODULE VERIFIED" || (echo "MINT_MAINTENANCE_FORM MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER VERIFIED" || (echo "MINT_COMMAND_CENTER MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER VERIFIED" || (echo "MINT_BANNER MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
 

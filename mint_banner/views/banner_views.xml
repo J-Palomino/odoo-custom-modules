@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Tree View -->
+    <record id="view_mint_banner_tree" model="ir.ui.view">
+        <field name="name">mint.banner.tree</field>
+        <field name="model">mint.banner</field>
+        <field name="arch" type="xml">
+            <tree string="Banners">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="slot"/>
+                <field name="category"/>
+                <field name="title"/>
+                <field name="active"/>
+                <field name="date_start"/>
+                <field name="date_end"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_mint_banner_form" model="ir.ui.view">
+        <field name="name">mint.banner.form</field>
+        <field name="model">mint.banner</field>
+        <field name="arch" type="xml">
+            <form string="Banner">
+                <sheet>
+                    <group>
+                        <group string="Banner Info">
+                            <field name="name"/>
+                            <field name="slot"/>
+                            <field name="category"/>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Content">
+                            <field name="title"/>
+                            <field name="subtitle"/>
+                            <field name="link_url"/>
+                            <field name="link_label"/>
+                            <field name="background_color"/>
+                        </group>
+                    </group>
+                    <group string="Image">
+                        <field name="image_url" placeholder="https://res.cloudinary.com/..."/>
+                        <field name="image" widget="image"/>
+                    </group>
+                    <group string="Schedule">
+                        <group>
+                            <field name="date_start"/>
+                            <field name="date_end"/>
+                        </group>
+                        <group>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_mint_banner" model="ir.actions.act_window">
+        <field name="name">Banners</field>
+        <field name="res_model">mint.banner</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first banner
+            </p>
+            <p>
+                Banners appear as interstitials or slots on category pages in the MintDeals storefront.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu -->
+    <menuitem id="menu_mint_banner_root"
+              name="MintDeals"
+              web_icon="mint_banner,static/description/icon.png"
+              sequence="90"/>
+
+    <menuitem id="menu_mint_banner_config"
+              name="Banners"
+              parent="menu_mint_banner_root"
+              action="action_mint_banner"
+              sequence="10"/>
+</odoo>
