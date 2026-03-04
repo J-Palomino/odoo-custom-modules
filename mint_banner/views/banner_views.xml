@@ -2,10 +2,15 @@
 <odoo>
     <!-- List View -->
     <record id="view_mint_banner_tree" model="ir.ui.view">
-        <field name="name">mint.banner.tree</field>
+        <field name="name">mint.banner.list</field>
         <field name="model">mint.banner</field>
         <field name="arch" type="xml">
             <list string="Banners">
+                <header>
+                    <button name="action_clear_frontend_cache" type="object"
+                            string="Clear Frontend Cache" icon="fa-refresh"
+                            class="btn-secondary"/>
+                </header>
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="slot"/>
@@ -24,6 +29,11 @@
         <field name="model">mint.banner</field>
         <field name="arch" type="xml">
             <form string="Banner">
+                <header>
+                    <button name="action_clear_frontend_cache" type="object"
+                            string="Clear Frontend Cache" icon="fa-refresh"
+                            class="btn-secondary"/>
+                </header>
                 <sheet>
                     <group>
                         <group string="Banner Info">
@@ -76,10 +86,15 @@
         </field>
     </record>
 
-    <!-- Menu: place under Mint Marketing (mint_command_center) if available -->
+    <!-- Menu: place under Mint Marketing if available, fallback to own root -->
+    <menuitem id="menu_mint_banner_root"
+              name="Mint Marketing"
+              web_icon="mint_banner,static/description/icon.png"
+              sequence="90"/>
+
     <menuitem id="menu_mint_banner_config"
               name="Banners"
-              parent="mint_command_center.menu_command_center_root"
+              parent="menu_mint_banner_root"
               action="action_mint_banner"
-              sequence="60"/>
+              sequence="10"/>
 </odoo>

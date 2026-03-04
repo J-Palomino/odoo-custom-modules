@@ -67,7 +67,7 @@ class MintBannerAPI(http.Controller):
 
         result = []
         for b in banners:
-            # Prefer external URL; fall back to Odoo /web/image/ URL (served from S3)
+            # Prefer external URL; fall back to /web/image/ (served from S3)
             if b.image_url:
                 image_data = b.image_url
             elif b.image:

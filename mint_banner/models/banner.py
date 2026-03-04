@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
+import json
 import logging
+import urllib.request
 
-from odoo import models, fields
+from odoo import models, fields, api
 
 _logger = logging.getLogger(__name__)
+
+FRONTEND_URL_PARAM = 'mint_banner.frontend_url'
+FRONTEND_URL_DEFAULT = 'https://mintdeals.com'
 
 
 class MintBanner(models.Model):
@@ -18,7 +23,7 @@ class MintBanner(models.Model):
         ('after-vapes', 'After Vapes'),
         ('after-edibles', 'After Edibles'),
         ('after-concentrates', 'After Concentrates'),
-    ], string='Slot', required=True, default='hero')
+    ], string='Slot Type', required=True, default='hero')
     category = fields.Char(string='Category', help='Category cname (e.g. flower, edibles). Leave empty for default/catch-all.')
     image = fields.Binary(string='Image', attachment=True)
     image_url = fields.Char(string='Image URL', help='External image URL (takes precedence over binary image)')
@@ -32,3 +37,41 @@ class MintBanner(models.Model):
     date_start = fields.Date(string='Start Date')
     date_end = fields.Date(string='End Date')
     company_id = fields.Many2one('res.company', string='Company', default=lambda self: self.env.company)
+
+    def action_clear_frontend_cache(self):
+        """Call the frontend cache-clear endpoint so banner changes appear immediately."""
+        icp = self.env['ir.config_parameter'].sudo()
+        base_url = (icp.get_param(FRONTEND_URL_PARAM) or FRONTEND_URL_DEFAULT).rstrip('/')
+        url = f'{base_url}/api/admin/clear-cache'
+        payload = json.dumps({'pattern': 'banners'}).encode()
+
+        try:
+            req = urllib.request.Request(
+                url, data=payload, method='POST',
+                headers={'Content-Type': 'application/json'},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = json.loads(resp.read())
+                _logger.info('Frontend banner cache cleared: %s', body)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Cache Cleared',
+                    'message': 'Frontend banner cache has been cleared. Changes will appear on next page load.',
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
+        except Exception as e:
+            _logger.warning('Failed to clear frontend cache at %s: %s', url, e)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Cache Clear Failed',
+                    'message': f'Could not reach frontend: {e}',
+                    'type': 'warning',
+                    'sticky': False,
+                },
+            }

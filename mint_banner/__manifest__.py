@@ -1,17 +1,15 @@
 {
     'name': 'MintDeals Banners',
-    'version': '19.0.1.1.0',
+    'version': '19.0.1.2.0',
     'category': 'Website',
-    'summary': 'Admin-managed hero & category banners for MintDeals storefront',
+    'summary': 'Admin-managed category banners for MintDeals storefront',
     'description': """MintDeals Banners
-        Manage hero carousel and category ad banners for store pages.
-        Slots: hero, after-flower, after-vapes, after-edibles, after-concentrates.
-        Exposes REST API at /api/v1/banners.
-        Images served via /web/image/ URLs (S3-backed) instead of inline base64.""",
+        Manage interstitial and slot banners for category pages.
+        Exposes REST API at /api/v1/banners.""",
     'author': 'MintDeals',
     'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
-    'depends': ['base', 'mint_command_center'],
+    'depends': ['base'],
     'data': [
         'security/ir.model.access.csv',
         'views/banner_views.xml',
