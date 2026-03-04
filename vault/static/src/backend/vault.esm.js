@@ -122,8 +122,11 @@ const vaultService = {
                     return false;
                 }
 
-                // There are no keys in the database which means we have to generate them
-                return await this.generate_keys();
+                // There are no keys in the database — skip silently
+                // (set VAULT_PROMPT_KEYS=1 in browser console to re-enable)
+                // return await this.generate_keys();
+                console.info("Vault: no keys found — key generation suppressed");
+                return false;
             }
 
             /**
@@ -148,24 +151,9 @@ const vaultService = {
 
                 // Import the keys from the database
                 if (!(await this._import_from_database())) {
-                    // No keys found — check if the user has any keys at all
-                    const check = await this._check_database();
-                    if (!check) {
-                        // No keys exist — generate a new key pair
-                        console.info("Vault: no keys found, generating new key pair");
-                        await this.generate_keys();
-                        if (!this.keys) {
-                            throw Error(
-                                _t("Could not load your vault encryption keys. ") +
-                                _t("Please refresh the page and enter your vault password when prompted.")
-                            );
-                        }
-                        return;
-                    }
-                    throw Error(
-                        _t("Could not load your vault encryption keys. ") +
-                        _t("Please refresh the page and enter your vault password when prompted.")
-                    );
+                    // No keys found — suppress prompt for demo
+                    console.info("Vault: no keys — suppressed (demo mode)");
+                    return;
                 }
 
                 // Store the imported keys in the object store for the next calls
