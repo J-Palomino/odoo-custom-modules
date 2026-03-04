@@ -72,17 +72,15 @@ const vaultService = {
              */
             async generate_keys() {
                 this.keys = await vault_utils.generate_key_pair();
+                this.time = new Date();
 
                 if (!(await this._export_to_database())) {
-                    // Clear in-memory keys so _ensure_keys() doesn't
-                    // think they're valid when the DB has nothing
                     this.keys = null;
                     this.time = null;
                     this.uuid = null;
-                    throw Error(_t("Failed to export the keys to the database"));
+                    return;
                 }
 
-                this.time = new Date();
                 await this._export_to_store();
             }
 
@@ -150,6 +148,20 @@ const vaultService = {
 
                 // Import the keys from the database
                 if (!(await this._import_from_database())) {
+                    // No keys found — check if the user has any keys at all
+                    const check = await this._check_database();
+                    if (!check) {
+                        // No keys exist — generate a new key pair
+                        console.info("Vault: no keys found, generating new key pair");
+                        await this.generate_keys();
+                        if (!this.keys) {
+                            throw Error(
+                                _t("Could not load your vault encryption keys. ") +
+                                _t("Please refresh the page and enter your vault password when prompted.")
+                            );
+                        }
+                        return;
+                    }
                     throw Error(
                         _t("Could not load your vault encryption keys. ") +
                         _t("Please refresh the page and enter your vault password when prompted.")
