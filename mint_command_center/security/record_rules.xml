@@ -42,5 +42,13 @@
             <field name="groups" eval="[(4, ref('base.group_user'))]"/>
         </record>
 
+        <!-- Push Banner: multi-company isolation (Many2many) -->
+        <record id="rule_push_banner_company" model="ir.rule">
+            <field name="name">Push Banner: multi-company</field>
+            <field name="model_id" ref="model_mint_push_banner"/>
+            <field name="domain_force">['|', ('store_ids', '=', False), ('store_ids', 'in', company_ids)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        </record>
+
     </data>
 </odoo>

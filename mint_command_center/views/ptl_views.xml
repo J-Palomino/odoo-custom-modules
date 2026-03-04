@@ -1,287 +1,287 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<odoo>
-
-    <!-- ==================== PTL Day Views ==================== -->
-
-    <!-- PTL Day: Form View -->
-    <record id="view_ptl_day_form" model="ir.ui.view">
-        <field name="name">mint.ptl.day.form</field>
-        <field name="model">mint.ptl.day</field>
-        <field name="arch" type="xml">
-            <form string="PTL Day">
-                <header>
-                    <field name="state" widget="statusbar"
-                           statusbar_visible="draft,confirmed,published"/>
-                </header>
-                <sheet>
-                    <field name="is_florida" invisible="1"/>
-                    <div class="alert alert-warning mb-3" role="alert"
-                         invisible="not is_florida">
-                        <h4 class="alert-heading mb-2">
-                            Florida Compliance — Advertising &amp; Marketing (64ER25-6)
-                        </h4>
-                        <p class="mb-2"><strong>V. Brochures &amp; Printed Literature</strong></p>
-                        <p class="mb-1">
-                            Advertisements or marketing in the form of a brochure or other
-                            printed literature that complies with subsection (3) may be
-                            distributed to qualified patients or caregivers inside the
-                            dispensing facility upon the dispensation of usable product or
-                            a marijuana delivery device.
-                        </p>
-                        <p class="mb-1"><strong>Required Notices</strong> (plain lettering, minimum 12-point font):</p>
-                        <ol class="mb-2">
-                            <li>Marijuana may have intoxicating effects and may be habit-forming.</li>
-                            <li>Do not operate a vehicle or heavy machinery when under the influence of marijuana.</li>
-                            <li>Smoking marijuana may be hazardous to your health.</li>
-                            <li>Use of marijuana while pregnant or breastfeeding may harm you and your baby.</li>
-                            <li>Keep marijuana away from children and pets.</li>
-                        </ol>
-                        <hr/>
-                        <p class="mb-2"><strong>VI. Internet Advertising &amp; Marketing (64ER25-6(6))</strong></p>
-                        <p class="mb-1">An MMTC may advertise and market on the internet only as follows:</p>
-                        <ol class="mb-2">
-                            <li>Department-registered social media accounts.</li>
-                            <li>Department-approved website.</li>
-                            <li>Sponsored, paid, or targeted internet advertisements.</li>
-                            <li>Opt-in email solicitations with easy and permanent opt-out.</li>
-                            <li>Department-approved mobile application.</li>
-                        </ol>
-                        <p class="mb-1"><strong>A. Social Media</strong> — All accounts must be registered using
-                            Form DH5064-OMMU-12/2025 (Variance). Department approval is not required for posts.
-                            All posts must comply with content restrictions in subsection 3.</p>
-                        <p class="mb-1"><strong>B. Sponsored/Paid/Targeted Ads</strong> — Must obtain department
-                            approval pursuant to Rule 64-4.023, F.A.C. (Variance). May only use platforms that
-                            allow age group selection for the target audience. Must not select or target users
-                            under 18. Documentation of compliance must be provided to the Department within 72
-                            hours upon written notice.</p>
-                        <p class="mb-0"><strong>C. Website Requirements</strong> — Must obtain department approval
-                            for URL (Current: mintdeals.com/Florida). The homepage must contain the required
-                            notices in subsection 5. Depictions of usable products and packaging must match
-                            actual dispensed products. Department approval is not required to post content, but
-                            all content must comply with content restrictions in subsection 3.</p>
-                    </div>
-                    <div class="oe_title">
-                        <h1><field name="name" placeholder="PTL Day Name"/></h1>
-                    </div>
-                    <group>
-                        <group>
-                            <field name="date"/>
-                            <field name="company_id"/>
-                        </group>
-                        <group>
-                            <field name="deal_count"/>
-                        </group>
-                    </group>
-                    <notebook>
-                        <page string="Deals" name="deals">
-                            <field name="deal_ids">
-                                <list editable="bottom">
-                                    <field name="sequence" widget="handle"/>
-                                    <field name="name"/>
-                                    <field name="brand_id"/>
-                                    <field name="product_category"/>
-                                    <field name="discount_type"/>
-                                    <field name="discount_value"/>
-                                    <field name="is_featured"/>
-                                    <field name="state"/>
-                                </list>
-                            </field>
-                        </page>
-                        <page string="Notes" name="notes">
-                            <field name="notes" placeholder="Internal notes..."/>
-                        </page>
-                    </notebook>
-                </sheet>
-                <chatter/>
-            </form>
-        </field>
-    </record>
-
-    <!-- PTL Day: List View (editable) -->
-    <record id="view_ptl_day_list" model="ir.ui.view">
-        <field name="name">mint.ptl.day.list</field>
-        <field name="model">mint.ptl.day</field>
-        <field name="arch" type="xml">
-            <list string="PTL Calendar" editable="top"
-                  decoration-info="state == 'draft'"
-                  decoration-success="state == 'published'">
-                <field name="date"/>
-                <field name="company_id"/>
-                <field name="deal_count"/>
-                <field name="state"/>
-            </list>
-        </field>
-    </record>
-
-    <!-- PTL Day: Calendar View -->
-    <record id="view_ptl_day_calendar" model="ir.ui.view">
-        <field name="name">mint.ptl.day.calendar</field>
-        <field name="model">mint.ptl.day</field>
-        <field name="arch" type="xml">
-            <calendar string="PTL Calendar"
-                      date_start="date"
-                      color="company_id"
-                      quick_create="0">
-                <field name="company_id"/>
-                <field name="deal_count"/>
-                <field name="state"/>
-            </calendar>
-        </field>
-    </record>
-
-    <!-- PTL Day: Kanban View -->
-    <record id="view_ptl_day_kanban" model="ir.ui.view">
-        <field name="name">mint.ptl.day.kanban</field>
-        <field name="model">mint.ptl.day</field>
-        <field name="arch" type="xml">
-            <kanban default_group_by="state">
-                <field name="name"/>
-                <field name="date"/>
-                <field name="company_id"/>
-                <field name="deal_count"/>
-                <field name="state"/>
-                <templates>
-                    <t t-name="card">
-                        <field name="name" class="fw-bold"/>
-                        <field name="date"/>
-                        <field name="company_id"/>
-                        <div>
-                            <field name="deal_count"/> deals
-                        </div>
-                    </t>
-                </templates>
-            </kanban>
-        </field>
-    </record>
-
-    <!-- PTL Day: Search View -->
-    <record id="view_ptl_day_search" model="ir.ui.view">
-        <field name="name">mint.ptl.day.search</field>
-        <field name="model">mint.ptl.day</field>
-        <field name="arch" type="xml">
-            <search string="Search PTL Days">
-                <field name="name"/>
-                <field name="company_id"/>
-                <field name="date"/>
-                <filter name="draft" string="Draft" domain="[('state', '=', 'draft')]"/>
-                <filter name="confirmed" string="Confirmed" domain="[('state', '=', 'confirmed')]"/>
-                <filter name="published" string="Published" domain="[('state', '=', 'published')]"/>
-                <separator/>
-                <filter name="today" string="Today" domain="[('date', '=', context_today())]"/>
-                <separator/>
-                <filter name="group_store" string="Store" context="{'group_by': 'company_id'}"/>
-                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
-                <filter name="group_date" string="Date" context="{'group_by': 'date:week'}"/>
-            </search>
-        </field>
-    </record>
-
-    <!-- PTL Day: Action -->
-    <record id="action_ptl_day" model="ir.actions.act_window">
-        <field name="name">PTL Calendar</field>
-        <field name="res_model">mint.ptl.day</field>
-        <field name="view_mode">list,calendar,kanban,form</field>
-        <field name="search_view_id" ref="view_ptl_day_search"/>
-        <field name="context">{}</field>
-        <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">
-                Create your first PTL Day
-            </p>
-            <p>
-                PTL Days define the promotional lineup for each store on a given date.
-                Add deals to build the day's promotional schedule.
-            </p>
-        </field>
-    </record>
-
-    <!-- ==================== PTL Deal Views ==================== -->
-
-    <!-- PTL Deal: Form View -->
-    <record id="view_ptl_deal_form" model="ir.ui.view">
-        <field name="name">mint.ptl.deal.form</field>
-        <field name="model">mint.ptl.deal</field>
-        <field name="arch" type="xml">
-            <form string="PTL Deal">
-                <sheet>
-                    <group>
-                        <group>
-                            <field name="name"/>
-                            <field name="ptl_day_id"/>
-                            <field name="company_id"/>
-                            <field name="date"/>
-                            <field name="brand_id"/>
-                        </group>
-                        <group>
-                            <field name="product_category"/>
-                            <field name="discount_type"/>
-                            <field name="discount_value"/>
-                            <field name="is_featured"/>
-                            <field name="state"/>
-                            <field name="sequence"/>
-                        </group>
-                    </group>
-                    <group string="Description">
-                        <field name="description" nolabel="1"/>
-                    </group>
-                </sheet>
-            </form>
-        </field>
-    </record>
-
-    <!-- PTL Deal: List View -->
-    <record id="view_ptl_deal_list" model="ir.ui.view">
-        <field name="name">mint.ptl.deal.list</field>
-        <field name="model">mint.ptl.deal</field>
-        <field name="arch" type="xml">
-            <list string="PTL Deals" editable="bottom"
-                  decoration-warning="state == 'pending'"
-                  decoration-success="state == 'live'"
-                  decoration-muted="state == 'expired'">
-                <field name="sequence" widget="handle"/>
-                <field name="date"/>
-                <field name="company_id"/>
-                <field name="name"/>
-                <field name="brand_id"/>
-                <field name="product_category"/>
-                <field name="discount_type"/>
-                <field name="discount_value"/>
-                <field name="is_featured"/>
-                <field name="state"/>
-            </list>
-        </field>
-    </record>
-
-    <!-- PTL Deal: Search View -->
-    <record id="view_ptl_deal_search" model="ir.ui.view">
-        <field name="name">mint.ptl.deal.search</field>
-        <field name="model">mint.ptl.deal</field>
-        <field name="arch" type="xml">
-            <search string="Search PTL Deals">
-                <field name="name"/>
-                <field name="company_id"/>
-                <field name="brand_id"/>
-                <field name="product_category"/>
-                <filter name="featured" string="Featured" domain="[('is_featured', '=', True)]"/>
-                <separator/>
-                <filter name="pending" string="Pending" domain="[('state', '=', 'pending')]"/>
-                <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
-                <filter name="live" string="Live" domain="[('state', '=', 'live')]"/>
-                <filter name="expired" string="Expired" domain="[('state', '=', 'expired')]"/>
-                <separator/>
-                <filter name="group_store" string="Store" context="{'group_by': 'company_id'}"/>
-                <filter name="group_brand" string="Brand" context="{'group_by': 'brand_id'}"/>
-                <filter name="group_category" string="Category" context="{'group_by': 'product_category'}"/>
-                <filter name="group_date" string="Date" context="{'group_by': 'date:week'}"/>
-            </search>
-        </field>
-    </record>
-
-    <!-- PTL Deal: Action (standalone) -->
-    <record id="action_ptl_deal" model="ir.actions.act_window">
-        <field name="name">All PTL Deals</field>
-        <field name="res_model">mint.ptl.deal</field>
-        <field name="view_mode">list,form</field>
-        <field name="search_view_id" ref="view_ptl_deal_search"/>
-    </record>
-
-</odoo>
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== PTL Day Views ==================== -->
+
+    <!-- PTL Day: Form View -->
+    <record id="view_ptl_day_form" model="ir.ui.view">
+        <field name="name">mint.ptl.day.form</field>
+        <field name="model">mint.ptl.day</field>
+        <field name="arch" type="xml">
+            <form string="PTL Day">
+                <header>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,confirmed,published"/>
+                </header>
+                <sheet>
+                    <field name="is_florida" invisible="1"/>
+                    <div class="alert alert-warning mb-3" role="alert"
+                         invisible="not is_florida">
+                        <h4 class="alert-heading mb-2">
+                            Florida Compliance — Advertising &amp; Marketing (64ER25-6)
+                        </h4>
+                        <p class="mb-2"><strong>V. Brochures &amp; Printed Literature</strong></p>
+                        <p class="mb-1">
+                            Advertisements or marketing in the form of a brochure or other
+                            printed literature that complies with subsection (3) may be
+                            distributed to qualified patients or caregivers inside the
+                            dispensing facility upon the dispensation of usable product or
+                            a marijuana delivery device.
+                        </p>
+                        <p class="mb-1"><strong>Required Notices</strong> (plain lettering, minimum 12-point font):</p>
+                        <ol class="mb-2">
+                            <li>Marijuana may have intoxicating effects and may be habit-forming.</li>
+                            <li>Do not operate a vehicle or heavy machinery when under the influence of marijuana.</li>
+                            <li>Smoking marijuana may be hazardous to your health.</li>
+                            <li>Use of marijuana while pregnant or breastfeeding may harm you and your baby.</li>
+                            <li>Keep marijuana away from children and pets.</li>
+                        </ol>
+                        <hr/>
+                        <p class="mb-2"><strong>VI. Internet Advertising &amp; Marketing (64ER25-6(6))</strong></p>
+                        <p class="mb-1">An MMTC may advertise and market on the internet only as follows:</p>
+                        <ol class="mb-2">
+                            <li>Department-registered social media accounts.</li>
+                            <li>Department-approved website.</li>
+                            <li>Sponsored, paid, or targeted internet advertisements.</li>
+                            <li>Opt-in email solicitations with easy and permanent opt-out.</li>
+                            <li>Department-approved mobile application.</li>
+                        </ol>
+                        <p class="mb-1"><strong>A. Social Media</strong> — All accounts must be registered using
+                            Form DH5064-OMMU-12/2025 (Variance). Department approval is not required for posts.
+                            All posts must comply with content restrictions in subsection 3.</p>
+                        <p class="mb-1"><strong>B. Sponsored/Paid/Targeted Ads</strong> — Must obtain department
+                            approval pursuant to Rule 64-4.023, F.A.C. (Variance). May only use platforms that
+                            allow age group selection for the target audience. Must not select or target users
+                            under 18. Documentation of compliance must be provided to the Department within 72
+                            hours upon written notice.</p>
+                        <p class="mb-0"><strong>C. Website Requirements</strong> — Must obtain department approval
+                            for URL (Current: mintdeals.com/Florida). The homepage must contain the required
+                            notices in subsection 5. Depictions of usable products and packaging must match
+                            actual dispensed products. Department approval is not required to post content, but
+                            all content must comply with content restrictions in subsection 3.</p>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="PTL Day Name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="date"/>
+                            <field name="company_id"/>
+                        </group>
+                        <group>
+                            <field name="deal_count"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Deals" name="deals">
+                            <field name="deal_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="brand_id"/>
+                                    <field name="product_category"/>
+                                    <field name="discount_type"/>
+                                    <field name="discount_value"/>
+                                    <field name="is_featured"/>
+                                    <field name="state"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Notes" name="notes">
+                            <field name="notes" placeholder="Internal notes..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- PTL Day: List View (editable) -->
+    <record id="view_ptl_day_list" model="ir.ui.view">
+        <field name="name">mint.ptl.day.list</field>
+        <field name="model">mint.ptl.day</field>
+        <field name="arch" type="xml">
+            <list string="PTL Calendar" editable="top"
+                  decoration-info="state == 'draft'"
+                  decoration-success="state == 'published'">
+                <field name="date"/>
+                <field name="company_id"/>
+                <field name="deal_count"/>
+                <field name="state"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- PTL Day: Calendar View -->
+    <record id="view_ptl_day_calendar" model="ir.ui.view">
+        <field name="name">mint.ptl.day.calendar</field>
+        <field name="model">mint.ptl.day</field>
+        <field name="arch" type="xml">
+            <calendar string="PTL Calendar"
+                      date_start="date"
+                      color="company_id"
+                      quick_create="0">
+                <field name="company_id"/>
+                <field name="deal_count"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- PTL Day: Kanban View -->
+    <record id="view_ptl_day_kanban" model="ir.ui.view">
+        <field name="name">mint.ptl.day.kanban</field>
+        <field name="model">mint.ptl.day</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state">
+                <field name="name"/>
+                <field name="date"/>
+                <field name="company_id"/>
+                <field name="deal_count"/>
+                <field name="state"/>
+                <templates>
+                    <t t-name="card">
+                        <field name="name" class="fw-bold"/>
+                        <field name="date"/>
+                        <field name="company_id"/>
+                        <div>
+                            <field name="deal_count"/> deals
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- PTL Day: Search View -->
+    <record id="view_ptl_day_search" model="ir.ui.view">
+        <field name="name">mint.ptl.day.search</field>
+        <field name="model">mint.ptl.day</field>
+        <field name="arch" type="xml">
+            <search string="Search PTL Days">
+                <field name="name"/>
+                <field name="company_id"/>
+                <field name="date"/>
+                <filter name="draft" string="Draft" domain="[('state', '=', 'draft')]"/>
+                <filter name="confirmed" string="Confirmed" domain="[('state', '=', 'confirmed')]"/>
+                <filter name="published" string="Published" domain="[('state', '=', 'published')]"/>
+                <separator/>
+                <filter name="today" string="Today" domain="[('date', '=', context_today())]"/>
+                <separator/>
+                <filter name="group_store" string="Store" context="{'group_by': 'company_id'}"/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_date" string="Date" context="{'group_by': 'date:week'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- PTL Day: Action -->
+    <record id="action_ptl_day" model="ir.actions.act_window">
+        <field name="name">PTL Calendar</field>
+        <field name="res_model">mint.ptl.day</field>
+        <field name="view_mode">list,calendar,kanban,form</field>
+        <field name="search_view_id" ref="view_ptl_day_search"/>
+        <field name="context">{}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first PTL Day
+            </p>
+            <p>
+                PTL Days define the promotional lineup for each store on a given date.
+                Add deals to build the day's promotional schedule.
+            </p>
+        </field>
+    </record>
+
+    <!-- ==================== PTL Deal Views ==================== -->
+
+    <!-- PTL Deal: Form View -->
+    <record id="view_ptl_deal_form" model="ir.ui.view">
+        <field name="name">mint.ptl.deal.form</field>
+        <field name="model">mint.ptl.deal</field>
+        <field name="arch" type="xml">
+            <form string="PTL Deal">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="ptl_day_id"/>
+                            <field name="company_id"/>
+                            <field name="date"/>
+                            <field name="brand_id"/>
+                        </group>
+                        <group>
+                            <field name="product_category"/>
+                            <field name="discount_type"/>
+                            <field name="discount_value"/>
+                            <field name="is_featured"/>
+                            <field name="state"/>
+                            <field name="sequence"/>
+                        </group>
+                    </group>
+                    <group string="Description">
+                        <field name="description" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- PTL Deal: List View -->
+    <record id="view_ptl_deal_list" model="ir.ui.view">
+        <field name="name">mint.ptl.deal.list</field>
+        <field name="model">mint.ptl.deal</field>
+        <field name="arch" type="xml">
+            <list string="PTL Deals" editable="bottom"
+                  decoration-warning="state == 'pending'"
+                  decoration-success="state == 'live'"
+                  decoration-muted="state == 'expired'">
+                <field name="sequence" widget="handle"/>
+                <field name="date"/>
+                <field name="company_id"/>
+                <field name="name"/>
+                <field name="brand_id"/>
+                <field name="product_category"/>
+                <field name="discount_type"/>
+                <field name="discount_value"/>
+                <field name="is_featured"/>
+                <field name="state"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- PTL Deal: Search View -->
+    <record id="view_ptl_deal_search" model="ir.ui.view">
+        <field name="name">mint.ptl.deal.search</field>
+        <field name="model">mint.ptl.deal</field>
+        <field name="arch" type="xml">
+            <search string="Search PTL Deals">
+                <field name="name"/>
+                <field name="company_id"/>
+                <field name="brand_id"/>
+                <field name="product_category"/>
+                <filter name="featured" string="Featured" domain="[('is_featured', '=', True)]"/>
+                <separator/>
+                <filter name="pending" string="Pending" domain="[('state', '=', 'pending')]"/>
+                <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
+                <filter name="live" string="Live" domain="[('state', '=', 'live')]"/>
+                <filter name="expired" string="Expired" domain="[('state', '=', 'expired')]"/>
+                <separator/>
+                <filter name="group_store" string="Store" context="{'group_by': 'company_id'}"/>
+                <filter name="group_brand" string="Brand" context="{'group_by': 'brand_id'}"/>
+                <filter name="group_category" string="Category" context="{'group_by': 'product_category'}"/>
+                <filter name="group_date" string="Date" context="{'group_by': 'date:week'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- PTL Deal: Action (standalone) -->
+    <record id="action_ptl_deal" model="ir.actions.act_window">
+        <field name="name">All PTL Deals</field>
+        <field name="res_model">mint.ptl.deal</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ptl_deal_search"/>
+    </record>
+
+</odoo>

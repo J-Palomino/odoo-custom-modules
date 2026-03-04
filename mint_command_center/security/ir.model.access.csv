@@ -9,6 +9,11 @@ access_brand_ranking_viewer,mint.brand.ranking.viewer,model_mint_brand_ranking,g
 access_brand_ranking_manager,mint.brand.ranking.manager,model_mint_brand_ranking,group_vendor_manager,1,1,1,1
 access_compliance_variance_viewer,mint.compliance.variance.viewer,model_mint_compliance_variance,group_viewer,1,0,0,0
 access_compliance_variance_manager,mint.compliance.variance.manager,model_mint_compliance_variance,group_compliance,1,1,1,1
-access_push_campaign_viewer,mint.push.campaign.viewer,model_mint_push_campaign,group_viewer,1,0,0,0
-access_push_campaign_manager,mint.push.campaign.manager,model_mint_push_campaign,group_push_manager,1,1,1,0
-access_push_send_wizard_manager,mint.push.send.wizard.manager,model_mint_push_send_wizard,group_push_manager,1,1,1,1
+access_push_site_viewer,mint.push.site.viewer,model_mint_push_site,group_viewer,1,0,0,0
+access_push_site_manager,mint.push.site.manager,model_mint_push_site,group_marketing,1,1,1,1
+access_push_subscription_viewer,mint.push.subscription.viewer,model_mint_push_subscription,group_viewer,1,0,0,0
+access_push_subscription_manager,mint.push.subscription.manager,model_mint_push_subscription,group_marketing,1,1,1,1
+access_push_notification_viewer,mint.push.notification.viewer,model_mint_push_notification,group_viewer,1,0,0,0
+access_push_notification_manager,mint.push.notification.manager,model_mint_push_notification,group_marketing,1,1,1,1
+access_push_banner_viewer,mint.push.banner.viewer,model_mint_push_banner,group_viewer,1,0,0,0
+access_push_banner_manager,mint.push.banner.manager,model_mint_push_banner,group_marketing,1,1,1,1

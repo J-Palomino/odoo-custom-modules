@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
 
-    <!-- ==================== Top-Level Command Center Menu ==================== -->
+    <!-- ==================== Top-Level Mint Marketing Menu ==================== -->
 
     <menuitem id="menu_command_center_root"
-              name="Command Center"
+              name="Mint Marketing"
               sequence="5"/>
 
     <!-- ── PTL Section ── -->
@@ -39,6 +39,36 @@
               action="action_brand_ranking"
               sequence="30"/>
 
+    <!-- ── Marketing Section ── -->
+    <menuitem id="menu_marketing"
+              name="Marketing"
+              parent="menu_command_center_root"
+              sequence="35"/>
+
+    <menuitem id="menu_push_notifications"
+              name="Push Notifications"
+              parent="menu_marketing"
+              action="action_push_notification"
+              sequence="10"/>
+
+    <menuitem id="menu_push_subscribers"
+              name="Subscribers"
+              parent="menu_marketing"
+              action="action_push_subscription"
+              sequence="20"/>
+
+    <menuitem id="menu_push_sites"
+              name="Sites"
+              parent="menu_marketing"
+              action="action_push_sites"
+              sequence="25"/>
+
+    <menuitem id="menu_push_banners"
+              name="Banners"
+              parent="menu_marketing"
+              action="action_push_banner"
+              sequence="30"/>
+
     <!-- ── Compliance Section ── -->
     <menuitem id="menu_compliance"
               name="Compliance"
@@ -50,29 +80,5 @@
               parent="menu_compliance"
               action="action_compliance_variance"
               sequence="10"/>
-
-    <!-- ── Push Notifications Section ── -->
-    <menuitem id="menu_push_root"
-              name="Push Notifications"
-              parent="menu_command_center_root"
-              sequence="50"/>
-
-    <menuitem id="menu_push_send"
-              name="Send Notification"
-              parent="menu_push_root"
-              action="action_push_send_wizard"
-              sequence="10"/>
-
-    <menuitem id="menu_push_history"
-              name="Notification History"
-              parent="menu_push_root"
-              action="action_push_campaign"
-              sequence="20"/>
-
-    <menuitem id="menu_push_sites"
-              name="Sites"
-              parent="menu_push_root"
-              action="mint_push.action_push_sites"
-              sequence="30"/>
 
 </odoo>
