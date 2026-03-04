@@ -13,10 +13,12 @@ class MintBanner(models.Model):
 
     name = fields.Char(string='Name', required=True)
     slot = fields.Selection([
-        ('hero', 'Hero'),
-        ('interstitial', 'Interstitial'),
-        ('slot', 'Slot'),
-    ], string='Slot Type', required=True, default='interstitial')
+        ('hero', 'Hero (Top Carousel)'),
+        ('after-flower', 'After Flower'),
+        ('after-vapes', 'After Vapes'),
+        ('after-edibles', 'After Edibles'),
+        ('after-concentrates', 'After Concentrates'),
+    ], string='Slot', required=True, default='hero')
     category = fields.Char(string='Category', help='Category cname (e.g. flower, edibles). Leave empty for default/catch-all.')
     image = fields.Binary(string='Image', attachment=True)
     image_url = fields.Char(string='Image URL', help='External image URL (takes precedence over binary image)')

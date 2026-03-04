@@ -4,7 +4,6 @@ MintDeals Banner API — /api/v1/banners
 
 Endpoint for retrieving active category banners.
 """
-import base64
 import json
 import logging
 
@@ -64,17 +63,15 @@ class MintBannerAPI(http.Controller):
         Banner = request.env['mint.banner'].sudo()
         banners = Banner.search(domain, order='sequence')
 
+        base_url = request.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+
         result = []
         for b in banners:
-            # Prefer external URL over binary image
+            # Prefer external URL; fall back to Odoo /web/image/ URL (served from S3)
             if b.image_url:
                 image_data = b.image_url
             elif b.image:
-                image_data = 'data:image/png;base64,' + base64.b64encode(
-                    base64.b64decode(b.image)
-                ).decode('utf-8') if isinstance(b.image, str) else (
-                    'data:image/png;base64,' + base64.b64encode(b.image).decode('utf-8')
-                )
+                image_data = f'{base_url}/web/image/mint.banner/{b.id}/image'
             else:
                 image_data = None
 

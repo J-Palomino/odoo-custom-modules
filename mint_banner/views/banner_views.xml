@@ -69,8 +69,9 @@
                 Create your first banner
             </p>
             <p>
-                Banners appear as hero images or interstitials on the MintDeals storefront.
-                Set the slot to "hero" for product page hero carousels.
+                Banners appear on the MintDeals storefront.
+                Use "Hero" for the top carousel on store and products pages.
+                Use "After Flower/Vapes/Edibles/Concentrates" for banners between product category sections.
             </p>
         </field>
     </record>
