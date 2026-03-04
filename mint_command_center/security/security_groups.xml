@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <data noupdate="0">
+    <data noupdate="1">
 
         <!-- Viewer: read-only access to all Mint Marketing modules -->
         <record id="group_viewer" model="res.groups">
