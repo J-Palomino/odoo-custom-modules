@@ -9,7 +9,7 @@
     'author': 'MintDeals',
     'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
-    'depends': ['base'],
+    'depends': ['base', 'mint_command_center'],
     'data': [
         'security/ir.model.access.csv',
         'views/banner_views.xml',
