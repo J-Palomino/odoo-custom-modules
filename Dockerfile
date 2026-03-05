@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=59
+ARG CACHEBUST=60
 
 USER root
 
@@ -35,6 +35,7 @@ COPY --chown=odoo:odoo mint_theme /opt/extra-addons/mint_theme
 COPY --chown=odoo:odoo mint_maintenance_form /opt/extra-addons/mint_maintenance_form
 COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financial_risk
 COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price_precision
+COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
 COPY --chown=odoo:odoo mint_embed /opt/extra-addons/mint_embed
@@ -95,6 +96,7 @@ RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 M
 RUN test -f /opt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MODULE VERIFIED" || (echo "MINT_THEME MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
 RUN test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MINT_MAINTENANCE_FORM MODULE VERIFIED" || (echo "MINT_MAINTENANCE_FORM MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
