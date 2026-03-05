@@ -42,7 +42,7 @@
                         </group>
                     </group>
                     <group string="Line Items">
-                        <field name="line_items_json" widget="text" readonly="1"/>
+                        <field name="line_items_json" widget="text" readonly="True"/>
                     </group>
                 </sheet>
             </form>
@@ -57,15 +57,15 @@
             <search string="Search Purchases">
                 <field name="partner_id"/>
                 <field name="receipt_no"/>
-                <field name="company_id" string="Store"/>
-                <filter string="Today" name="today" domain="[('date', '=', context_today().strftime('%Y-%m-%d'))]"/>
-                <filter string="This Week" name="this_week" domain="[('date', '>=', (context_today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'))]"/>
-                <filter string="This Month" name="this_month" domain="[('date', '>=', context_today().strftime('%Y-%m-01'))]"/>
+                <field name="company_id"/>
+                <filter string="Today" name="today" domain="[('date', '=', context_today())]"/>
+                <filter string="This Week" name="this_week" domain="[('date', '&gt;=', context_today() - datetime.timedelta(days=7))]"/>
+                <filter string="This Month" name="this_month" domain="[('date', '&gt;=', context_today().replace(day=1))]"/>
                 <separator/>
                 <group expand="0" string="Group By">
                     <filter string="Customer" name="group_customer" context="{'group_by': 'partner_id'}"/>
                     <filter string="Store" name="group_store" context="{'group_by': 'company_id'}"/>
-                    <filter string="Date" name="group_date" context="{'group_by': 'date:day'}"/>
+                    <filter string="Date" name="group_date" context="{'group_by': 'date:month'}"/>
                 </group>
             </search>
         </field>
