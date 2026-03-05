@@ -105,10 +105,9 @@
                 <filter name="interstitial" string="Interstitial" domain="[('slot', '=', 'interstitial')]"/>
                 <filter name="slot_type" string="Slot" domain="[('slot', '=', 'slot')]"/>
                 <filter name="popup" string="Popup" domain="[('slot', '=', 'popup')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_slot" string="Slot Type" context="{'group_by': 'slot'}"/>
-                    <filter name="group_category" string="Category" context="{'group_by': 'category'}"/>
-                </group>
+                <separator/>
+                <filter name="group_slot" string="Slot Type" context="{'group_by': 'slot'}"/>
+                <filter name="group_category" string="Category" context="{'group_by': 'category'}"/>
             </search>
         </field>
     </record>

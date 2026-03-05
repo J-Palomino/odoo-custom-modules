@@ -85,10 +85,9 @@
                 <filter name="draft" string="Draft" domain="[('state', '=', 'draft')]"/>
                 <filter name="sent" string="Sent" domain="[('state', '=', 'sent')]"/>
                 <filter name="failed" string="Failed" domain="[('state', '=', 'failed')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
-                    <filter name="group_site" string="Site" context="{'group_by': 'site_id'}"/>
-                </group>
+                <separator/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_site" string="Site" context="{'group_by': 'site_id'}"/>
             </search>
         </field>
     </record>
