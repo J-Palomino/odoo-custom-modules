@@ -3,3 +3,4 @@ access_mint_push_site_all,mint.push.site.all,model_mint_push_site,,1,0,0,0
 access_mint_push_site_user,mint.push.site.user,model_mint_push_site,base.group_user,1,1,1,1
 access_mint_push_subscription_all,mint.push.subscription.all,model_mint_push_subscription,,1,0,0,0
 access_mint_push_subscription_user,mint.push.subscription.user,model_mint_push_subscription,base.group_user,1,1,1,1
+access_mint_push_send_wizard,mint.push.send.wizard,model_mint_push_send_wizard,base.group_user,1,1,1,0

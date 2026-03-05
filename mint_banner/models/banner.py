@@ -8,7 +8,7 @@ from odoo import models, fields, api
 _logger = logging.getLogger(__name__)
 
 FRONTEND_URL_PARAM = 'mint_banner.frontend_url'
-FRONTEND_URL_DEFAULT = 'https://mintdeals.com'
+FRONTEND_URL_DEFAULT = 'https://mintdeals2026.pages.dev'
 
 
 class MintBanner(models.Model):
@@ -23,10 +23,24 @@ class MintBanner(models.Model):
         ('after-vapes', 'After Vapes'),
         ('after-edibles', 'After Edibles'),
         ('after-concentrates', 'After Concentrates'),
+        ('brand-spotlight', 'Brand Spotlight (Below Hero)'),
+        ('deals-popup', 'Deals Popup (Bottom-Right)'),
     ], string='Slot Type', required=True, default='hero')
     category = fields.Char(string='Category', help='Category cname (e.g. flower, edibles). Leave empty for default/catch-all.')
+    brand = fields.Char(string='Brand', help='Brand name for click-through filter')
+    search_term = fields.Char(string='Search Term', help='Product search term for click-through filter')
+    size = fields.Selection([
+        ('small', 'Small (Compact Strip)'),
+        ('medium', 'Medium (Standard)'),
+        ('large', 'Large (Featured)'),
+    ], string='Size', default='medium', required=True,
+       help='Small: compact horizontal strip. Medium: standard banner. Large: prominent callout with product photo.')
     image = fields.Binary(string='Image', attachment=True)
     image_url = fields.Char(string='Image URL', help='External image URL (takes precedence over binary image)')
+    product_image = fields.Binary(string='Product Image', attachment=True,
+                                  help='Product photo displayed alongside the banner (best with Large size)')
+    product_image_url = fields.Char(string='Product Image URL',
+                                    help='External product image URL (takes precedence over uploaded product image)')
     title = fields.Char(string='Title')
     subtitle = fields.Text(string='Subtitle')
     link_url = fields.Char(string='Link URL')

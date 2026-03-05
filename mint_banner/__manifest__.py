@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Banners',
-    'version': '19.0.1.2.0',
+    'version': '19.0.1.4.0',
     'category': 'Website',
     'summary': 'Admin-managed category banners for MintDeals storefront',
     'description': """MintDeals Banners

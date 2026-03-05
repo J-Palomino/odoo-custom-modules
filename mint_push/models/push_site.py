@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
+import logging
+
 from odoo import models, fields
+
+_logger = logging.getLogger(__name__)
 
 
 class PushSite(models.Model):
@@ -10,7 +14,7 @@ class PushSite(models.Model):
     name = fields.Char(string='Site Name', required=True,
                        help='Display name (e.g. "MintDeals PWA", "Mint Mobile App")')
     code = fields.Char(string='Site Code', required=True, index=True,
-                       help='Unique identifier sent by the frontend (e.g. "mintdeals")')
+                       help='Unique identifier sent by the frontend (e.g. "mintdeals", "mint-mobile")')
     url = fields.Char(string='Site URL',
                       help='Base URL of the frontend (e.g. "https://letsgomint.us")')
     active = fields.Boolean(default=True)

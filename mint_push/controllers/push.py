@@ -35,6 +35,21 @@ def error_response(message, status=400):
 class MintPushAPI(http.Controller):
     """REST API Controller for push notification management."""
 
+    # ==================== SITES ====================
+
+    @http.route('/api/v1/push/sites', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def list_sites(self):
+        """Return all active push notification sites."""
+        sites = request.env['mint.push.site'].sudo().search([('active', '=', True)])
+        return json_response({
+            'sites': [{
+                'code': s.code,
+                'name': s.name,
+                'url': s.url or '',
+            } for s in sites]
+        })
+
     # ==================== VAPID KEY ====================
 
     @http.route('/api/v1/push/vapid-key', type='http', auth='none',

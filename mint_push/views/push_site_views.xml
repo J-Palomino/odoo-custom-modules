@@ -43,6 +43,7 @@
                             <field name="subscription_ids">
                                 <list>
                                     <field name="endpoint" widget="char"/>
+                                    <field name="partner_id"/>
                                     <field name="created_at"/>
                                     <field name="fail_count"/>
                                 </list>
@@ -70,7 +71,7 @@ fetch('/api/push/subscribe', {
                                     <li>Register a service worker that handles <code>push</code> events
                                         (see <code>public/sw.js</code> in the MintDeals repo for reference).</li>
                                     <li>Subscriptions from this site will appear here and can be targeted
-                                        when composing push notifications.</li>
+                                        from the <strong>Send Notification</strong> wizard.</li>
                                 </ol>
                             </div>
                         </page>
@@ -86,5 +87,12 @@ fetch('/api/push/subscribe', {
         <field name="res_model">mint.push.site</field>
         <field name="view_mode">list,form</field>
     </record>
+
+    <!-- ============ Menu ============ -->
+    <menuitem id="menu_push_sites"
+              name="Sites"
+              parent="menu_push_root"
+              action="action_push_sites"
+              sequence="5"/>
 
 </odoo>

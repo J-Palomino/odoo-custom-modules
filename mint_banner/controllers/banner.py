@@ -75,18 +75,31 @@ class MintBannerAPI(http.Controller):
             else:
                 image_data = None
 
+            # Product image: same precedence logic
+            if b.product_image_url:
+                product_image_data = b.product_image_url
+            elif b.product_image:
+                product_image_data = f'{base_url}/web/image/mint.banner/{b.id}/product_image'
+            else:
+                product_image_data = None
+
             result.append({
                 'id': b.id,
                 'name': b.name,
                 'slot': b.slot,
                 'category': b.category or '',
+                'size': b.size or 'medium',
                 'image': image_data,
                 'image_url': b.image_url or '',
+                'product_image': product_image_data,
+                'product_image_url': b.product_image_url or '',
                 'title': b.title or '',
                 'subtitle': b.subtitle or '',
                 'link_url': b.link_url or '',
                 'link_label': b.link_label or '',
                 'background_color': b.background_color or '',
+                'brand': b.brand or '',
+                'search_term': b.search_term or '',
                 'sequence': b.sequence,
             })
 

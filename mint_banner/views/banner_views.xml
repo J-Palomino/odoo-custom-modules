@@ -14,7 +14,10 @@
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="slot"/>
+                <field name="size"/>
                 <field name="category"/>
+                <field name="brand"/>
+                <field name="search_term"/>
                 <field name="title"/>
                 <field name="active"/>
                 <field name="date_start"/>
@@ -39,6 +42,7 @@
                         <group string="Banner Info">
                             <field name="name"/>
                             <field name="slot"/>
+                            <field name="size"/>
                             <field name="category"/>
                             <field name="sequence"/>
                             <field name="active"/>
@@ -49,11 +53,17 @@
                             <field name="link_url"/>
                             <field name="link_label"/>
                             <field name="background_color"/>
+                            <field name="brand"/>
+                            <field name="search_term"/>
                         </group>
                     </group>
-                    <group string="Image">
+                    <group string="Background Image">
                         <field name="image_url" placeholder="https://res.cloudinary.com/..."/>
                         <field name="image" widget="image"/>
+                    </group>
+                    <group string="Product Image">
+                        <field name="product_image_url" placeholder="https://res.cloudinary.com/..."/>
+                        <field name="product_image" widget="image"/>
                     </group>
                     <group string="Schedule">
                         <group>
