@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Hide password form fields; show only Google OAuth button -->
+    <template id="login_oauth_only" inherit_id="web.login" name="OAuth Only Login">
+
+        <!-- Hide the email field -->
+        <xpath expr="//div[hasclass('field-login')]" position="attributes">
+            <attribute name="class">mb-3 field-login d-none</attribute>
+        </xpath>
+
+        <!-- Hide the password field -->
+        <xpath expr="//div[hasclass('o_caps_lock_warning')]" position="attributes">
+            <attribute name="class">o_caps_lock_warning d-none</attribute>
+        </xpath>
+
+        <!-- Hide the Log in button and signup link, keep OAuth section -->
+        <xpath expr="//button[@type='submit']" position="attributes">
+            <attribute name="class">btn btn-primary d-none</attribute>
+        </xpath>
+
+    </template>
+
+</odoo>

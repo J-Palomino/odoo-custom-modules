@@ -1,0 +1,41 @@
+/*
+ * OAuth-only login page styles
+ * Hides password form elements, promotes Google Sign-in button
+ */
+
+/* Hide "Don't have an account?" signup link */
+.oe_login_form .oe_login_buttons > a.btn-link {
+    display: none !important;
+}
+
+/* Hide "- or -" separator since there's only one option */
+.oe_login_form .o_login_auth > em {
+    display: none !important;
+}
+
+/* Hide hidden form inputs area (type=password, redirect, etc.) */
+.oe_login_form input[name="type"],
+.oe_login_form input[name="redirect"],
+.oe_login_form input[name="webauthn_response"] {
+    display: none !important;
+}
+
+/* Make the Google OAuth button more prominent */
+.oe_login_form .o_login_auth .list-group-item:first-child {
+    font-size: 1.1rem;
+    padding: 0.75rem 1rem !important;
+    font-weight: 500;
+    border-color: #4285f4;
+    background-color: #fff;
+    transition: background-color 0.2s;
+}
+
+.oe_login_form .o_login_auth .list-group-item:first-child:hover {
+    background-color: #f0f6ff;
+}
+
+/* Add top padding to OAuth section since form fields are hidden */
+.oe_login_form .o_login_auth {
+    margin-top: 0 !important;
+    padding-top: 0.5rem;
+}

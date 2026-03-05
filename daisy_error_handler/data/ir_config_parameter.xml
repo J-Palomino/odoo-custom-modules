@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo noupdate="1">
+    <record id="daisy_error_handler_api_url" model="ir.config_parameter">
+        <field name="key">daisy_error_handler.api_url</field>
+        <field name="value">https://daisy.plus/api/v1/prediction/af2db2cc-f48c-4ca8-b1a9-36b156ec06cf</field>
+    </record>
+    <record id="daisy_error_handler_enabled" model="ir.config_parameter">
+        <field name="key">daisy_error_handler.enabled</field>
+        <field name="value">true</field>
+    </record>
+</odoo>
