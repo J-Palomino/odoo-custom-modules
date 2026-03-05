@@ -89,7 +89,7 @@ class MintEmbedAPI(http.Controller):
             })
         except Exception as e:
             _logger.error('Error fetching embed page %s: %s', slug, e)
-            return _error(str(e), 500)
+            return _error('Internal server error', 500)
 
     # ==================== CONTACT FORM ====================
 
@@ -98,7 +98,7 @@ class MintEmbedAPI(http.Controller):
     def submit_contact(self, **kwargs):
         try:
             data = json.loads(request.httprequest.data or '{}')
-            email = (data.get('email') or '').strip()
+            email = (data.get('email') or '').strip().lower()
             name = (data.get('name') or '').strip()
             message = (data.get('message') or '').strip()
 
@@ -108,23 +108,25 @@ class MintEmbedAPI(http.Controller):
                 return _error('Name is required.')
             if not message:
                 return _error('Message is required.')
+            if len(message) > 10000:
+                return _error('Message is too long.')
 
             Submission = request.env['mint.embed.submission'].sudo()
             Submission.create({
                 'form_type': 'contact',
-                'name': name,
-                'email': email,
-                'phone': (data.get('phone') or '').strip(),
+                'name': name[:200],
+                'email': email[:254],
+                'phone': (data.get('phone') or '').strip()[:30],
                 'message': message,
-                'source_url': (data.get('source_url') or '').strip(),
-                'embed_key': (data.get('embed_key') or '').strip(),
+                'source_url': (data.get('source_url') or '').strip()[:500],
+                'embed_key': (data.get('embed_key') or '').strip()[:20],
                 'ip_address': request.httprequest.remote_addr,
             })
 
             return _json({'ok': True, 'message': 'Thank you! We will be in touch.'})
         except Exception as e:
             _logger.error('Error submitting contact form: %s', e)
-            return _error(str(e), 500)
+            return _error('Internal server error', 500)
 
     # ==================== NEWSLETTER ====================
 
@@ -133,14 +135,14 @@ class MintEmbedAPI(http.Controller):
     def submit_newsletter(self, **kwargs):
         try:
             data = json.loads(request.httprequest.data or '{}')
-            email = (data.get('email') or '').strip()
+            email = (data.get('email') or '').strip().lower()
 
             if not email or not EMAIL_RE.match(email):
                 return _error('A valid email is required.')
 
             Submission = request.env['mint.embed.submission'].sudo()
 
-            # Avoid duplicate newsletter signups
+            # Case-insensitive dedup
             existing = Submission.search([
                 ('form_type', '=', 'newsletter'),
                 ('email', '=', email),
@@ -150,14 +152,14 @@ class MintEmbedAPI(http.Controller):
 
             Submission.create({
                 'form_type': 'newsletter',
-                'name': (data.get('name') or '').strip(),
-                'email': email,
-                'source_url': (data.get('source_url') or '').strip(),
-                'embed_key': (data.get('embed_key') or '').strip(),
+                'name': (data.get('name') or '').strip()[:200],
+                'email': email[:254],
+                'source_url': (data.get('source_url') or '').strip()[:500],
+                'embed_key': (data.get('embed_key') or '').strip()[:20],
                 'ip_address': request.httprequest.remote_addr,
             })
 
             return _json({'ok': True, 'message': 'Welcome! You are now subscribed.'})
         except Exception as e:
             _logger.error('Error submitting newsletter: %s', e)
-            return _error(str(e), 500)
+            return _error('Internal server error', 500)

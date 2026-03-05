@@ -42,5 +42,5 @@ class MintEmbedSubmission(models.Model):
     def action_mark_replied(self):
         self.write({'state': 'replied'})
 
-    def action_archive(self):
+    def action_mark_archived(self):
         self.write({'state': 'archived'})

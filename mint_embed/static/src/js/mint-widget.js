@@ -16,7 +16,7 @@
 
   // ── Find our own script tag ──────────────────────────────────
   var scripts = document.querySelectorAll('script[src*="mint-widget"]');
-  var me = scripts[scripts.length - 1];
+  var me = document.currentScript || scripts[scripts.length - 1];
   if (!me) return;
 
   var TYPE = me.getAttribute('data-type') || 'banners';
@@ -68,7 +68,25 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }).then(function (r) { return r.json(); });
+    }).then(function (r) {
+      if (!r.ok && r.status >= 500) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  function sanitizeHTML(html) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script,iframe,object,embed,form').forEach(function (el) { el.remove(); });
+    doc.querySelectorAll('*').forEach(function (el) {
+      Array.from(el.attributes).forEach(function (attr) {
+        if (attr.name.startsWith('on')) el.removeAttribute(attr.name);
+      });
+    });
+    return doc.body.innerHTML;
   }
 
   function el(tag, attrs, children) {
@@ -165,7 +183,8 @@
       + '.mint-blog-title { font-size: 1.0625rem; font-weight: 700; margin: 0 0 0.375rem;'
       + ' color: inherit; text-decoration: none; }\n'
       + '.mint-blog-excerpt { font-size: 0.875rem; color: #6b7280; margin: 0; line-height: 1.5; }\n'
-      + '.mint-blog-date { font-size: 0.75rem; color: #9ca3af; margin-top: 0.5rem; }\n';
+      + '.mint-blog-date { font-size: 0.75rem; color: #9ca3af; margin-top: 0.5rem; }\n'
+      + '.mint-blog-link { display: inline-block; margin-top: 0.5rem; font-size: 0.8125rem; font-weight: 600; }\n';
 
     var style = el('style', { innerHTML: css });
     var root = el('div', { className: 'mint-root' });
@@ -192,6 +211,14 @@
         if (p.published_at) {
           var d = new Date(p.published_at);
           body.appendChild(el('div', { className: 'mint-blog-date' }, [d.toLocaleDateString()]));
+        }
+        if (p.slug) {
+          body.appendChild(el('a', {
+            className: 'mint-blog-link',
+            href: BASE.replace(/\/api.*/, '') + '/blog/' + p.slug,
+            target: '_blank',
+            rel: 'noopener',
+          }, ['Read more']));
         }
         card.appendChild(body);
         grid.appendChild(card);
@@ -243,6 +270,11 @@
       var message = messageInput.value.trim();
       if (!name || !email || !message) {
         errorEl.textContent = 'Please fill in name, email, and message.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      if (!isValidEmail(email)) {
+        errorEl.textContent = 'Please enter a valid email address.';
         errorEl.style.display = 'block';
         return;
       }
@@ -309,8 +341,8 @@
     submitBtn.addEventListener('click', function () {
       errorEl.style.display = 'none';
       var email = emailInput.value.trim();
-      if (!email) {
-        errorEl.textContent = 'Please enter your email address.';
+      if (!email || !isValidEmail(email)) {
+        errorEl.textContent = 'Please enter a valid email address.';
         errorEl.style.display = 'block';
         return;
       }
@@ -377,7 +409,7 @@
       }
       if (page.title) wrap.appendChild(el('h1', { className: 'mint-page-title' }, [page.title]));
       if (page.summary) wrap.appendChild(el('p', { className: 'mint-page-summary' }, [page.summary]));
-      if (page.content) wrap.appendChild(el('div', { className: 'mint-page-content', innerHTML: page.content }));
+      if (page.content) wrap.appendChild(el('div', { className: 'mint-page-content', innerHTML: sanitizeHTML(page.content) }));
       if (page.cta_label && page.cta_url) {
         var ctaWrap = el('div', { className: 'mint-page-cta' });
         ctaWrap.appendChild(el('a', { className: 'mint-btn', href: page.cta_url, target: '_blank', rel: 'noopener' }, [page.cta_label]));

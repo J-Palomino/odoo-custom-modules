@@ -34,7 +34,7 @@
                         </group>
                         <group string="Appearance">
                             <field name="theme"/>
-                            <field name="accent_color" widget="color"/>
+                            <field name="accent_color"/>
                             <field name="max_width"/>
                         </group>
                     </group>
@@ -184,7 +184,7 @@
                     <button name="action_mark_replied" type="object"
                             string="Mark Replied" class="btn-primary"
                             invisible="state not in ('new', 'read')"/>
-                    <button name="action_archive" type="object"
+                    <button name="action_mark_archived" type="object"
                             string="Archive" class="btn-secondary"
                             invisible="state == 'archived'"/>
                     <field name="state" widget="statusbar"

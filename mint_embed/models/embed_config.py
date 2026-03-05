@@ -12,6 +12,9 @@ class MintEmbedConfig(models.Model):
     _name = 'mint.embed.config'
     _description = 'Embed Widget Configuration'
     _order = 'create_date desc'
+    _sql_constraints = [
+        ('embed_key_unique', 'UNIQUE(embed_key)', 'Embed key must be unique.'),
+    ]
 
     name = fields.Char(string='Label', required=True,
                        help='Internal name, e.g. "Homepage banner carousel"')

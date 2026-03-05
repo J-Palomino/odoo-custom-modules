@@ -10,11 +10,14 @@ class MintEmbedPage(models.Model):
     _name = 'mint.embed.page'
     _description = 'Embeddable Info Page'
     _order = 'sequence, name'
+    _sql_constraints = [
+        ('slug_unique', 'UNIQUE(slug)', 'Page slug must be unique.'),
+    ]
 
     name = fields.Char(string='Title', required=True)
     slug = fields.Char(string='Slug', required=True, index=True,
                        help='URL-safe identifier, e.g. "app-info" or "loyalty-program"')
-    content = fields.Html(string='Content', sanitize=False,
+    content = fields.Html(string='Content', sanitize=True,
                           help='Rich HTML content rendered inside the embed widget')
     summary = fields.Text(string='Summary',
                           help='Short description shown above the content')
