@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_embed_config_all,mint.embed.config.all,model_mint_embed_config,,1,0,0,0
+access_mint_embed_config_user,mint.embed.config.user,model_mint_embed_config,base.group_user,1,1,1,1
+access_mint_embed_submission_all,mint.embed.submission.all,model_mint_embed_submission,,1,0,0,0
+access_mint_embed_submission_user,mint.embed.submission.user,model_mint_embed_submission,base.group_user,1,1,1,0
+access_mint_embed_page_all,mint.embed.page.all,model_mint_embed_page,,1,0,0,0
+access_mint_embed_page_user,mint.embed.page.user,model_mint_embed_page,base.group_user,1,1,1,1

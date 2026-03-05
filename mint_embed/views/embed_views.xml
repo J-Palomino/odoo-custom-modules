@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================ -->
+    <!-- EMBED CONFIG                                                  -->
+    <!-- ============================================================ -->
+
+    <record id="view_mint_embed_config_list" model="ir.ui.view">
+        <field name="name">mint.embed.config.list</field>
+        <field name="model">mint.embed.config</field>
+        <field name="arch" type="xml">
+            <list string="Embed Widgets">
+                <field name="name"/>
+                <field name="widget_type"/>
+                <field name="embed_key"/>
+                <field name="theme"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_embed_config_form" model="ir.ui.view">
+        <field name="name">mint.embed.config.form</field>
+        <field name="model">mint.embed.config</field>
+        <field name="arch" type="xml">
+            <form string="Embed Widget">
+                <sheet>
+                    <group>
+                        <group string="General">
+                            <field name="name"/>
+                            <field name="widget_type"/>
+                            <field name="embed_key"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Appearance">
+                            <field name="theme"/>
+                            <field name="accent_color" widget="color"/>
+                            <field name="max_width"/>
+                        </group>
+                    </group>
+
+                    <!-- Banner options -->
+                    <group string="Banner Options"
+                           invisible="widget_type != 'banners'">
+                        <field name="banner_slot"/>
+                        <field name="banner_company_id"/>
+                    </group>
+
+                    <!-- Blog options -->
+                    <group string="Blog Options"
+                           invisible="widget_type != 'blog'">
+                        <field name="blog_limit"/>
+                        <field name="blog_featured_only"/>
+                    </group>
+
+                    <!-- Page options -->
+                    <group string="Page"
+                           invisible="widget_type != 'page'">
+                        <field name="page_id"/>
+                    </group>
+
+                    <!-- Generated embed code -->
+                    <separator string="Embed Code"/>
+                    <group>
+                        <field name="embed_code" widget="CopyClipboardText"
+                               readonly="1" string="Copy this code into WordPress"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_embed_config" model="ir.actions.act_window">
+        <field name="name">Embed Widgets</field>
+        <field name="res_model">mint.embed.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first embed widget
+            </p>
+            <p>
+                Configure a widget (banners, blog feed, contact form, newsletter,
+                or info page), then copy the generated embed code into any
+                WordPress page or third-party site.
+            </p>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- EMBED PAGES                                                   -->
+    <!-- ============================================================ -->
+
+    <record id="view_mint_embed_page_list" model="ir.ui.view">
+        <field name="name">mint.embed.page.list</field>
+        <field name="model">mint.embed.page</field>
+        <field name="arch" type="xml">
+            <list string="Embed Pages">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="slug"/>
+                <field name="cta_label"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_embed_page_form" model="ir.ui.view">
+        <field name="name">mint.embed.page.form</field>
+        <field name="model">mint.embed.page</field>
+        <field name="arch" type="xml">
+            <form string="Embed Page">
+                <sheet>
+                    <group>
+                        <group string="Page Info">
+                            <field name="name"/>
+                            <field name="slug"/>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Call to Action">
+                            <field name="cta_label" placeholder="Download the App"/>
+                            <field name="cta_url" placeholder="https://apps.apple.com/..."/>
+                        </group>
+                    </group>
+                    <group string="Hero Image">
+                        <field name="hero_image_url" placeholder="https://..."/>
+                        <field name="hero_image" widget="image"/>
+                    </group>
+                    <field name="summary" placeholder="Short description shown above the content"/>
+                    <separator string="Page Content"/>
+                    <field name="content" widget="html"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_embed_page" model="ir.actions.act_window">
+        <field name="name">Embed Pages</field>
+        <field name="res_model">mint.embed.page</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first embeddable page
+            </p>
+            <p>
+                Build rich info pages (app promo, loyalty program, etc.)
+                that render inside the embed widget on WordPress.
+            </p>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- SUBMISSIONS                                                   -->
+    <!-- ============================================================ -->
+
+    <record id="view_mint_embed_submission_list" model="ir.ui.view">
+        <field name="name">mint.embed.submission.list</field>
+        <field name="model">mint.embed.submission</field>
+        <field name="arch" type="xml">
+            <list string="Form Submissions" decoration-info="state == 'new'">
+                <field name="create_date" string="Date"/>
+                <field name="form_type"/>
+                <field name="name"/>
+                <field name="email"/>
+                <field name="phone"/>
+                <field name="source_url"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'new'"
+                       decoration-success="state == 'replied'"
+                       decoration-muted="state == 'archived'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_embed_submission_form" model="ir.ui.view">
+        <field name="name">mint.embed.submission.form</field>
+        <field name="model">mint.embed.submission</field>
+        <field name="arch" type="xml">
+            <form string="Form Submission">
+                <header>
+                    <button name="action_mark_read" type="object"
+                            string="Mark Read" class="btn-secondary"
+                            invisible="state != 'new'"/>
+                    <button name="action_mark_replied" type="object"
+                            string="Mark Replied" class="btn-primary"
+                            invisible="state not in ('new', 'read')"/>
+                    <button name="action_archive" type="object"
+                            string="Archive" class="btn-secondary"
+                            invisible="state == 'archived'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="new,read,replied,archived"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Contact">
+                            <field name="form_type"/>
+                            <field name="name"/>
+                            <field name="email"/>
+                            <field name="phone"/>
+                        </group>
+                        <group string="Source">
+                            <field name="source_url"/>
+                            <field name="embed_key"/>
+                            <field name="ip_address"/>
+                            <field name="create_date"/>
+                        </group>
+                    </group>
+                    <group string="Message" invisible="form_type != 'contact'">
+                        <field name="message" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_embed_submission" model="ir.actions.act_window">
+        <field name="name">Form Submissions</field>
+        <field name="res_model">mint.embed.submission</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('state', '!=', 'archived')]</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No submissions yet
+            </p>
+            <p>
+                Contact and newsletter submissions from embedded widgets
+                will appear here.
+            </p>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- MENU                                                          -->
+    <!-- ============================================================ -->
+
+    <menuitem id="menu_mint_embed_root"
+              name="Embeds"
+              parent="mint_banner.menu_mint_banner_root"
+              sequence="20"/>
+
+    <menuitem id="menu_mint_embed_config"
+              name="Widgets"
+              parent="menu_mint_embed_root"
+              action="action_mint_embed_config"
+              sequence="10"/>
+
+    <menuitem id="menu_mint_embed_pages"
+              name="Pages"
+              parent="menu_mint_embed_root"
+              action="action_mint_embed_page"
+              sequence="20"/>
+
+    <menuitem id="menu_mint_embed_submissions"
+              name="Submissions"
+              parent="menu_mint_embed_root"
+              action="action_mint_embed_submission"
+              sequence="30"/>
+
+</odoo>
