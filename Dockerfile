@@ -1,17 +1,17 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=54
+ARG CACHEBUST=57
 
 USER root
 
-# Install nginx (reverse proxy for websocket routing) + git (OCA module cloning)
+# Install git (needed for OCA module cloning)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nginx gettext-base git \
+    && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush py-vapid "fsspec[s3]>=2025.3.0" packaging
+# Install Python dependencies for base_accounting_kit + push notifications + S3 storage
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
@@ -32,14 +32,16 @@ RUN git clone --depth 1 --branch 19.0 https://github.com/OCA/storage.git /tmp/oc
 COPY --chown=odoo:odoo avancir_inventory /opt/extra-addons/avancir_inventory
 COPY --chown=odoo:odoo mint_api_v2 /opt/extra-addons/mint_api_v2
 COPY --chown=odoo:odoo mint_theme /opt/extra-addons/mint_theme
-COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financial_risk
 COPY --chown=odoo:odoo mint_maintenance_form /opt/extra-addons/mint_maintenance_form
-COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
+COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financial_risk
+COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price_precision
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
+COPY --chown=odoo:odoo mint_oauth_only /opt/extra-addons/mint_oauth_only
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
+COPY --chown=odoo:odoo daisy_error_handler /opt/extra-addons/daisy_error_handler
 COPY --chown=odoo:odoo daisydo_theme /opt/extra-addons/daisydo_theme
 COPY --chown=odoo:odoo daisydo_livechat /opt/extra-addons/daisydo_livechat
 COPY --chown=odoo:odoo daisydo_agents /opt/extra-addons/daisydo_agents
@@ -91,13 +93,11 @@ RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync
 RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MODULE VERIFIED" || (echo "MINT_THEME MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
-RUN wc -l /opt/extra-addons/mint_theme/static/src/scss/mint_theme.scss && echo "SCSS LINE COUNT CHECK"
-RUN grep -c "field-login" /opt/extra-addons/mint_theme/static/src/scss/mint_theme.scss && echo "LOGIN HIDE RULES PRESENT" || (echo "ERROR: LOGIN HIDE RULES MISSING!" && exit 1)
 RUN test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MINT_MAINTENANCE_FORM MODULE VERIFIED" || (echo "MINT_MAINTENANCE_FORM MODULE MISSING" && exit 1)
-RUN test -f /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
-RUN test -f /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER VERIFIED" || (echo "MINT_COMMAND_CENTER MISSING" && exit 1)
-RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER VERIFIED" || (echo "MINT_BANNER MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
 
 # Verify DaisyDo modules
@@ -137,9 +137,8 @@ RUN for mod in dms dms_field hr_dms_field; do \
 RUN chmod +x /opt/extra-addons/mint_theme/generate-theme.sh
 RUN chmod +x /opt/extra-addons/daisydo_theme/generate-theme.sh
 
-# Copy config, nginx template, and fix script
+# Copy config file as backup and fix script
 COPY odoo.conf /etc/odoo/odoo.conf
-COPY nginx.conf.template /etc/nginx/templates/odoo.conf.template
 COPY fix-config.sh /fix-config.sh
 RUN chmod +x /fix-config.sh
 

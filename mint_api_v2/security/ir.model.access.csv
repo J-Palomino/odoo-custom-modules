@@ -17,3 +17,5 @@ access_mint_blog_tag_all,mint.blog.tag.all,model_mint_blog_tag,,1,0,0,0
 access_mint_blog_tag_user,mint.blog.tag.user,model_mint_blog_tag,base.group_user,1,1,1,1
 access_mint_event_all,mint.event.all,model_mint_event,,1,0,0,0
 access_mint_event_user,mint.event.user,model_mint_event,base.group_user,1,1,1,1
+access_mint_config_all,mint.config.all,model_mint_config,,1,0,0,0
+access_mint_config_user,mint.config.user,model_mint_config,base.group_user,1,1,1,1

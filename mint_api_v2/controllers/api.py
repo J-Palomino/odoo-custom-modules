@@ -44,7 +44,7 @@ class MintDealsAPI(http.Controller):
         return json_response({
             'status': 'healthy',
             'timestamp': datetime.utcnow().isoformat(),
-            'version': '2.0.0',
+            'version': '3.0.0',
             'service': 'mint-api',
         })
 
@@ -534,6 +534,79 @@ class MintDealsAPI(http.Controller):
             })
         except Exception as e:
             _logger.error("Error getting store events: %s", e)
+            return error_response(str(e), 500)
+
+    # ==================== CONFIG ====================
+
+    @http.route('/api/v1/config', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_all_config(self, **kwargs):
+        """Get all active config entries."""
+        try:
+            configs = request.env["mint.config"].sudo().search([('is_active', '=', True)])
+
+            items = []
+            for cfg in configs:
+                parsed = cfg.value
+                try:
+                    parsed = json.loads(cfg.value) if cfg.value else None
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                items.append({
+                    'key': cfg.key,
+                    'value': parsed,
+                    'description': cfg.description,
+                })
+
+            body = json.dumps({'count': len(items), 'items': items}, default=str)
+
+            return Response(
+                body,
+                status=200,
+                content_type='application/json',
+                headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, max-age=3600',
+                }
+            )
+        except Exception as e:
+            _logger.error("Error getting configs: %s", e)
+            return error_response(str(e), 500)
+
+    @http.route('/api/v1/config/<string:key>', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_config_by_key(self, key):
+        """Get a single config entry by key."""
+        try:
+            cfg = request.env["mint.config"].sudo().search([
+                ('key', '=', key),
+                ('is_active', '=', True),
+            ], limit=1)
+
+            if not cfg:
+                return error_response("Config key not found", 404)
+
+            parsed = cfg.value
+            try:
+                parsed = json.loads(cfg.value) if cfg.value else None
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            body = json.dumps({
+                'key': cfg.key,
+                'value': parsed,
+                'description': cfg.description,
+            }, default=str)
+
+            return Response(
+                body,
+                status=200,
+                content_type='application/json',
+                headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, max-age=3600',
+                }
+            )
+        except Exception as e:
+            _logger.error("Error getting config key %s: %s", key, e)
             return error_response(str(e), 500)
 
     # ==================== CATEGORIES ====================
