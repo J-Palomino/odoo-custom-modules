@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Add Dutchie fields to partner form -->
+    <record id="view_partner_form_dutchie" model="ir.ui.view">
+        <field name="name">res.partner.form.dutchie</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='internal_notes']" position="after">
+                <page string="Dutchie Sync" name="dutchie_sync">
+                    <group>
+                        <group string="Dutchie Identification">
+                            <field name="x_dutchie_customer_id"/>
+                            <field name="x_dutchie_customer_code"/>
+                            <field name="x_home_store_id"/>
+                        </group>
+                        <group string="Dutchie Stats">
+                            <field name="x_dutchie_total_spend"/>
+                            <field name="x_dutchie_visit_count"/>
+                            <field name="x_dutchie_first_visit"/>
+                            <field name="x_dutchie_last_sync"/>
+                        </group>
+                    </group>
+                    <field name="x_dutchie_purchase_ids">
+                        <list string="Purchase History" editable="bottom" create="false" delete="false">
+                            <field name="date"/>
+                            <field name="receipt_no"/>
+                            <field name="company_id" string="Store"/>
+                            <field name="gross_total"/>
+                            <field name="discount"/>
+                            <field name="net_total"/>
+                            <field name="loyalty_points"/>
+                        </list>
+                    </field>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add Dutchie ID to partner list view -->
+    <record id="view_partner_tree_dutchie" model="ir.ui.view">
+        <field name="name">res.partner.list.dutchie</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='email']" position="after">
+                <field name="x_dutchie_customer_id" optional="hide"/>
+                <field name="x_home_store_id" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Search filter for Dutchie-synced customers -->
+    <record id="view_partner_search_dutchie" model="ir.ui.view">
+        <field name="name">res.partner.search.dutchie</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_res_partner_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='customer']" position="after">
+                <separator/>
+                <filter string="Dutchie Synced" name="dutchie_synced"
+                        domain="[('x_dutchie_customer_id', '!=', False)]"/>
+                <filter string="Has Home Store" name="has_home_store"
+                        domain="[('x_home_store_id', '!=', False)]"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

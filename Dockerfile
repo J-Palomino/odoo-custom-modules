@@ -11,7 +11,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
@@ -40,6 +40,8 @@ COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
 COPY --chown=odoo:odoo mint_embed /opt/extra-addons/mint_embed
 COPY --chown=odoo:odoo mint_oauth_only /opt/extra-addons/mint_oauth_only
+COPY --chown=odoo:odoo mint_customer_api /opt/extra-addons/mint_customer_api
+COPY --chown=odoo:odoo mint_dutchie_sync /opt/extra-addons/mint_dutchie_sync
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
@@ -100,6 +102,8 @@ RUN test -f /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODUL
 RUN test -f /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_dutchie_sync/__manifest__.py && echo "MINT_DUTCHIE_SYNC VERIFIED" || (echo "MINT_DUTCHIE_SYNC MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)

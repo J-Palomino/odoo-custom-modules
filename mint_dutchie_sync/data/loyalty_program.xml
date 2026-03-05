@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!--
+            Mint Rewards loyalty program.
+            1 point per $1 net spend. Points imported daily from Dutchie.
+            Redemption rules can be added later via the Odoo UI.
+        -->
+        <record id="loyalty_program_mint_rewards" model="loyalty.program">
+            <field name="name">Mint Rewards</field>
+            <field name="program_type">loyalty</field>
+            <field name="applies_on">current</field>
+            <field name="trigger">auto</field>
+            <field name="company_id" eval="False"/>
+        </record>
+    </data>
+</odoo>
