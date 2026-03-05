@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Purchase list view -->
+    <record id="view_dutchie_purchase_list" model="ir.ui.view">
+        <field name="name">mint.dutchie.purchase.list</field>
+        <field name="model">mint.dutchie.purchase</field>
+        <field name="arch" type="xml">
+            <list string="Dutchie Purchases" default_order="date desc">
+                <field name="date"/>
+                <field name="receipt_no"/>
+                <field name="partner_id"/>
+                <field name="company_id" string="Store"/>
+                <field name="gross_total" sum="Total Gross"/>
+                <field name="discount" sum="Total Discount"/>
+                <field name="net_total" sum="Total Net"/>
+                <field name="tax" sum="Total Tax"/>
+                <field name="loyalty_points" sum="Total Points"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Purchase form view -->
+    <record id="view_dutchie_purchase_form" model="ir.ui.view">
+        <field name="name">mint.dutchie.purchase.form</field>
+        <field name="model">mint.dutchie.purchase</field>
+        <field name="arch" type="xml">
+            <form string="Dutchie Purchase" create="false" delete="false">
+                <sheet>
+                    <group>
+                        <group string="Transaction">
+                            <field name="receipt_no"/>
+                            <field name="date"/>
+                            <field name="partner_id"/>
+                            <field name="company_id" string="Store"/>
+                        </group>
+                        <group string="Financials">
+                            <field name="gross_total"/>
+                            <field name="discount"/>
+                            <field name="net_total"/>
+                            <field name="tax"/>
+                            <field name="loyalty_points"/>
+                        </group>
+                    </group>
+                    <group string="Line Items">
+                        <field name="line_items_json" widget="text" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Purchase search view -->
+    <record id="view_dutchie_purchase_search" model="ir.ui.view">
+        <field name="name">mint.dutchie.purchase.search</field>
+        <field name="model">mint.dutchie.purchase</field>
+        <field name="arch" type="xml">
+            <search string="Search Purchases">
+                <field name="partner_id"/>
+                <field name="receipt_no"/>
+                <field name="company_id" string="Store"/>
+                <filter string="Today" name="today" domain="[('date', '=', context_today().strftime('%Y-%m-%d'))]"/>
+                <filter string="This Week" name="this_week" domain="[('date', '>=', (context_today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'))]"/>
+                <filter string="This Month" name="this_month" domain="[('date', '>=', context_today().strftime('%Y-%m-01'))]"/>
+                <separator/>
+                <group expand="0" string="Group By">
+                    <filter string="Customer" name="group_customer" context="{'group_by': 'partner_id'}"/>
+                    <filter string="Store" name="group_store" context="{'group_by': 'company_id'}"/>
+                    <filter string="Date" name="group_date" context="{'group_by': 'date:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+</odoo>

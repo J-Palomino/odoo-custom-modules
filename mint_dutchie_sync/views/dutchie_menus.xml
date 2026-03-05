@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Top-level menu: Dutchie Sync -->
+    <menuitem id="menu_dutchie_root"
+              name="Dutchie Sync"
+              groups="base.group_system"
+              sequence="95"/>
+
+    <!-- Purchases action -->
+    <record id="action_dutchie_purchases" model="ir.actions.act_window">
+        <field name="name">Purchases</field>
+        <field name="res_model">mint.dutchie.purchase</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_dutchie_purchase_search"/>
+        <field name="context">{'search_default_this_week': 1}</field>
+    </record>
+
+    <menuitem id="menu_dutchie_purchases"
+              name="Purchases"
+              parent="menu_dutchie_root"
+              action="action_dutchie_purchases"
+              sequence="10"/>
+
+    <!-- Loyalty Customers action (partners with loyalty cards) -->
+    <record id="action_dutchie_loyalty_customers" model="ir.actions.act_window">
+        <field name="name">Loyalty Customers</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('x_dutchie_visit_count', '>', 0)]</field>
+        <field name="context">{'search_default_customer': 1}</field>
+    </record>
+
+    <menuitem id="menu_dutchie_loyalty_customers"
+              name="Loyalty Customers"
+              parent="menu_dutchie_root"
+              action="action_dutchie_loyalty_customers"
+              sequence="20"/>
+
+    <!-- Loyalty Cards action (points balances) -->
+    <record id="action_dutchie_loyalty_cards" model="ir.actions.act_window">
+        <field name="name">Loyalty Points</field>
+        <field name="res_model">loyalty.card</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('program_id.name', '=', 'Mint Rewards')]</field>
+    </record>
+
+    <menuitem id="menu_dutchie_loyalty_cards"
+              name="Loyalty Points"
+              parent="menu_dutchie_root"
+              action="action_dutchie_loyalty_cards"
+              sequence="30"/>
+</odoo>
