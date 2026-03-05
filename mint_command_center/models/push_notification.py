@@ -85,32 +85,36 @@ class PushNotification(models.Model):
         self.write({'state': 'sending'})
 
         Subscription = self.env['mint.push.subscription'].sudo()
-        domain = [('is_active', '=', True)]
-        if self.site_id:
-            domain.append(('site_id', '=', self.site_id.id))
-        subs = Subscription.search(domain)
-
         payload = self._build_payload()
-        sent = 0
-        failed = 0
+        site_id = self.site_id.id if self.site_id else None
 
-        for sub in subs:
-            if sub._send_push(payload):
-                sent += 1
-            else:
-                failed += 1
+        # Use mint_push's send_to_all which handles subscription
+        # iteration, VAPID keys, and stale-subscription cleanup.
+        sent = Subscription.send_to_all(
+            title=payload['title'],
+            body=payload['body'],
+            url=payload.get('url'),
+            icon=payload.get('icon'),
+            image=payload.get('image'),
+            actions=payload.get('actions'),
+            site_id=site_id,
+        )
+
+        domain = [('site_id', '=', site_id)] if site_id else []
+        total = Subscription.search_count(domain)
+        failed = total - sent
 
         self.write({
             'state': 'sent' if sent > 0 else 'failed',
             'sent_count': sent,
             'failed_count': failed,
-            'total_targeted': len(subs),
+            'total_targeted': total,
             'sent_at': fields.Datetime.now(),
         })
 
         _logger.info(
             'Push notification "%s" sent: %d delivered, %d failed out of %d',
-            self.name, sent, failed, len(subs),
+            self.name, sent, failed, total,
         )
 
     def action_reset_to_draft(self):
