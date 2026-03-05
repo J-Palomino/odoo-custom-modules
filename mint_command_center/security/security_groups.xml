@@ -11,35 +11,30 @@
         <!-- PTL Manager: full CRUD on PTL Calendar and Hot Box -->
         <record id="group_ptl_manager" model="res.groups">
             <field name="name">Mint Marketing / PTL Manager</field>
-            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
             <field name="comment">Full PTL and Hot Box management access.</field>
         </record>
 
-        <!-- Marketing: marketing tasks, requests, campaigns, banners -->
+        <!-- Marketing: push notifications, banners, campaigns -->
         <record id="group_marketing" model="res.groups">
             <field name="name">Mint Marketing / Marketing</field>
-            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
-            <field name="comment">Marketing tasks, requests, campaign and banner management.</field>
+            <field name="comment">Push notifications, banner management, campaigns.</field>
         </record>
 
         <!-- Vendor Manager: vendor relationships, brands -->
         <record id="group_vendor_manager" model="res.groups">
             <field name="name">Mint Marketing / Vendor Manager</field>
-            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
             <field name="comment">Vendor and brand relationship management.</field>
         </record>
 
         <!-- Operations: placements, billboards, taco day -->
         <record id="group_operations" model="res.groups">
             <field name="name">Mint Marketing / Operations</field>
-            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
             <field name="comment">Operational management for placements, billboards, events.</field>
         </record>
 
         <!-- Compliance: variance tracking, regulatory submissions -->
         <record id="group_compliance" model="res.groups">
             <field name="name">Mint Marketing / Compliance</field>
-            <field name="implied_ids" eval="[(4, ref('group_viewer'))]"/>
             <field name="comment">Compliance variance management and regulatory tracking.</field>
         </record>
 
