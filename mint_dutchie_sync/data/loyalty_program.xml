@@ -11,6 +11,7 @@
             <field name="program_type">loyalty</field>
             <field name="applies_on">current</field>
             <field name="trigger">auto</field>
+            <field name="currency_id" ref="base.USD"/>
             <field name="company_id" eval="False"/>
         </record>
     </data>
