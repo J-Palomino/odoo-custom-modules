@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Customer API',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.1.0',
     'category': 'Website',
     'summary': 'JWT-based customer auth and profile API for MintDeals frontend',
     'author': 'MintDeals',
@@ -11,6 +11,7 @@
         'base',
         'portal',
         'auth_signup',
+        'loyalty',
     ],
     'external_dependencies': {
         'python': ['PyJWT'],
