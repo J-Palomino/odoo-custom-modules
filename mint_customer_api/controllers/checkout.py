@@ -4,6 +4,8 @@ Checkout & Loyalty endpoints for MintDeals seamless checkout.
 
 Provides:
   - /api/v1/checkout/loyalty  — Look up customer loyalty by phone/email
+  - /api/v1/checkout/create   — Create draft order (before payment)
+  - /api/v1/checkout/status   — Poll order payment status
   - /api/v1/checkout/order    — Record completed order + award loyalty points
 
 These endpoints use API key auth (X-Api-Key header) rather than JWT,
@@ -95,7 +97,175 @@ class MintCheckout(http.Controller):
             'loyalty': loyalty,
         })
 
-    # ── Order Creation ───────────────────────────────────────────────────
+    # ── Create Draft Order ──────────────────────────────────────────────
+
+    @http.route('/api/v1/checkout/create', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def create_draft_order(self, **kw):
+        """Create a draft online order before payment.
+
+        Request body:
+            {
+              "customer": {
+                "phone": "6025551234",
+                "email": "user@example.com",
+                "first_name": "John",
+                "last_name": "Doe",
+                "birth_date": "1990-01-15"
+              },
+              "store_slug": "mint-tempe",
+              "dutchie_checkout_id": "uuid",
+              "payment_method": "online" | "in-store",
+              "order_type": "PICKUP",
+              "items": [
+                {
+                  "product_name": "Blue Dream 3.5g",
+                  "product_id": "11485249",
+                  "quantity": 1,
+                  "unit_price": 25.00,
+                  "discount": 0
+                }
+              ],
+              "totals": {
+                "subtotal": 55.00,
+                "discounts": 0,
+                "total": 55.00
+              },
+              "notes": ""
+            }
+
+        Returns:
+            {
+              "success": true,
+              "order_id": 42,
+              "order_ref": "MINT-00042",
+              "status": "pending"
+            }
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        if not _verify_api_key():
+            return error_response('Invalid API key', 401)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        customer_data = data.get('customer', {})
+        items = data.get('items', [])
+        totals = data.get('totals', {})
+        payment_method = data.get('payment_method', 'online')
+
+        if not items:
+            return error_response('Items are required')
+
+        phone = _normalize_phone(customer_data.get('phone', ''))
+        email = (customer_data.get('email') or '').strip().lower()
+
+        # Find or create customer
+        partner = self._find_partner(phone, email)
+        if not partner:
+            name = ' '.join(filter(None, [
+                customer_data.get('first_name', ''),
+                customer_data.get('last_name', ''),
+            ])).strip() or email or phone
+            partner = request.env['res.partner'].sudo().create({
+                'name': name,
+                'email': email or False,
+                'phone': phone or False,
+                'customer_rank': 1,
+            })
+            _logger.info('Created new customer partner %s: %s', partner.id, name)
+
+        # Create sale order in draft state
+        SaleOrder = request.env['sale.order'].sudo()
+
+        # Determine company from store_slug if possible
+        company = None
+        store_slug = data.get('store_slug', '')
+        if store_slug:
+            company = request.env['res.company'].sudo().search(
+                [('x_slug', '=', store_slug)], limit=1
+            )
+
+        order_vals = {
+            'partner_id': partner.id,
+            'state': 'draft',
+            'client_order_ref': data.get('dutchie_checkout_id', ''),
+            'note': data.get('notes', ''),
+            'x_payment_method': payment_method,
+            'x_dutchie_checkout_id': data.get('dutchie_checkout_id', ''),
+            'x_checkout_status': 'pending' if payment_method == 'online' else 'pay_at_store',
+        }
+        if company:
+            order_vals['company_id'] = company.id
+
+        order = SaleOrder.create(order_vals)
+
+        # Add order lines
+        for item in items:
+            request.env['sale.order.line'].sudo().create({
+                'order_id': order.id,
+                'name': item.get('product_name', 'Product'),
+                'product_uom_qty': item.get('quantity', 1),
+                'price_unit': item.get('unit_price', 0),
+                'discount': self._calc_discount_pct(
+                    item.get('unit_price', 0),
+                    item.get('discount', 0),
+                ),
+            })
+
+        _logger.info(
+            'Draft order %s created for %s (%s) — payment: %s',
+            order.name, partner.name, store_slug, payment_method,
+        )
+
+        return json_response({
+            'success': True,
+            'order_id': order.id,
+            'order_ref': order.name,
+            'status': order.x_checkout_status or 'pending',
+        })
+
+    # ── Order Status Poll ─────────────────────────────────────────────
+
+    @http.route('/api/v1/checkout/status', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def checkout_status(self, **kw):
+        """Poll order payment status by Dutchie checkout ID.
+
+        Query params:
+            checkout_id — The Dutchie checkout UUID
+
+        Returns:
+            { "status": "pending" | "paid" | "pay_at_store" | "cancelled" | "not_found" }
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        if not _verify_api_key():
+            return error_response('Invalid API key', 401)
+
+        checkout_id = kw.get('checkout_id', '')
+        if not checkout_id:
+            return error_response('checkout_id is required')
+
+        order = request.env['sale.order'].sudo().search([
+            ('x_dutchie_checkout_id', '=', checkout_id),
+        ], limit=1)
+
+        if not order:
+            return json_response({'status': 'not_found'})
+
+        return json_response({
+            'status': order.x_checkout_status or 'pending',
+            'order_id': order.id,
+            'order_ref': order.name,
+        })
+
+    # ── Order Completion (legacy — still used for post-payment sync) ──
 
     @http.route('/api/v1/checkout/order', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
@@ -141,6 +311,29 @@ class MintCheckout(http.Controller):
             data = json.loads(request.httprequest.data)
         except (json.JSONDecodeError, TypeError):
             return error_response('Invalid JSON body')
+
+        # Quick path: mark existing order as paid (called by status poll)
+        if data.get('mark_paid') and data.get('dutchie_checkout_id'):
+            order = request.env['sale.order'].sudo().search([
+                ('x_dutchie_checkout_id', '=', data['dutchie_checkout_id']),
+            ], limit=1)
+            if order and order.x_checkout_status != 'paid':
+                order.sudo().write({'x_checkout_status': 'paid'})
+                # Award loyalty on the existing order
+                if order.partner_id:
+                    self._award_loyalty(
+                        order.partner_id,
+                        order.amount_untaxed,
+                        data.get('loyalty_points_redeemed', 0),
+                    )
+                _logger.info('Order %s marked as paid', order.name)
+                return json_response({
+                    'success': True,
+                    'order_id': order.id,
+                    'order_ref': order.name,
+                    'status': 'paid',
+                })
+            return json_response({'success': True, 'status': 'already_paid' if order else 'not_found'})
 
         customer_data = data.get('customer', {})
         items = data.get('items', [])
@@ -226,6 +419,42 @@ class MintCheckout(http.Controller):
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
+    def _calc_discount_pct(self, unit_price, discount_amount):
+        """Convert flat discount amount to percentage for sale.order.line."""
+        if not unit_price or unit_price <= 0 or not discount_amount:
+            return 0
+        return min(round((discount_amount / unit_price) * 100, 2), 100)
+
+    def _award_loyalty(self, partner, spend_amount, points_redeemed=0):
+        """Award loyalty points to a partner. Returns points earned."""
+        loyalty_program = request.env['loyalty.program'].sudo().search(
+            [('program_type', '=', 'loyalty')], limit=1
+        )
+        if not loyalty_program:
+            return 0
+
+        card = request.env['loyalty.card'].sudo().search([
+            ('partner_id', '=', partner.id),
+            ('program_id', '=', loyalty_program.id),
+        ], limit=1)
+
+        if not card:
+            card = request.env['loyalty.card'].sudo().create({
+                'partner_id': partner.id,
+                'program_id': loyalty_program.id,
+                'points': 0,
+            })
+
+        points_earned = int(spend_amount)
+        new_balance = card.points - points_redeemed + points_earned
+        card.sudo().write({'points': max(new_balance, 0)})
+
+        _logger.info(
+            'Loyalty update for %s: -%d redeemed, +%d earned = %d balance',
+            partner.name, points_redeemed, points_earned, max(new_balance, 0),
+        )
+        return points_earned
+
     def _find_partner(self, phone, email):
         """Find partner by phone or email. Returns first match."""
         Partner = request.env['res.partner'].sudo()
@@ -287,3 +516,5 @@ def _normalize_phone(phone):
         return ''
     digits = ''.join(c for c in str(phone) if c.isdigit())
     return digits[-10:] if len(digits) >= 10 else digits
+
+
