@@ -194,6 +194,7 @@ class MintCheckout(http.Controller):
         order_vals = {
             'partner_id': partner.id,
             'company_id': company.id,
+            'user_id': request.env.ref('base.user_admin').id,
             'client_order_ref': data.get('dutchie_checkout_id', ''),
             'note': data.get('notes', ''),
             'x_payment_method': payment_method,
