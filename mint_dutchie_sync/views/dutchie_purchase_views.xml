@@ -48,22 +48,4 @@
             </form>
         </field>
     </record>
-
-    <!-- Purchase search view -->
-    <record id="view_dutchie_purchase_search" model="ir.ui.view">
-        <field name="name">mint.dutchie.purchase.search</field>
-        <field name="model">mint.dutchie.purchase</field>
-        <field name="arch" type="xml">
-            <search string="Search Purchases">
-                <field name="partner_id"/>
-                <field name="receipt_no"/>
-                <field name="company_id"/>
-                <separator/>
-                <group expand="0" string="Group By">
-                    <filter string="Customer" name="group_customer" context="{'group_by': 'partner_id'}"/>
-                    <filter string="Store" name="group_store" context="{'group_by': 'company_id'}"/>
-                </group>
-            </search>
-        </field>
-    </record>
 </odoo>
