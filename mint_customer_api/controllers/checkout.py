@@ -180,33 +180,33 @@ class MintCheckout(http.Controller):
             _logger.info('Created new customer partner %s: %s', partner.id, name)
 
         # Create sale order in draft state
-        SaleOrder = request.env['sale.order'].sudo()
-
-        # Determine company from store_slug if possible
-        company = None
         store_slug = data.get('store_slug', '')
-        if store_slug:
-            company = request.env['res.company'].sudo().search(
-                [('x_slug', '=', store_slug)], limit=1
-            )
+        company = request.env['res.company'].sudo().search(
+            [('x_slug', '=', store_slug)], limit=1,
+        ) if store_slug else request.env.company
+
+        if not company:
+            company = request.env.company
+
+        # Use with_company to set proper context (pricelist, warehouse, etc.)
+        SaleOrder = request.env['sale.order'].sudo().with_company(company)
 
         order_vals = {
             'partner_id': partner.id,
-            'state': 'draft',
+            'company_id': company.id,
             'client_order_ref': data.get('dutchie_checkout_id', ''),
             'note': data.get('notes', ''),
             'x_payment_method': payment_method,
             'x_dutchie_checkout_id': data.get('dutchie_checkout_id', ''),
             'x_checkout_status': 'pending' if payment_method == 'online' else 'pay_at_store',
         }
-        if company:
-            order_vals['company_id'] = company.id
 
         order = SaleOrder.create(order_vals)
 
         # Add order lines
+        OrderLine = request.env['sale.order.line'].sudo().with_company(company)
         for item in items:
-            request.env['sale.order.line'].sudo().create({
+            OrderLine.create({
                 'order_id': order.id,
                 'name': item.get('product_name', 'Product'),
                 'product_uom_qty': item.get('quantity', 1),
