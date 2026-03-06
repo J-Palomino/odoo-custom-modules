@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <record id="param_allowed_emails" model="ir.config_parameter">
+        <field name="key">mint_mail_whitelist.allowed_emails</field>
+        <field name="value">jpalomino@brightroot.com</field>
+    </record>
+</odoo>
