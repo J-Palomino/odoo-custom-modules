@@ -48,4 +48,24 @@
             </form>
         </field>
     </record>
+
+    <!-- Purchase search view (Odoo 19: no <group> wrapper for group-by filters) -->
+    <record id="view_dutchie_purchase_search" model="ir.ui.view">
+        <field name="name">mint.dutchie.purchase.search</field>
+        <field name="model">mint.dutchie.purchase</field>
+        <field name="arch" type="xml">
+            <search string="Search Purchases">
+                <field name="partner_id"/>
+                <field name="receipt_no"/>
+                <field name="company_id"/>
+                <filter string="Today" name="today" domain="[('date', '=', context_today())]"/>
+                <filter string="This Week" name="this_week" domain="[('date', '&gt;=', context_today() - datetime.timedelta(days=7))]"/>
+                <filter string="This Month" name="this_month" domain="[('date', '&gt;=', context_today().replace(day=1))]"/>
+                <separator/>
+                <filter string="Customer" name="group_customer" context="{'group_by': 'partner_id'}"/>
+                <filter string="Store" name="group_store" context="{'group_by': 'company_id'}"/>
+                <filter string="Date" name="group_date" context="{'group_by': 'date:month'}"/>
+            </search>
+        </field>
+    </record>
 </odoo>
