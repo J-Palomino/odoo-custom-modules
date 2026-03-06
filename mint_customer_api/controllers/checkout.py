@@ -462,8 +462,7 @@ class MintCheckout(http.Controller):
 
         if phone:
             partner = Partner.search([
-                '|', ('phone', 'ilike', phone[-10:]),
-                ('mobile', 'ilike', phone[-10:]),
+                ('phone', 'ilike', phone[-10:]),
             ], limit=1)
 
         if not partner and email:
