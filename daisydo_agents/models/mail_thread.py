@@ -12,7 +12,7 @@ class MailThread(models.AbstractModel):
         """Auto-respond with AI when a document follower is an agent."""
         result = super()._message_post_after_hook(message, msg_vals)
 
-        # Skip discuss.channel -- handled by discuss_channel.py
+        # Skip discuss.channel — handled by discuss_channel.py
         if self._name == "discuss.channel":
             return result
 
@@ -65,6 +65,7 @@ class MailThread(models.AbstractModel):
         conversation_id = last_ai_msg.daisy_conversation_id if last_ai_msg else None
 
         # Build document context prefix for the AI
+        # (Flowise Agentflow V2 doesn't support overrideConfig.startState)
         doc_desc = ""
         for field_name in ("description", "note", "comment"):
             if field_name in self._fields and self[field_name]:

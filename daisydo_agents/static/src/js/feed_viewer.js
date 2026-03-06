@@ -5,7 +5,7 @@ import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 
 /**
- * Go2rtcFeedViewer -- WebRTC viewer that connects to Go2RTC via WebSocket.
+ * Go2rtcFeedViewer — WebRTC viewer that connects to Go2RTC via WebSocket.
  *
  * Flow:
  * 1. Open WebSocket to Go2RTC ws_url

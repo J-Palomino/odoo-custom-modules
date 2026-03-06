@@ -4,11 +4,9 @@ from . import daisy_agent_job
 from . import daisy_agent_metric
 from . import daisy_ai_service
 from . import daisy_go2rtc_service
-from . import mail_mail
-from . import mail_mail_report
-from . import mail_message
 from . import discuss_channel
 from . import im_livechat_channel
+from . import mail_message
 from . import mail_thread
 from . import project_task
 from . import res_config_settings

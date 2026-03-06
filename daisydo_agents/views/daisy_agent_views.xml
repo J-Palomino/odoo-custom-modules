@@ -50,10 +50,8 @@
                     </div>
                     <group>
                         <group>
-                            <field name="code"
-                                   help="Unique identifier used as login and email prefix (e.g. 'hugo' becomes hugo@daisy.plus)."/>
+                            <field name="code"/>
                             <field name="email"/>
-                            <field name="company_id" options="{'no_create': True}"/>
                             <field name="mail_project_id" invisible="state == 'draft'"/>
                             <field name="user_id" readonly="1"/>
                         </group>
@@ -67,26 +65,19 @@
                         <page string="AI Configuration" name="ai_config">
                             <group>
                                 <group string="AI Connection">
-                                    <field name="daisy_api_key" password="True"
-                                           help="Bearer token from daisy.plus. Generate one at daisy.plus &gt; API Keys."/>
-                                    <field name="daisy_agency_id" string="Chatflow ID"
-                                           help="UUID of the Flowise chatflow or agentflow. Find it in the URL when editing the flow on daisy.plus."/>
+                                    <field name="daisy_api_key" password="True"/>
+                                    <field name="daisy_agency_id" string="Chatflow ID"/>
                                 </group>
                                 <group string="Behavior">
-                                    <field name="ai_personality"
-                                           help="Overall tone of AI responses. Combined with the system prompt."/>
-                                    <field name="ai_handoff_threshold"
-                                           help="Confidence (0-1) below which the agent hands off to a human."/>
-                                    <field name="ai_max_turns"
-                                           help="Max messages before auto-handoff to a human."/>
-                                    <field name="ai_greeting"
-                                           help="First message sent when a new conversation starts."/>
+                                    <field name="ai_personality"/>
+                                    <field name="ai_handoff_threshold"/>
+                                    <field name="ai_max_turns"/>
+                                    <field name="ai_greeting"/>
                                 </group>
                             </group>
                             <group string="System Prompt">
                                 <field name="ai_system_prompt" nolabel="1"
-                                       placeholder="Custom instructions for this agent. Define persona, knowledge boundaries, response style..."
-                                       help="Overrides the Flowise chatflow's default system prompt. Personality tone is automatically prepended."/>
+                                       placeholder="Custom instructions for this agent..."/>
                             </group>
                         </page>
                         <page string="Livechat Channels" name="channels">
@@ -113,11 +104,12 @@
                             </group>
                         </page>
                         <page string="Camera Feeds" name="feeds">
-                            <field name="feed_ids">
+                            <field name="feed_ids" context="{'default_agent_id': id}">
                                 <list editable="bottom">
                                     <field name="name"/>
                                     <field name="company_id"/>
                                     <field name="feed_type"/>
+                                    <field name="rtsp_url" invisible="feed_type != 'rtsp_in'"/>
                                     <field name="go2rtc_status" widget="badge"
                                            decoration-success="go2rtc_status == 'active'"
                                            decoration-danger="go2rtc_status == 'error'"
@@ -163,7 +155,6 @@
                 <field name="name"/>
                 <field name="code"/>
                 <field name="role"/>
-                <field name="company_id" optional="show"/>
                 <field name="ai_personality"/>
                 <field name="active_conversations"/>
                 <field name="total_conversations"/>
@@ -229,7 +220,6 @@
                 <filter string="Suspended" name="suspended" domain="[('state', '=', 'suspended')]"/>
                 <separator/>
                 <filter string="State" name="group_state" context="{'group_by': 'state'}"/>
-                <filter string="Company" name="group_company" context="{'group_by': 'company_id'}"/>
                 <filter string="Personality" name="group_personality" context="{'group_by': 'ai_personality'}"/>
             </search>
         </field>

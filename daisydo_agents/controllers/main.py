@@ -61,7 +61,11 @@ class DaisyAgentController(http.Controller):
 
     @http.route("/daisy/feeds/by-channel/<int:channel_id>", auth="user", type="jsonrpc", methods=["POST"])
     def feeds_by_channel(self, channel_id, **kw):
-        """Return all active camera feeds for agents in a Discuss channel."""
+        """Return all active camera feeds for agents in a Discuss channel.
+
+        Looks up agents that are members of the channel, then returns
+        their active feeds.
+        """
         channel = request.env["discuss.channel"].browse(channel_id)
         if not channel.exists():
             return {"error": "Channel not found"}
@@ -98,7 +102,11 @@ class DaisyAgentController(http.Controller):
 
     @http.route("/daisy/feeds/<int:feed_id>/push-webrtc", auth="user", type="jsonrpc", methods=["POST"])
     def feed_push_webrtc(self, feed_id, sdp_offer=None, **kw):
-        """Push a WebRTC stream into Go2RTC for RTSP out broadcast."""
+        """Push a WebRTC stream into Go2RTC for RTSP out broadcast.
+
+        Accepts an SDP offer from the browser, proxies it to Go2RTC's WHIP
+        endpoint, and returns the SDP answer + RTSP URL for store displays.
+        """
         if not sdp_offer:
             return {"error": "sdp_offer is required"}
 
@@ -124,6 +132,7 @@ class DaisyAgentController(http.Controller):
 
         # Build the RTSP URL for store displays
         api_url = svc._get_api_url()
+        # Replace http with rtsp and use the RTSP port
         rtsp_host = api_url.replace("http://", "").replace("https://", "").split(":")[0]
         rtsp_url = f"rtsp://{rtsp_host}:8554/{feed.go2rtc_stream_name}"
 

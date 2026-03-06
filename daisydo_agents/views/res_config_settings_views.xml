@@ -8,7 +8,7 @@
         <field name="inherit_id" ref="base.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
-                <app data-string="Daisy Agency" string="Daisy Agency"
+                <app name="daisydo_agents" data-string="Daisy Agency" string="Daisy Agency"
                      data-key="daisydo_agents" groups="daisydo_agents.group_daisy_admin">
                     <block title="Daisy+ AI" name="daisy_ai_settings">
                         <setting string="API Base URL"

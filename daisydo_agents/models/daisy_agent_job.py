@@ -38,7 +38,7 @@ class DaisyAgentJob(models.Model):
 
     @api.model
     def _cron_process_jobs(self):
-        """Called by ir.cron -- process pending AI response jobs."""
+        """Called by ir.cron — process pending AI response jobs."""
         jobs = self.sudo().search(
             [("state", "=", "pending")],
             order="create_date ASC",

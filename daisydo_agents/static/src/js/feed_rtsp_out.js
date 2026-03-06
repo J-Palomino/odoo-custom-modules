@@ -4,7 +4,7 @@ import { Component, useState, onWillUnmount } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 
 /**
- * DaisyRtspOutPush -- captures a Discuss call's MediaStream and pushes it
+ * DaisyRtspOutPush — captures a Discuss call's MediaStream and pushes it
  * to Go2RTC via WHIP so the call is available as an RTSP output stream
  * for store displays and recorders.
  *

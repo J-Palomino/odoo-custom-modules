@@ -17,19 +17,14 @@ else:
     <menuitem id="menu_digital_employees_root"
               name="Daisy Agency"
               web_icon="daisydo_agents,static/description/icon.png"
-              sequence="25"/>
+              sequence="25"
+              groups="daisydo_agents.group_daisy_user"/>
 
     <menuitem id="menu_digital_employees_agents"
               name="Agents"
               parent="menu_digital_employees_root"
               action="daisy_agent_smart_action"
               sequence="10"/>
-
-    <menuitem id="menu_digital_employees_metrics"
-              name="Metrics"
-              parent="menu_digital_employees_root"
-              action="daisy_agent_metric_action"
-              sequence="20"/>
 
     <menuitem id="menu_digital_employees_feeds"
               name="Camera Feeds"
@@ -43,12 +38,11 @@ else:
               action="daisy_agent_job_action"
               sequence="17"/>
 
-    <menuitem id="menu_digital_employees_email_stats"
-              name="Email Stats"
+    <menuitem id="menu_digital_employees_metrics"
+              name="Metrics"
               parent="menu_digital_employees_root"
-              action="mail_mail_report_action"
-              groups="daisydo_agents.group_daisy_admin"
-              sequence="25"/>
+              action="daisy_agent_metric_action"
+              sequence="20"/>
 
     <menuitem id="menu_digital_employees_sync"
               name="Sync from Daisy+"
@@ -60,5 +54,6 @@ else:
               name="Configuration"
               parent="menu_digital_employees_root"
               action="base_setup.action_general_configuration"
-              sequence="99"/>
+              sequence="99"
+              groups="daisydo_agents.group_daisy_admin"/>
 </odoo>
