@@ -201,20 +201,28 @@ class MintPushAPI(http.Controller):
                 ROUND(longitude::numeric, 2) AS lng,
                 COALESCE(region, '') AS region,
                 COALESCE(
-                    (SELECT x_slug FROM res_company WHERE id = store_id),
+                    (SELECT x_slug FROM res_company WHERE id = g.store_id),
                     ''
                 ) AS store_slug,
-                COUNT(*) AS subscriber_count
-            FROM mint_push_subscription
-            WHERE latitude IS NOT NULL
-              AND longitude IS NOT NULL
-              AND latitude != 0
-              AND longitude != 0
-            GROUP BY
-                ROUND(latitude::numeric, 2),
-                ROUND(longitude::numeric, 2),
-                region,
-                store_slug
+                subscriber_count
+            FROM (
+                SELECT
+                    ROUND(latitude::numeric, 2) AS lat,
+                    ROUND(longitude::numeric, 2) AS lng,
+                    region,
+                    store_id,
+                    COUNT(*) AS subscriber_count
+                FROM mint_push_subscription
+                WHERE latitude IS NOT NULL
+                  AND longitude IS NOT NULL
+                  AND latitude != 0
+                  AND longitude != 0
+                GROUP BY
+                    ROUND(latitude::numeric, 2),
+                    ROUND(longitude::numeric, 2),
+                    region,
+                    store_id
+            ) g
             ORDER BY subscriber_count DESC
         """)
         rows = request.env.cr.dictfetchall()
