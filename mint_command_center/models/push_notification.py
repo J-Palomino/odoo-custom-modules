@@ -30,9 +30,21 @@ class PushNotification(models.Model):
     action_2_url = fields.Char('Button 2 URL')
 
     # Targeting
+    targeting_mode = fields.Selection([
+        ('all', 'All Subscribers'),
+        ('stores', 'By Store(s)'),
+        ('proximity', 'By Proximity'),
+    ], string='Targeting', default='all', required=True)
     company_ids = fields.Many2many(
         'res.company', string='Target Stores',
-        help='Leave empty to send to all subscribers')
+        help='Select stores to target. Only used when targeting = By Store(s).')
+    proximity_store_id = fields.Many2one(
+        'res.company', string='Near Store',
+        domain="[('parent_id', '!=', False)]",
+        help='Center point for proximity targeting.')
+    proximity_radius = fields.Float('Radius (miles)', default=10.0)
+    estimated_audience = fields.Integer(
+        string='Est. Audience', compute='_compute_estimated_audience')
 
     state = fields.Selection([
         ('draft', 'Draft'),
@@ -45,6 +57,37 @@ class PushNotification(models.Model):
     failed_count = fields.Integer('Failed', readonly=True)
     total_targeted = fields.Integer('Total Targeted', readonly=True)
     sent_at = fields.Datetime('Sent At', readonly=True)
+
+    @api.depends('site_id', 'targeting_mode', 'company_ids', 'proximity_store_id', 'proximity_radius')
+    def _compute_estimated_audience(self):
+        Sub = self.env['mint.push.subscription'].sudo()
+        for rec in self:
+            if rec.targeting_mode == 'proximity' and rec.proximity_store_id:
+                # Count via Haversine SQL
+                partner = rec.proximity_store_id.partner_id
+                lat = partner.partner_latitude
+                lng = partner.partner_longitude
+                radius = rec.proximity_radius or 10.0
+                if lat and lng:
+                    self.env.cr.execute("""
+                        SELECT COUNT(*) FROM mint_push_subscription
+                        WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                          AND (3959 * acos(
+                                cos(radians(%s)) * cos(radians(latitude))
+                                * cos(radians(longitude) - radians(%s))
+                                + sin(radians(%s)) * sin(radians(latitude))
+                          )) <= %s
+                    """, (lat, lng, lat, radius))
+                    rec.estimated_audience = self.env.cr.fetchone()[0]
+                else:
+                    rec.estimated_audience = 0
+            else:
+                domain = [('is_active', '=', True)]
+                if rec.site_id:
+                    domain.append(('site_id', '=', rec.site_id.id))
+                if rec.targeting_mode == 'stores' and rec.company_ids:
+                    domain.append(('store_id', 'in', rec.company_ids.ids))
+                rec.estimated_audience = Sub.search_count(domain)
 
     def _build_payload(self):
         """Build the Web Push JSON payload matching sw.js expectations."""
@@ -77,7 +120,7 @@ class PushNotification(models.Model):
         return payload
 
     def action_send(self):
-        """Send this notification to all active subscribers."""
+        """Send this notification based on targeting mode."""
         self.ensure_one()
         if self.state != 'draft':
             return
@@ -88,21 +131,44 @@ class PushNotification(models.Model):
         payload = self._build_payload()
         site_id = self.site_id.id if self.site_id else None
 
-        # Use mint_push's send_to_all which handles subscription
-        # iteration, VAPID keys, and stale-subscription cleanup.
-        sent = Subscription.send_to_all(
-            title=payload['title'],
-            body=payload['body'],
-            url=payload.get('url'),
-            icon=payload.get('icon'),
-            image=payload.get('image'),
-            actions=payload.get('actions'),
-            site_id=site_id,
-        )
+        if self.targeting_mode == 'proximity' and self.proximity_store_id:
+            partner = self.proximity_store_id.partner_id
+            lat = partner.partner_latitude
+            lng = partner.partner_longitude
+            radius = self.proximity_radius or 10.0
+            if lat and lng:
+                sent = Subscription.send_to_nearby(
+                    lat=lat, lng=lng, radius_miles=radius,
+                    title=payload['title'],
+                    body=payload['body'],
+                    url=payload.get('url'),
+                    icon=payload.get('icon'),
+                    image=payload.get('image'),
+                    actions=payload.get('actions'),
+                )
+            else:
+                sent = 0
+                _logger.warning("Proximity store %s has no GPS coordinates", self.proximity_store_id.name)
+            total = self.estimated_audience
+        else:
+            company_ids = self.company_ids.ids if self.targeting_mode == 'stores' and self.company_ids else None
+            sent = Subscription.send_to_all(
+                title=payload['title'],
+                body=payload['body'],
+                url=payload.get('url'),
+                icon=payload.get('icon'),
+                image=payload.get('image'),
+                actions=payload.get('actions'),
+                site_id=site_id,
+                company_ids=company_ids,
+            )
 
-        domain = [('site_id', '=', site_id)] if site_id else []
-        total = Subscription.search_count(domain)
-        failed = total - sent
+            domain = [('site_id', '=', site_id)] if site_id else []
+            if company_ids:
+                domain.append(('store_id', 'in', company_ids))
+            total = Subscription.search_count(domain)
+
+        failed = max(total - sent, 0)
 
         self.write({
             'state': 'sent' if sent > 0 else 'failed',
@@ -113,8 +179,8 @@ class PushNotification(models.Model):
         })
 
         _logger.info(
-            'Push notification "%s" sent: %d delivered, %d failed out of %d',
-            self.name, sent, failed, total,
+            'Push notification "%s" [%s] sent: %d delivered, %d failed out of %d',
+            self.name, self.targeting_mode, sent, failed, total,
         )
 
     def action_reset_to_draft(self):

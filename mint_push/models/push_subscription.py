@@ -127,16 +127,22 @@ class PushSubscription(models.Model):
         return payload
 
     def send_to_all(self, title, body, url=None, icon=None, image=None,
-                    actions=None, site_id=None):
+                    actions=None, site_id=None, company_ids=None, region=None):
         """Send a notification to all active subscriptions.
 
         Args:
             site_id: Optional mint.push.site ID to filter subscribers by site.
+            company_ids: Optional list of res.company IDs to filter by store.
+            region: Optional region slug to filter by region.
         """
         payload = self._build_payload(title, body, url=url, icon=icon,
                                       image=image, actions=actions)
 
         domain = [('site_id', '=', site_id)] if site_id else []
+        if company_ids and 'store_id' in self._fields:
+            domain.append(('store_id', 'in', company_ids))
+        if region and 'region' in self._fields:
+            domain.append(('region', '=', region))
         subscriptions = self.sudo().search(domain)
         to_delete = self.env['mint.push.subscription']
         to_reset = self.env['mint.push.subscription']
@@ -197,4 +203,68 @@ class PushSubscription(models.Model):
             elif result == 'gone':
                 sub.sudo().unlink()
 
+        return sent
+
+    def send_to_nearby(self, lat, lng, radius_miles, title, body,
+                       url=None, icon=None, image=None, actions=None):
+        """Send a notification to subscribers within radius_miles of (lat, lng).
+
+        Uses the Haversine formula to find nearby subscriptions with GPS data.
+        Requires mint_command_center module (provides latitude/longitude fields).
+        """
+        if 'latitude' not in self._fields:
+            _logger.warning("send_to_nearby requires mint_command_center module (latitude/longitude fields)")
+            return 0
+
+        self.env.cr.execute("""
+            SELECT id FROM mint_push_subscription
+            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+              AND (3959 * acos(
+                    cos(radians(%s)) * cos(radians(latitude))
+                    * cos(radians(longitude) - radians(%s))
+                    + sin(radians(%s)) * sin(radians(latitude))
+              )) <= %s
+        """, (lat, lng, lat, radius_miles))
+        sub_ids = [row[0] for row in self.env.cr.fetchall()]
+
+        if not sub_ids:
+            _logger.info("No subscribers within %s miles of (%s, %s)", radius_miles, lat, lng)
+            return 0
+
+        subscriptions = self.sudo().browse(sub_ids)
+        payload = self._build_payload(title, body, url=url, icon=icon,
+                                      image=image, actions=actions)
+        to_delete = self.env['mint.push.subscription']
+        to_reset = self.env['mint.push.subscription']
+
+        for sub in subscriptions:
+            sub_info = {
+                'endpoint': sub.endpoint,
+                'keys': {
+                    'p256dh': sub.key_p256dh,
+                    'auth': sub.key_auth,
+                },
+            }
+            result = self._send_push(sub_info, payload)
+            if result is True:
+                if sub.fail_count > 0:
+                    to_reset |= sub
+            elif result == 'gone':
+                to_delete |= sub
+            else:
+                new_count = sub.fail_count + 1
+                if new_count >= 3:
+                    to_delete |= sub
+                else:
+                    sub.sudo().write({'fail_count': new_count})
+
+        if to_reset:
+            to_reset.sudo().write({'fail_count': 0})
+        if to_delete:
+            _logger.info("Removing %d stale push subscriptions", len(to_delete))
+            to_delete.sudo().unlink()
+
+        sent = len(subscriptions) - len(to_delete)
+        _logger.info("Proximity push sent to %d/%d subscriptions within %s miles",
+                      sent, len(subscriptions), radius_miles)
         return sent

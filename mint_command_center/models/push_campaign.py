@@ -20,6 +20,13 @@ class PushCampaign(models.Model):
     url = fields.Char(string='URL', tracking=True)
     icon = fields.Char(string='Icon URL')
     image = fields.Char(string='Image URL')
+    # Targeting
+    company_ids = fields.Many2many(
+        'res.company', string='Target Stores',
+        help='Leave empty to send to all subscribers')
+    region = fields.Char(string='Region',
+        help='Filter by region slug (e.g., "arizona")')
+
     sent_count = fields.Integer(string='Delivered', readonly=True)
     total_count = fields.Integer(string='Total Subscriptions', readonly=True)
     state = fields.Selection([
@@ -38,7 +45,14 @@ class PushCampaign(models.Model):
 
         Sub = self.env['mint.push.subscription'].sudo()
         site_id = self.site_id.id if self.site_id else False
+        company_ids = self.company_ids.ids if self.company_ids else None
+        region = self.region or None
+
         domain = [('site_id', '=', site_id)] if site_id else []
+        if company_ids:
+            domain.append(('store_id', 'in', company_ids))
+        if region:
+            domain.append(('region', '=', region))
         total = Sub.search_count(domain)
 
         try:
@@ -49,6 +63,8 @@ class PushCampaign(models.Model):
                 icon=self.icon or None,
                 image=self.image or None,
                 site_id=site_id,
+                company_ids=company_ids,
+                region=region,
             )
             self.write({
                 'sent_count': sent,

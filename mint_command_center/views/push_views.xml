@@ -13,7 +13,7 @@
                     <button name="action_send" string="Send Now"
                             type="object" class="btn-primary"
                             invisible="state != 'draft'"
-                            confirm="Send this push notification to all subscribers?"/>
+                            confirm="Send this push notification to the targeted subscribers?"/>
                     <button name="action_reset_to_draft" string="Reset to Draft"
                             type="object"
                             invisible="state not in ('sent', 'failed')"/>
@@ -35,11 +35,24 @@
                             <field name="image_url" placeholder="https://..."/>
                         </group>
                         <group string="Delivery">
+                            <field name="estimated_audience"/>
                             <field name="sent_at" readonly="1"/>
                             <field name="total_targeted" readonly="1"/>
                             <field name="sent_count" readonly="1"/>
                             <field name="failed_count" readonly="1"/>
                         </group>
+                    </group>
+                    <group string="Targeting">
+                        <field name="targeting_mode" widget="radio"/>
+                        <field name="company_ids" widget="many2many_tags"
+                               domain="[('parent_id', '!=', False)]"
+                               options="{'no_create': True}"
+                               invisible="targeting_mode != 'stores'"/>
+                        <field name="proximity_store_id"
+                               options="{'no_create': True}"
+                               invisible="targeting_mode != 'proximity'"/>
+                        <field name="proximity_radius"
+                               invisible="targeting_mode != 'proximity'"/>
                     </group>
                     <group string="Action Buttons (Chrome/Android)" col="4">
                         <field name="action_1_title" placeholder="View Deals"/>
@@ -67,6 +80,7 @@
                 <field name="name"/>
                 <field name="body"/>
                 <field name="url"/>
+                <field name="targeting_mode"/>
                 <field name="state"/>
                 <field name="sent_count"/>
                 <field name="failed_count"/>
@@ -88,6 +102,7 @@
                 <separator/>
                 <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
                 <filter name="group_site" string="Site" context="{'group_by': 'site_id'}"/>
+                <filter name="group_targeting" string="Targeting" context="{'group_by': 'targeting_mode'}"/>
             </search>
         </field>
     </record>
@@ -117,6 +132,8 @@
         <field name="arch" type="xml">
             <list string="Push Subscribers" create="0" edit="0">
                 <field name="site_id"/>
+                <field name="store_id"/>
+                <field name="region"/>
                 <field name="endpoint" string="Endpoint" widget="char"/>
                 <field name="user_agent"/>
                 <field name="is_active"/>
@@ -134,8 +151,14 @@
             <search string="Push Subscribers">
                 <field name="endpoint"/>
                 <field name="user_agent"/>
+                <field name="store_id"/>
+                <field name="region"/>
                 <filter name="active" string="Active" domain="[('is_active', '=', True)]"/>
                 <filter name="inactive" string="Inactive" domain="[('is_active', '=', False)]"/>
+                <filter name="has_location" string="Has GPS" domain="[('latitude', '!=', False)]"/>
+                <separator/>
+                <filter name="group_store" string="Store" context="{'group_by': 'store_id'}"/>
+                <filter name="group_region" string="Region" context="{'group_by': 'region'}"/>
             </search>
         </field>
     </record>

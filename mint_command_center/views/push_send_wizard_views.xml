@@ -7,6 +7,12 @@
         <field name="model">mint.push.send.wizard</field>
         <field name="arch" type="xml">
             <form string="Send Push Notification">
+                <group string="Targeting">
+                    <field name="company_ids" widget="many2many_tags"
+                           options="{'no_create': True}"
+                           placeholder="All subscribers"/>
+                    <field name="region" placeholder="e.g., arizona"/>
+                </group>
                 <group>
                     <field name="url_template" widget="radio"/>
                 </group>

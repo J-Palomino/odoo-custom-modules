@@ -7,7 +7,7 @@ Endpoints for managing browser push subscriptions and sending notifications.
 import json
 import logging
 
-from odoo import http
+from odoo import http, fields
 from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
@@ -97,6 +97,21 @@ class MintPushAPI(http.Controller):
             if site:
                 site_id = site.id
 
+        # Resolve store by slug (optional)
+        store_id = False
+        store_slug = data.get('store_slug')
+        if store_slug:
+            store = request.env['res.company'].sudo().search(
+                [('x_slug', '=', store_slug)], limit=1)
+            if store:
+                store_id = store.id
+
+        region = data.get('region') or ''
+
+        # GPS coordinates (optional, from cached location)
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+
         # Upsert: update existing or create new
         existing = Sub.search([('endpoint', '=', endpoint)], limit=1)
         if existing:
@@ -107,16 +122,31 @@ class MintPushAPI(http.Controller):
             }
             if site_id:
                 vals['site_id'] = site_id
+            if store_id:
+                vals['store_id'] = store_id
+            if region:
+                vals['region'] = region
+            if latitude is not None and longitude is not None:
+                vals['latitude'] = float(latitude)
+                vals['longitude'] = float(longitude)
+                vals['geo_updated_at'] = fields.Datetime.now()
             existing.write(vals)
             _logger.info("Updated push subscription: %s...", endpoint[:60])
             return json_response({'status': 'updated', 'id': existing.id})
 
-        sub = Sub.create({
+        create_vals = {
             'endpoint': endpoint,
             'key_p256dh': p256dh,
             'key_auth': auth,
             'site_id': site_id,
-        })
+            'store_id': store_id,
+            'region': region,
+        }
+        if latitude is not None and longitude is not None:
+            create_vals['latitude'] = float(latitude)
+            create_vals['longitude'] = float(longitude)
+            create_vals['geo_updated_at'] = fields.Datetime.now()
+        sub = Sub.create(create_vals)
         _logger.info("New push subscription: %s...", endpoint[:60])
         return json_response({'status': 'subscribed', 'id': sub.id})
 
@@ -143,6 +173,67 @@ class MintPushAPI(http.Controller):
             return json_response({'status': 'unsubscribed'})
 
         return json_response({'status': 'not_found'}, 404)
+
+    # ==================== SUBSCRIBER LOCATIONS (for Grafana map) ====================
+
+    @http.route('/api/v1/push/locations', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def subscriber_locations(self):
+        """Return anonymized subscriber locations for Grafana Geomap.
+
+        Groups subscribers by rounded lat/lng (~1km grid) to preserve privacy.
+        Returns counts per grid cell, region, and store.
+        """
+        Sub = request.env['mint.push.subscription'].sudo()
+
+        # Only include subscribers with valid GPS data
+        domain = [
+            ('latitude', '!=', 0),
+            ('longitude', '!=', 0),
+            ('latitude', '!=', False),
+            ('longitude', '!=', False),
+        ]
+
+        # Query: round to 2 decimal places (~1.1km grid) for privacy
+        request.env.cr.execute("""
+            SELECT
+                ROUND(latitude::numeric, 2) AS lat,
+                ROUND(longitude::numeric, 2) AS lng,
+                COALESCE(region, '') AS region,
+                COALESCE(
+                    (SELECT x_slug FROM res_company WHERE id = store_id),
+                    ''
+                ) AS store_slug,
+                COUNT(*) AS subscriber_count
+            FROM mint_push_subscription
+            WHERE latitude IS NOT NULL
+              AND longitude IS NOT NULL
+              AND latitude != 0
+              AND longitude != 0
+            GROUP BY
+                ROUND(latitude::numeric, 2),
+                ROUND(longitude::numeric, 2),
+                region,
+                store_slug
+            ORDER BY subscriber_count DESC
+        """)
+        rows = request.env.cr.dictfetchall()
+
+        # Also return summary stats
+        total_with_geo = sum(r['subscriber_count'] for r in rows)
+        total_subs = Sub.search_count([])
+
+        return json_response({
+            'total_subscribers': total_subs,
+            'total_with_location': total_with_geo,
+            'locations': [{
+                'lat': float(r['lat']),
+                'lng': float(r['lng']),
+                'region': r['region'],
+                'store': r['store_slug'],
+                'count': r['subscriber_count'],
+            } for r in rows],
+        })
 
     # ==================== SEND (admin) ====================
 
