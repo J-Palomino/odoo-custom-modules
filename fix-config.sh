@@ -100,6 +100,7 @@ fi
 # scanned before /opt/extra-addons/ — we need the Docker version)
 for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_financial_risk \
     purchase_price_precision mint_automations mint_maintenance_form mint_command_center mint_embed \
+    mint_push mint_banner mint_customer_api mint_dutchie_sync mint_mail_whitelist \
     daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
     mint_oauth_only base_accounting_kit base_account_budget sign_oca \
     dms dms_field hr_dms_field \
