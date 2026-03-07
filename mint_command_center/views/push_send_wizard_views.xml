@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- ============ Wizard Form ============ -->
+    <!-- ============ Wizard Form (enhanced with store/region targeting) ============ -->
     <record id="mint_push_send_wizard_form" model="ir.ui.view">
-        <field name="name">mint.push.send.wizard.form</field>
+        <field name="name">mint.push.send.wizard.form.command_center</field>
         <field name="model">mint.push.send.wizard</field>
+        <field name="priority">5</field>
         <field name="arch" type="xml">
             <form string="Send Push Notification">
                 <group string="Targeting">
@@ -42,6 +43,7 @@
         <field name="name">Send Notification</field>
         <field name="res_model">mint.push.send.wizard</field>
         <field name="view_mode">form</field>
+        <field name="view_id" ref="mint_push_send_wizard_form"/>
         <field name="target">new</field>
     </record>
 

@@ -1,6 +1,6 @@
 {
     'name': 'Mint Marketing',
-    'version': '19.0.2.2.0',
+    'version': '19.0.2.3.0',
     'category': 'Marketing',
     'summary': 'Marketing Platform for Mint Cannabis',
     'description': """
