@@ -39,19 +39,35 @@
                                             <label for="submitter_name" class="form-label fw-bold">
                                                 Your Name <span class="text-danger">*</span>
                                             </label>
-                                            <input type="text" class="form-control" id="submitter_name"
-                                                   name="submitter_name" required="required"
-                                                   placeholder="Your full name"
-                                                   t-att-value="form_values.get('submitter_name', '')"/>
+                                            <t t-if="is_logged_in">
+                                                <input type="text" class="form-control" id="submitter_name"
+                                                       name="submitter_name" readonly="readonly"
+                                                       t-att-value="form_values.get('submitter_name', '')"
+                                                       style="background-color: #f8f9fa;"/>
+                                            </t>
+                                            <t t-else="">
+                                                <input type="text" class="form-control" id="submitter_name"
+                                                       name="submitter_name" required="required"
+                                                       placeholder="Your full name"
+                                                       t-att-value="form_values.get('submitter_name', '')"/>
+                                            </t>
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <label for="submitter_email" class="form-label fw-bold">
                                                 Your Email <span class="text-danger">*</span>
                                             </label>
-                                            <input type="email" class="form-control" id="submitter_email"
-                                                   name="submitter_email" required="required"
-                                                   placeholder="your.email@mintcannabis.com"
-                                                   t-att-value="form_values.get('submitter_email', '')"/>
+                                            <t t-if="is_logged_in">
+                                                <input type="email" class="form-control" id="submitter_email"
+                                                       name="submitter_email" readonly="readonly"
+                                                       t-att-value="form_values.get('submitter_email', '')"
+                                                       style="background-color: #f8f9fa;"/>
+                                            </t>
+                                            <t t-else="">
+                                                <input type="email" class="form-control" id="submitter_email"
+                                                       name="submitter_email" required="required"
+                                                       placeholder="your.email@mintcannabis.com"
+                                                       t-att-value="form_values.get('submitter_email', '')"/>
+                                            </t>
                                         </div>
                                     </div>
 
@@ -238,6 +254,70 @@
                             </t>
                         </div>
                     </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <template id="request_list" name="My Maintenance Requests">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h1 class="mb-0">My Open Requests</h1>
+                        <a href="/maintenance/request" class="btn btn-primary">
+                            New Request
+                        </a>
+                    </div>
+
+                    <t t-if="not requests">
+                        <div class="alert alert-info">
+                            You have no open maintenance requests.
+                        </div>
+                    </t>
+
+                    <t t-if="requests">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Request</th>
+                                        <th>Store</th>
+                                        <th>Equipment</th>
+                                        <th>Priority</th>
+                                        <th>Status</th>
+                                        <th>Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="requests" t-as="r">
+                                        <tr>
+                                            <td>
+                                                <strong><t t-esc="r['name']"/></strong>
+                                            </td>
+                                            <td><t t-esc="r['company']"/></td>
+                                            <td><t t-esc="r['equipment']"/></td>
+                                            <td>
+                                                <t t-if="r['priority'] == 'High'">
+                                                    <span class="badge bg-danger"><t t-esc="r['priority']"/></span>
+                                                </t>
+                                                <t t-elif="r['priority'] == 'Normal'">
+                                                    <span class="badge bg-warning text-dark"><t t-esc="r['priority']"/></span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="badge bg-secondary"><t t-esc="r['priority']"/></span>
+                                                </t>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-info text-dark"><t t-esc="r['stage']"/></span>
+                                            </td>
+                                            <td><t t-esc="r['request_date']"/></td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </t>
                 </div>
             </div>
         </t>

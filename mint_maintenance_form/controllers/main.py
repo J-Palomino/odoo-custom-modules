@@ -124,6 +124,7 @@ class MaintenanceFormController(http.Controller):
             "error": None,
             "success": None,
             "form_values": {},
+            "is_logged_in": False,
         }
         ctx.update(extra)
         return ctx
@@ -138,8 +139,10 @@ class MaintenanceFormController(http.Controller):
     def maintenance_form(self, **post):
         if request.httprequest.method == "GET":
             prefill = {}
+            logged_in = False
             user = request.env.user
             if user and user.id != request.env.ref("base.public_user").id:
+                logged_in = True
                 prefill["submitter_name"] = user.name or ""
                 prefill["submitter_email"] = user.email or ""
                 if user.company_id and user.company_id.parent_id:
@@ -149,7 +152,7 @@ class MaintenanceFormController(http.Controller):
                         prefill["state"] = state_name
             return request.render(
                 "mint_maintenance_form.request_form",
-                self._form_context(form_values=prefill),
+                self._form_context(form_values=prefill, is_logged_in=logged_in),
             )
 
         ctx = self._form_context(form_values=post)
@@ -296,3 +299,43 @@ class MaintenanceFormController(http.Controller):
             )
 
         return request.render("mint_maintenance_form.request_form", ctx)
+
+    @http.route(
+        "/maintenance/requests",
+        type="http",
+        auth="user",
+        website=True,
+        methods=["GET"],
+    )
+    def maintenance_requests(self, **kw):
+        priority_labels = dict(PRIORITY_OPTIONS)
+        MaintRequest = request.env["maintenance.request"].sudo()
+
+        user = request.env.user
+        requests_list = MaintRequest.search(
+            [
+                ("stage_id.done", "!=", True),
+                "|",
+                ("owner_user_id", "=", user.id),
+                ("email_cc", "ilike", user.email or ""),
+            ],
+            order="request_date desc, id desc",
+            limit=50,
+        )
+
+        items = []
+        for r in requests_list:
+            items.append({
+                "id": r.id,
+                "name": r.name or "",
+                "stage": r.stage_id.name if r.stage_id else "New",
+                "priority": priority_labels.get(r.priority, "Normal"),
+                "request_date": r.request_date,
+                "company": r.company_id.name if r.company_id else "",
+                "equipment": r.equipment_id.name if r.equipment_id else "",
+            })
+
+        return request.render(
+            "mint_maintenance_form.request_list",
+            {"requests": items, "user": user},
+        )
