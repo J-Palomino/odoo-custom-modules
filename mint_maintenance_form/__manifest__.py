@@ -1,6 +1,6 @@
 {
     "name": "Mint Maintenance Request Form",
-    "version": "19.0.1.0.0",
+    "version": "19.0.2.0.0",
     "category": "Maintenance",
     "summary": "Website form for submitting maintenance requests",
     "author": "Mint Cannabis",

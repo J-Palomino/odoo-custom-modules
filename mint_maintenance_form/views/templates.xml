@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-    <template id="request_form" name="Maintenance Request Form">
+    <template id="request_form" name="IT Maintenance Request Form">
         <t t-call="website.layout">
             <div id="wrap" class="oe_structure">
                 <div class="container py-5">
                     <div class="row justify-content-center">
                         <div class="col-lg-8">
-                            <h1 class="mb-2">Submit a Maintenance Request</h1>
+                            <h1 class="mb-2">IT Maintenance Request</h1>
                             <p class="text-muted mb-4">
-                                Use this form to submit IT, graphics, or internal maintenance requests.
+                                Submit an IT maintenance request. This creates a ticket assigned to the IT team.
                             </p>
 
                             <t t-if="error">
@@ -23,9 +23,17 @@
                             </t>
 
                             <t t-if="not success">
+                                <!-- Data for JS -->
+                                <script type="application/json" id="subtype-data"><t t-out="subtype_options_json"/></script>
+                                <input type="hidden" id="saved_equipment_type"
+                                       t-att-value="form_values.get('equipment_type', '')"/>
+                                <input type="hidden" id="saved_subtype"
+                                       t-att-value="form_values.get('subtype', '')"/>
+
                                 <form action="/maintenance/request" method="post" enctype="multipart/form-data">
                                     <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
+                                    <!-- Your Name & Email -->
                                     <div class="row">
                                         <div class="col-md-6 mb-3">
                                             <label for="submitter_name" class="form-label fw-bold">
@@ -47,94 +55,87 @@
                                         </div>
                                     </div>
 
-                                    <div class="mb-3">
-                                        <label for="name" class="form-label fw-bold">
-                                            Request Title <span class="text-danger">*</span>
-                                        </label>
-                                        <input type="text" class="form-control" id="name" name="name"
-                                               required="required"
-                                               placeholder="Brief description of the issue"
-                                               t-att-value="form_values.get('name', '')"/>
+                                    <!-- State & Store -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="state" class="form-label fw-bold">State</label>
+                                            <select class="form-select" id="state" name="state">
+                                                <option value="">-- Select State --</option>
+                                                <t t-foreach="states" t-as="s">
+                                                    <option t-att-value="s"
+                                                            t-att-selected="s == form_values.get('state', '')">
+                                                        <t t-esc="s"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="company_id" class="form-label fw-bold">Store / Location</label>
+                                            <select class="form-select" id="company_id" name="company_id">
+                                                <option value="">-- Select Store --</option>
+                                                <t t-foreach="companies" t-as="c">
+                                                    <option t-att-value="c['id']"
+                                                            t-att-data-state="c['state']"
+                                                            t-att-selected="str(c['id']) == form_values.get('company_id', '')">
+                                                        <t t-esc="c['name']"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
                                     </div>
 
+                                    <!-- Equipment Type & Sub-type -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="equipment_type" class="form-label fw-bold">
+                                                Equipment Type <span class="text-danger">*</span>
+                                            </label>
+                                            <select class="form-select" id="equipment_type"
+                                                    name="equipment_type" required="required">
+                                                <option value="">-- Select Type --</option>
+                                                <t t-foreach="equipment_types" t-as="et">
+                                                    <option t-att-value="et[0]"
+                                                            t-att-selected="et[0] == form_values.get('equipment_type', '')">
+                                                        <t t-esc="et[1]"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3" id="subtype_wrapper" style="display:none">
+                                            <label for="subtype" class="form-label fw-bold">Specify</label>
+                                            <select class="form-select" id="subtype" name="subtype">
+                                                <option value="">-- Select --</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Priority -->
                                     <div class="mb-3">
-                                        <label for="maintenance_team_id" class="form-label fw-bold">
-                                            Team <span class="text-danger">*</span>
+                                        <label for="priority" class="form-label fw-bold">
+                                            Priority <span class="text-danger">*</span>
                                         </label>
-                                        <select class="form-select" id="maintenance_team_id"
-                                                name="maintenance_team_id" required="required">
-                                            <option value="">-- Select a Team --</option>
-                                            <t t-foreach="teams" t-as="team">
-                                                <option t-att-value="team.id"
-                                                        t-att-selected="str(team.id) == form_values.get('maintenance_team_id', '')">
-                                                    <t t-esc="team.name"/>
+                                        <select class="form-select w-50" id="priority"
+                                                name="priority" required="required">
+                                            <t t-foreach="priorities" t-as="p">
+                                                <option t-att-value="p[0]"
+                                                        t-att-selected="p[0] == form_values.get('priority', '2')">
+                                                    <t t-esc="p[1]"/>
                                                 </option>
                                             </t>
                                         </select>
                                     </div>
 
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label for="priority" class="form-label fw-bold">Priority</label>
-                                            <select class="form-select" id="priority" name="priority">
-                                                <t t-foreach="priorities" t-as="p">
-                                                    <option t-att-value="p[0]"
-                                                            t-att-selected="p[0] == form_values.get('priority', '2')">
-                                                        <t t-esc="p[1]"/>
-                                                    </option>
-                                                </t>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-6 mb-3">
-                                            <label for="maintenance_type" class="form-label fw-bold">Type</label>
-                                            <select class="form-select" id="maintenance_type" name="maintenance_type">
-                                                <option value="">-- Select Type --</option>
-                                                <t t-foreach="maintenance_types" t-as="mt">
-                                                    <option t-att-value="mt[0]"
-                                                            t-att-selected="mt[0] == form_values.get('maintenance_type', '')">
-                                                        <t t-esc="mt[1]"/>
-                                                    </option>
-                                                </t>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label for="company_id" class="form-label fw-bold">Store / Location</label>
-                                            <select class="form-select" id="company_id" name="company_id">
-                                                <option value="">-- Select Store --</option>
-                                                <t t-foreach="companies" t-as="company">
-                                                    <option t-att-value="company.id"
-                                                            t-att-selected="str(company.id) == form_values.get('company_id', '')">
-                                                        <t t-esc="company.name"/>
-                                                    </option>
-                                                </t>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-6 mb-3">
-                                            <label for="category_id" class="form-label fw-bold">Equipment Category</label>
-                                            <select class="form-select" id="category_id" name="category_id">
-                                                <option value="">-- Select Category --</option>
-                                                <t t-foreach="categories" t-as="cat">
-                                                    <option t-att-value="cat.id"
-                                                            t-att-selected="str(cat.id) == form_values.get('category_id', '')">
-                                                        <t t-esc="cat.name"/>
-                                                    </option>
-                                                </t>
-                                            </select>
-                                        </div>
-                                    </div>
-
+                                    <!-- Description -->
                                     <div class="mb-3">
                                         <label for="description" class="form-label fw-bold">
-                                            Description <span class="text-danger">*</span>
+                                            Description of Issue <span class="text-danger">*</span>
                                         </label>
                                         <textarea class="form-control" id="description" name="description"
                                                   rows="5" required="required"
                                                   placeholder="Describe the issue in detail..."><t t-esc="form_values.get('description', '')"/></textarea>
                                     </div>
 
+                                    <!-- Photos -->
                                     <div class="mb-4">
                                         <label for="photos" class="form-label fw-bold">
                                             Photos / Screenshots
@@ -151,6 +152,77 @@
                                         Submit Request
                                     </button>
                                 </form>
+
+                                <script>
+                                    (function () {
+                                        var subtypeData = JSON.parse(
+                                            document.getElementById('subtype-data').textContent || '{}'
+                                        );
+                                        var savedSubtype = document.getElementById('saved_subtype').value || '';
+
+                                        /* --- Equipment sub-type conditional --- */
+                                        var equipSelect = document.getElementById('equipment_type');
+                                        var subtypeWrapper = document.getElementById('subtype_wrapper');
+                                        var subtypeSelect = document.getElementById('subtype');
+
+                                        function updateSubtype() {
+                                            var opts = subtypeData[equipSelect.value];
+                                            subtypeSelect.innerHTML = '<option value="">-- Select --</option>';
+                                            if (opts) {
+                                                opts.forEach(function (o) {
+                                                    var el = document.createElement('option');
+                                                    el.value = o[0];
+                                                    el.textContent = o[1];
+                                                    if (o[0] === savedSubtype) el.selected = true;
+                                                    subtypeSelect.appendChild(el);
+                                                });
+                                                subtypeWrapper.style.display = '';
+                                            } else {
+                                                subtypeWrapper.style.display = 'none';
+                                            }
+                                            savedSubtype = '';
+                                        }
+
+                                        equipSelect.addEventListener('change', updateSubtype);
+                                        updateSubtype();
+
+                                        /* --- State -> Store filter --- */
+                                        var stateSelect = document.getElementById('state');
+                                        var storeSelect = document.getElementById('company_id');
+                                        var allStores = [];
+                                        Array.from(storeSelect.options).forEach(function (opt) {
+                                            if (opt.value) {
+                                                allStores.push({
+                                                    value: opt.value,
+                                                    text: opt.text,
+                                                    state: opt.dataset.state || '',
+                                                    selected: opt.selected
+                                                });
+                                            }
+                                        });
+
+                                        function filterStores(reset) {
+                                            var sel = stateSelect.value;
+                                            var cur = storeSelect.value;
+                                            while (storeSelect.options.length > 1) storeSelect.remove(1);
+                                            allStores.forEach(function (s) {
+                                                if (!sel || s.state === sel) {
+                                                    var el = document.createElement('option');
+                                                    el.value = s.value;
+                                                    el.textContent = s.text;
+                                                    if (!reset &amp;&amp; s.value === cur) el.selected = true;
+                                                    storeSelect.appendChild(el);
+                                                }
+                                            });
+                                            if (reset) storeSelect.value = '';
+                                        }
+
+                                        stateSelect.addEventListener('change', function () {
+                                            filterStores(true);
+                                        });
+                                        filterStores(false);
+                                    })();
+                                </script>
                             </t>
 
                             <t t-if="success">
