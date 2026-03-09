@@ -23,7 +23,7 @@
                             </t>
 
                             <t t-if="not success">
-                                <form action="/maintenance/request" method="post">
+                                <form action="/maintenance/request" method="post" enctype="multipart/form-data">
                                     <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
                                     <div class="row">
@@ -136,13 +136,15 @@
                                     </div>
 
                                     <div class="mb-4">
-                                        <label for="schedule_date" class="form-label fw-bold">
-                                            Preferred Schedule Date
+                                        <label for="photos" class="form-label fw-bold">
+                                            Photos / Screenshots
                                         </label>
-                                        <input type="date" class="form-control w-50" id="schedule_date"
-                                               name="schedule_date"
-                                               t-att-value="form_values.get('schedule_date', '')"/>
-                                        <div class="form-text">Optional — leave blank if no date preference.</div>
+                                        <input type="file" class="form-control" id="photos"
+                                               name="photos" multiple="multiple"
+                                               accept="image/*,.pdf"/>
+                                        <div class="form-text">
+                                            Optional — attach photos or screenshots of the issue (max 5 files, 10 MB each).
+                                        </div>
                                     </div>
 
                                     <button type="submit" class="btn btn-primary btn-lg">
