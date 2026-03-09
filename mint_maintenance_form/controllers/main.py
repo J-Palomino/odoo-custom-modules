@@ -130,7 +130,7 @@ class MaintenanceFormController(http.Controller):
         return ctx
 
     @http.route(
-        "/maintenance/request",
+        ["/fixit", "/maintenance/request"],
         type="http",
         auth="public",
         website=True,
@@ -301,7 +301,7 @@ class MaintenanceFormController(http.Controller):
         return request.render("mint_maintenance_form.request_form", ctx)
 
     @http.route(
-        "/maintenance/requests",
+        ["/tickets", "/maintenance/requests"],
         type="http",
         auth="user",
         website=True,
