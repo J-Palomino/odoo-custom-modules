@@ -204,16 +204,22 @@
                                         function filterStores(reset) {
                                             var sel = stateSelect.value;
                                             var cur = storeSelect.value;
-                                            while (storeSelect.options.length > 1) storeSelect.remove(1);
-                                            allStores.forEach(function (s) {
-                                                if (!sel || s.state === sel) {
-                                                    var el = document.createElement('option');
-                                                    el.value = s.value;
-                                                    el.textContent = s.text;
-                                                    if (!reset &amp;&amp; s.value === cur) el.selected = true;
-                                                    storeSelect.appendChild(el);
-                                                }
-                                            });
+                                            while (storeSelect.options.length > 0) storeSelect.remove(0);
+                                            var ph = document.createElement('option');
+                                            ph.value = '';
+                                            ph.textContent = sel ? '-- Select Store --' : '-- Select a state first --';
+                                            storeSelect.appendChild(ph);
+                                            if (sel) {
+                                                allStores.forEach(function (s) {
+                                                    if (s.state === sel) {
+                                                        var el = document.createElement('option');
+                                                        el.value = s.value;
+                                                        el.textContent = s.text;
+                                                        if (!reset &amp;&amp; s.value === cur) el.selected = true;
+                                                        storeSelect.appendChild(el);
+                                                    }
+                                                });
+                                            }
                                             if (reset) storeSelect.value = '';
                                         }
 

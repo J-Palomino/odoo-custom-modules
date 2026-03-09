@@ -137,8 +137,19 @@ class MaintenanceFormController(http.Controller):
     )
     def maintenance_form(self, **post):
         if request.httprequest.method == "GET":
+            prefill = {}
+            user = request.env.user
+            if user and user.id != request.env.ref("base.public_user").id:
+                prefill["submitter_name"] = user.name or ""
+                prefill["submitter_email"] = user.email or ""
+                if user.company_id and user.company_id.parent_id:
+                    prefill["company_id"] = str(user.company_id.id)
+                    state_name = user.company_id.state_id.name if user.company_id.state_id else ""
+                    if state_name:
+                        prefill["state"] = state_name
             return request.render(
-                "mint_maintenance_form.request_form", self._form_context()
+                "mint_maintenance_form.request_form",
+                self._form_context(form_values=prefill),
             )
 
         ctx = self._form_context(form_values=post)
