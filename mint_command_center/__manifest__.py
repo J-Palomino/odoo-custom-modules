@@ -27,8 +27,14 @@
     'license': 'LGPL-3',
     'depends': [
         'mail',
+        'bus',
         'mint_push',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'mint_command_center/static/src/outdated_page_watcher_patch.js',
+        ],
+    },
     'external_dependencies': {
         'python': ['pywebpush'],
     },
