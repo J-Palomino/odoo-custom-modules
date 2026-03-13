@@ -330,6 +330,24 @@ echo "=== Check dependency modules on disk ==="
 ls -d /usr/lib/python3/dist-packages/odoo/addons/maintenance/ 2>/dev/null && echo "MAINTENANCE: OK" || echo "MAINTENANCE: MISSING"
 ls -d /usr/lib/python3/dist-packages/odoo/addons/website/ 2>/dev/null && echo "WEBSITE: OK" || echo "WEBSITE: MISSING"
 
+# ── Start nginx reverse proxy for websocket routing ──────────────────
+NGINX_PORT="${PORT:-8080}"
+echo "=== Configuring nginx on port $NGINX_PORT ==="
+sed "s/__NGINX_PORT__/$NGINX_PORT/g" /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+nginx -t 2>&1 && echo "nginx config OK" || echo "WARNING: nginx config test failed"
+nginx
+echo "=== nginx started (pid $(cat /run/nginx.pid 2>/dev/null || echo 'unknown')) ==="
+
+# Ensure gevent_port is set in config for websocket support
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "gevent_port" "$CONFIG_FILE"; then
+        sed -i 's/gevent_port\s*=\s*.*/gevent_port = 8072/g' "$CONFIG_FILE"
+    else
+        echo "gevent_port = 8072" >> "$CONFIG_FILE"
+    fi
+    echo "gevent_port = 8072 set in config"
+fi
+
 # Build extra args from environment variables
 EXTRA_ARGS=""
 if [ -n "$ODOO_UPDATE_MODULES" ] && [ "$ODOO_UPDATE_MODULES" != "none" ]; then

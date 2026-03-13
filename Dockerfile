@@ -7,10 +7,11 @@ RUN echo "Build cache key: $CACHEBUST"
 
 USER root
 
-# Install git (needed for OCA module cloning)
+# Install git (needed for OCA module cloning) and nginx (websocket reverse proxy)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends git nginx \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/nginx
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT
@@ -149,10 +150,14 @@ RUN for mod in dms dms_field hr_dms_field; do \
 RUN chmod +x /opt/extra-addons/mint_theme/generate-theme.sh
 RUN chmod +x /opt/extra-addons/daisydo_theme/generate-theme.sh
 
-# Copy config file as backup and fix script
+# Copy config file as backup, nginx template, and fix script
 COPY odoo.conf /etc/odoo/odoo.conf
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY fix-config.sh /fix-config.sh
 RUN chmod +x /fix-config.sh
+
+# Expose nginx port (Railway routes traffic here)
+EXPOSE 8080
 
 # Run as root — fix-config.sh handles user switch via /entrypoint.sh
 ENTRYPOINT ["/fix-config.sh"]
