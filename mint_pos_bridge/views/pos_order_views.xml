@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Kanban View — Primary budtender view
+         Columns by state. Cards show customer, items, total, wait time.
+         Color: red if >15min, yellow if >10min.
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_order_kanban" model="ir.ui.view">
+        <field name="name">mint.pos.order.kanban</field>
+        <field name="model">mint.pos.order</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" on_create="quick_create"
+                    quick_create_view="mint_pos_bridge.view_pos_order_form_quick"
+                    class="o_kanban_small_column">
+                <field name="state"/>
+                <field name="partner_id"/>
+                <field name="company_id"/>
+                <field name="total"/>
+                <field name="line_count"/>
+                <field name="wait_minutes"/>
+                <field name="placed_at"/>
+                <field name="order_type"/>
+                <field name="payment_method"/>
+                <progressbar field="state"
+                    colors='{"placed": "info", "confirmed": "warning", "preparing": "warning", "ready": "success", "picked_up": "success", "completed": "muted", "cancelled": "danger"}'/>
+                <templates>
+                    <t t-name="card">
+                        <div t-attf-class="#{record.wait_minutes.raw_value > 15 ? 'border-start border-danger border-3' : record.wait_minutes.raw_value > 10 ? 'border-start border-warning border-3' : ''}">
+                            <div class="d-flex justify-content-between">
+                                <strong>
+                                    <field name="name"/>
+                                </strong>
+                                <span class="badge rounded-pill"
+                                      t-attf-class="#{record.wait_minutes.raw_value > 15 ? 'text-bg-danger' : record.wait_minutes.raw_value > 10 ? 'text-bg-warning' : 'text-bg-secondary'}">
+                                    <field name="wait_minutes"/>m
+                                </span>
+                            </div>
+                            <div class="text-muted small mt-1">
+                                <field name="partner_id"/> |
+                                <field name="line_count"/> items
+                            </div>
+                            <div class="d-flex justify-content-between mt-2">
+                                <span class="fw-bold text-success">
+                                    $<field name="total"/>
+                                </span>
+                                <span class="badge text-bg-light">
+                                    <field name="order_type"/>
+                                </span>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Quick create form for kanban -->
+    <record id="view_pos_order_form_quick" model="ir.ui.view">
+        <field name="name">mint.pos.order.form.quick</field>
+        <field name="model">mint.pos.order</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <field name="partner_id"/>
+                    <field name="company_id"/>
+                    <field name="order_type"/>
+                </group>
+            </form>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         List View — Filterable by store, date, state, budtender
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_order_list" model="ir.ui.view">
+        <field name="name">mint.pos.order.list</field>
+        <field name="model">mint.pos.order</field>
+        <field name="arch" type="xml">
+            <list string="POS Orders" decoration-danger="state == 'cancelled'"
+                  decoration-muted="state == 'completed'"
+                  decoration-warning="wait_minutes > 10 and state in ('placed','confirmed','preparing')"
+                  multi_edit="1">
+                <field name="name"/>
+                <field name="partner_id"/>
+                <field name="company_id"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'placed'"
+                       decoration-warning="state in ('confirmed','preparing')"
+                       decoration-success="state in ('ready','picked_up','completed')"
+                       decoration-danger="state == 'cancelled'"/>
+                <field name="order_type"/>
+                <field name="payment_method"/>
+                <field name="line_count" string="Items"/>
+                <field name="total" sum="Total"/>
+                <field name="placed_at"/>
+                <field name="budtender_id" optional="hide"/>
+                <field name="dutchie_receipt_no" optional="hide"/>
+                <field name="wait_minutes" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Form View — Full order details + action buttons + chatter
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_order_form" model="ir.ui.view">
+        <field name="name">mint.pos.order.form</field>
+        <field name="model">mint.pos.order</field>
+        <field name="arch" type="xml">
+            <form string="POS Order">
+                <header>
+                    <button name="action_confirm" string="Confirm"
+                            type="object" class="btn-primary"
+                            invisible="state != 'placed'"/>
+                    <button name="action_start_preparing" string="Start Preparing"
+                            type="object" class="btn-primary"
+                            invisible="state != 'confirmed'"/>
+                    <button name="action_mark_ready" string="Mark Ready"
+                            type="object" class="btn-success"
+                            invisible="state not in ('confirmed', 'preparing')"/>
+                    <button name="action_mark_picked_up" string="Mark Picked Up"
+                            type="object" class="btn-primary"
+                            invisible="state != 'ready'"/>
+                    <button name="action_complete" string="Complete"
+                            type="object" class="btn-success"
+                            invisible="state not in ('ready', 'picked_up')"/>
+                    <button name="action_cancel" string="Cancel"
+                            type="object" class="btn-danger"
+                            invisible="state in ('completed', 'cancelled')"
+                            confirm="Are you sure you want to cancel this order?"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="placed,confirmed,preparing,ready,completed"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Order Info">
+                            <field name="partner_id"/>
+                            <field name="company_id"/>
+                            <field name="order_type"/>
+                            <field name="payment_method"/>
+                            <field name="budtender_id"/>
+                        </group>
+                        <group string="Dutchie Reference">
+                            <field name="dutchie_checkout_id"/>
+                            <field name="dutchie_receipt_no"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Totals">
+                            <field name="subtotal"/>
+                            <field name="discount_total"/>
+                            <field name="tax_total"/>
+                            <field name="total"/>
+                        </group>
+                        <group string="Timestamps">
+                            <field name="placed_at"/>
+                            <field name="confirmed_at"/>
+                            <field name="ready_at"/>
+                            <field name="completed_at"/>
+                            <field name="wait_minutes"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Loyalty">
+                            <field name="loyalty_points_earned"/>
+                            <field name="loyalty_points_redeemed"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Order Lines" name="lines">
+                            <field name="line_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="product_name"/>
+                                    <field name="sku" optional="hide"/>
+                                    <field name="category"/>
+                                    <field name="brand" optional="hide"/>
+                                    <field name="weight" optional="hide"/>
+                                    <field name="quantity"/>
+                                    <field name="unit_price"/>
+                                    <field name="discount"/>
+                                    <field name="tax" optional="hide"/>
+                                    <field name="line_total"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Notes" name="notes">
+                            <field name="notes" placeholder="Internal notes..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Search View — Filters and group-by options
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_order_search" model="ir.ui.view">
+        <field name="name">mint.pos.order.search</field>
+        <field name="model">mint.pos.order</field>
+        <field name="arch" type="xml">
+            <search string="POS Orders">
+                <field name="name"/>
+                <field name="partner_id"/>
+                <field name="company_id"/>
+                <field name="dutchie_receipt_no"/>
+                <field name="dutchie_checkout_id"/>
+                <field name="budtender_id"/>
+
+                <!-- State filters -->
+                <filter name="filter_active" string="Active"
+                        domain="[('state', 'not in', ['completed', 'cancelled'])]"/>
+                <filter name="filter_placed" string="Placed"
+                        domain="[('state', '=', 'placed')]"/>
+                <filter name="filter_confirmed" string="Confirmed"
+                        domain="[('state', '=', 'confirmed')]"/>
+                <filter name="filter_preparing" string="Preparing"
+                        domain="[('state', '=', 'preparing')]"/>
+                <filter name="filter_ready" string="Ready"
+                        domain="[('state', '=', 'ready')]"/>
+                <filter name="filter_completed" string="Completed"
+                        domain="[('state', '=', 'completed')]"/>
+                <filter name="filter_cancelled" string="Cancelled"
+                        domain="[('state', '=', 'cancelled')]"/>
+
+                <separator/>
+
+                <!-- Date filters -->
+                <filter name="filter_today" string="Today"
+                        domain="[('placed_at', '>=', context_today().strftime('%Y-%m-%d'))]"/>
+                <filter name="filter_this_week" string="This Week"
+                        domain="[('placed_at', '>=', (context_today() - datetime.timedelta(days=context_today().weekday())).strftime('%Y-%m-%d'))]"/>
+
+                <separator/>
+
+                <!-- Order type filters -->
+                <filter name="filter_pickup" string="Pickup"
+                        domain="[('order_type', '=', 'pickup')]"/>
+                <filter name="filter_in_store" string="In-Store"
+                        domain="[('order_type', '=', 'in_store')]"/>
+                <filter name="filter_delivery" string="Delivery"
+                        domain="[('order_type', '=', 'delivery')]"/>
+
+                <separator/>
+
+                <!-- Group by -->
+                <filter name="group_state" string="State"
+                        context="{'group_by': 'state'}"/>
+                <filter name="group_company" string="Store"
+                        context="{'group_by': 'company_id'}"/>
+                <filter name="group_date" string="Date"
+                        context="{'group_by': 'placed_at:day'}"/>
+                <filter name="group_order_type" string="Order Type"
+                        context="{'group_by': 'order_type'}"/>
+                <filter name="group_budtender" string="Budtender"
+                        context="{'group_by': 'budtender_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Order Line List View (standalone)
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_order_line_list" model="ir.ui.view">
+        <field name="name">mint.pos.order.line.list</field>
+        <field name="model">mint.pos.order.line</field>
+        <field name="arch" type="xml">
+            <list string="Order Lines">
+                <field name="order_id"/>
+                <field name="product_name"/>
+                <field name="sku"/>
+                <field name="category"/>
+                <field name="brand"/>
+                <field name="quantity"/>
+                <field name="unit_price"/>
+                <field name="discount"/>
+                <field name="line_total" sum="Total"/>
+                <field name="company_id"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Employee Credential Views
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_employee_cred_list" model="ir.ui.view">
+        <field name="name">mint.pos.employee.credential.list</field>
+        <field name="model">mint.pos.employee.credential</field>
+        <field name="arch" type="xml">
+            <list string="POS Employee Credentials">
+                <field name="employee_id"/>
+                <field name="company_id"/>
+                <field name="access_level" widget="badge"
+                       decoration-info="access_level == 'budtender'"
+                       decoration-warning="access_level == 'manager'"
+                       decoration-danger="access_level == 'admin'"/>
+                <field name="is_service_account"/>
+                <field name="dutchie_username"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pos_employee_cred_form" model="ir.ui.view">
+        <field name="name">mint.pos.employee.credential.form</field>
+        <field name="model">mint.pos.employee.credential</field>
+        <field name="arch" type="xml">
+            <form string="POS Employee Credential">
+                <sheet>
+                    <group>
+                        <group string="Employee">
+                            <field name="employee_id"/>
+                            <field name="company_id"/>
+                            <field name="access_level"/>
+                            <field name="is_service_account"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Dutchie Access"
+                               invisible="is_service_account">
+                            <field name="dutchie_username"/>
+                            <field name="dutchie_credential" password="True"/>
+                            <field name="dutchie_session_id" readonly="1"/>
+                            <field name="session_expires_at" readonly="1"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+</odoo>

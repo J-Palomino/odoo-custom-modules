@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=65
+ARG CACHEBUST=66
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 RUN echo "Build cache key: $CACHEBUST"
 
@@ -45,6 +45,7 @@ COPY --chown=odoo:odoo mint_embed /opt/extra-addons/mint_embed
 COPY --chown=odoo:odoo mint_oauth_only /opt/extra-addons/mint_oauth_only
 COPY --chown=odoo:odoo mint_customer_api /opt/extra-addons/mint_customer_api
 COPY --chown=odoo:odoo mint_dutchie_sync /opt/extra-addons/mint_dutchie_sync
+COPY --chown=odoo:odoo mint_pos_bridge /opt/extra-addons/mint_pos_bridge
 COPY --chown=odoo:odoo mint_mail_whitelist /opt/extra-addons/mint_mail_whitelist
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
@@ -109,6 +110,7 @@ RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER M
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_dutchie_sync/__manifest__.py && echo "MINT_DUTCHIE_SYNC VERIFIED" || (echo "MINT_DUTCHIE_SYNC MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_pos_bridge/__manifest__.py && echo "MINT_POS_BRIDGE VERIFIED" || (echo "MINT_POS_BRIDGE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
