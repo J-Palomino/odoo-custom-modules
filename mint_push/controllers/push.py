@@ -112,6 +112,20 @@ class MintPushAPI(http.Controller):
         latitude = data.get('latitude')
         longitude = data.get('longitude')
 
+        # Resolve partner by partner_id or email (links push to user account)
+        partner_id = False
+        raw_partner_id = data.get('partner_id')
+        email = data.get('email')
+        if raw_partner_id:
+            partner = request.env['res.partner'].sudo().browse(int(raw_partner_id))
+            if partner.exists():
+                partner_id = partner.id
+        elif email:
+            partner = request.env['res.partner'].sudo().search(
+                [('email', '=ilike', email)], limit=1)
+            if partner:
+                partner_id = partner.id
+
         # Upsert: update existing or create new
         existing = Sub.search([('endpoint', '=', endpoint)], limit=1)
         if existing:
@@ -126,12 +140,14 @@ class MintPushAPI(http.Controller):
                 vals['store_id'] = store_id
             if region:
                 vals['region'] = region
+            if partner_id:
+                vals['partner_id'] = partner_id
             if latitude is not None and longitude is not None:
                 vals['latitude'] = float(latitude)
                 vals['longitude'] = float(longitude)
                 vals['geo_updated_at'] = fields.Datetime.now()
             existing.write(vals)
-            _logger.info("Updated push subscription: %s...", endpoint[:60])
+            _logger.info("Updated push subscription: %s... partner=%s", endpoint[:60], partner_id or 'anon')
             return json_response({'status': 'updated', 'id': existing.id})
 
         create_vals = {
@@ -142,12 +158,14 @@ class MintPushAPI(http.Controller):
             'store_id': store_id,
             'region': region,
         }
+        if partner_id:
+            create_vals['partner_id'] = partner_id
         if latitude is not None and longitude is not None:
             create_vals['latitude'] = float(latitude)
             create_vals['longitude'] = float(longitude)
             create_vals['geo_updated_at'] = fields.Datetime.now()
         sub = Sub.create(create_vals)
-        _logger.info("New push subscription: %s...", endpoint[:60])
+        _logger.info("New push subscription: %s... partner=%s", endpoint[:60], partner_id or 'anon')
         return json_response({'status': 'subscribed', 'id': sub.id})
 
     # ==================== UNSUBSCRIBE ====================
