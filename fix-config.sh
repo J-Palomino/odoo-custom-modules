@@ -126,7 +126,7 @@ done
 # These modules cause registry failures during update (view validation errors,
 # incompatible versions, missing dependencies)
 echo "=== Scanning for broken modules to remove ==="
-for mod in slack_sync spreadsheet_oca spreadsheet_dashboard_oca sign_oca; do
+for mod in slack_sync sign_oca; do
     # Check /opt/extra-addons (Docker image baked-in modules)
     if [ -d "/opt/extra-addons/$mod" ]; then
         echo "=== Removing broken module $mod at /opt/extra-addons/$mod ==="
