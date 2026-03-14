@@ -240,6 +240,33 @@ class MintPosOrderAPI(http.Controller):
         if kw.get('dutchie_checkout_id'):
             domain.append(('dutchie_checkout_id', '=', kw['dutchie_checkout_id']))
 
+        # Filter by phone (customer lookup)
+        if kw.get('phone'):
+            phone = _normalize_phone(kw['phone'])
+            if phone:
+                partners = request.env['res.partner'].sudo().search(
+                    [('phone', 'ilike', phone[-10:])]
+                )
+                if partners:
+                    domain.append(('partner_id', 'in', partners.ids))
+                else:
+                    return _json({'orders': [], 'total': 0, 'limit': 0, 'offset': 0})
+
+        # Filter by email
+        if kw.get('email'):
+            email = kw['email'].strip().lower()
+            partners = request.env['res.partner'].sudo().search(
+                [('email', '=ilike', email)]
+            )
+            if partners:
+                domain.append(('partner_id', 'in', partners.ids))
+            else:
+                return _json({'orders': [], 'total': 0, 'limit': 0, 'offset': 0})
+
+        # Filter by order ref (MINT-POS-XXXXX)
+        if kw.get('order_ref'):
+            domain.append(('name', '=', kw['order_ref']))
+
         limit = min(int(kw.get('limit', 50)), 200)
         offset = int(kw.get('offset', 0))
 
@@ -458,9 +485,12 @@ class MintPosOrderAPI(http.Controller):
             'customer': {
                 'id': order.partner_id.id,
                 'name': order.partner_id.name,
+                'phone': order.partner_id.phone or '',
+                'email': order.partner_id.email or '',
             } if order.partner_id else None,
             'company_id': order.company_id.id,
             'store_name': order.company_id.name,
+            'store_slug': getattr(order.company_id, 'x_slug', '') or '',
             'dutchie_checkout_id': order.dutchie_checkout_id or '',
             'dutchie_receipt_no': order.dutchie_receipt_no or '',
             'state': order.state,
