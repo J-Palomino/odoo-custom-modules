@@ -130,9 +130,14 @@ class MintCustomerAuth(http.Controller):
 
         try:
             # Create portal user directly (Odoo 19 compatible)
-            # company_id is required — use the main Mint Dispensaries company
+            # company_id required, no_reset_password skips signup email
             main_company = request.env['res.company'].sudo().browse(1)
-            user = request.env['res.users'].sudo().create({
+            Users = request.env['res.users'].sudo().with_context(
+                no_reset_password=True,
+                mail_create_nosubscribe=True,
+                mail_create_nolog=True,
+            )
+            user = Users.create({
                 'name': name,
                 'login': email,
                 'password': password,
