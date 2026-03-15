@@ -77,9 +77,7 @@ class MintCustomerAuth(http.Controller):
 
         # Verify credentials via Odoo's authenticate (Odoo 19 API)
         try:
-            uid = request.env['res.users'].authenticate(
-                request.env.cr.dbname, email, password, {'interactive': False}
-            )
+            uid = request.env['res.users'].authenticate(email, password)
         except AccessDenied:
             return error_response('Invalid email or password', 401)
         except Exception as e:
