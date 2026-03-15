@@ -159,7 +159,7 @@ class MintCustomerAuth(http.Controller):
             return error_response(str(e))
         except Exception as e:
             _logger.exception('Registration failed: %s', e)
-            return error_response('Registration failed. Please try again.', 500)
+            return error_response('Registration failed: %s' % str(e), 500)
 
     @http.route('/api/v1/auth/forgot-password', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
