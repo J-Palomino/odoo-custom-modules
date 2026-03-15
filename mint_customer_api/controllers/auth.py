@@ -75,28 +75,21 @@ class MintCustomerAuth(http.Controller):
         if not email or not password:
             return error_response('Email and password are required')
 
-        user = request.env['res.users'].sudo().search(
-            [('login', '=', email)], limit=1,
-        )
-        if not user:
-            return error_response('Invalid email or password', 401)
-
+        # Verify credentials via Odoo's authenticate (Odoo 19 API)
         try:
-            request.env.cr.execute(
-                "SELECT COALESCE(password, '') FROM res_users WHERE id=%s",
-                (user.id,)
+            uid = request.env['res.users'].authenticate(
+                request.env.cr.dbname, email, password, {'interactive': False}
             )
-            stored_hash = request.env.cr.fetchone()[0]
-            if not stored_hash:
-                return error_response('Invalid email or password', 401)
-
-            from odoo.addons.base.models.res_users import Users
-            Users._check_credentials(user, {'type': 'password', 'password': password})
         except AccessDenied:
             return error_response('Invalid email or password', 401)
         except Exception as e:
             _logger.exception('Login error for %s: %s', email, e)
+            return error_response('Login failed: %s' % str(e), 500)
+
+        if not uid:
             return error_response('Invalid email or password', 401)
+
+        user = request.env['res.users'].sudo().browse(uid)
         token = user._generate_jwt()
 
         return json_response({
