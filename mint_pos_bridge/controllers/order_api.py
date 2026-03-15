@@ -518,3 +518,85 @@ class MintPosOrderAPI(http.Controller):
                 'brand': l.brand or '',
             } for l in order.line_ids],
         }
+
+    # ── Web Order Config API ──────────────────────────────────
+
+    @http.route('/api/v1/pos/web-order-config', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def get_web_order_config(self):
+        """Get web order configuration for all stores (for BullMQ worker)."""
+        if not self._check_api_key():
+            return _json({'error': 'Forbidden'}, 403)
+
+        ConfigAPI = request.env['mint.web.order.config.api'].sudo()
+        configs = ConfigAPI.get_all_configs()
+        return _json({'configs': configs})
+
+    @http.route('/api/v1/pos/web-order-config/<string:store_slug>', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def get_web_order_config_for_store(self, store_slug):
+        """Get web order configuration for a specific store."""
+        if not self._check_api_key():
+            return _json({'error': 'Forbidden'}, 403)
+
+        ConfigAPI = request.env['mint.web.order.config.api'].sudo()
+        config = ConfigAPI.get_config_for_store(store_slug)
+        if not config:
+            return _json({'error': 'No config for store: ' + store_slug}, 404)
+        return _json(config)
+
+    @http.route('/api/v1/pos/orders/cancel', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def cancel_order(self):
+        """Cancel an order by shipment ID or order ref."""
+        if not self._check_api_key():
+            return _json({'error': 'Forbidden'}, 403)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return _json({'error': 'Invalid JSON'}, 400)
+
+        Order = request.env['mint.pos.order'].sudo()
+
+        order = None
+        if data.get('dutchie_shipment_id'):
+            order = Order.search([
+                ('dutchie_checkout_id', '=', str(data['dutchie_shipment_id']))
+            ], limit=1)
+        if not order and data.get('dutchie_receipt_no'):
+            order = Order.search([
+                ('dutchie_receipt_no', '=', str(data['dutchie_receipt_no']))
+            ], limit=1)
+
+        if not order:
+            return _json({'error': 'Order not found'}, 404)
+
+        order.write({
+            'state': 'cancelled',
+            'notes': (order.notes or '') + '\nCancelled: ' + (data.get('reason') or 'No reason'),
+        })
+
+        # Send push notification if configured
+        if order.partner_id:
+            config = request.env['mint.web.order.config'].sudo().search([
+                ('company_id', '=', order.company_id.id),
+                ('active', '=', True),
+            ], limit=1)
+            if config and config.auto_push_notifications:
+                title, body = config.format_push_message(
+                    'cancelled',
+                    store_name=order.company_id.name,
+                    order_ref=order.name,
+                    customer_name=order.partner_id.name,
+                )
+                if title:
+                    try:
+                        request.env['mint.push.subscription'].sudo().send_to_partner(
+                            order.partner_id.id, title, body,
+                            url='/order/' + (order.name or ''),
+                        )
+                    except Exception as e:
+                        _logger.warning('Push notification failed: %s', e)
+
+        return _json({'success': True, 'order_id': order.id, 'state': 'cancelled'})

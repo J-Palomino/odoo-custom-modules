@@ -5,11 +5,17 @@ from odoo import api, fields, models
 _logger = logging.getLogger(__name__)
 
 ORDER_STATES = [
-    ('placed', 'Placed'),
-    ('confirmed', 'Confirmed'),
-    ('preparing', 'Preparing'),
-    ('ready', 'Ready for Pickup'),
-    ('picked_up', 'Picked Up'),
+    ('lobby', 'Lobby'),
+    ('online_orders', 'Online Orders'),
+    ('sales_floor', 'Sales Floor / Needs Code'),
+    ('processing', 'Processing'),
+    ('pickup', 'Pick-Up'),
+    ('deli_counter', 'Deli Counter'),
+    ('credit_checkout', 'Credit Checkout'),
+    ('delivery', 'Delivery'),
+    ('ready_delivery', 'Ready For Delivery'),
+    ('delivery_progress', 'Delivery In Progress'),
+    ('delivery_completed', 'Delivery Completed'),
     ('completed', 'Completed'),
     ('cancelled', 'Cancelled'),
 ]
@@ -67,7 +73,7 @@ class MintPosOrder(models.Model):
     state = fields.Selection(
         selection=ORDER_STATES,
         string='Status',
-        default='placed',
+        default='online_orders',
         required=True,
         tracking=True,
         index=True,

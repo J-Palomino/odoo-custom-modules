@@ -74,4 +74,10 @@
               action="action_pos_employee_credentials"
               sequence="10"/>
 
+    <menuitem id="menu_web_order_config"
+              name="Web Order Config"
+              parent="menu_pos_settings"
+              action="mint_pos_bridge.action_web_order_config"
+              sequence="20"/>
+
 </odoo>

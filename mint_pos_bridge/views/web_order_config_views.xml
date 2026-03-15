@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Web Order Config Form View -->
+    <record id="view_web_order_config_form" model="ir.ui.view">
+        <field name="name">mint.web.order.config.form</field>
+        <field name="model">mint.web.order.config</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group string="Store">
+                            <field name="company_id"/>
+                            <field name="active"/>
+                            <field name="sequence"/>
+                        </group>
+                        <group string="Dutchie POS Connection">
+                            <field name="dutchie_loc_id"/>
+                            <field name="dutchie_register_id"/>
+                            <field name="dutchie_room_id"/>
+                            <field name="order_source"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Order Settings">
+                            <field name="default_payment_method"/>
+                            <field name="require_photo_id"/>
+                        </group>
+                        <group string="Automation">
+                            <field name="auto_sync_to_pos"/>
+                            <field name="auto_push_notifications"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="State-Lane Mapping" name="state_lane">
+                            <field name="state_lane_map" widget="ace" options="{'mode': 'json'}"/>
+                            <div class="alert alert-info" role="alert">
+                                <p><strong>Map Odoo order states to Dutchie POS swimlane lane names.</strong></p>
+                                <p>Available states: lobby, online_orders, sales_floor, processing, pickup, deli_counter, credit_checkout, delivery, ready_delivery, delivery_progress, delivery_completed, completed, cancelled</p>
+                                <p>Lane names must match exactly what appears in Dutchie backoffice (case-sensitive).</p>
+                            </div>
+                        </page>
+                        <page string="Push Notification Templates" name="push_templates">
+                            <field name="push_templates" widget="ace" options="{'mode': 'json'}"/>
+                            <div class="alert alert-info" role="alert">
+                                <p><strong>Configure push notification messages sent to customers on state changes.</strong></p>
+                                <p>Available placeholders: <code>{store}</code>, <code>{order_ref}</code>, <code>{customer}</code></p>
+                                <p>Each state can have a <code>title</code> and <code>body</code> field. Leave a state empty to skip notification.</p>
+                            </div>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Web Order Config Tree View -->
+    <record id="view_web_order_config_tree" model="ir.ui.view">
+        <field name="name">mint.web.order.config.tree</field>
+        <field name="model">mint.web.order.config</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="company_id"/>
+                <field name="dutchie_loc_id"/>
+                <field name="order_source"/>
+                <field name="auto_sync_to_pos"/>
+                <field name="auto_push_notifications"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Web Order Config Action -->
+    <record id="action_web_order_config" model="ir.actions.act_window">
+        <field name="name">Web Order Config</field>
+        <field name="res_model">mint.web.order.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure web order settings per store
+            </p>
+            <p>Map order states to Dutchie POS swimlane lanes and configure push notification templates.</p>
+        </field>
+    </record>
+</odoo>
