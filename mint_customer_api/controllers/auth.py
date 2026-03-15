@@ -129,37 +129,33 @@ class MintCustomerAuth(http.Controller):
             return error_response('An account with this email already exists', 409)
 
         try:
-            # Create partner first, then user (Odoo 19 compatible)
+            # Create user (Odoo 19: create() returns empty, so search after)
             main_company = request.env['res.company'].sudo().browse(1)
-            portal_group = request.env.ref('base.group_portal')
-
-            # Step 1: Create res.partner
-            partner = request.env['res.partner'].sudo().create({
+            request.env['res.users'].sudo().with_context(
+                no_reset_password=True,
+                mail_create_nosubscribe=True,
+            ).create({
                 'name': name,
-                'email': email,
-                'phone': phone or False,
-                'customer_rank': 1,
-                'company_id': main_company.id,
-            })
-
-            # Step 2: Create res.users linked to partner via signup
-            partner.sudo().signup_prepare()
-            db = request.db
-            login, passwd = partner.signup_get_auth_param()[partner.id].get('login', email), password
-            # Use Odoo's signup method which handles all internals correctly
-            request.env.cr.commit()  # commit partner to make it visible
-            _db, _login, _password = request.env['res.users'].sudo().signup({
                 'login': email,
                 'password': password,
-                'name': name,
-                'token': partner.signup_token,
+                'company_id': main_company.id,
+                'company_ids': [(6, 0, [main_company.id])],
             })
-            request.env.cr.commit()
 
-            # Find the created user
-            user = request.env['res.users'].sudo().search([('login', '=', email)], limit=1)
+            # Search by login (create returns empty in Odoo 19)
+            user = request.env['res.users'].sudo().search(
+                [('login', '=', email)], limit=1,
+            )
             if not user:
                 return error_response('Failed to create account', 500)
+
+            # Assign portal group
+            portal_group = request.env.ref('base.group_portal')
+            user.write({'groups_id': [(4, portal_group.id)]})
+
+            # Set phone on partner
+            if phone:
+                user.partner_id.write({'phone': phone})
 
             token = user._generate_jwt()
 
