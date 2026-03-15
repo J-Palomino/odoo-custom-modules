@@ -129,36 +129,35 @@ class MintCustomerAuth(http.Controller):
             return error_response('An account with this email already exists', 409)
 
         try:
-            # Create portal user directly (Odoo 19 compatible)
-            # company_id required, no_reset_password skips signup email
+            # Create partner first, then user (Odoo 19 compatible)
             main_company = request.env['res.company'].sudo().browse(1)
-            Users = request.env['res.users'].sudo().with_context(
-                no_reset_password=True,
-                mail_create_nosubscribe=True,
-                mail_create_nolog=True,
-            )
-            user = Users.create({
+            portal_group = request.env.ref('base.group_portal')
+
+            # Step 1: Create res.partner
+            partner = request.env['res.partner'].sudo().create({
                 'name': name,
+                'email': email,
+                'phone': phone or False,
+                'customer_rank': 1,
+                'company_id': main_company.id,
+            })
+
+            # Step 2: Create res.users linked to partner
+            user = request.env['res.users'].sudo().with_context(
+                no_reset_password=True,
+            ).create({
+                'partner_id': partner.id,
                 'login': email,
                 'password': password,
                 'company_id': main_company.id,
-                'company_ids': [(4, main_company.id)],
+                'company_ids': [(6, 0, [main_company.id])],
+                'groups_id': [(6, 0, [portal_group.id])],
             })
-            if not user or not user.id:
+
+            if not user.exists():
                 return error_response('Failed to create account', 500)
 
-            user_id = user.id
-
-            # Assign portal group after creation
-            portal_group = request.env.ref('base.group_portal')
-            user.sudo().write({'groups_id': [(4, portal_group.id)]})
-
-            if phone:
-                user.partner_id.sudo().write({'phone': phone})
-
-            # Re-browse to get fresh recordset after group changes
-            user = request.env['res.users'].sudo().browse(user_id)
-            token = user._generate_jwt()
+            token = request.env['res.users'].sudo().browse(user.id)._generate_jwt()
 
             return json_response({
                 'token': token,
