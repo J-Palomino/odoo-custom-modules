@@ -151,11 +151,13 @@ class MintCustomerAuth(http.Controller):
                 'password': password,
                 'company_id': main_company.id,
                 'company_ids': [(6, 0, [main_company.id])],
-                'groups_id': [(6, 0, [portal_group.id])],
             })
 
             if not user.exists():
                 return error_response('Failed to create account', 500)
+
+            # Step 3: Assign portal group (can't do in create on Odoo 19)
+            user.sudo().write({'groups_id': [(4, portal_group.id)]})
 
             token = request.env['res.users'].sudo().browse(user.id)._generate_jwt()
 
