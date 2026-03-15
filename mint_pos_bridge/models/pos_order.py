@@ -158,11 +158,12 @@ class MintPosOrder(models.Model):
                 if not order[ts_field]:
                     super(MintPosOrder, order).write({ts_field: now})
 
-        # Push notification when order is ready
-        if new_state == 'ready':
+        # Push notifications for customer-facing state changes
+        notification_states = ('confirmed', 'ready', 'cancelled')
+        if new_state in notification_states:
             for order in self:
                 if order.partner_id:
-                    self._send_ready_notification(order)
+                    self._send_order_notification(order, new_state)
 
         # Real-time bus.bus notification for Odoo UI
         for order in self:
@@ -178,22 +179,41 @@ class MintPosOrder(models.Model):
 
         return res
 
-    def _send_ready_notification(self, order):
-        """Send push notification to customer when order is ready."""
+    def _send_order_notification(self, order, state):
+        """Send push notification to customer on state change."""
+        messages = {
+            'confirmed': {
+                'title': 'Order Received',
+                'body': f'{order.company_id.name} confirmed your order {order.name}',
+            },
+            'ready': {
+                'title': 'Your order is ready!',
+                'body': f'Order {order.name} is ready for pickup at {order.company_id.name}',
+            },
+            'cancelled': {
+                'title': 'Order Cancelled',
+                'body': f'Order {order.name} at {order.company_id.name} has been cancelled',
+            },
+        }
+        msg = messages.get(state)
+        if not msg:
+            return
+
         try:
-            region_slug = getattr(order.company_id, 'x_region_slug', '') or ''
-            store_slug = getattr(order.company_id, 'x_slug', '') or ''
-            url = f'/{region_slug}/{store_slug}' if region_slug and store_slug else '/'
+            order_url = f'/orders?ref={order.name}'
 
             self.env['mint.push.subscription'].sudo().send_to_partner(
                 partner_id=order.partner_id.id,
-                title='Your order is ready!',
-                body=f'Order {order.name} is ready at {order.company_id.name}',
-                url=url,
+                title=msg['title'],
+                body=msg['body'],
+                url=order_url,
+                actions=[
+                    {'action': 'track', 'title': 'Track Order', 'url': order_url},
+                ],
             )
             _logger.info(
-                'Push notification sent for order %s to partner %s',
-                order.name, order.partner_id.id,
+                'Push [%s] sent for order %s to partner %s',
+                state, order.name, order.partner_id.id,
             )
         except Exception:
             _logger.exception(
