@@ -129,29 +129,38 @@ class MintCustomerAuth(http.Controller):
             return error_response('An account with this email already exists', 409)
 
         try:
-            # Create user (Odoo 19: create() returns empty, so search after)
+            # Create user via raw SQL + ORM hybrid (Odoo 19 create hooks
+            # cause transaction rollbacks due to mail/signup side effects)
             main_company = request.env['res.company'].sudo().browse(1)
-            request.env['res.users'].sudo().with_context(
-                no_reset_password=True,
+
+            # Create partner first
+            partner = request.env['res.partner'].sudo().with_context(
                 mail_create_nosubscribe=True,
+                mail_create_nolog=True,
+                tracking_disable=True,
+                mail_notrack=True,
             ).create({
                 'name': name,
-                'login': email,
-                'password': password,
+                'email': email,
+                'phone': phone or False,
+                'customer_rank': 1,
                 'company_id': main_company.id,
-                'company_ids': [(6, 0, [main_company.id])],
             })
+            request.env.cr.flush()
 
-            # Search by login (create returns empty in Odoo 19)
-            user = request.env['res.users'].sudo().search(
-                [('login', '=', email)], limit=1,
-            )
-            if not user:
-                return error_response('Failed to create account', 500)
+            # Create user with ALL hooks disabled
+            request.env.cr.execute("""
+                INSERT INTO res_users (login, password, company_id, partner_id,
+                                       active, share, create_uid, write_uid,
+                                       create_date, write_date, notification_type)
+                VALUES (%s, '', %s, %s, true, true, 1, 1, NOW(), NOW(), 'email')
+                RETURNING id
+            """, (email, main_company.id, partner.id))
+            user_id = request.env.cr.fetchone()[0]
 
-            # Set phone on partner
-            if phone:
-                user.partner_id.write({'phone': phone})
+            # Set password via ORM (handles hashing)
+            user = request.env['res.users'].sudo().browse(user_id)
+            user.write({'password': password})
 
             token = user._generate_jwt()
 
