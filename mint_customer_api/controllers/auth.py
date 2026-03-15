@@ -81,6 +81,9 @@ class MintCustomerAuth(http.Controller):
             )
         except AccessDenied:
             return error_response('Invalid email or password', 401)
+        except Exception as e:
+            _logger.exception('Login error for %s: %s', email, e)
+            return error_response('Login failed: %s' % str(e), 500)
 
         if not uid:
             return error_response('Invalid email or password', 401)
@@ -158,9 +161,20 @@ class MintCustomerAuth(http.Controller):
             """, (email, main_company.id, partner.id))
             user_id = request.env.cr.fetchone()[0]
 
-            # Set password via ORM (handles hashing)
+            # Add company_ids m2m relation
+            request.env.cr.execute("""
+                INSERT INTO res_company_users_rel (cid, user_id)
+                VALUES (%s, %s)
+                ON CONFLICT DO NOTHING
+            """, (main_company.id, user_id))
+
+            # Invalidate ORM cache and set password (handles hashing)
+            request.env['res.users'].sudo().invalidate_model()
             user = request.env['res.users'].sudo().browse(user_id)
-            user.write({'password': password})
+            user.with_context(
+                no_reset_password=True,
+                tracking_disable=True,
+            ).write({'password': password})
 
             token = user._generate_jwt()
 
