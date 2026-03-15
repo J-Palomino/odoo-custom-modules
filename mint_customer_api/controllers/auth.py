@@ -129,23 +129,16 @@ class MintCustomerAuth(http.Controller):
             return error_response('An account with this email already exists', 409)
 
         try:
-            # Use auth_signup to create portal user
-            values = {
+            # Create portal user directly (Odoo 19 compatible)
+            portal_group = request.env.ref('base.group_portal')
+            user = request.env['res.users'].sudo().create({
                 'name': name,
                 'login': email,
                 'password': password,
-            }
-            if phone:
-                values['phone'] = phone
-
-            # Create user via signup mechanism
-            user = request.env['res.users'].sudo()._signup_create_user(values)
+                'groups_id': [(6, 0, [portal_group.id])],
+            })
             if not user:
                 return error_response('Failed to create account', 500)
-
-            # Assign portal group
-            portal_group = request.env.ref('base.group_portal')
-            user.sudo().write({'groups_id': [(4, portal_group.id)]})
 
             if phone:
                 user.partner_id.sudo().write({'phone': phone})
