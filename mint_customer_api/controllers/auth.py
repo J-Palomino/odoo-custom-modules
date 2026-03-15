@@ -76,9 +76,7 @@ class MintCustomerAuth(http.Controller):
             return error_response('Email and password are required')
 
         try:
-            uid = request.session.authenticate(
-                request.env.cr.dbname, email, password
-            )
+            uid = request.session.authenticate(email, password)
         except AccessDenied:
             return error_response('Invalid email or password', 401)
         except Exception as e:

@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=80
+ARG CACHEBUST=81
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 RUN echo "Build cache key: $CACHEBUST"
 
