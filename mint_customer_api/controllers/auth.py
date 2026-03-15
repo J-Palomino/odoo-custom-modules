@@ -149,10 +149,6 @@ class MintCustomerAuth(http.Controller):
             if not user:
                 return error_response('Failed to create account', 500)
 
-            # Assign portal group
-            portal_group = request.env.ref('base.group_portal')
-            user.write({'groups_id': [(4, portal_group.id)]})
-
             # Set phone on partner
             if phone:
                 user.partner_id.write({'phone': phone})
