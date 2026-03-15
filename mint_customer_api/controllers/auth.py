@@ -142,24 +142,26 @@ class MintCustomerAuth(http.Controller):
                 'company_id': main_company.id,
             })
 
-            # Step 2: Create res.users linked to partner
-            user = request.env['res.users'].sudo().with_context(
-                no_reset_password=True,
-            ).create({
-                'partner_id': partner.id,
+            # Step 2: Create res.users linked to partner via signup
+            partner.sudo().signup_prepare()
+            db = request.db
+            login, passwd = partner.signup_get_auth_param()[partner.id].get('login', email), password
+            # Use Odoo's signup method which handles all internals correctly
+            request.env.cr.commit()  # commit partner to make it visible
+            _db, _login, _password = request.env['res.users'].sudo().signup({
                 'login': email,
                 'password': password,
-                'company_id': main_company.id,
-                'company_ids': [(6, 0, [main_company.id])],
+                'name': name,
+                'token': partner.signup_token,
             })
+            request.env.cr.commit()
 
-            if not user.exists():
+            # Find the created user
+            user = request.env['res.users'].sudo().search([('login', '=', email)], limit=1)
+            if not user:
                 return error_response('Failed to create account', 500)
 
-            # Step 3: Assign portal group (can't do in create on Odoo 19)
-            user.sudo().write({'groups_id': [(4, portal_group.id)]})
-
-            token = request.env['res.users'].sudo().browse(user.id)._generate_jwt()
+            token = user._generate_jwt()
 
             return json_response({
                 'token': token,
