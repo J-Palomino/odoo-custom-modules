@@ -144,8 +144,10 @@ class MintCustomerAuth(http.Controller):
                 'company_id': main_company.id,
                 'company_ids': [(4, main_company.id)],
             })
-            if not user:
+            if not user or not user.id:
                 return error_response('Failed to create account', 500)
+
+            user_id = user.id
 
             # Assign portal group after creation
             portal_group = request.env.ref('base.group_portal')
@@ -154,6 +156,8 @@ class MintCustomerAuth(http.Controller):
             if phone:
                 user.partner_id.sudo().write({'phone': phone})
 
+            # Re-browse to get fresh recordset after group changes
+            user = request.env['res.users'].sudo().browse(user_id)
             token = user._generate_jwt()
 
             return json_response({
