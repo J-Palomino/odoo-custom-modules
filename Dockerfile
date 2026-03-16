@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=89
+ARG CACHEBUST=90
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 RUN echo "Build cache key: $CACHEBUST"
 
@@ -111,6 +111,7 @@ RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MOD
 RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_dutchie_sync/__manifest__.py && echo "MINT_DUTCHIE_SYNC VERIFIED" || (echo "MINT_DUTCHIE_SYNC MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_pos_bridge/__manifest__.py && echo "MINT_POS_BRIDGE VERIFIED" || (echo "MINT_POS_BRIDGE MISSING" && exit 1)
+RUN python3 -c "compile(open('/opt/extra-addons/mint_pos_bridge/models/pos_order.py').read(), 'pos_order.py', 'exec')" && echo "POS_ORDER SYNTAX OK" || (echo "POS_ORDER SYNTAX ERROR" && head -60 /opt/extra-addons/mint_pos_bridge/models/pos_order.py && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
