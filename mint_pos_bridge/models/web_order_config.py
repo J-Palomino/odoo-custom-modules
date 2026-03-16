@@ -44,7 +44,7 @@ class WebOrderConfig(models.Model):
     # Push notification templates (stored as JSON)
     push_templates = fields.Text(
         string='Push Notification Templates (JSON)',
-        default='{"online_orders":{"title":"Order Received","body":"Your order at {store} has been placed. We\\'ll start preparing it shortly."},"processing":{"title":"Being Prepared","body":"Your order at {store} is being prepared now."},"pickup":{"title":"Ready for Pickup!","body":"Your order at {store} is ready! Head to the pickup counter."},"cancelled":{"title":"Order Cancelled","body":"Your order at {store} has been cancelled. Contact us if you have questions."}}',
+        default='{"online_orders":{"title":"Order Received","body":"Your order at {store} has been placed. We will start preparing it shortly."},"processing":{"title":"Being Prepared","body":"Your order at {store} is being prepared now."},"pickup":{"title":"Ready for Pickup!","body":"Your order at {store} is ready! Head to the pickup counter."},"cancelled":{"title":"Order Cancelled","body":"Your order at {store} has been cancelled. Contact us if you have questions."}}',
         help='JSON templates for push notifications per state. Use {store}, {order_ref}, {customer} placeholders.',
     )
 
