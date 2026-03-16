@@ -155,8 +155,11 @@ class MintPosOrder(models.Model):
         ts_map = {
             'confirmed': 'confirmed_at',
             'ready': 'ready_at',
+            'pickup': 'ready_at',
+            'deli_counter': 'ready_at',
             'completed': 'completed_at',
             'picked_up': 'completed_at',
+            'delivery_completed': 'completed_at',
         }
         ts_field = ts_map.get(new_state)
         if ts_field:
@@ -165,8 +168,7 @@ class MintPosOrder(models.Model):
                     super(MintPosOrder, order).write({ts_field: now})
 
         # Push notifications for customer-facing state changes
-        notification_states = ('confirmed', 'ready', 'cancelled')
-        if new_state in notification_states:
+        if new_state in self._get_notification_messages():
             for order in self:
                 if order.partner_id:
                     self._send_order_notification(order, new_state)
@@ -185,33 +187,82 @@ class MintPosOrder(models.Model):
 
         return res
 
-    def _send_order_notification(self, order, state):
-        """Send push notification to customer on state change."""
-        messages = {
-            'confirmed': {
+    @api.model
+    def _get_notification_messages(self):
+        """Map of states → push notification content.
+
+        Only states listed here trigger a customer push notification.
+        Timing principle: notify when the customer should DO something
+        or when something they care about changes.
+        """
+        return {
+            # ── Order lifecycle (pickup) ────────────────────────
+            'online_orders': {
                 'title': 'Order Received',
-                'body': f'{order.company_id.name} confirmed your order {order.name}',
+                'body': '{store} received your order {ref}',
+            },
+            'confirmed': {
+                'title': 'Order Confirmed',
+                'body': '{store} confirmed your order {ref}',
+            },
+            'lobby': {
+                'title': 'You\'re checked in',
+                'body': 'You\'re in the queue at {store} — we\'ll call you up shortly',
+            },
+            'sales_floor': {
+                'title': 'Order Being Prepared',
+                'body': 'A budtender is preparing your order {ref}',
+            },
+            'pickup': {
+                'title': 'Ready for Pickup!',
+                'body': 'Order {ref} is ready at the counter — head to {store}',
+            },
+            'deli_counter': {
+                'title': 'Ready at Counter',
+                'body': 'Order {ref} is waiting for you at {store}',
             },
             'ready': {
-                'title': 'Your order is ready!',
-                'body': f'Order {order.name} is ready for pickup at {order.company_id.name}',
+                'title': 'Ready for Pickup!',
+                'body': 'Order {ref} is ready at {store}',
             },
+            # ── Delivery ────────────────────────────────────────
+            'delivery': {
+                'title': 'Out for Delivery',
+                'body': 'Order {ref} from {store} is on its way',
+            },
+            'delivery_progress': {
+                'title': 'Driver En Route',
+                'body': 'Your delivery from {store} is almost there',
+            },
+            'delivery_completed': {
+                'title': 'Delivered',
+                'body': 'Order {ref} from {store} has been delivered',
+            },
+            # ── Terminal ────────────────────────────────────────
             'cancelled': {
                 'title': 'Order Cancelled',
-                'body': f'Order {order.name} at {order.company_id.name} has been cancelled',
+                'body': 'Order {ref} at {store} has been cancelled',
             },
         }
+
+    def _send_order_notification(self, order, state):
+        """Send push notification to customer on state change."""
+        messages = self._get_notification_messages()
         msg = messages.get(state)
         if not msg:
             return
 
         try:
-            order_url = f'/orders?ref={order.name}'
+            store_name = order.company_id.name or ''
+            ref = order.name or ''
+            title = msg['title']
+            body = msg['body'].format(store=store_name, ref=ref)
+            order_url = f'/orders?ref={ref}'
 
             self.env['mint.push.subscription'].sudo().send_to_partner(
                 partner_id=order.partner_id.id,
-                title=msg['title'],
-                body=msg['body'],
+                title=title,
+                body=body,
                 url=order_url,
                 actions=[
                     {'action': 'track', 'title': 'Track Order', 'url': order_url},
