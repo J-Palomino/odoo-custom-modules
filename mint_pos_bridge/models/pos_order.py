@@ -206,8 +206,8 @@ class MintPosOrder(models.Model):
                 'body': '{store} confirmed your order {ref}',
             },
             'lobby': {
-                'title': 'You\'re checked in',
-                'body': 'You\'re in the queue at {store} — we\'ll call you up shortly',
+                'title': 'Checked In',
+                'body': 'You are in the queue at {store}. We will call you up shortly.',
             },
             'sales_floor': {
                 'title': 'Order Being Prepared',
@@ -215,7 +215,7 @@ class MintPosOrder(models.Model):
             },
             'pickup': {
                 'title': 'Ready for Pickup!',
-                'body': 'Order {ref} is ready at the counter — head to {store}',
+                'body': 'Order {ref} is ready at the counter. Head to {store}!',
             },
             'deli_counter': {
                 'title': 'Ready at Counter',
