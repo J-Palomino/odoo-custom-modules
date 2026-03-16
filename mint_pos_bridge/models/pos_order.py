@@ -123,6 +123,21 @@ class MintPosOrder(models.Model):
     loyalty_points_earned = fields.Integer(string='Points Earned')
     loyalty_points_redeemed = fields.Integer(string='Points Redeemed')
 
+    is_prepaid = fields.Boolean(
+        string='Prepaid',
+        default=False,
+        tracking=True,
+    )
+    dutchie_order_number = fields.Char(
+        string='Dutchie Order #',
+        index=True,
+        copy=False,
+    )
+    payment_confirmed_at = fields.Datetime(string='Payment Confirmed At')
+    dutchie_subtotal = fields.Float(string='Dutchie Subtotal', digits=(12, 2))
+    dutchie_tax = fields.Float(string='Dutchie Tax', digits=(12, 2))
+    dutchie_total = fields.Float(string='Dutchie Total', digits=(12, 2))
+
     # Computed: time since placed (for kanban color)
     wait_minutes = fields.Integer(
         string='Wait (min)',

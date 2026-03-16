@@ -23,6 +23,7 @@
                 <field name="placed_at"/>
                 <field name="order_type"/>
                 <field name="payment_method"/>
+                <field name="is_prepaid"/>
                 <progressbar field="state"
                     colors='{"placed": "info", "confirmed": "warning", "preparing": "warning", "ready": "success", "picked_up": "success", "completed": "muted", "cancelled": "danger"}'/>
                 <templates>
@@ -38,6 +39,7 @@
                                 </span>
                             </div>
                             <div class="text-muted small mt-1">
+                                <span t-if="record.is_prepaid.raw_value" class="badge text-bg-success fw-bold me-1">PREPAID</span>
                                 <field name="partner_id"/> |
                                 <field name="line_count"/> items
                             </div>
@@ -136,6 +138,9 @@
                            statusbar_visible="placed,confirmed,preparing,ready,completed"/>
                 </header>
                 <sheet>
+                    <div class="alert alert-success text-center fw-bold" role="alert" invisible="not is_prepaid">
+                        PREPAID - Customer already paid online. Do NOT collect payment.
+                    </div>
                     <div class="oe_title">
                         <h1><field name="name" readonly="1"/></h1>
                     </div>
@@ -171,6 +176,12 @@
                         <group string="Loyalty">
                             <field name="loyalty_points_earned"/>
                             <field name="loyalty_points_redeemed"/>
+                        </group>
+                        <group string="Payment Confirmation">
+                            <field name="is_prepaid"/>
+                            <field name="dutchie_order_number"/>
+                            <field name="payment_confirmed_at"/>
+                            <field name="dutchie_total"/>
                         </group>
                     </group>
                     <notebook>
@@ -232,6 +243,8 @@
                         domain="[('state', '=', 'completed')]"/>
                 <filter name="filter_cancelled" string="Cancelled"
                         domain="[('state', '=', 'cancelled')]"/>
+                <filter name="filter_prepaid" string="Prepaid"
+                        domain="[('is_prepaid', '=', True)]"/>
 
                 <separator/>
 

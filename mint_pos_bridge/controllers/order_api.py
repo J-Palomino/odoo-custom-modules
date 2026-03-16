@@ -170,6 +170,14 @@ class MintPosOrderAPI(http.Controller):
 
         if data.get('placed_at'):
             order_vals['placed_at'] = data['placed_at']
+        if data.get('is_prepaid'):
+            order_vals['is_prepaid'] = True
+        if data.get('dutchie_subtotal') is not None:
+            order_vals['dutchie_subtotal'] = data['dutchie_subtotal']
+        if data.get('dutchie_tax') is not None:
+            order_vals['dutchie_tax'] = data['dutchie_tax']
+        if data.get('dutchie_total') is not None:
+            order_vals['dutchie_total'] = data['dutchie_total']
 
         # Create order
         Order = request.env['mint.pos.order'].sudo().with_company(company)
@@ -312,6 +320,18 @@ class MintPosOrderAPI(http.Controller):
             vals['budtender_id'] = data['budtender_id']
         if data.get('dutchie_receipt_no'):
             vals['dutchie_receipt_no'] = data['dutchie_receipt_no']
+        if data.get('is_prepaid') is not None:
+            vals['is_prepaid'] = bool(data['is_prepaid'])
+        if data.get('payment_confirmed_at'):
+            vals['payment_confirmed_at'] = data['payment_confirmed_at']
+        if data.get('dutchie_order_number'):
+            vals['dutchie_order_number'] = data['dutchie_order_number']
+        if data.get('dutchie_subtotal') is not None:
+            vals['dutchie_subtotal'] = data['dutchie_subtotal']
+        if data.get('dutchie_tax') is not None:
+            vals['dutchie_tax'] = data['dutchie_tax']
+        if data.get('dutchie_total') is not None:
+            vals['dutchie_total'] = data['dutchie_total']
 
         order.write(vals)
 
@@ -393,6 +413,8 @@ class MintPosOrderAPI(http.Controller):
                         update_vals['state'] = new_state
                     if receipt_no and not existing.dutchie_receipt_no:
                         update_vals['dutchie_receipt_no'] = receipt_no
+                    if order_data.get('dutchie_order_number') and not existing.dutchie_order_number:
+                        update_vals['dutchie_order_number'] = order_data['dutchie_order_number']
                     if update_vals:
                         existing.write(update_vals)
                         updated += 1
@@ -505,6 +527,10 @@ class MintPosOrderAPI(http.Controller):
             'confirmed_at': order.confirmed_at,
             'ready_at': order.ready_at,
             'completed_at': order.completed_at,
+            'is_prepaid': order.is_prepaid,
+            'dutchie_order_number': order.dutchie_order_number or '',
+            'payment_confirmed_at': order.payment_confirmed_at,
+            'dutchie_total': order.dutchie_total,
             'budtender': order.budtender_id.name if order.budtender_id else None,
             'notes': order.notes or '',
             'items': [{
