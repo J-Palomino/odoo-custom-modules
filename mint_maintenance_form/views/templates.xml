@@ -87,8 +87,8 @@
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <label for="company_id" class="form-label fw-bold">Store / Location</label>
-                                            <select class="form-select" id="company_id" name="company_id">
-                                                <option value="">-- Select Store --</option>
+                                            <select class="form-select" id="company_id" name="company_id" disabled="disabled">
+                                                <option value="">-- Select a state first --</option>
                                                 <t t-foreach="companies" t-as="c">
                                                     <option t-att-value="c['id']"
                                                             t-att-data-state="c['state']"
@@ -176,35 +176,13 @@
                                         );
                                         var savedSubtype = document.getElementById('saved_subtype').value || '';
 
-                                        /* --- Equipment sub-type conditional --- */
+                                        var stateSelect = document.getElementById('state');
+                                        var storeSelect = document.getElementById('company_id');
                                         var equipSelect = document.getElementById('equipment_type');
                                         var subtypeWrapper = document.getElementById('subtype_wrapper');
                                         var subtypeSelect = document.getElementById('subtype');
 
-                                        function updateSubtype() {
-                                            var opts = subtypeData[equipSelect.value];
-                                            subtypeSelect.innerHTML = '<option value="">-- Select --</option>';
-                                            if (opts) {
-                                                opts.forEach(function (o) {
-                                                    var el = document.createElement('option');
-                                                    el.value = o[0];
-                                                    el.textContent = o[1];
-                                                    if (o[0] === savedSubtype) el.selected = true;
-                                                    subtypeSelect.appendChild(el);
-                                                });
-                                                subtypeWrapper.style.display = '';
-                                            } else {
-                                                subtypeWrapper.style.display = 'none';
-                                            }
-                                            savedSubtype = '';
-                                        }
-
-                                        equipSelect.addEventListener('change', updateSubtype);
-                                        updateSubtype();
-
-                                        /* --- State -> Store filter --- */
-                                        var stateSelect = document.getElementById('state');
-                                        var storeSelect = document.getElementById('company_id');
+                                        /* --- Snapshot all stores before JS filters them --- */
                                         var allStores = [];
                                         Array.from(storeSelect.options).forEach(function (opt) {
                                             if (opt.value) {
@@ -217,32 +195,89 @@
                                             }
                                         });
 
+                                        /* --- State → Store cascading filter --- */
                                         function filterStores(reset) {
-                                            var sel = stateSelect.value;
-                                            var cur = storeSelect.value;
-                                            while (storeSelect.options.length > 0) storeSelect.remove(0);
+                                            var state = stateSelect.value;
+                                            var prev = storeSelect.value;
+
+                                            storeSelect.innerHTML = '';
                                             var ph = document.createElement('option');
                                             ph.value = '';
-                                            ph.textContent = sel ? '-- Select Store --' : '-- Select a state first --';
-                                            storeSelect.appendChild(ph);
-                                            if (sel) {
-                                                allStores.forEach(function (s) {
-                                                    if (s.state === sel) {
-                                                        var el = document.createElement('option');
-                                                        el.value = s.value;
-                                                        el.textContent = s.text;
-                                                        if (!reset &amp;&amp; s.value === cur) el.selected = true;
-                                                        storeSelect.appendChild(el);
-                                                    }
-                                                });
+
+                                            if (!state) {
+                                                ph.textContent = '-- Select a state first --';
+                                                storeSelect.appendChild(ph);
+                                                storeSelect.disabled = true;
+                                                storeSelect.value = '';
+                                                return;
                                             }
-                                            if (reset) storeSelect.value = '';
+
+                                            ph.textContent = '-- Select Store --';
+                                            storeSelect.appendChild(ph);
+                                            storeSelect.disabled = false;
+
+                                            var matches = [];
+                                            allStores.forEach(function (s) {
+                                                if (s.state === state) {
+                                                    var el = document.createElement('option');
+                                                    el.value = s.value;
+                                                    el.textContent = s.text;
+                                                    if (!reset &amp;&amp; s.value === prev) el.selected = true;
+                                                    storeSelect.appendChild(el);
+                                                    matches.push(s);
+                                                }
+                                            });
+
+                                            /* Auto-select when only one store in the state */
+                                            if (matches.length === 1) {
+                                                storeSelect.value = matches[0].value;
+                                            } else if (reset) {
+                                                storeSelect.value = '';
+                                            }
                                         }
 
                                         stateSelect.addEventListener('change', function () {
                                             filterStores(true);
                                         });
                                         filterStores(false);
+
+                                        /* --- Equipment Type → Subtype cascading filter --- */
+                                        function updateSubtype(reset) {
+                                            var opts = subtypeData[equipSelect.value];
+                                            subtypeSelect.innerHTML = '';
+                                            var ph = document.createElement('option');
+                                            ph.value = '';
+                                            ph.textContent = '-- Select --';
+                                            subtypeSelect.appendChild(ph);
+
+                                            if (opts) {
+                                                opts.forEach(function (o) {
+                                                    var el = document.createElement('option');
+                                                    el.value = o[0];
+                                                    el.textContent = o[1];
+                                                    if (!reset &amp;&amp; o[0] === savedSubtype) el.selected = true;
+                                                    subtypeSelect.appendChild(el);
+                                                });
+                                                subtypeWrapper.style.display = '';
+                                                subtypeSelect.disabled = false;
+
+                                                /* Auto-select when only one subtype option */
+                                                if (opts.length === 1) {
+                                                    subtypeSelect.value = opts[0][0];
+                                                }
+                                            } else {
+                                                subtypeWrapper.style.display = 'none';
+                                                subtypeSelect.disabled = true;
+                                                subtypeSelect.value = '';
+                                            }
+
+                                            if (reset) savedSubtype = '';
+                                        }
+
+                                        equipSelect.addEventListener('change', function () {
+                                            updateSubtype(true);
+                                        });
+                                        updateSubtype(false);
                                     })();
                                 </script>
                             </t>
@@ -291,9 +326,12 @@
                                 </thead>
                                 <tbody>
                                     <t t-foreach="requests" t-as="r">
-                                        <tr>
+                                        <tr style="cursor:pointer"
+                                            t-attf-onclick="window.location='/tickets/#{r['id']}'">
                                             <td>
-                                                <strong><t t-esc="r['name']"/></strong>
+                                                <a t-attf-href="/tickets/#{r['id']}" class="text-decoration-none">
+                                                    <strong><t t-esc="r['name']"/></strong>
+                                                </a>
                                             </td>
                                             <td><t t-esc="r['company']"/></td>
                                             <td><t t-esc="r['equipment']"/></td>
@@ -318,6 +356,141 @@
                             </table>
                         </div>
                     </t>
+                </div>
+            </div>
+        </t>
+    </template>
+    <template id="request_detail" name="Maintenance Request Detail">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <!-- Breadcrumb -->
+                    <nav aria-label="breadcrumb" class="mb-4">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="/tickets">My Requests</a></li>
+                            <li class="breadcrumb-item active" t-esc="req.name"/>
+                        </ol>
+                    </nav>
+
+                    <!-- Header -->
+                    <div class="d-flex justify-content-between align-items-start mb-4">
+                        <div>
+                            <h1 class="mb-1" t-esc="req.name"/>
+                            <div class="text-muted">
+                                Submitted <t t-esc="req.request_date"/>
+                                <t t-if="req.company_id">
+                                    · <t t-esc="req.company_id.name"/>
+                                </t>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-info fs-6"
+                                  t-esc="req.stage_id.name or 'New'"/>
+                            <br/>
+                            <span class="badge mt-1"
+                                  t-att-class="'bg-danger' if req.priority == '3' else ('bg-warning text-dark' if req.priority == '2' else 'bg-secondary')">
+                                <t t-esc="priority_labels.get(req.priority, 'Normal')"/>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Details card -->
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6" t-if="req.equipment_id">
+                                    <strong>Equipment:</strong>
+                                    <t t-esc="req.equipment_id.name"/>
+                                </div>
+                                <div class="col-md-6" t-if="req.maintenance_team_id">
+                                    <strong>Team:</strong>
+                                    <t t-esc="req.maintenance_team_id.name"/>
+                                </div>
+                            </div>
+                            <t t-if="req.description">
+                                <hr/>
+                                <div t-out="req.description"/>
+                            </t>
+                        </div>
+                    </div>
+
+                    <!-- Attachments -->
+                    <t t-if="attachments">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <strong>Attachments</strong>
+                            </div>
+                            <div class="card-body">
+                                <t t-foreach="attachments" t-as="att">
+                                    <a t-attf-href="/web/content/#{att.id}?download=true"
+                                       class="btn btn-sm btn-outline-secondary me-2 mb-2">
+                                        <t t-esc="att.name"/>
+                                    </a>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Message thread -->
+                    <h3 class="mb-3">Messages</h3>
+
+                    <t t-if="not messages">
+                        <div class="alert alert-light">
+                            No messages yet. Use the form below to add details or ask a question.
+                        </div>
+                    </t>
+
+                    <t t-foreach="messages" t-as="msg">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <strong t-esc="msg.author_id.name or 'System'"/>
+                                    <small class="text-muted"
+                                           t-esc="msg.date"
+                                           t-options="{'widget': 'datetime', 'format': 'MM/dd/yyyy hh:mm a'}"/>
+                                </div>
+                                <div class="mt-2" t-out="msg.body"/>
+                                <t t-if="msg.attachment_ids">
+                                    <div class="mt-2">
+                                        <t t-foreach="msg.attachment_ids" t-as="att">
+                                            <a t-attf-href="/web/content/#{att.id}?download=true"
+                                               class="btn btn-sm btn-outline-secondary me-1">
+                                                <t t-esc="att.name"/>
+                                            </a>
+                                        </t>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Reply form -->
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <strong>Reply</strong>
+                        </div>
+                        <div class="card-body">
+                            <form t-attf-action="/tickets/#{req.id}/reply"
+                                  method="post" enctype="multipart/form-data">
+                                <input type="hidden" name="csrf_token"
+                                       t-att-value="request.csrf_token()"/>
+                                <div class="mb-3">
+                                    <textarea class="form-control" name="message"
+                                              rows="4" required="required"
+                                              placeholder="Type your reply..."/>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Attach files (optional)</label>
+                                    <input type="file" class="form-control"
+                                           name="attachments" multiple="multiple"
+                                           accept="image/*,.pdf"/>
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    Send Reply
+                                </button>
+                            </form>
+                        </div>
+                    </div>
                 </div>
             </div>
         </t>

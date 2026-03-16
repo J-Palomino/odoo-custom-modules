@@ -97,6 +97,16 @@ PRIORITY_OPTIONS = [
 
 class MaintenanceFormController(http.Controller):
 
+    def _check_request_access(self, maint_req, user):
+        """Return True if user owns this request."""
+        if not maint_req.exists():
+            return False
+        if maint_req.owner_user_id and maint_req.owner_user_id.id == user.id:
+            return True
+        if user.email and user.email.lower() in (maint_req.email_cc or "").lower():
+            return True
+        return False
+
     def _form_context(self, **extra):
         companies = (
             request.env["res.company"]
@@ -339,3 +349,111 @@ class MaintenanceFormController(http.Controller):
             "mint_maintenance_form.request_list",
             {"requests": items, "user": user},
         )
+
+    @http.route(
+        "/tickets/<int:request_id>",
+        type="http",
+        auth="user",
+        website=True,
+        methods=["GET"],
+    )
+    def maintenance_request_detail(self, request_id, **kw):
+        user = request.env.user
+        maint_req = (
+            request.env["maintenance.request"].sudo().browse(request_id)
+        )
+        if not self._check_request_access(maint_req, user):
+            return request.redirect("/tickets")
+
+        priority_labels = dict(PRIORITY_OPTIONS)
+
+        # Get visible messages (exclude internal notes)
+        messages = (
+            request.env["mail.message"]
+            .sudo()
+            .search(
+                [
+                    ("model", "=", "maintenance.request"),
+                    ("res_id", "=", request_id),
+                    ("message_type", "in", ["comment", "email"]),
+                    ("subtype_id.internal", "=", False),
+                ],
+                order="date asc",
+            )
+        )
+
+        # Get attachments on the request itself (not on messages)
+        attachments = (
+            request.env["ir.attachment"]
+            .sudo()
+            .search(
+                [
+                    ("res_model", "=", "maintenance.request"),
+                    ("res_id", "=", request_id),
+                    ("res_field", "=", False),
+                ],
+            )
+        )
+
+        return request.render(
+            "mint_maintenance_form.request_detail",
+            {
+                "req": maint_req,
+                "messages": messages,
+                "attachments": attachments,
+                "priority_labels": priority_labels,
+            },
+        )
+
+    @http.route(
+        "/tickets/<int:request_id>/reply",
+        type="http",
+        auth="user",
+        website=True,
+        methods=["POST"],
+    )
+    def maintenance_request_reply(self, request_id, **post):
+        user = request.env.user
+        maint_req = (
+            request.env["maintenance.request"].sudo().browse(request_id)
+        )
+        if not self._check_request_access(maint_req, user):
+            return request.redirect("/tickets")
+
+        body = post.get("message", "").strip()
+        if not body:
+            return request.redirect(f"/tickets/{request_id}")
+
+        # Create attachments first
+        Attachment = request.env["ir.attachment"].sudo()
+        attachment_ids = []
+        uploaded_files = request.httprequest.files.getlist("attachments")
+        for f in uploaded_files:
+            if not f or not f.filename:
+                continue
+            if f.mimetype not in ALLOWED_MIMETYPES:
+                continue
+            data = f.read()
+            if len(data) > MAX_UPLOAD_BYTES:
+                continue
+            att = Attachment.create(
+                {
+                    "name": f.filename,
+                    "datas": base64.b64encode(data),
+                    "res_model": "maintenance.request",
+                    "res_id": request_id,
+                    "mimetype": f.mimetype,
+                }
+            )
+            attachment_ids.append(att.id)
+
+        # Post message as the user
+        maint_req.sudo().message_post(
+            body=body,
+            message_type="comment",
+            subtype_xmlid="mail.mt_comment",
+            author_id=user.partner_id.id,
+            attachment_ids=[(4, aid) for aid in attachment_ids],
+        )
+
+        return request.redirect(f"/tickets/{request_id}")
