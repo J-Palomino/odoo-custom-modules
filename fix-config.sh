@@ -348,6 +348,17 @@ if [ -f "$CONFIG_FILE" ]; then
     echo "gevent_port = 8072 set in config"
 fi
 
+# Apply ODOO_WORKERS env var override (default: 6)
+WORKERS="${ODOO_WORKERS:-6}"
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "workers" "$CONFIG_FILE"; then
+        sed -i "s/workers\s*=\s*[0-9]*/workers = $WORKERS/g" "$CONFIG_FILE"
+    else
+        echo "workers = $WORKERS" >> "$CONFIG_FILE"
+    fi
+    echo "workers = $WORKERS set in config"
+fi
+
 # Build extra args from environment variables
 EXTRA_ARGS=""
 if [ -n "$ODOO_UPDATE_MODULES" ] && [ "$ODOO_UPDATE_MODULES" != "none" ]; then
