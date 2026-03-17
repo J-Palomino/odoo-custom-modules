@@ -340,7 +340,34 @@ class MintPosOrderAPI(http.Controller):
 
         order.write(vals)
 
-        _logger.info('POS order %s state → %s', order.name, new_state)
+        _logger.info('POS order %s state -> %s', order.name, new_state)
+
+        # Send push notification directly from controller (belt + suspenders)
+        if order.partner_id:
+            try:
+                msgs = order._get_notification_messages()
+                msg = msgs.get(new_state)
+                if msg:
+                    store_name = order.company_id.name or ''
+                    ref = order.name or ''
+                    title = msg['title']
+                    body = msg['body'].format(store=store_name, ref=ref)
+                    order_url = '/orders?ref=%s' % ref
+
+                    sent = request.env['mint.push.subscription'].sudo().send_to_partner(
+                        partner_id=order.partner_id.id,
+                        title=title,
+                        body=body,
+                        url=order_url,
+                    )
+                    _logger.info(
+                        'Push [%s] sent for order %s to partner %s (%d delivered)',
+                        new_state, order.name, order.partner_id.id, sent,
+                    )
+            except Exception:
+                _logger.exception(
+                    'Failed to send push for order %s', order.name,
+                )
 
         return _json({
             'success': True,
