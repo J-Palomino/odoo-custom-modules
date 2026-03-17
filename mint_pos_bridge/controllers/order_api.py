@@ -149,6 +149,11 @@ class MintPosOrderAPI(http.Controller):
         raw_type = data.get('order_type', 'pickup')
         order_type = ORDER_TYPE_MAP.get(raw_type, 'pickup')
 
+        # Map payment method (frontend sends 'in-store', model expects 'cash')
+        raw_pm = data.get('payment_method', 'online')
+        pm_map = {'in-store': 'cash', 'pay-at-store': 'cash'}
+        payment_method = pm_map.get(raw_pm, raw_pm) if raw_pm else 'online'
+
         # Build order values
         totals = data.get('totals', {})
         order_vals = {
@@ -158,7 +163,7 @@ class MintPosOrderAPI(http.Controller):
             'dutchie_receipt_no': data.get('dutchie_receipt_no', ''),
             'state': data.get('state', 'placed'),
             'order_type': order_type,
-            'payment_method': data.get('payment_method', 'online'),
+            'payment_method': payment_method,
             'subtotal': totals.get('subtotal', 0),
             'discount_total': totals.get('discounts', 0),
             'tax_total': totals.get('taxes', 0),
