@@ -148,6 +148,54 @@ echo "=== Persistent volume addons contents ==="
 ls -la /var/lib/odoo/addons/ 2>/dev/null || echo "No addons dir"
 ls -la /var/lib/odoo/addons/19.0/ 2>/dev/null || echo "No 19.0 dir"
 
+# Clean stale model references from uninstalled modules (sign_oca, etc.)
+echo "=== Cleaning stale model references ==="
+if [ -n "$HOST" ]; then
+    python3 << 'PYCLEAN' 2>&1
+import os, sys
+try:
+    import psycopg2
+except ImportError:
+    print("psycopg2 not available, skipping stale model cleanup")
+    sys.exit(0)
+
+host = os.environ.get("HOST", "localhost")
+port = os.environ.get("PORT", "5432")
+user = os.environ.get("USER", "odoo")
+password = os.environ.get("PASSWORD", os.environ.get("ODOO_DB_PASSWORD", ""))
+dbname = os.environ.get("ODOO_DB_NAME", "odoo")
+
+try:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    # Remove stale ir.model entries for uninstalled modules
+    for model in ('sign.oca.field', 'sign.oca.role', 'sign.oca.request',
+                  'sign.oca.item', 'sign.oca.template', 'sign.oca.type'):
+        cur.execute("DELETE FROM ir_model WHERE model = %s", (model,))
+        if cur.rowcount:
+            print(f"Removed stale ir_model: {model} ({cur.rowcount} rows)")
+
+    # Clean orphaned ir.attachment records pointing to missing filestore files
+    cur.execute("""
+        DELETE FROM ir_attachment
+        WHERE store_fname IS NOT NULL
+          AND store_fname != ''
+          AND id NOT IN (SELECT res_id FROM ir_model_data WHERE model = 'ir.attachment')
+          AND create_date < NOW() - INTERVAL '30 days'
+          AND res_model IS NULL
+    """)
+    if cur.rowcount:
+        print(f"Cleaned {cur.rowcount} orphaned attachments")
+
+    cur.close()
+    conn.close()
+except Exception as e:
+    print(f"WARNING: stale model cleanup failed: {e}")
+PYCLEAN
+fi
+
 # Fix mail_message and mail_mail missing primary keys (pre-existing DB issue)
 # Uses Python/psycopg2 since psql may not be installed in the Docker image
 echo "=== Checking mail table primary keys ==="
