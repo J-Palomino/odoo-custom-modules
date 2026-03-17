@@ -5,6 +5,7 @@ from odoo import api, fields, models
 _logger = logging.getLogger(__name__)
 
 ORDER_STATES = [
+    # Dutchie POS swimlane states
     ('lobby', 'Lobby'),
     ('online_orders', 'Online Orders'),
     ('sales_floor', 'Sales Floor / Needs Code'),
@@ -16,6 +17,13 @@ ORDER_STATES = [
     ('ready_delivery', 'Ready For Delivery'),
     ('delivery_progress', 'Delivery In Progress'),
     ('delivery_completed', 'Delivery Completed'),
+    # Legacy / frontend states (mapped from checkout flow)
+    ('placed', 'Placed'),
+    ('confirmed', 'Confirmed'),
+    ('preparing', 'Preparing'),
+    ('ready', 'Ready'),
+    ('picked_up', 'Picked Up'),
+    # Terminal
     ('completed', 'Completed'),
     ('cancelled', 'Cancelled'),
 ]
