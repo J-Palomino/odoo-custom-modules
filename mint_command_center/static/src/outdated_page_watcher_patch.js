@@ -2,15 +2,15 @@
 import { OutdatedPageWatcherService } from "@bus/outdated_page_watcher_service";
 import { patch } from "@web/core/utils/patch";
 
-// Patch the outdated page watcher to silently refresh instead of showing
-// a persistent sticky notification. The default behavior shows "The page
-// is out of date" every time the websocket reconnects after the autovacuum
-// cron purges old bus_bus records — which is normal operation, not an error.
+// Suppress the "page is out of date" notification entirely. The default
+// behavior shows a persistent sticky warning every time the websocket
+// reconnects (e.g. after autovacuum or brief worker saturation). The
+// previous patch did window.location.reload() which interrupted saves
+// and corrupted form data. Now we simply ignore it — users can manually
+// refresh if needed.
 patch(OutdatedPageWatcherService.prototype, {
     showOutdatedPageNotification() {
-        // Instead of a sticky warning that blocks the user, silently reload.
-        // This avoids the constant "page is out of date" prompts while still
-        // keeping the page current.
-        window.location.reload();
+        // No-op: suppress the notification without reloading.
+        // A silent reload mid-save causes data loss and form corruption.
     },
 });
