@@ -16,32 +16,51 @@
                         </div>
                     </div>
                     <div class="row justify-content-center g-4">
-                        <div class="col-md-5">
+                        <div class="col-md-4">
                             <a href="/it-requests" class="text-decoration-none">
                                 <div class="card h-100 shadow-sm">
                                     <div class="text-center pt-4">
-                                        <img src="/web/image/166055" alt="Engineering Tech"
-                                             style="max-height: 220px; object-fit: contain;"/>
+                                        <img src="/web/image/166055" alt="IT Support"
+                                             style="max-height: 180px; object-fit: contain;"/>
+                                    </div>
+                                    <div class="card-body text-center p-4">
+                                        <h3 class="card-title mb-3 text-dark">IT Request</h3>
+                                        <p class="card-text text-muted">
+                                            Computer, printer, scanner, POS equipment,
+                                            and other hardware or IT issues.
+                                        </p>
+                                        <span class="btn btn-primary btn-lg mt-2">
+                                            Submit IT Request
+                                        </span>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                        <div class="col-md-4">
+                            <a href="/engineering-requests" class="text-decoration-none">
+                                <div class="card h-100 shadow-sm">
+                                    <div class="text-center pt-4">
+                                        <i class="fa fa-code" style="font-size: 120px; color: #6f42c1; padding: 30px 0;"/>
                                     </div>
                                     <div class="card-body text-center p-4">
                                         <h3 class="card-title mb-3 text-dark">Engineering Request</h3>
                                         <p class="card-text text-muted">
-                                            Computer, printer, scanner, POS equipment,
-                                            software, and other IT issues.
+                                            Websites, e-commerce, chat, apps,
+                                            AI/LLMs, and new software requests.
                                         </p>
-                                        <span class="btn btn-primary btn-lg mt-2">
+                                        <span class="btn btn-info btn-lg mt-2">
                                             Submit Engineering Request
                                         </span>
                                     </div>
                                 </div>
                             </a>
                         </div>
-                        <div class="col-md-5">
+                        <div class="col-md-4">
                             <a href="/maintenance-requests" class="text-decoration-none">
                                 <div class="card h-100 shadow-sm">
                                     <div class="text-center pt-4">
                                         <img src="/web/image/166056" alt="Maintenance Tech"
-                                             style="max-height: 220px; object-fit: contain;"/>
+                                             style="max-height: 180px; object-fit: contain;"/>
                                     </div>
                                     <div class="card-body text-center p-4">
                                         <h3 class="card-title mb-3 text-dark">Maintenance Request</h3>
@@ -70,7 +89,7 @@
     </template>
 
     <!-- ============================================================ -->
-    <!-- /engineering-requests — Engineering Request Form              -->
+    <!-- Shared request form body (rendered by IT + Engineering)       -->
     <!-- ============================================================ -->
     <template id="engineering_request_form" name="Engineering Request Form">
         <t t-call="website.layout">
@@ -78,9 +97,9 @@
                 <div class="container py-5">
                     <div class="row justify-content-center">
                         <div class="col-lg-8">
-                            <h1 class="mb-2">Engineering Request</h1>
+                            <h1 class="mb-2"><t t-esc="form_title"/></h1>
                             <p class="text-muted mb-4">
-                                Submit an engineering request. This creates a ticket assigned to the Engineering team.
+                                <t t-esc="form_subtitle"/>
                             </p>
 
                             <t t-if="error">
@@ -102,7 +121,7 @@
                                 <input type="hidden" id="saved_subtype"
                                        t-att-value="form_values.get('subtype', '')"/>
 
-                                <form action="/engineering-requests" method="post" enctype="multipart/form-data">
+                                <form t-att-action="form_action" method="post" enctype="multipart/form-data">
                                     <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
                                     <!-- Your Name & Email -->
@@ -336,7 +355,7 @@
                             </t>
 
                             <t t-if="success">
-                                <a href="/engineering-requests" class="btn btn-outline-primary mt-3">
+                                <a t-att-href="form_action" class="btn btn-outline-primary mt-3">
                                     Submit Another Request
                                 </a>
                             </t>

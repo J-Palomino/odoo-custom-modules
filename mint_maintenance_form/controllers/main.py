@@ -239,13 +239,13 @@ class MaintenanceFormController(http.Controller):
             return equip.id, category_name
         return None, category_name
 
-    def _handle_form_post(self, team_id, template, success_msg, default_title, **post):
-        """Shared POST handler for both Engineering and Facilities forms.
+    def _handle_form_post(self, team_id, template, success_msg, default_title, extra_ctx=None, **post):
+        """Shared POST handler for Engineering, IT, and Facilities forms.
 
         team_id can be an int or list of ints. When creating the request,
         the first ID in the list is used as the assigned team.
         """
-        ctx = self._form_context(team_id, form_values=post)
+        ctx = self._form_context(team_id, form_values=post, **(extra_ctx or {}))
 
         submitter_name = post.get("submitter_name", "").strip()
         submitter_email = post.get("submitter_email", "").strip()
@@ -353,10 +353,49 @@ class MaintenanceFormController(http.Controller):
         return request.render("mint_maintenance_form.routing_page")
 
     # ------------------------------------------------------------------
-    # /engineering-requests — Engineering equipment form
+    # /it-requests — IT equipment form
     # ------------------------------------------------------------------
     @http.route(
-        ["/it-requests", "/engineering-requests"],
+        "/it-requests",
+        type="http",
+        auth="public",
+        website=True,
+        methods=["GET", "POST"],
+    )
+    def it_request_form(self, **post):
+        template = "mint_maintenance_form.engineering_request_form"
+        form_ctx = {
+            "form_title": "IT Request",
+            "form_subtitle": "Submit an IT request. This creates a ticket assigned to the IT team.",
+            "form_action": "/it-requests",
+        }
+
+        if request.httprequest.method == "GET":
+            prefill, logged_in = self._get_user_prefill()
+            return request.render(
+                template,
+                self._form_context(
+                    IT_TEAM_ID,
+                    form_values=prefill,
+                    is_logged_in=logged_in,
+                    **form_ctx,
+                ),
+            )
+
+        return self._handle_form_post(
+            team_id=IT_TEAM_ID,
+            template=template,
+            success_msg="Your IT request has been submitted successfully!",
+            default_title="IT Request",
+            extra_ctx=form_ctx,
+            **post,
+        )
+
+    # ------------------------------------------------------------------
+    # /engineering-requests — Engineering / software form
+    # ------------------------------------------------------------------
+    @http.route(
+        "/engineering-requests",
         type="http",
         auth="public",
         website=True,
@@ -364,23 +403,30 @@ class MaintenanceFormController(http.Controller):
     )
     def engineering_request_form(self, **post):
         template = "mint_maintenance_form.engineering_request_form"
+        form_ctx = {
+            "form_title": "Engineering Request",
+            "form_subtitle": "Submit an engineering request for websites, e-commerce, apps, AI/LLMs, chat, or new software.",
+            "form_action": "/engineering-requests",
+        }
 
         if request.httprequest.method == "GET":
             prefill, logged_in = self._get_user_prefill()
             return request.render(
                 template,
                 self._form_context(
-                    ENGINEERING_TEAM_IDS,
+                    ENGINEERING_TEAM_ID,
                     form_values=prefill,
                     is_logged_in=logged_in,
+                    **form_ctx,
                 ),
             )
 
         return self._handle_form_post(
-            team_id=ENGINEERING_TEAM_IDS,
+            team_id=ENGINEERING_TEAM_ID,
             template=template,
             success_msg="Your engineering request has been submitted successfully!",
             default_title="Engineering Request",
+            extra_ctx=form_ctx,
             **post,
         )
 
