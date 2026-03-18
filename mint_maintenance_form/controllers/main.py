@@ -260,6 +260,12 @@ class MaintenanceFormController(http.Controller):
         if error:
             ctx["error"] = error
             return request.render(template, ctx)
+        if not state:
+            ctx["error"] = "Please select a state."
+            return request.render(template, ctx)
+        if not post.get("company_id", "").strip():
+            ctx["error"] = "Please select a store / location."
+            return request.render(template, ctx)
         if not category:
             ctx["error"] = "Please select a category."
             return request.render(template, ctx)
@@ -345,7 +351,7 @@ class MaintenanceFormController(http.Controller):
     @http.route(
         "/fixit",
         type="http",
-        auth="public",
+        auth="user",
         website=True,
         methods=["GET"],
     )
@@ -358,7 +364,7 @@ class MaintenanceFormController(http.Controller):
     @http.route(
         "/it-requests",
         type="http",
-        auth="public",
+        auth="user",
         website=True,
         methods=["GET", "POST"],
     )
@@ -397,7 +403,7 @@ class MaintenanceFormController(http.Controller):
     @http.route(
         "/engineering-requests",
         type="http",
-        auth="public",
+        auth="user",
         website=True,
         methods=["GET", "POST"],
     )
@@ -436,7 +442,7 @@ class MaintenanceFormController(http.Controller):
     @http.route(
         "/maintenance-requests",
         type="http",
-        auth="public",
+        auth="user",
         website=True,
         methods=["GET", "POST"],
     )
