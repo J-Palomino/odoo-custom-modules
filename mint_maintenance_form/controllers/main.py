@@ -375,7 +375,7 @@ class MaintenanceFormController(http.Controller):
             return request.render(
                 template,
                 self._form_context(
-                    IT_TEAM_ID,
+                    ENGINEERING_TEAM_IDS,
                     form_values=prefill,
                     is_logged_in=logged_in,
                     **form_ctx,
@@ -383,7 +383,7 @@ class MaintenanceFormController(http.Controller):
             )
 
         return self._handle_form_post(
-            team_id=IT_TEAM_ID,
+            team_id=ENGINEERING_TEAM_IDS,
             template=template,
             success_msg="Your IT request has been submitted successfully!",
             default_title="IT Request",
