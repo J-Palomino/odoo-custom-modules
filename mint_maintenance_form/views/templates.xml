@@ -17,32 +17,44 @@
                     </div>
                     <div class="row justify-content-center g-4">
                         <div class="col-md-5">
-                            <div class="card h-100 shadow-sm">
-                                <div class="card-body text-center p-4">
-                                    <h3 class="card-title mb-3">IT Request</h3>
-                                    <p class="card-text text-muted">
-                                        Computer, printer, scanner, POS equipment,
-                                        software, and other IT issues.
-                                    </p>
-                                    <a href="/it-requests" class="btn btn-primary btn-lg mt-2">
-                                        Submit IT Request
-                                    </a>
+                            <a href="/it-requests" class="text-decoration-none">
+                                <div class="card h-100 shadow-sm">
+                                    <div class="text-center pt-4">
+                                        <img src="/web/image/166055" alt="IT Tech"
+                                             style="max-height: 220px; object-fit: contain;"/>
+                                    </div>
+                                    <div class="card-body text-center p-4">
+                                        <h3 class="card-title mb-3 text-dark">IT Request</h3>
+                                        <p class="card-text text-muted">
+                                            Computer, printer, scanner, POS equipment,
+                                            software, and other IT issues.
+                                        </p>
+                                        <span class="btn btn-primary btn-lg mt-2">
+                                            Submit IT Request
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
+                            </a>
                         </div>
                         <div class="col-md-5">
-                            <div class="card h-100 shadow-sm">
-                                <div class="card-body text-center p-4">
-                                    <h3 class="card-title mb-3">Maintenance Request</h3>
-                                    <p class="card-text text-muted">
-                                        HVAC, plumbing, electrical, janitorial,
-                                        building access, and other facilities issues.
-                                    </p>
-                                    <a href="/maintenance-requests" class="btn btn-success btn-lg mt-2">
-                                        Submit Maintenance Request
-                                    </a>
+                            <a href="/maintenance-requests" class="text-decoration-none">
+                                <div class="card h-100 shadow-sm">
+                                    <div class="text-center pt-4">
+                                        <img src="/web/image/166056" alt="Maintenance Tech"
+                                             style="max-height: 220px; object-fit: contain;"/>
+                                    </div>
+                                    <div class="card-body text-center p-4">
+                                        <h3 class="card-title mb-3 text-dark">Maintenance Request</h3>
+                                        <p class="card-text text-muted">
+                                            HVAC, plumbing, electrical, janitorial,
+                                            building access, and other facilities issues.
+                                        </p>
+                                        <span class="btn btn-success btn-lg mt-2">
+                                            Submit Maintenance Request
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
+                            </a>
                         </div>
                     </div>
                     <div class="row justify-content-center mt-5">
