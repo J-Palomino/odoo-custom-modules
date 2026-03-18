@@ -189,6 +189,18 @@ try:
     if cur.rowcount:
         print(f"Cleaned {cur.rowcount} orphaned attachments")
 
+    # Pre-create inventory_status column for mint_inventory_ops (avoids serialization conflicts)
+    cur.execute("""
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'product_template' AND column_name = 'inventory_status'
+    """)
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE product_template ADD COLUMN inventory_status VARCHAR DEFAULT 'active'")
+        cur.execute("ALTER TABLE product_template ADD COLUMN discontinue_reason TEXT")
+        cur.execute("ALTER TABLE product_template ADD COLUMN discontinue_date DATE")
+        cur.execute("ALTER TABLE product_template ADD COLUMN last_adjustment_id INTEGER")
+        print("=== Pre-created inventory_status columns on product_template ===")
+
     # Enable stock tracking on all goods (Odoo 19: is_storable=True for stock.quant)
     cur.execute("""
         UPDATE product_template
