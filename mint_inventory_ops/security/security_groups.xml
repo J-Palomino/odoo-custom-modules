@@ -1,19 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <record id="module_category_mint_inventory" model="ir.module.category">
-        <field name="name">Mint Inventory</field>
-        <field name="sequence">50</field>
-    </record>
-
     <record id="group_inventory_user" model="res.groups">
-        <field name="name">Inventory User</field>
-        <field name="category_id" ref="module_category_mint_inventory"/>
+        <field name="name">Mint Inventory / User</field>
         <field name="comment">Can view adjustments and create drafts</field>
     </record>
 
     <record id="group_inventory_manager" model="res.groups">
-        <field name="name">Inventory Manager</field>
-        <field name="category_id" ref="module_category_mint_inventory"/>
+        <field name="name">Mint Inventory / Manager</field>
         <field name="implied_ids" eval="[(4, ref('group_inventory_user'))]"/>
         <field name="comment">Can approve, reject, and apply adjustments. Full CRUD.</field>
     </record>
