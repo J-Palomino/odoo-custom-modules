@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+from collections import OrderedDict
 from datetime import date
 from html import escape as html_escape
 
@@ -18,99 +19,9 @@ ALLOWED_MIMETYPES = {
     "application/pdf",
 }
 
-IT_TEAM_ID = 2
+ENGINEERING_TEAM_ID = 4
+FACILITIES_TEAM_ID = 11
 NEW_REQUEST_STAGE = 1
-
-EQUIPMENT_TYPES = [
-    ("computer", "Computer"),
-    ("printer", "Printer"),
-    ("scanner", "Scanner"),
-    ("pos", "POS Equipment"),
-    ("security_camera", "Security Camera"),
-    ("software", "Software / Email"),
-    ("ipad", "iPad"),
-    ("telephone", "Telephone"),
-    ("drive_thru", "Drive Thru"),
-    ("tv", "TV"),
-]
-
-SUBTYPE_OPTIONS = {
-    "computer": [
-        ("laptop_mac", "Laptop Mac"),
-        ("computer_windows", "PC / Windows"),
-    ],
-    "printer": [
-        ("receipt", "Receipt Printer"),
-        ("zebra", "Zebra Label Printer"),
-        ("printnode", "Printnode"),
-        ("other_printer", "Other Printer"),
-    ],
-    "scanner": [
-        ("passport", "Passport / License Scanner"),
-        ("paper", "Paper Scanner"),
-    ],
-    "pos": [
-        ("pos_monitor", "Monitor"),
-        ("pos_computer", "Computer"),
-        ("pos_keyboard", "Keyboard"),
-        ("pos_mouse", "Mouse"),
-        ("dutchie_pay", "Dutchie Pay Terminal"),
-        ("deli_scale", "Deli Scale"),
-    ],
-    "tv": [
-        ("apple_tv", "Apple TV"),
-        ("tv_other", "TV (Other)"),
-    ],
-}
-
-# Maps (equipment_type, subtype) -> maintenance.equipment ID in Odoo
-EQUIPMENT_ID_MAP = {
-    ("computer", "laptop_mac"): 12,
-    ("computer", "computer_windows"): 13,
-    ("printer", "receipt"): 14,
-    ("printer", "zebra"): 15,
-    ("printer", "other_printer"): 16,
-    ("printer", "printnode"): 17,
-    ("scanner", "passport"): 18,
-    ("scanner", "paper"): 19,
-    ("pos", "pos_monitor"): 20,
-    ("pos", "pos_computer"): 21,
-    ("pos", "pos_keyboard"): 22,
-    ("pos", "pos_mouse"): 23,
-    ("pos", "dutchie_pay"): 24,
-    ("pos", "deli_scale"): 25,
-    ("security_camera", ""): 26,
-    ("software", ""): 27,
-    ("ipad", ""): 28,
-    ("telephone", ""): 29,
-    ("drive_thru", ""): 30,
-    ("tv", "apple_tv"): 31,
-    ("tv", "tv_other"): 32,
-}
-
-FACILITIES_EQUIPMENT_TYPES = [
-    ("hvac", "HVAC"),
-    ("plumbing", "Plumbing"),
-    ("electrical", "Electrical"),
-    ("janitorial", "Janitorial / Cleaning"),
-    ("building_access", "Building Access / Locks"),
-    ("parking", "Parking Lot"),
-    ("signage", "Signage"),
-    ("furniture", "Furniture / Fixtures"),
-]
-
-FACILITIES_EQUIPMENT_XMLID_MAP = {
-    "hvac": "mint_maintenance_form.equip_facilities_hvac",
-    "plumbing": "mint_maintenance_form.equip_facilities_plumbing",
-    "electrical": "mint_maintenance_form.equip_facilities_electrical",
-    "janitorial": "mint_maintenance_form.equip_facilities_janitorial",
-    "building_access": "mint_maintenance_form.equip_facilities_building_access",
-    "parking": "mint_maintenance_form.equip_facilities_parking",
-    "signage": "mint_maintenance_form.equip_facilities_signage",
-    "furniture": "mint_maintenance_form.equip_facilities_furniture",
-}
-
-FACILITIES_TEAM_XMLID = "mint_maintenance_form.team_facilities"
 
 PRIORITY_OPTIONS = [
     ("0", "Very Low"),
@@ -132,7 +43,37 @@ class MaintenanceFormController(http.Controller):
             return True
         return False
 
-    def _form_context(self, equipment_types=None, subtype_options=None, **extra):
+    def _get_team_equipment(self, team_id):
+        """Query equipment for a team, grouped by category.
+
+        Returns:
+            equipment_types: list of (category_name, category_name) for the dropdown
+            subtype_options: dict of {category_name: [(equip_id, equip_name), ...]}
+                             only for categories with >1 equipment
+        """
+        Equipment = request.env["maintenance.equipment"].sudo()
+        records = Equipment.search(
+            [("maintenance_team_id", "=", team_id)],
+            order="category_id, name",
+        )
+
+        categories = OrderedDict()
+        for equip in records:
+            cat_name = equip.category_id.name if equip.category_id else "Other"
+            if cat_name not in categories:
+                categories[cat_name] = []
+            categories[cat_name].append((str(equip.id), equip.name))
+
+        equipment_types = [(cat, cat) for cat in categories]
+
+        subtype_options = {}
+        for cat_name, equips in categories.items():
+            if len(equips) > 1:
+                subtype_options[cat_name] = equips
+
+        return equipment_types, subtype_options
+
+    def _form_context(self, team_id, **extra):
         companies = (
             request.env["res.company"]
             .sudo()
@@ -150,11 +91,13 @@ class MaintenanceFormController(http.Controller):
             if state_name:
                 states.add(state_name)
 
+        equipment_types, subtype_options = self._get_team_equipment(team_id)
+
         ctx = {
             "companies": company_list,
             "states": sorted(states),
-            "equipment_types": equipment_types or EQUIPMENT_TYPES,
-            "subtype_options_json": Markup(json.dumps(subtype_options or SUBTYPE_OPTIONS)),
+            "equipment_types": equipment_types,
+            "subtype_options_json": Markup(json.dumps(subtype_options)),
             "priorities": PRIORITY_OPTIONS,
             "error": None,
             "success": None,
@@ -241,44 +184,41 @@ class MaintenanceFormController(http.Controller):
 
         return request.render(template, ctx)
 
-    # ------------------------------------------------------------------
-    # /fixit — routing page
-    # ------------------------------------------------------------------
-    @http.route(
-        "/fixit",
-        type="http",
-        auth="public",
-        website=True,
-        methods=["GET"],
-    )
-    def fixit_routing(self, **kw):
-        return request.render("mint_maintenance_form.routing_page")
+    def _resolve_equipment(self, team_id, category_name, subtype_id):
+        """Resolve equipment_id and label from form POST values.
 
-    # ------------------------------------------------------------------
-    # /it-requests — IT equipment form
-    # ------------------------------------------------------------------
-    @http.route(
-        "/it-requests",
-        type="http",
-        auth="public",
-        website=True,
-        methods=["GET", "POST"],
-    )
-    def it_request_form(self, **post):
-        template = "mint_maintenance_form.it_request_form"
+        Args:
+            team_id: maintenance team ID
+            category_name: selected category (equipment_type field)
+            subtype_id: selected equipment ID string (subtype field), or empty
 
-        if request.httprequest.method == "GET":
-            prefill, logged_in = self._get_user_prefill()
-            return request.render(
-                template,
-                self._form_context(form_values=prefill, is_logged_in=logged_in),
-            )
+        Returns:
+            (equipment_id, equipment_label) tuple
+        """
+        Equipment = request.env["maintenance.equipment"].sudo()
 
-        ctx = self._form_context(form_values=post)
+        if subtype_id:
+            equip = Equipment.browse(int(subtype_id))
+            if equip.exists():
+                return equip.id, f"{category_name} - {equip.name}"
+            return None, category_name
+
+        # Single-equipment category — look up by team + category name
+        equip = Equipment.search([
+            ("maintenance_team_id", "=", team_id),
+            ("category_id.name", "=", category_name),
+        ], limit=1)
+        if equip:
+            return equip.id, category_name
+        return None, category_name
+
+    def _handle_form_post(self, team_id, template, success_msg, default_title, **post):
+        """Shared POST handler for both Engineering and Facilities forms."""
+        ctx = self._form_context(team_id, form_values=post)
 
         submitter_name = post.get("submitter_name", "").strip()
         submitter_email = post.get("submitter_email", "").strip()
-        equipment_type = post.get("equipment_type", "").strip()
+        category = post.get("equipment_type", "").strip()
         subtype = post.get("subtype", "").strip()
         state = post.get("state", "").strip()
         description = post.get("description", "").strip()
@@ -289,8 +229,8 @@ class MaintenanceFormController(http.Controller):
         if error:
             ctx["error"] = error
             return request.render(template, ctx)
-        if not equipment_type:
-            ctx["error"] = "Please select an equipment type."
+        if not category:
+            ctx["error"] = "Please select a category."
             return request.render(template, ctx)
 
         # Resolve store name
@@ -301,21 +241,13 @@ class MaintenanceFormController(http.Controller):
             if company.exists():
                 store_name = company.name
 
-        # Build equipment label
-        equip_type_label = dict(EQUIPMENT_TYPES).get(equipment_type, "")
-        subtype_label = ""
-        for opts in SUBTYPE_OPTIONS.values():
-            for val, label in opts:
-                if val == subtype:
-                    subtype_label = label
-                    break
-        equipment_label = (
-            f"{equip_type_label} - {subtype_label}" if subtype_label
-            else equip_type_label
+        # Resolve equipment
+        equipment_id, equipment_label = self._resolve_equipment(
+            team_id, category, subtype
         )
 
         # Auto-generate request title
-        title = store_name or "IT Request"
+        title = store_name or default_title
         if equipment_label:
             title += " - " + equipment_label
         desc_preview = description[:60].split("\n")[0]
@@ -348,15 +280,12 @@ class MaintenanceFormController(http.Controller):
             "description": desc_html,
             "maintenance_type": "corrective",
             "priority": priority,
-            "maintenance_team_id": IT_TEAM_ID,
+            "maintenance_team_id": team_id,
             "stage_id": NEW_REQUEST_STAGE,
             "request_date": date.today(),
             "email_cc": submitter_email,
         }
 
-        # Map equipment selection to maintenance.equipment ID
-        equip_key = (equipment_type, subtype) if subtype else (equipment_type, "")
-        equipment_id = EQUIPMENT_ID_MAP.get(equip_key)
         if equipment_id:
             vals["equipment_id"] = equipment_id
 
@@ -371,9 +300,51 @@ class MaintenanceFormController(http.Controller):
         if error_resp:
             return error_resp
 
-        return self._create_request(
-            vals, valid_files, template, ctx,
-            "Your IT request has been submitted successfully!",
+        return self._create_request(vals, valid_files, template, ctx, success_msg)
+
+    # ------------------------------------------------------------------
+    # /fixit — routing page
+    # ------------------------------------------------------------------
+    @http.route(
+        "/fixit",
+        type="http",
+        auth="public",
+        website=True,
+        methods=["GET"],
+    )
+    def fixit_routing(self, **kw):
+        return request.render("mint_maintenance_form.routing_page")
+
+    # ------------------------------------------------------------------
+    # /engineering-requests — Engineering equipment form
+    # ------------------------------------------------------------------
+    @http.route(
+        "/engineering-requests",
+        type="http",
+        auth="public",
+        website=True,
+        methods=["GET", "POST"],
+    )
+    def engineering_request_form(self, **post):
+        template = "mint_maintenance_form.engineering_request_form"
+
+        if request.httprequest.method == "GET":
+            prefill, logged_in = self._get_user_prefill()
+            return request.render(
+                template,
+                self._form_context(
+                    ENGINEERING_TEAM_ID,
+                    form_values=prefill,
+                    is_logged_in=logged_in,
+                ),
+            )
+
+        return self._handle_form_post(
+            team_id=ENGINEERING_TEAM_ID,
+            template=template,
+            success_msg="Your engineering request has been submitted successfully!",
+            default_title="Engineering Request",
+            **post,
         )
 
     # ------------------------------------------------------------------
@@ -394,115 +365,18 @@ class MaintenanceFormController(http.Controller):
             return request.render(
                 template,
                 self._form_context(
-                    equipment_types=FACILITIES_EQUIPMENT_TYPES,
-                    subtype_options={},
+                    FACILITIES_TEAM_ID,
                     form_values=prefill,
                     is_logged_in=logged_in,
                 ),
             )
 
-        ctx = self._form_context(
-            equipment_types=FACILITIES_EQUIPMENT_TYPES,
-            subtype_options={},
-            form_values=post,
-        )
-
-        submitter_name = post.get("submitter_name", "").strip()
-        submitter_email = post.get("submitter_email", "").strip()
-        category = post.get("equipment_type", "").strip()
-        state = post.get("state", "").strip()
-        description = post.get("description", "").strip()
-        priority = post.get("priority", "2")
-
-        # Validation
-        error = self._validate_common_fields(post)
-        if error:
-            ctx["error"] = error
-            return request.render(template, ctx)
-        if not category:
-            ctx["error"] = "Please select a category."
-            return request.render(template, ctx)
-
-        # Resolve store name
-        company_id = post.get("company_id")
-        store_name = ""
-        if company_id:
-            company = request.env["res.company"].sudo().browse(int(company_id))
-            if company.exists():
-                store_name = company.name
-
-        # Category label
-        category_label = dict(FACILITIES_EQUIPMENT_TYPES).get(category, "")
-
-        # Auto-generate request title
-        title = store_name or "Maintenance Request"
-        if category_label:
-            title += " - " + category_label
-        desc_preview = description[:60].split("\n")[0]
-        if desc_preview:
-            title += " - " + desc_preview
-        title = title[:128]
-
-        # Build rich HTML description
-        desc_parts = [
-            f"<p><strong>Submitted by:</strong> {html_escape(submitter_name)}</p>",
-            f"<p><strong>Email:</strong> {html_escape(submitter_email)}</p>",
-        ]
-        if state:
-            desc_parts.append(
-                f"<p><strong>State:</strong> {html_escape(state)}</p>"
-            )
-        if store_name:
-            desc_parts.append(
-                f"<p><strong>Store:</strong> {html_escape(store_name)}</p>"
-            )
-        if category_label:
-            desc_parts.append(
-                f"<p><strong>Category:</strong> {html_escape(category_label)}</p>"
-            )
-        desc_parts.append(f"<br/>{html_escape(description)}")
-        desc_html = "".join(desc_parts)
-
-        # Resolve team and equipment IDs via XML IDs
-        try:
-            facilities_team_id = request.env.ref(FACILITIES_TEAM_XMLID).id
-        except Exception:
-            _logger.warning("Facilities team XML ID not found, falling back to IT team")
-            facilities_team_id = IT_TEAM_ID
-
-        vals = {
-            "name": title,
-            "description": desc_html,
-            "maintenance_type": "corrective",
-            "priority": priority,
-            "maintenance_team_id": facilities_team_id,
-            "stage_id": NEW_REQUEST_STAGE,
-            "request_date": date.today(),
-            "email_cc": submitter_email,
-        }
-
-        # Resolve equipment ID from XML ID
-        xmlid = FACILITIES_EQUIPMENT_XMLID_MAP.get(category)
-        if xmlid:
-            try:
-                vals["equipment_id"] = request.env.ref(xmlid).id
-            except Exception:
-                _logger.warning("Equipment XML ID %s not found", xmlid)
-
-        if company_id:
-            vals["company_id"] = int(company_id)
-
-        if request.env.uid and request.env.uid != request.env.ref("base.public_user").id:
-            vals["owner_user_id"] = request.env.uid
-
-        # Validate uploaded files
-        valid_files, error_resp = self._validate_uploads(template, ctx)
-        if error_resp:
-            return error_resp
-
-        return self._create_request(
-            vals, valid_files, template, ctx,
-            "Your maintenance request has been submitted successfully!",
+        return self._handle_form_post(
+            team_id=FACILITIES_TEAM_ID,
+            template=template,
+            success_msg="Your maintenance request has been submitted successfully!",
+            default_title="Maintenance Request",
+            **post,
         )
 
     # ------------------------------------------------------------------
@@ -533,6 +407,7 @@ class MaintenanceFormController(http.Controller):
 
         items = []
         for r in requests_list:
+            team_name = r.maintenance_team_id.name if r.maintenance_team_id else ""
             items.append({
                 "id": r.id,
                 "name": r.name or "",
@@ -541,7 +416,7 @@ class MaintenanceFormController(http.Controller):
                 "request_date": r.request_date,
                 "company": r.company_id.name if r.company_id else "",
                 "equipment": r.equipment_id.name if r.equipment_id else "",
-                "request_type": "IT" if r.maintenance_team_id.id == IT_TEAM_ID else "Facilities",
+                "request_type": team_name or "Other",
             })
 
         return request.render(
@@ -568,8 +443,7 @@ class MaintenanceFormController(http.Controller):
             return request.redirect("/tickets")
 
         priority_labels = dict(PRIORITY_OPTIONS)
-
-        request_type = "IT" if maint_req.maintenance_team_id.id == IT_TEAM_ID else "Facilities"
+        team_name = maint_req.maintenance_team_id.name if maint_req.maintenance_team_id else "Other"
 
         # Get visible messages (exclude internal notes)
         messages = (
@@ -606,7 +480,7 @@ class MaintenanceFormController(http.Controller):
                 "messages": messages,
                 "attachments": attachments,
                 "priority_labels": priority_labels,
-                "request_type": request_type,
+                "request_type": team_name,
             },
         )
 

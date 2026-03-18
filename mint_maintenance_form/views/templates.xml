@@ -17,20 +17,20 @@
                     </div>
                     <div class="row justify-content-center g-4">
                         <div class="col-md-5">
-                            <a href="/it-requests" class="text-decoration-none">
+                            <a href="/engineering-requests" class="text-decoration-none">
                                 <div class="card h-100 shadow-sm">
                                     <div class="text-center pt-4">
-                                        <img src="/web/image/166055" alt="IT Tech"
+                                        <img src="/web/image/166055" alt="Engineering Tech"
                                              style="max-height: 220px; object-fit: contain;"/>
                                     </div>
                                     <div class="card-body text-center p-4">
-                                        <h3 class="card-title mb-3 text-dark">IT Request</h3>
+                                        <h3 class="card-title mb-3 text-dark">Engineering Request</h3>
                                         <p class="card-text text-muted">
                                             Computer, printer, scanner, POS equipment,
                                             software, and other IT issues.
                                         </p>
                                         <span class="btn btn-primary btn-lg mt-2">
-                                            Submit IT Request
+                                            Submit Engineering Request
                                         </span>
                                     </div>
                                 </div>
@@ -70,17 +70,17 @@
     </template>
 
     <!-- ============================================================ -->
-    <!-- /it-requests — IT Request Form                               -->
+    <!-- /engineering-requests — Engineering Request Form              -->
     <!-- ============================================================ -->
-    <template id="it_request_form" name="IT Request Form">
+    <template id="engineering_request_form" name="Engineering Request Form">
         <t t-call="website.layout">
             <div id="wrap" class="oe_structure">
                 <div class="container py-5">
                     <div class="row justify-content-center">
                         <div class="col-lg-8">
-                            <h1 class="mb-2">IT Request</h1>
+                            <h1 class="mb-2">Engineering Request</h1>
                             <p class="text-muted mb-4">
-                                Submit an IT request. This creates a ticket assigned to the IT team.
+                                Submit an engineering request. This creates a ticket assigned to the Engineering team.
                             </p>
 
                             <t t-if="error">
@@ -102,7 +102,7 @@
                                 <input type="hidden" id="saved_subtype"
                                        t-att-value="form_values.get('subtype', '')"/>
 
-                                <form action="/it-requests" method="post" enctype="multipart/form-data">
+                                <form action="/engineering-requests" method="post" enctype="multipart/form-data">
                                     <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
                                     <!-- Your Name & Email -->
@@ -254,7 +254,6 @@
                                         var subtypeWrapper = document.getElementById('subtype_wrapper');
                                         var subtypeSelect = document.getElementById('subtype');
 
-                                        /* --- Snapshot all stores before JS filters them --- */
                                         var allStores = [];
                                         Array.from(storeSelect.options).forEach(function (opt) {
                                             if (opt.value) {
@@ -267,15 +266,12 @@
                                             }
                                         });
 
-                                        /* --- State → Store cascading filter --- */
                                         function filterStores(reset) {
                                             var state = stateSelect.value;
                                             var prev = storeSelect.value;
-
                                             storeSelect.innerHTML = '';
                                             var ph = document.createElement('option');
                                             ph.value = '';
-
                                             if (!state) {
                                                 ph.textContent = '-- Select a state first --';
                                                 storeSelect.appendChild(ph);
@@ -283,11 +279,9 @@
                                                 storeSelect.value = '';
                                                 return;
                                             }
-
                                             ph.textContent = '-- Select Store --';
                                             storeSelect.appendChild(ph);
                                             storeSelect.disabled = false;
-
                                             var matches = [];
                                             allStores.forEach(function (s) {
                                                 if (s.state === state) {
@@ -299,21 +293,15 @@
                                                     matches.push(s);
                                                 }
                                             });
-
-                                            /* Auto-select when only one store in the state */
                                             if (matches.length === 1) {
                                                 storeSelect.value = matches[0].value;
                                             } else if (reset) {
                                                 storeSelect.value = '';
                                             }
                                         }
-
-                                        stateSelect.addEventListener('change', function () {
-                                            filterStores(true);
-                                        });
+                                        stateSelect.addEventListener('change', function () { filterStores(true); });
                                         filterStores(false);
 
-                                        /* --- Equipment Type → Subtype cascading filter --- */
                                         function updateSubtype(reset) {
                                             var opts = subtypeData[equipSelect.value];
                                             subtypeSelect.innerHTML = '';
@@ -321,7 +309,6 @@
                                             ph.value = '';
                                             ph.textContent = '-- Select --';
                                             subtypeSelect.appendChild(ph);
-
                                             if (opts) {
                                                 opts.forEach(function (o) {
                                                     var el = document.createElement('option');
@@ -332,8 +319,6 @@
                                                 });
                                                 subtypeWrapper.style.display = '';
                                                 subtypeSelect.disabled = false;
-
-                                                /* Auto-select when only one subtype option */
                                                 if (opts.length === 1) {
                                                     subtypeSelect.value = opts[0][0];
                                                 }
@@ -342,20 +327,16 @@
                                                 subtypeSelect.disabled = true;
                                                 subtypeSelect.value = '';
                                             }
-
                                             if (reset) savedSubtype = '';
                                         }
-
-                                        equipSelect.addEventListener('change', function () {
-                                            updateSubtype(true);
-                                        });
+                                        equipSelect.addEventListener('change', function () { updateSubtype(true); });
                                         updateSubtype(false);
                                     })();
                                 </script>
                             </t>
 
                             <t t-if="success">
-                                <a href="/it-requests" class="btn btn-outline-primary mt-3">
+                                <a href="/engineering-requests" class="btn btn-outline-primary mt-3">
                                     Submit Another Request
                                 </a>
                             </t>
@@ -392,6 +373,13 @@
                             </t>
 
                             <t t-if="not success">
+                                <!-- Data for JS -->
+                                <script type="application/json" id="subtype-data"><t t-out="subtype_options_json"/></script>
+                                <input type="hidden" id="saved_equipment_type"
+                                       t-att-value="form_values.get('equipment_type', '')"/>
+                                <input type="hidden" id="saved_subtype"
+                                       t-att-value="form_values.get('subtype', '')"/>
+
                                 <form action="/maintenance-requests" method="post" enctype="multipart/form-data">
                                     <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
@@ -462,7 +450,7 @@
                                         </div>
                                     </div>
 
-                                    <!-- Category (flat, no subtypes) -->
+                                    <!-- Category & Sub-type (dynamic from DB) -->
                                     <div class="row">
                                         <div class="col-md-6 mb-3">
                                             <label for="equipment_type" class="form-label fw-bold">
@@ -477,6 +465,12 @@
                                                         <t t-esc="et[1]"/>
                                                     </option>
                                                 </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3" id="subtype_wrapper" style="display:none">
+                                            <label for="subtype" class="form-label fw-bold">Specify</label>
+                                            <select class="form-select" id="subtype" name="subtype">
+                                                <option value="">-- Select --</option>
                                             </select>
                                         </div>
                                     </div>
@@ -527,10 +521,17 @@
 
                                 <script>
                                     (function () {
+                                        var subtypeData = JSON.parse(
+                                            document.getElementById('subtype-data').textContent || '{}'
+                                        );
+                                        var savedSubtype = document.getElementById('saved_subtype').value || '';
+
                                         var stateSelect = document.getElementById('state');
                                         var storeSelect = document.getElementById('company_id');
+                                        var equipSelect = document.getElementById('equipment_type');
+                                        var subtypeWrapper = document.getElementById('subtype_wrapper');
+                                        var subtypeSelect = document.getElementById('subtype');
 
-                                        /* --- Snapshot all stores before JS filters them --- */
                                         var allStores = [];
                                         Array.from(storeSelect.options).forEach(function (opt) {
                                             if (opt.value) {
@@ -543,15 +544,12 @@
                                             }
                                         });
 
-                                        /* --- State → Store cascading filter --- */
                                         function filterStores(reset) {
                                             var state = stateSelect.value;
                                             var prev = storeSelect.value;
-
                                             storeSelect.innerHTML = '';
                                             var ph = document.createElement('option');
                                             ph.value = '';
-
                                             if (!state) {
                                                 ph.textContent = '-- Select a state first --';
                                                 storeSelect.appendChild(ph);
@@ -559,11 +557,9 @@
                                                 storeSelect.value = '';
                                                 return;
                                             }
-
                                             ph.textContent = '-- Select Store --';
                                             storeSelect.appendChild(ph);
                                             storeSelect.disabled = false;
-
                                             var matches = [];
                                             allStores.forEach(function (s) {
                                                 if (s.state === state) {
@@ -575,19 +571,44 @@
                                                     matches.push(s);
                                                 }
                                             });
-
-                                            /* Auto-select when only one store in the state */
                                             if (matches.length === 1) {
                                                 storeSelect.value = matches[0].value;
                                             } else if (reset) {
                                                 storeSelect.value = '';
                                             }
                                         }
-
-                                        stateSelect.addEventListener('change', function () {
-                                            filterStores(true);
-                                        });
+                                        stateSelect.addEventListener('change', function () { filterStores(true); });
                                         filterStores(false);
+
+                                        function updateSubtype(reset) {
+                                            var opts = subtypeData[equipSelect.value];
+                                            subtypeSelect.innerHTML = '';
+                                            var ph = document.createElement('option');
+                                            ph.value = '';
+                                            ph.textContent = '-- Select --';
+                                            subtypeSelect.appendChild(ph);
+                                            if (opts) {
+                                                opts.forEach(function (o) {
+                                                    var el = document.createElement('option');
+                                                    el.value = o[0];
+                                                    el.textContent = o[1];
+                                                    if (!reset &amp;&amp; o[0] === savedSubtype) el.selected = true;
+                                                    subtypeSelect.appendChild(el);
+                                                });
+                                                subtypeWrapper.style.display = '';
+                                                subtypeSelect.disabled = false;
+                                                if (opts.length === 1) {
+                                                    subtypeSelect.value = opts[0][0];
+                                                }
+                                            } else {
+                                                subtypeWrapper.style.display = 'none';
+                                                subtypeSelect.disabled = true;
+                                                subtypeSelect.value = '';
+                                            }
+                                            if (reset) savedSubtype = '';
+                                        }
+                                        equipSelect.addEventListener('change', function () { updateSubtype(true); });
+                                        updateSubtype(false);
                                     })();
                                 </script>
                             </t>
@@ -648,11 +669,11 @@
                                                 </a>
                                             </td>
                                             <td>
-                                                <t t-if="r['request_type'] == 'IT'">
-                                                    <span class="badge bg-primary">IT</span>
+                                                <t t-if="r['request_type'] == 'Facilities'">
+                                                    <span class="badge bg-success"><t t-esc="r['request_type']"/></span>
                                                 </t>
                                                 <t t-else="">
-                                                    <span class="badge bg-success">Facilities</span>
+                                                    <span class="badge bg-primary"><t t-esc="r['request_type']"/></span>
                                                 </t>
                                             </td>
                                             <td><t t-esc="r['company']"/></td>
@@ -710,11 +731,11 @@
                             </div>
                         </div>
                         <div class="text-end">
-                            <t t-if="request_type == 'IT'">
-                                <span class="badge bg-primary fs-6">IT</span>
+                            <t t-if="request_type == 'Facilities'">
+                                <span class="badge bg-success fs-6"><t t-esc="request_type"/></span>
                             </t>
                             <t t-else="">
-                                <span class="badge bg-success fs-6">Facilities</span>
+                                <span class="badge bg-primary fs-6"><t t-esc="request_type"/></span>
                             </t>
                             <span class="badge bg-info fs-6 ms-1"
                                   t-esc="req.stage_id.name or 'New'"/>
