@@ -19,7 +19,9 @@ ALLOWED_MIMETYPES = {
     "application/pdf",
 }
 
+IT_TEAM_ID = 2
 ENGINEERING_TEAM_ID = 4
+ENGINEERING_TEAM_IDS = [IT_TEAM_ID, ENGINEERING_TEAM_ID]
 FACILITIES_TEAM_ID = 11
 NEW_REQUEST_STAGE = 1
 
@@ -43,17 +45,22 @@ class MaintenanceFormController(http.Controller):
             return True
         return False
 
-    def _get_team_equipment(self, team_id):
-        """Query equipment for a team, grouped by category.
+    def _get_team_equipment(self, team_ids):
+        """Query equipment for one or more teams, grouped by category.
+
+        Args:
+            team_ids: int or list of ints — maintenance team ID(s)
 
         Returns:
             equipment_types: list of (category_name, category_name) for the dropdown
             subtype_options: dict of {category_name: [(equip_id, equip_name), ...]}
                              only for categories with >1 equipment
         """
+        if isinstance(team_ids, int):
+            team_ids = [team_ids]
         Equipment = request.env["maintenance.equipment"].sudo()
         records = Equipment.search(
-            [("maintenance_team_id", "=", team_id)],
+            [("maintenance_team_id", "in", team_ids)],
             order="category_id, name",
         )
 
@@ -184,17 +191,19 @@ class MaintenanceFormController(http.Controller):
 
         return request.render(template, ctx)
 
-    def _resolve_equipment(self, team_id, category_name, subtype_id):
+    def _resolve_equipment(self, team_ids, category_name, subtype_id):
         """Resolve equipment_id and label from form POST values.
 
         Args:
-            team_id: maintenance team ID
+            team_ids: int or list of ints — maintenance team ID(s)
             category_name: selected category (equipment_type field)
             subtype_id: selected equipment ID string (subtype field), or empty
 
         Returns:
             (equipment_id, equipment_label) tuple
         """
+        if isinstance(team_ids, int):
+            team_ids = [team_ids]
         Equipment = request.env["maintenance.equipment"].sudo()
 
         if subtype_id:
@@ -205,7 +214,7 @@ class MaintenanceFormController(http.Controller):
 
         # Single-equipment category — look up by team + category name
         equip = Equipment.search([
-            ("maintenance_team_id", "=", team_id),
+            ("maintenance_team_id", "in", team_ids),
             ("category_id.name", "=", category_name),
         ], limit=1)
         if equip:
@@ -213,7 +222,11 @@ class MaintenanceFormController(http.Controller):
         return None, category_name
 
     def _handle_form_post(self, team_id, template, success_msg, default_title, **post):
-        """Shared POST handler for both Engineering and Facilities forms."""
+        """Shared POST handler for both Engineering and Facilities forms.
+
+        team_id can be an int or list of ints. When creating the request,
+        the first ID in the list is used as the assigned team.
+        """
         ctx = self._form_context(team_id, form_values=post)
 
         submitter_name = post.get("submitter_name", "").strip()
@@ -275,12 +288,15 @@ class MaintenanceFormController(http.Controller):
         desc_parts.append(f"<br/>{html_escape(description)}")
         desc_html = "".join(desc_parts)
 
+        # When team_id is a list, use the first for the created record
+        assigned_team = team_id[0] if isinstance(team_id, list) else team_id
+
         vals = {
             "name": title,
             "description": desc_html,
             "maintenance_type": "corrective",
             "priority": priority,
-            "maintenance_team_id": team_id,
+            "maintenance_team_id": assigned_team,
             "stage_id": NEW_REQUEST_STAGE,
             "request_date": date.today(),
             "email_cc": submitter_email,
@@ -333,14 +349,14 @@ class MaintenanceFormController(http.Controller):
             return request.render(
                 template,
                 self._form_context(
-                    ENGINEERING_TEAM_ID,
+                    ENGINEERING_TEAM_IDS,
                     form_values=prefill,
                     is_logged_in=logged_in,
                 ),
             )
 
         return self._handle_form_post(
-            team_id=ENGINEERING_TEAM_ID,
+            team_id=ENGINEERING_TEAM_IDS,
             template=template,
             success_msg="Your engineering request has been submitted successfully!",
             default_title="Engineering Request",
