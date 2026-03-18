@@ -23,6 +23,7 @@ IT_TEAM_ID = 2
 ENGINEERING_TEAM_ID = 4
 ENGINEERING_TEAM_IDS = [IT_TEAM_ID, ENGINEERING_TEAM_ID]
 FACILITIES_TEAM_ID = 11
+GRAPHICS_TEAM_ID = 12
 NEW_REQUEST_STAGE = 1
 
 PRIORITY_OPTIONS = [
@@ -432,6 +433,45 @@ class MaintenanceFormController(http.Controller):
             template=template,
             success_msg="Your engineering request has been submitted successfully!",
             default_title="Engineering Request",
+            extra_ctx=form_ctx,
+            **post,
+        )
+
+    # ------------------------------------------------------------------
+    # /graphics-requests — Graphics / signage / print form
+    # ------------------------------------------------------------------
+    @http.route(
+        "/graphics-requests",
+        type="http",
+        auth="user",
+        website=True,
+        methods=["GET", "POST"],
+    )
+    def graphics_request_form(self, **post):
+        template = "mint_maintenance_form.engineering_request_form"
+        form_ctx = {
+            "form_title": "Graphics Request",
+            "form_subtitle": "Submit a graphics request for signage, menu boards, print materials, vehicle wraps, or digital assets.",
+            "form_action": "/graphics-requests",
+        }
+
+        if request.httprequest.method == "GET":
+            prefill, logged_in = self._get_user_prefill()
+            return request.render(
+                template,
+                self._form_context(
+                    GRAPHICS_TEAM_ID,
+                    form_values=prefill,
+                    is_logged_in=logged_in,
+                    **form_ctx,
+                ),
+            )
+
+        return self._handle_form_post(
+            team_id=GRAPHICS_TEAM_ID,
+            template=template,
+            success_msg="Your graphics request has been submitted successfully!",
+            default_title="Graphics Request",
             extra_ctx=form_ctx,
             **post,
         )

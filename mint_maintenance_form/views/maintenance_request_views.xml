@@ -35,6 +35,7 @@
                 <filter string="IT" name="filter_it" domain="[('maintenance_team_id', '=', 2)]"/>
                 <filter string="Engineering" name="filter_engineering" domain="[('maintenance_team_id', '=', 4)]"/>
                 <filter string="Facilities" name="filter_facilities" domain="[('maintenance_team_id', '=', 11)]"/>
+                <filter string="Graphics" name="filter_graphics" domain="[('maintenance_team_id', '=', 12)]"/>
                 <filter string="Group by Team" name="group_team" context="{'group_by': 'maintenance_team_id'}"/>
             </field>
         </field>

@@ -1,14 +1,15 @@
 {
     "name": "Mint Service Request Forms",
-    "version": "19.0.5.4.0",
+    "version": "19.0.6.0.0",
     "category": "Maintenance",
-    "summary": "Website forms for Engineering and Facilities service requests",
+    "summary": "Website forms for Engineering, Facilities, and Graphics service requests",
     "author": "Mint Cannabis",
     "license": "LGPL-3",
     "depends": ["maintenance", "website"],
     "data": [
         "security/equipment_rules.xml",
         "data/facilities_data.xml",
+        "data/graphics_data.xml",
         "views/maintenance_request_views.xml",
         "views/templates.xml",
     ],

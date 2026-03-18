@@ -75,6 +75,24 @@
                             </a>
                         </div>
                     </div>
+                    <div class="row justify-content-center mt-3">
+                        <div class="col-md-10">
+                            <a href="/graphics-requests" class="text-decoration-none">
+                                <div class="card shadow-sm">
+                                    <div class="card-body d-flex align-items-center justify-content-between px-4 py-3">
+                                        <div class="d-flex align-items-center">
+                                            <i class="fa fa-paint-brush me-3" style="font-size: 28px; color: #e83e8c;"/>
+                                            <div>
+                                                <h5 class="mb-0 text-dark">Graphics Request</h5>
+                                                <small class="text-muted">Signage, menu boards, print materials, vehicle wraps, and digital assets</small>
+                                            </div>
+                                        </div>
+                                        <span class="btn btn-outline-secondary">Submit</span>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
                     <div class="row justify-content-center mt-5">
                         <div class="col-lg-8 text-center">
                             <a href="/tickets" class="text-muted">
