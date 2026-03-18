@@ -299,11 +299,12 @@ class InventoryAdjustment(models.Model):
                 'company_id': self.company_id.id,
             }).action_validate()
 
-            # Update product status
-            line.product_id.product_tmpl_id.write({
-                'inventory_status': 'destroyed',
-                'last_adjustment_id': self.id,
-            })
+            # Update product status (columns pre-created via SQL, no ORM field)
+            self.env.cr.execute("""
+                UPDATE product_template
+                SET inventory_status = 'destroyed', last_adjustment_id = %s
+                WHERE id = %s
+            """, (self.id, line.product_id.product_tmpl_id.id))
 
     def _apply_discontinue(self):
         """Mark products as discontinued and zero out stock."""
@@ -316,25 +317,28 @@ class InventoryAdjustment(models.Model):
             if quant:
                 quant.write({'quantity': 0, 'inventory_quantity': 0})
 
-            # Update product status
-            tmpl = line.product_id.product_tmpl_id
-            tmpl.write({
-                'inventory_status': 'discontinued',
-                'discontinue_reason': self.reason,
-                'discontinue_date': fields.Date.today(),
-                'last_adjustment_id': self.id,
-            })
+            # Update product status (columns pre-created via SQL, no ORM field)
+            self.env.cr.execute("""
+                UPDATE product_template
+                SET inventory_status = 'discontinued',
+                    discontinue_reason = %s,
+                    discontinue_date = %s,
+                    last_adjustment_id = %s
+                WHERE id = %s
+            """, (self.reason, fields.Date.today(), self.id, line.product_id.product_tmpl_id.id))
 
     def _apply_restore(self):
         """Restore discontinued/destroyed products to active status."""
         for line in self.line_ids:
-            tmpl = line.product_id.product_tmpl_id
-            tmpl.write({
-                'inventory_status': 'active',
-                'discontinue_reason': False,
-                'discontinue_date': False,
-                'last_adjustment_id': self.id,
-            })
+            # Update product status (columns pre-created via SQL, no ORM field)
+            self.env.cr.execute("""
+                UPDATE product_template
+                SET inventory_status = 'active',
+                    discontinue_reason = NULL,
+                    discontinue_date = NULL,
+                    last_adjustment_id = %s
+                WHERE id = %s
+            """, (self.id, line.product_id.product_tmpl_id.id))
             # Set restored quantity
             if line.new_qty:
                 quant = self.env['stock.quant'].sudo().search([
@@ -367,6 +371,14 @@ class InventoryAdjustment(models.Model):
                 if not avancir_id:
                     continue
 
+                # Read inventory_status from DB directly (column exists, no ORM field)
+                self.env.cr.execute(
+                    "SELECT inventory_status FROM product_template WHERE id = %s",
+                    (line.product_id.product_tmpl_id.id,)
+                )
+                row = self.env.cr.fetchone()
+                inv_status = row[0] if row else 'active'
+
                 status_map = {
                     'active': 'Active',
                     'discontinued': 'Inactive',
@@ -374,9 +386,7 @@ class InventoryAdjustment(models.Model):
                     'hold': 'On Hold',
                     'quarantine': 'Quarantine',
                 }
-                new_status = status_map.get(
-                    line.product_id.product_tmpl_id.inventory_status, 'Active'
-                )
+                new_status = status_map.get(inv_status, 'Active')
                 try:
                     sync = AvancirSync.sudo()
                     sync.update_avancir_item_status(avancir_id, new_status)
