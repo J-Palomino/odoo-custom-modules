@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!-- Filter "Responsible" field by selected team's members -->
+    <record id="maintenance_request_form_filter_responsible" model="ir.ui.view">
+        <field name="name">maintenance.request.form.filter.responsible</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_request_view_form"/>
+        <field name="arch" type="xml">
+            <field name="user_id" position="attributes">
+                <attribute name="domain">[('id', 'in', maintenance_team_id.member_ids.ids)]</attribute>
+            </field>
+        </field>
+    </record>
+</odoo>
