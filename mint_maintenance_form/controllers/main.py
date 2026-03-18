@@ -36,13 +36,17 @@ PRIORITY_OPTIONS = [
 class MaintenanceFormController(http.Controller):
 
     def _check_request_access(self, maint_req, user):
-        """Return True if user owns this request."""
+        """Return True if user owns this request or is on the assigned team."""
         if not maint_req.exists():
             return False
         if maint_req.owner_user_id and maint_req.owner_user_id.id == user.id:
             return True
         if user.email and user.email.lower() in (maint_req.email_cc or "").lower():
             return True
+        # Team members can view their team's requests
+        if maint_req.maintenance_team_id:
+            if user.id in maint_req.maintenance_team_id.member_ids.ids:
+                return True
         return False
 
     def _get_team_equipment(self, team_ids):
@@ -169,6 +173,20 @@ class MaintenanceFormController(http.Controller):
         """Create maintenance.request + attachments. Returns rendered response."""
         try:
             maint_req = request.env["maintenance.request"].sudo().create(vals)
+
+            # Subscribe team members and notify
+            try:
+                team = maint_req.maintenance_team_id
+                if team and team.member_ids:
+                    partner_ids = team.member_ids.mapped("partner_id").ids
+                    maint_req.message_subscribe(partner_ids=partner_ids)
+                maint_req.message_post(
+                    body=f"New request submitted: {vals.get('name', '')}",
+                    message_type="notification",
+                    subtype_xmlid="mail.mt_comment",
+                )
+            except Exception:
+                _logger.warning("Failed to send notification for request %s", maint_req.id)
 
             Attachment = request.env["ir.attachment"].sudo()
             for filename, mimetype, data in valid_files:
@@ -304,6 +322,9 @@ class MaintenanceFormController(http.Controller):
 
         if equipment_id:
             vals["equipment_id"] = equipment_id
+            equip = request.env["maintenance.equipment"].sudo().browse(equipment_id)
+            if equip.technician_user_id:
+                vals["user_id"] = equip.technician_user_id.id
 
         if company_id:
             vals["company_id"] = int(company_id)
@@ -410,13 +431,26 @@ class MaintenanceFormController(http.Controller):
         MaintRequest = request.env["maintenance.request"].sudo()
 
         user = request.env.user
-        requests_list = MaintRequest.search(
-            [
+        user_teams = request.env["maintenance.team"].sudo().search(
+            [("member_ids", "in", [user.id])]
+        )
+        if user_teams:
+            domain = [
+                ("stage_id.done", "!=", True),
+                "|", "|",
+                ("owner_user_id", "=", user.id),
+                ("email_cc", "ilike", user.email or ""),
+                ("maintenance_team_id", "in", user_teams.ids),
+            ]
+        else:
+            domain = [
                 ("stage_id.done", "!=", True),
                 "|",
                 ("owner_user_id", "=", user.id),
                 ("email_cc", "ilike", user.email or ""),
-            ],
+            ]
+        requests_list = MaintRequest.search(
+            domain,
             order="request_date desc, id desc",
             limit=50,
         )
