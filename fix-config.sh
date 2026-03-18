@@ -189,6 +189,17 @@ try:
     if cur.rowcount:
         print(f"Cleaned {cur.rowcount} orphaned attachments")
 
+    # Migrate consumable products to storable for stock.quant tracking
+    cur.execute("""
+        UPDATE product_template
+        SET type = 'product'
+        WHERE type = 'consu'
+    """)
+    if cur.rowcount:
+        print(f"=== Migrated {cur.rowcount} product templates: consu → product (storable) ===")
+    else:
+        print("=== All product templates already storable ===")
+
     cur.close()
     conn.close()
 except Exception as e:
