@@ -1,14 +1,74 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-    <template id="request_form" name="IT Maintenance Request Form">
+    <!-- ============================================================ -->
+    <!-- /fixit — Routing page                                        -->
+    <!-- ============================================================ -->
+    <template id="routing_page" name="Fix-It Routing Page">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <div class="row justify-content-center">
+                        <div class="col-lg-8 text-center">
+                            <h1 class="mb-2">How can we help?</h1>
+                            <p class="text-muted mb-5">
+                                Choose the type of request you need to submit.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="row justify-content-center g-4">
+                        <div class="col-md-5">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-body text-center p-4">
+                                    <h3 class="card-title mb-3">IT Request</h3>
+                                    <p class="card-text text-muted">
+                                        Computer, printer, scanner, POS equipment,
+                                        software, and other IT issues.
+                                    </p>
+                                    <a href="/it-requests" class="btn btn-primary btn-lg mt-2">
+                                        Submit IT Request
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-body text-center p-4">
+                                    <h3 class="card-title mb-3">Maintenance Request</h3>
+                                    <p class="card-text text-muted">
+                                        HVAC, plumbing, electrical, janitorial,
+                                        building access, and other facilities issues.
+                                    </p>
+                                    <a href="/maintenance-requests" class="btn btn-success btn-lg mt-2">
+                                        Submit Maintenance Request
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row justify-content-center mt-5">
+                        <div class="col-lg-8 text-center">
+                            <a href="/tickets" class="text-muted">
+                                View your existing requests &#x2192;
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!-- /it-requests — IT Request Form                               -->
+    <!-- ============================================================ -->
+    <template id="it_request_form" name="IT Request Form">
         <t t-call="website.layout">
             <div id="wrap" class="oe_structure">
                 <div class="container py-5">
                     <div class="row justify-content-center">
                         <div class="col-lg-8">
-                            <h1 class="mb-2">IT Maintenance Request</h1>
+                            <h1 class="mb-2">IT Request</h1>
                             <p class="text-muted mb-4">
-                                Submit an IT maintenance request. This creates a ticket assigned to the IT team.
+                                Submit an IT request. This creates a ticket assigned to the IT team.
                             </p>
 
                             <t t-if="error">
@@ -30,7 +90,7 @@
                                 <input type="hidden" id="saved_subtype"
                                        t-att-value="form_values.get('subtype', '')"/>
 
-                                <form action="/fixit" method="post" enctype="multipart/form-data">
+                                <form action="/it-requests" method="post" enctype="multipart/form-data">
                                     <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
                                     <!-- Your Name & Email -->
@@ -283,7 +343,7 @@
                             </t>
 
                             <t t-if="success">
-                                <a href="/fixit" class="btn btn-outline-primary mt-3">
+                                <a href="/it-requests" class="btn btn-outline-primary mt-3">
                                     Submit Another Request
                                 </a>
                             </t>
@@ -294,7 +354,248 @@
         </t>
     </template>
 
-    <template id="request_list" name="My Maintenance Requests">
+    <!-- ============================================================ -->
+    <!-- /maintenance-requests — Facilities Maintenance Request Form  -->
+    <!-- ============================================================ -->
+    <template id="facilities_request_form" name="Facilities Maintenance Request Form">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <div class="row justify-content-center">
+                        <div class="col-lg-8">
+                            <h1 class="mb-2">Maintenance Request</h1>
+                            <p class="text-muted mb-4">
+                                Submit a facilities maintenance request. This creates a ticket assigned to the Facilities team.
+                            </p>
+
+                            <t t-if="error">
+                                <div class="alert alert-danger" role="alert">
+                                    <t t-esc="error"/>
+                                </div>
+                            </t>
+                            <t t-if="success">
+                                <div class="alert alert-success" role="alert">
+                                    <t t-esc="success"/>
+                                </div>
+                            </t>
+
+                            <t t-if="not success">
+                                <form action="/maintenance-requests" method="post" enctype="multipart/form-data">
+                                    <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+
+                                    <!-- Your Name & Email -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="submitter_name" class="form-label fw-bold">
+                                                Your Name <span class="text-danger">*</span>
+                                            </label>
+                                            <t t-if="is_logged_in">
+                                                <input type="text" class="form-control" id="submitter_name"
+                                                       name="submitter_name" readonly="readonly"
+                                                       t-att-value="form_values.get('submitter_name', '')"
+                                                       style="background-color: #f8f9fa;"/>
+                                            </t>
+                                            <t t-else="">
+                                                <input type="text" class="form-control" id="submitter_name"
+                                                       name="submitter_name" required="required"
+                                                       placeholder="Your full name"
+                                                       t-att-value="form_values.get('submitter_name', '')"/>
+                                            </t>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="submitter_email" class="form-label fw-bold">
+                                                Your Email <span class="text-danger">*</span>
+                                            </label>
+                                            <t t-if="is_logged_in">
+                                                <input type="email" class="form-control" id="submitter_email"
+                                                       name="submitter_email" readonly="readonly"
+                                                       t-att-value="form_values.get('submitter_email', '')"
+                                                       style="background-color: #f8f9fa;"/>
+                                            </t>
+                                            <t t-else="">
+                                                <input type="email" class="form-control" id="submitter_email"
+                                                       name="submitter_email" required="required"
+                                                       placeholder="your.email@mintcannabis.com"
+                                                       t-att-value="form_values.get('submitter_email', '')"/>
+                                            </t>
+                                        </div>
+                                    </div>
+
+                                    <!-- State & Store -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="state" class="form-label fw-bold">State</label>
+                                            <select class="form-select" id="state" name="state">
+                                                <option value="">-- Select State --</option>
+                                                <t t-foreach="states" t-as="s">
+                                                    <option t-att-value="s"
+                                                            t-att-selected="s == form_values.get('state', '')">
+                                                        <t t-esc="s"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="company_id" class="form-label fw-bold">Store / Location</label>
+                                            <select class="form-select" id="company_id" name="company_id" disabled="disabled">
+                                                <option value="">-- Select a state first --</option>
+                                                <t t-foreach="companies" t-as="c">
+                                                    <option t-att-value="c['id']"
+                                                            t-att-data-state="c['state']"
+                                                            t-att-selected="str(c['id']) == form_values.get('company_id', '')">
+                                                        <t t-esc="c['name']"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Category (flat, no subtypes) -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="equipment_type" class="form-label fw-bold">
+                                                Category <span class="text-danger">*</span>
+                                            </label>
+                                            <select class="form-select" id="equipment_type"
+                                                    name="equipment_type" required="required">
+                                                <option value="">-- Select Category --</option>
+                                                <t t-foreach="equipment_types" t-as="et">
+                                                    <option t-att-value="et[0]"
+                                                            t-att-selected="et[0] == form_values.get('equipment_type', '')">
+                                                        <t t-esc="et[1]"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Priority -->
+                                    <div class="mb-3">
+                                        <label for="priority" class="form-label fw-bold">
+                                            Priority <span class="text-danger">*</span>
+                                        </label>
+                                        <select class="form-select w-50" id="priority"
+                                                name="priority" required="required">
+                                            <t t-foreach="priorities" t-as="p">
+                                                <option t-att-value="p[0]"
+                                                        t-att-selected="p[0] == form_values.get('priority', '2')">
+                                                    <t t-esc="p[1]"/>
+                                                </option>
+                                            </t>
+                                        </select>
+                                    </div>
+
+                                    <!-- Description -->
+                                    <div class="mb-3">
+                                        <label for="description" class="form-label fw-bold">
+                                            Description of Issue <span class="text-danger">*</span>
+                                        </label>
+                                        <textarea class="form-control" id="description" name="description"
+                                                  rows="5" required="required"
+                                                  placeholder="Describe the issue in detail..."><t t-esc="form_values.get('description', '')"/></textarea>
+                                    </div>
+
+                                    <!-- Photos -->
+                                    <div class="mb-4">
+                                        <label for="photos" class="form-label fw-bold">
+                                            Photos / Screenshots
+                                        </label>
+                                        <input type="file" class="form-control" id="photos"
+                                               name="photos" multiple="multiple"
+                                               accept="image/*,.pdf"/>
+                                        <div class="form-text">
+                                            Optional — attach photos or screenshots of the issue (max 5 files, 10 MB each).
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-success btn-lg">
+                                        Submit Request
+                                    </button>
+                                </form>
+
+                                <script>
+                                    (function () {
+                                        var stateSelect = document.getElementById('state');
+                                        var storeSelect = document.getElementById('company_id');
+
+                                        /* --- Snapshot all stores before JS filters them --- */
+                                        var allStores = [];
+                                        Array.from(storeSelect.options).forEach(function (opt) {
+                                            if (opt.value) {
+                                                allStores.push({
+                                                    value: opt.value,
+                                                    text: opt.text,
+                                                    state: opt.dataset.state || '',
+                                                    selected: opt.selected
+                                                });
+                                            }
+                                        });
+
+                                        /* --- State → Store cascading filter --- */
+                                        function filterStores(reset) {
+                                            var state = stateSelect.value;
+                                            var prev = storeSelect.value;
+
+                                            storeSelect.innerHTML = '';
+                                            var ph = document.createElement('option');
+                                            ph.value = '';
+
+                                            if (!state) {
+                                                ph.textContent = '-- Select a state first --';
+                                                storeSelect.appendChild(ph);
+                                                storeSelect.disabled = true;
+                                                storeSelect.value = '';
+                                                return;
+                                            }
+
+                                            ph.textContent = '-- Select Store --';
+                                            storeSelect.appendChild(ph);
+                                            storeSelect.disabled = false;
+
+                                            var matches = [];
+                                            allStores.forEach(function (s) {
+                                                if (s.state === state) {
+                                                    var el = document.createElement('option');
+                                                    el.value = s.value;
+                                                    el.textContent = s.text;
+                                                    if (!reset &amp;&amp; s.value === prev) el.selected = true;
+                                                    storeSelect.appendChild(el);
+                                                    matches.push(s);
+                                                }
+                                            });
+
+                                            /* Auto-select when only one store in the state */
+                                            if (matches.length === 1) {
+                                                storeSelect.value = matches[0].value;
+                                            } else if (reset) {
+                                                storeSelect.value = '';
+                                            }
+                                        }
+
+                                        stateSelect.addEventListener('change', function () {
+                                            filterStores(true);
+                                        });
+                                        filterStores(false);
+                                    })();
+                                </script>
+                            </t>
+
+                            <t t-if="success">
+                                <a href="/maintenance-requests" class="btn btn-outline-success mt-3">
+                                    Submit Another Request
+                                </a>
+                            </t>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!-- /tickets — Unified request list                              -->
+    <!-- ============================================================ -->
+    <template id="request_list" name="My Service Requests">
         <t t-call="website.layout">
             <div id="wrap" class="oe_structure">
                 <div class="container py-5">
@@ -307,7 +608,7 @@
 
                     <t t-if="not requests">
                         <div class="alert alert-info">
-                            You have no open maintenance requests.
+                            You have no open requests.
                         </div>
                     </t>
 
@@ -317,6 +618,7 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th>Request</th>
+                                        <th>Type</th>
                                         <th>Store</th>
                                         <th>Equipment</th>
                                         <th>Priority</th>
@@ -332,6 +634,14 @@
                                                 <a t-attf-href="/tickets/#{r['id']}" class="text-decoration-none">
                                                     <strong><t t-esc="r['name']"/></strong>
                                                 </a>
+                                            </td>
+                                            <td>
+                                                <t t-if="r['request_type'] == 'IT'">
+                                                    <span class="badge bg-primary">IT</span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="badge bg-success">Facilities</span>
+                                                </t>
                                             </td>
                                             <td><t t-esc="r['company']"/></td>
                                             <td><t t-esc="r['equipment']"/></td>
@@ -360,7 +670,11 @@
             </div>
         </t>
     </template>
-    <template id="request_detail" name="Maintenance Request Detail">
+
+    <!-- ============================================================ -->
+    <!-- /tickets/<id> — Request detail                               -->
+    <!-- ============================================================ -->
+    <template id="request_detail" name="Service Request Detail">
         <t t-call="website.layout">
             <div id="wrap" class="oe_structure">
                 <div class="container py-5">
@@ -384,7 +698,13 @@
                             </div>
                         </div>
                         <div class="text-end">
-                            <span class="badge bg-info fs-6"
+                            <t t-if="request_type == 'IT'">
+                                <span class="badge bg-primary fs-6">IT</span>
+                            </t>
+                            <t t-else="">
+                                <span class="badge bg-success fs-6">Facilities</span>
+                            </t>
+                            <span class="badge bg-info fs-6 ms-1"
                                   t-esc="req.stage_id.name or 'New'"/>
                             <br/>
                             <span class="badge mt-1"

@@ -4,6 +4,7 @@ import logging
 from datetime import date
 from html import escape as html_escape
 
+from markupsafe import Markup
 from odoo import http
 from odoo.http import request
 
@@ -87,6 +88,30 @@ EQUIPMENT_ID_MAP = {
     ("tv", "tv_other"): 32,
 }
 
+FACILITIES_EQUIPMENT_TYPES = [
+    ("hvac", "HVAC"),
+    ("plumbing", "Plumbing"),
+    ("electrical", "Electrical"),
+    ("janitorial", "Janitorial / Cleaning"),
+    ("building_access", "Building Access / Locks"),
+    ("parking", "Parking Lot"),
+    ("signage", "Signage"),
+    ("furniture", "Furniture / Fixtures"),
+]
+
+FACILITIES_EQUIPMENT_XMLID_MAP = {
+    "hvac": "mint_maintenance_form.equip_facilities_hvac",
+    "plumbing": "mint_maintenance_form.equip_facilities_plumbing",
+    "electrical": "mint_maintenance_form.equip_facilities_electrical",
+    "janitorial": "mint_maintenance_form.equip_facilities_janitorial",
+    "building_access": "mint_maintenance_form.equip_facilities_building_access",
+    "parking": "mint_maintenance_form.equip_facilities_parking",
+    "signage": "mint_maintenance_form.equip_facilities_signage",
+    "furniture": "mint_maintenance_form.equip_facilities_furniture",
+}
+
+FACILITIES_TEAM_XMLID = "mint_maintenance_form.team_facilities"
+
 PRIORITY_OPTIONS = [
     ("0", "Very Low"),
     ("1", "Low"),
@@ -107,7 +132,7 @@ class MaintenanceFormController(http.Controller):
             return True
         return False
 
-    def _form_context(self, **extra):
+    def _form_context(self, equipment_types=None, subtype_options=None, **extra):
         companies = (
             request.env["res.company"]
             .sudo()
@@ -128,8 +153,8 @@ class MaintenanceFormController(http.Controller):
         ctx = {
             "companies": company_list,
             "states": sorted(states),
-            "equipment_types": EQUIPMENT_TYPES,
-            "subtype_options_json": json.dumps(SUBTYPE_OPTIONS),
+            "equipment_types": equipment_types or EQUIPMENT_TYPES,
+            "subtype_options_json": Markup(json.dumps(subtype_options or SUBTYPE_OPTIONS)),
             "priorities": PRIORITY_OPTIONS,
             "error": None,
             "success": None,
@@ -139,29 +164,113 @@ class MaintenanceFormController(http.Controller):
         ctx.update(extra)
         return ctx
 
+    def _get_user_prefill(self):
+        """Return (prefill_dict, is_logged_in) for the current user."""
+        prefill = {}
+        logged_in = False
+        user = request.env.user
+        if user and user.id != request.env.ref("base.public_user").id:
+            logged_in = True
+            prefill["submitter_name"] = user.name or ""
+            prefill["submitter_email"] = user.email or ""
+            if user.company_id and user.company_id.parent_id:
+                prefill["company_id"] = str(user.company_id.id)
+                state_name = user.company_id.state_id.name if user.company_id.state_id else ""
+                if state_name:
+                    prefill["state"] = state_name
+        return prefill, logged_in
+
+    def _validate_common_fields(self, post):
+        """Validate shared fields. Returns error string or None."""
+        if not post.get("submitter_name", "").strip():
+            return "Your name is required."
+        if not post.get("submitter_email", "").strip():
+            return "Your email is required."
+        if not post.get("description", "").strip():
+            return "Description is required."
+        return None
+
+    def _validate_uploads(self, template, ctx):
+        """Validate uploaded files. Returns (valid_files, error_response) tuple."""
+        uploaded_files = request.httprequest.files.getlist("photos")
+        valid_files = []
+        for f in uploaded_files:
+            if not f or not f.filename:
+                continue
+            if len(valid_files) >= MAX_UPLOAD_FILES:
+                ctx["error"] = f"Maximum {MAX_UPLOAD_FILES} files allowed."
+                return None, request.render(template, ctx)
+            if f.mimetype not in ALLOWED_MIMETYPES:
+                ctx["error"] = (
+                    f"File '{f.filename}' has an unsupported type. "
+                    "Please upload images or PDFs only."
+                )
+                return None, request.render(template, ctx)
+            data = f.read()
+            if len(data) > MAX_UPLOAD_BYTES:
+                ctx["error"] = (
+                    f"File '{f.filename}' exceeds the 10 MB size limit."
+                )
+                return None, request.render(template, ctx)
+            valid_files.append((f.filename, f.mimetype, data))
+        return valid_files, None
+
+    def _create_request(self, vals, valid_files, template, ctx, success_msg):
+        """Create maintenance.request + attachments. Returns rendered response."""
+        try:
+            maint_req = request.env["maintenance.request"].sudo().create(vals)
+
+            Attachment = request.env["ir.attachment"].sudo()
+            for filename, mimetype, data in valid_files:
+                Attachment.create({
+                    "name": filename,
+                    "datas": base64.b64encode(data),
+                    "res_model": "maintenance.request",
+                    "res_id": maint_req.id,
+                    "mimetype": mimetype,
+                })
+
+            ctx["success"] = success_msg
+            ctx["form_values"] = {}
+        except Exception as e:
+            _logger.exception("Failed to create maintenance request: %s", e)
+            ctx["error"] = (
+                "An error occurred while submitting your request. "
+                "Please try again."
+            )
+
+        return request.render(template, ctx)
+
+    # ------------------------------------------------------------------
+    # /fixit — routing page
+    # ------------------------------------------------------------------
     @http.route(
-        ["/fixit", "/maintenance/request"],
+        "/fixit",
+        type="http",
+        auth="public",
+        website=True,
+        methods=["GET"],
+    )
+    def fixit_routing(self, **kw):
+        return request.render("mint_maintenance_form.routing_page")
+
+    # ------------------------------------------------------------------
+    # /it-requests — IT equipment form
+    # ------------------------------------------------------------------
+    @http.route(
+        "/it-requests",
         type="http",
         auth="public",
         website=True,
         methods=["GET", "POST"],
     )
-    def maintenance_form(self, **post):
+    def it_request_form(self, **post):
+        template = "mint_maintenance_form.it_request_form"
+
         if request.httprequest.method == "GET":
-            prefill = {}
-            logged_in = False
-            user = request.env.user
-            if user and user.id != request.env.ref("base.public_user").id:
-                logged_in = True
-                prefill["submitter_name"] = user.name or ""
-                prefill["submitter_email"] = user.email or ""
-                if user.company_id and user.company_id.parent_id:
-                    prefill["company_id"] = str(user.company_id.id)
-                    state_name = user.company_id.state_id.name if user.company_id.state_id else ""
-                    if state_name:
-                        prefill["state"] = state_name
+            prefill, logged_in = self._get_user_prefill()
             return request.render(
-                "mint_maintenance_form.request_form",
+                template,
                 self._form_context(form_values=prefill, is_logged_in=logged_in),
             )
 
@@ -175,18 +284,14 @@ class MaintenanceFormController(http.Controller):
         description = post.get("description", "").strip()
         priority = post.get("priority", "2")
 
-        if not submitter_name:
-            ctx["error"] = "Your name is required."
-            return request.render("mint_maintenance_form.request_form", ctx)
-        if not submitter_email:
-            ctx["error"] = "Your email is required."
-            return request.render("mint_maintenance_form.request_form", ctx)
+        # Validation
+        error = self._validate_common_fields(post)
+        if error:
+            ctx["error"] = error
+            return request.render(template, ctx)
         if not equipment_type:
             ctx["error"] = "Please select an equipment type."
-            return request.render("mint_maintenance_form.request_form", ctx)
-        if not description:
-            ctx["error"] = "Description is required."
-            return request.render("mint_maintenance_form.request_form", ctx)
+            return request.render(template, ctx)
 
         # Resolve store name
         company_id = post.get("company_id")
@@ -262,56 +367,149 @@ class MaintenanceFormController(http.Controller):
             vals["owner_user_id"] = request.env.uid
 
         # Validate uploaded files
-        uploaded_files = request.httprequest.files.getlist("photos")
-        valid_files = []
-        for f in uploaded_files:
-            if not f or not f.filename:
-                continue
-            if len(valid_files) >= MAX_UPLOAD_FILES:
-                ctx["error"] = f"Maximum {MAX_UPLOAD_FILES} files allowed."
-                return request.render("mint_maintenance_form.request_form", ctx)
-            if f.mimetype not in ALLOWED_MIMETYPES:
-                ctx["error"] = (
-                    f"File '{f.filename}' has an unsupported type. "
-                    "Please upload images or PDFs only."
-                )
-                return request.render("mint_maintenance_form.request_form", ctx)
-            data = f.read()
-            if len(data) > MAX_UPLOAD_BYTES:
-                ctx["error"] = (
-                    f"File '{f.filename}' exceeds the 10 MB size limit."
-                )
-                return request.render("mint_maintenance_form.request_form", ctx)
-            valid_files.append((f.filename, f.mimetype, data))
+        valid_files, error_resp = self._validate_uploads(template, ctx)
+        if error_resp:
+            return error_resp
 
-        try:
-            maint_req = request.env["maintenance.request"].sudo().create(vals)
+        return self._create_request(
+            vals, valid_files, template, ctx,
+            "Your IT request has been submitted successfully!",
+        )
 
-            Attachment = request.env["ir.attachment"].sudo()
-            for filename, mimetype, data in valid_files:
-                Attachment.create({
-                    "name": filename,
-                    "datas": base64.b64encode(data),
-                    "res_model": "maintenance.request",
-                    "res_id": maint_req.id,
-                    "mimetype": mimetype,
-                })
-
-            ctx["success"] = (
-                "Your maintenance request has been submitted successfully!"
-            )
-            ctx["form_values"] = {}
-        except Exception as e:
-            _logger.exception("Failed to create maintenance request: %s", e)
-            ctx["error"] = (
-                "An error occurred while submitting your request. "
-                "Please try again."
-            )
-
-        return request.render("mint_maintenance_form.request_form", ctx)
-
+    # ------------------------------------------------------------------
+    # /maintenance-requests — Facilities maintenance form
+    # ------------------------------------------------------------------
     @http.route(
-        ["/tickets", "/maintenance/requests"],
+        "/maintenance-requests",
+        type="http",
+        auth="public",
+        website=True,
+        methods=["GET", "POST"],
+    )
+    def facilities_request_form(self, **post):
+        template = "mint_maintenance_form.facilities_request_form"
+
+        if request.httprequest.method == "GET":
+            prefill, logged_in = self._get_user_prefill()
+            return request.render(
+                template,
+                self._form_context(
+                    equipment_types=FACILITIES_EQUIPMENT_TYPES,
+                    subtype_options={},
+                    form_values=prefill,
+                    is_logged_in=logged_in,
+                ),
+            )
+
+        ctx = self._form_context(
+            equipment_types=FACILITIES_EQUIPMENT_TYPES,
+            subtype_options={},
+            form_values=post,
+        )
+
+        submitter_name = post.get("submitter_name", "").strip()
+        submitter_email = post.get("submitter_email", "").strip()
+        category = post.get("equipment_type", "").strip()
+        state = post.get("state", "").strip()
+        description = post.get("description", "").strip()
+        priority = post.get("priority", "2")
+
+        # Validation
+        error = self._validate_common_fields(post)
+        if error:
+            ctx["error"] = error
+            return request.render(template, ctx)
+        if not category:
+            ctx["error"] = "Please select a category."
+            return request.render(template, ctx)
+
+        # Resolve store name
+        company_id = post.get("company_id")
+        store_name = ""
+        if company_id:
+            company = request.env["res.company"].sudo().browse(int(company_id))
+            if company.exists():
+                store_name = company.name
+
+        # Category label
+        category_label = dict(FACILITIES_EQUIPMENT_TYPES).get(category, "")
+
+        # Auto-generate request title
+        title = store_name or "Maintenance Request"
+        if category_label:
+            title += " - " + category_label
+        desc_preview = description[:60].split("\n")[0]
+        if desc_preview:
+            title += " - " + desc_preview
+        title = title[:128]
+
+        # Build rich HTML description
+        desc_parts = [
+            f"<p><strong>Submitted by:</strong> {html_escape(submitter_name)}</p>",
+            f"<p><strong>Email:</strong> {html_escape(submitter_email)}</p>",
+        ]
+        if state:
+            desc_parts.append(
+                f"<p><strong>State:</strong> {html_escape(state)}</p>"
+            )
+        if store_name:
+            desc_parts.append(
+                f"<p><strong>Store:</strong> {html_escape(store_name)}</p>"
+            )
+        if category_label:
+            desc_parts.append(
+                f"<p><strong>Category:</strong> {html_escape(category_label)}</p>"
+            )
+        desc_parts.append(f"<br/>{html_escape(description)}")
+        desc_html = "".join(desc_parts)
+
+        # Resolve team and equipment IDs via XML IDs
+        try:
+            facilities_team_id = request.env.ref(FACILITIES_TEAM_XMLID).id
+        except Exception:
+            _logger.warning("Facilities team XML ID not found, falling back to IT team")
+            facilities_team_id = IT_TEAM_ID
+
+        vals = {
+            "name": title,
+            "description": desc_html,
+            "maintenance_type": "corrective",
+            "priority": priority,
+            "maintenance_team_id": facilities_team_id,
+            "stage_id": NEW_REQUEST_STAGE,
+            "request_date": date.today(),
+            "email_cc": submitter_email,
+        }
+
+        # Resolve equipment ID from XML ID
+        xmlid = FACILITIES_EQUIPMENT_XMLID_MAP.get(category)
+        if xmlid:
+            try:
+                vals["equipment_id"] = request.env.ref(xmlid).id
+            except Exception:
+                _logger.warning("Equipment XML ID %s not found", xmlid)
+
+        if company_id:
+            vals["company_id"] = int(company_id)
+
+        if request.env.uid and request.env.uid != request.env.ref("base.public_user").id:
+            vals["owner_user_id"] = request.env.uid
+
+        # Validate uploaded files
+        valid_files, error_resp = self._validate_uploads(template, ctx)
+        if error_resp:
+            return error_resp
+
+        return self._create_request(
+            vals, valid_files, template, ctx,
+            "Your maintenance request has been submitted successfully!",
+        )
+
+    # ------------------------------------------------------------------
+    # /tickets — unified list
+    # ------------------------------------------------------------------
+    @http.route(
+        "/tickets",
         type="http",
         auth="user",
         website=True,
@@ -343,6 +541,7 @@ class MaintenanceFormController(http.Controller):
                 "request_date": r.request_date,
                 "company": r.company_id.name if r.company_id else "",
                 "equipment": r.equipment_id.name if r.equipment_id else "",
+                "request_type": "IT" if r.maintenance_team_id.id == IT_TEAM_ID else "Facilities",
             })
 
         return request.render(
@@ -350,6 +549,9 @@ class MaintenanceFormController(http.Controller):
             {"requests": items, "user": user},
         )
 
+    # ------------------------------------------------------------------
+    # /tickets/<id> — detail view
+    # ------------------------------------------------------------------
     @http.route(
         "/tickets/<int:request_id>",
         type="http",
@@ -366,6 +568,8 @@ class MaintenanceFormController(http.Controller):
             return request.redirect("/tickets")
 
         priority_labels = dict(PRIORITY_OPTIONS)
+
+        request_type = "IT" if maint_req.maintenance_team_id.id == IT_TEAM_ID else "Facilities"
 
         # Get visible messages (exclude internal notes)
         messages = (
@@ -402,9 +606,13 @@ class MaintenanceFormController(http.Controller):
                 "messages": messages,
                 "attachments": attachments,
                 "priority_labels": priority_labels,
+                "request_type": request_type,
             },
         )
 
+    # ------------------------------------------------------------------
+    # /tickets/<id>/reply — unchanged
+    # ------------------------------------------------------------------
     @http.route(
         "/tickets/<int:request_id>/reply",
         type="http",
