@@ -97,46 +97,46 @@ class RedisSessionStore(SessionStore):
                             session.sid[:8], exc_info=True)
 
     def rotate(self, session, env, soft=False):
-        """Rotate session ID (hard or soft).
+        """Rotate session ID — must match FilesystemSessionStore exactly.
 
-        Soft rotation keeps the first 42 chars (identifier) stable and
-        only changes the last 42.  A pointer from the old SID is saved
-        briefly so concurrent requests can follow the redirect.
+        After rotation, computes session_token for authenticated sessions.
+        Without session_token, Odoo rejects the session on the next request.
         """
+        import time
+        from odoo.service import security
+
         if soft:
-            old_sid = session.sid
-            # Keep identifier (first 42 chars), regenerate second half
-            new_tail = secrets.token_urlsafe(
-                STORED_SESSION_BYTES
-            )[:STORED_SESSION_BYTES]
-            new_sid = old_sid[:STORED_SESSION_BYTES] + new_tail
+            static = session.sid[:STORED_SESSION_BYTES]
+            # Check if a concurrent request already rotated
+            recent_session = self.get(session.sid)
+            if 'next_sid' in recent_session:
+                session.sid = recent_session['next_sid']
+                return
 
-            # Save redirect pointer on old SID with short TTL
-            try:
-                redirect_data = json.dumps({
-                    **dict(session),
-                    '_next_sid': new_sid,
-                })
-                self.redis.setex(
-                    self._key(old_sid),
-                    SESSION_DELETION_TIMER,
-                    redirect_data,
-                )
-            except Exception:
-                _logger.warning("Redis soft-rotate pointer failed",
-                                exc_info=True)
-
-            session.sid = new_sid
+            next_sid = static + self.generate_key()[STORED_SESSION_BYTES:]
+            # Save old session with pointer + short TTL
+            session['next_sid'] = next_sid
+            session['deletion_time'] = time.time() + SESSION_DELETION_TIMER
             self.save(session)
+
+            # Prepare the new session
+            session['gc_previous_sessions'] = True
+            session.sid = next_sid
+            del session['deletion_time']
+            del session['next_sid']
         else:
-            # Hard rotation — completely new SID
-            old_sid = session.sid
+            self.delete(session)
             session.sid = self.generate_key()
-            self.save(session)
-            try:
-                self.redis.delete(self._key(old_sid))
-            except Exception:
-                pass
+
+        # Compute session token for authenticated sessions
+        if session.uid:
+            assert env, "saving this session requires an environment"
+            session.session_token = security.compute_session_token(
+                session, env
+            )
+        session.should_rotate = False
+        session['create_time'] = time.time()
+        self.save(session)
 
     def delete_old_sessions(self, session):
         """Clean up redirect pointers after soft rotation.
