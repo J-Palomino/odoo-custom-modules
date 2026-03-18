@@ -189,14 +189,14 @@ try:
     if cur.rowcount:
         print(f"Cleaned {cur.rowcount} orphaned attachments")
 
-    # Migrate consumable products to storable for stock.quant tracking
+    # Enable stock tracking on all goods (Odoo 19: is_storable=True for stock.quant)
     cur.execute("""
         UPDATE product_template
-        SET type = 'product'
-        WHERE type = 'consu'
+        SET is_storable = true
+        WHERE type = 'consu' AND (is_storable = false OR is_storable IS NULL)
     """)
     if cur.rowcount:
-        print(f"=== Migrated {cur.rowcount} product templates: consu → product (storable) ===")
+        print(f"=== Enabled stock tracking on {cur.rowcount} product templates ===")
     else:
         print("=== All product templates already storable ===")
 
