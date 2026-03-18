@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="seq_inventory_adjustment" model="ir.sequence">
+        <field name="name">Inventory Adjustment</field>
+        <field name="code">mint.inventory.adjustment</field>
+        <field name="prefix">MINT-ADJ-</field>
+        <field name="padding">5</field>
+    </record>
+</odoo>

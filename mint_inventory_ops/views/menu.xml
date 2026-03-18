@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <menuitem id="menu_mint_inventory_root"
+              name="Mint Inventory"
+              web_icon="mint_inventory_ops,static/description/icon.png"
+              sequence="25"/>
+
+    <menuitem id="menu_adjustments"
+              name="Adjustments"
+              parent="menu_mint_inventory_root"
+              action="action_adjustment"
+              sequence="10"/>
+</odoo>
