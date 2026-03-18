@@ -356,7 +356,7 @@ class MaintenanceFormController(http.Controller):
     # /engineering-requests — Engineering equipment form
     # ------------------------------------------------------------------
     @http.route(
-        "/engineering-requests",
+        ["/it-requests", "/engineering-requests"],
         type="http",
         auth="public",
         website=True,
