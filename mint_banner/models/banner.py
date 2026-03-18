@@ -35,12 +35,14 @@ class MintBanner(models.Model):
         ('large', 'Large (Featured)'),
     ], string='Size', default='medium', required=True,
        help='Small: compact horizontal strip. Medium: standard banner. Large: prominent callout with product photo.')
-    image = fields.Binary(string='Image', attachment=True)
-    image_url = fields.Char(string='Image URL', help='External image URL (takes precedence over binary image)')
+    image = fields.Binary(string='Image', attachment=True,
+                          help='Hero: 1600×400px (4:1). Category/Spotlight: 1200×300px. Deals Popup: 800×600px.')
+    image_url = fields.Char(string='Image URL',
+                            help='External image URL (takes precedence over uploaded image). Same sizes apply.')
     product_image = fields.Binary(string='Product Image', attachment=True,
-                                  help='Product photo displayed alongside the banner (best with Large size)')
+                                  help='384×384px square PNG with transparent background. Rendered 40-176px depending on size.')
     product_image_url = fields.Char(string='Product Image URL',
-                                    help='External product image URL (takes precedence over uploaded product image)')
+                                    help='External product image URL (takes precedence). 384×384px square PNG recommended.')
     title = fields.Char(string='Title')
     subtitle = fields.Text(string='Subtitle')
     link_url = fields.Char(string='Link URL')
@@ -51,6 +53,29 @@ class MintBanner(models.Model):
     date_start = fields.Date(string='Start Date')
     date_end = fields.Date(string='End Date')
     company_id = fields.Many2one('res.company', string='Company', default=lambda self: self.env.company)
+
+    publish_status = fields.Selection(
+        selection=[
+            ('published', 'Published'),
+            ('scheduled', 'Scheduled'),
+            ('expired', 'Expired'),
+            ('draft', 'Draft'),
+        ],
+        string='Status', compute='_compute_publish_status', store=False,
+    )
+
+    @api.depends('active', 'date_start', 'date_end')
+    def _compute_publish_status(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            if not rec.active:
+                rec.publish_status = 'draft'
+            elif rec.date_end and rec.date_end < today:
+                rec.publish_status = 'expired'
+            elif rec.date_start and rec.date_start > today:
+                rec.publish_status = 'scheduled'
+            else:
+                rec.publish_status = 'published'
 
     def action_clear_frontend_cache(self):
         """Call the frontend cache-clear endpoint so banner changes appear immediately."""
