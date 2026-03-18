@@ -111,6 +111,7 @@ class MintPosOrderAPI(http.Controller):
         '/api/v1/pos/orders',
         '/api/v1/pos/orders/<int:order_id>/state',
         '/api/v1/pos/orders/bulk-sync',
+        '/api/v1/pos/orders/stats',
     ], type='http', auth='none', methods=['OPTIONS'], csrf=False)
     def preflight(self, **kw):
         return request.make_response('', headers=[
@@ -658,3 +659,59 @@ class MintPosOrderAPI(http.Controller):
                         _logger.warning('Push notification failed: %s', e)
 
         return _json({'success': True, 'order_id': order.id, 'state': 'cancelled'})
+
+    # ── GET /api/v1/pos/orders/stats — Aggregate counts ────────────
+
+    @http.route('/api/v1/pos/orders/stats', type='http', auth='none',
+                methods=['GET'], csrf=False, cors='*')
+    def order_stats(self, **kw):
+        if not _verify_api_key():
+            return _error('Invalid API key', 401)
+
+        domain = []
+
+        # Optional date filter (default: today)
+        if kw.get('date_from'):
+            domain.append(('placed_at', '>=', kw['date_from']))
+        if kw.get('date_to'):
+            domain.append(('placed_at', '<=', kw['date_to']))
+
+        Order = request.env['mint.pos.order'].sudo()
+
+        # read_group: count orders grouped by state and company_id
+        groups = Order.read_group(
+            domain,
+            fields=['id'],
+            groupby=['company_id', 'state'],
+            lazy=False,
+        )
+
+        # Build response: list of {company_id, company_name, state, count}
+        stats = []
+        for g in groups:
+            company = g.get('company_id')
+            stats.append({
+                'company_id': company[0] if company else None,
+                'company_name': company[1] if company else 'Unknown',
+                'state': g.get('state') or 'unknown',
+                'count': g.get('__count', 0),
+            })
+
+        # Also include store metadata for label enrichment
+        company_ids = list({s['company_id'] for s in stats if s['company_id']})
+        stores = {}
+        if company_ids:
+            companies = request.env['res.company'].sudo().browse(company_ids)
+            for c in companies:
+                stores[c.id] = {
+                    'name': c.name,
+                    'slug': c.x_slug or '',
+                    'state': (c.state_id.code if c.state_id else '') or '',
+                    'city': c.city or '',
+                }
+
+        return _json({
+            'stats': stats,
+            'stores': stores,
+            'total_orders': sum(s['count'] for s in stats),
+        })
