@@ -66,9 +66,10 @@ class WebOrderConfig(models.Model):
 
     sequence = fields.Integer(default=10)
 
-    _sql_constraints = [
-        ('company_uniq', 'UNIQUE(company_id)', 'Only one web order config per store.'),
-    ]
+    company_uniq = models.Constraint(
+        'UNIQUE(company_id)',
+        'Only one web order config per store.',
+    )
 
     def get_lane_for_state(self, state):
         """Get the Dutchie POS swimlane lane name for an order state."""

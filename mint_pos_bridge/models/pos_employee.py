@@ -63,10 +63,10 @@ class MintPosEmployeeCredential(models.Model):
 
     active = fields.Boolean(default=True)
 
-    _sql_constraints = [
-        ('employee_company_uniq', 'UNIQUE(employee_id, company_id)',
-         'An employee can only have one credential per store.'),
-    ]
+    employee_company_uniq = models.Constraint(
+        'UNIQUE(employee_id, company_id)',
+        'An employee can only have one credential per store.',
+    )
 
     @api.onchange('access_level')
     def _onchange_access_level(self):

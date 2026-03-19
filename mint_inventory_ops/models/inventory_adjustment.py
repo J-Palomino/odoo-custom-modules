@@ -36,7 +36,6 @@ class InventoryAdjustment(models.Model):
     adjustment_type = fields.Selection(
         ADJUSTMENT_TYPES, string='Type', required=True,
         default='adjust', tracking=True,
-        states={'done': [('readonly', True)], 'rejected': [('readonly', True)]},
     )
     state = fields.Selection(
         STATES, string='Status', default='draft',

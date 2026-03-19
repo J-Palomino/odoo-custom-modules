@@ -52,10 +52,10 @@ class PtlDay(models.Model):
         compute='_compute_is_florida',
     )
 
-    _sql_constraints = [
-        ('date_company_uniq', 'unique(date, company_id)',
-         'Only one PTL day per store per date is allowed.'),
-    ]
+    date_company_uniq = models.Constraint(
+        'unique(date, company_id)',
+        'Only one PTL day per store per date is allowed.',
+    )
 
     @api.depends('date', 'company_id')
     def _compute_name(self):

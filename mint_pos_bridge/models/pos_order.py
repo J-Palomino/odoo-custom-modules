@@ -152,10 +152,10 @@ class MintPosOrder(models.Model):
         compute='_compute_wait_minutes',
     )
 
-    _sql_constraints = [
-        ('dutchie_checkout_uniq', 'UNIQUE(company_id, dutchie_checkout_id)',
-         'Dutchie checkout ID must be unique per store.'),
-    ]
+    dutchie_checkout_uniq = models.Constraint(
+        'UNIQUE(company_id, dutchie_checkout_id)',
+        'Dutchie checkout ID must be unique per store.',
+    )
 
     @api.model_create_multi
     def create(self, vals_list):

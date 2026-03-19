@@ -104,9 +104,10 @@ class DmsAccessGroups(models.Model):
         for record in self:
             record.count_directories = len(record.directory_ids)
 
-    _sql_constraints = [
-        ("name_uniq", "unique (name)", "The name of the group must be unique!")
-    ]
+    name_uniq = models.Constraint(
+        "unique (name)",
+        "The name of the group must be unique!",
+    )
 
     @api.depends(
         "parent_group_id.perm_inclusive_create",

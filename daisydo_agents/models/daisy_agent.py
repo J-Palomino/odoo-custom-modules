@@ -84,9 +84,10 @@ class DaisyAgent(models.Model):
     total_messages_sent = fields.Integer(compute="_compute_message_stats")
     metric_ids = fields.One2many("daisy.agent.metric", "agent_id", string="Daily Metrics")
 
-    _sql_constraints = [
-        ("code_unique", "UNIQUE(code)", "Agent code must be unique."),
-    ]
+    code_unique = models.Constraint(
+        "UNIQUE(code)",
+        "Agent code must be unique.",
+    )
 
     def _compute_feed_count(self):
         for agent in self:

@@ -6,9 +6,10 @@ class ComplianceVariance(models.Model):
     _description = 'Compliance Variance — Regulatory approval tracker'
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'submission_date desc, id desc'
-    _sql_constraints = [
-        ('reference_unique', 'unique(reference)', 'Variance reference must be unique.'),
-    ]
+    reference_unique = models.Constraint(
+        'unique(reference)',
+        'Variance reference must be unique.',
+    )
 
     name = fields.Char(
         string='Name',
@@ -86,12 +87,12 @@ class ComplianceVariance(models.Model):
     # Computed
     is_expired = fields.Boolean(
         string='Expired',
-        compute='_compute_expiry',
+        compute='_compute_is_expired',
         store=True,
     )
     days_until_expiry = fields.Integer(
         string='Days Until Expiry',
-        compute='_compute_expiry',
+        compute='_compute_days_until_expiry',
     )
 
     # Platform fields (for social media / website types)
@@ -112,13 +113,19 @@ class ComplianceVariance(models.Model):
             rec.name = f"{rec.reference or ''} — {label}".strip(' —')
 
     @api.depends('expiration_date')
-    def _compute_expiry(self):
+    def _compute_is_expired(self):
         today = fields.Date.context_today(self)
         for rec in self:
             if rec.expiration_date:
-                delta = (rec.expiration_date - today).days
-                rec.is_expired = delta < 0
-                rec.days_until_expiry = delta
+                rec.is_expired = (rec.expiration_date - today).days < 0
             else:
                 rec.is_expired = False
+
+    @api.depends('expiration_date')
+    def _compute_days_until_expiry(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            if rec.expiration_date:
+                rec.days_until_expiry = (rec.expiration_date - today).days
+            else:
                 rec.days_until_expiry = 0

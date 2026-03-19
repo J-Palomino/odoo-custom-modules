@@ -678,23 +678,21 @@ class MintPosOrderAPI(http.Controller):
 
         Order = request.env['mint.pos.order'].sudo()
 
-        # read_group: count orders grouped by state and company_id
-        groups = Order.read_group(
+        # _read_group: count orders grouped by state and company_id
+        groups = Order._read_group(
             domain,
-            fields=['id'],
             groupby=['company_id', 'state'],
-            lazy=False,
+            aggregates=['__count'],
         )
 
         # Build response: list of {company_id, company_name, state, count}
         stats = []
-        for g in groups:
-            company = g.get('company_id')
+        for company, state, count in groups:
             stats.append({
-                'company_id': company[0] if company else None,
-                'company_name': company[1] if company else 'Unknown',
-                'state': g.get('state') or 'unknown',
-                'count': g.get('__count', 0),
+                'company_id': company.id if company else None,
+                'company_name': company.name if company else 'Unknown',
+                'state': state or 'unknown',
+                'count': count,
             })
 
         # Also include store metadata for label enrichment
