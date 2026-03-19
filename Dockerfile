@@ -7,11 +7,14 @@ RUN echo "Build cache key: $CACHEBUST"
 
 USER root
 
-# Install git (needed for OCA module cloning) and nginx (websocket reverse proxy)
+# Install git (needed for OCA module cloning), nginx (websocket reverse proxy), and cloudflared (tunnel)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git nginx \
+    && apt-get install -y --no-install-recommends git nginx curl \
+    && curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb \
+    && dpkg -i /tmp/cloudflared.deb \
+    && rm -f /tmp/cloudflared.deb \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /run/nginx
+    && mkdir -p /run/nginx /etc/cloudflared
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis
@@ -163,6 +166,11 @@ COPY odoo.conf /etc/odoo/odoo.conf
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY fix-config.sh /fix-config.sh
 RUN chmod +x /fix-config.sh
+
+# ── Cloudflare Tunnel config ──────────────────────────────────────────
+COPY cloudflared-config.yml /etc/cloudflared/config.yml
+COPY start-tunnel.sh /start-tunnel.sh
+RUN chmod +x /start-tunnel.sh
 
 # Expose nginx port (Railway routes traffic here)
 EXPOSE 8080

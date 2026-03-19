@@ -463,5 +463,16 @@ if [ -n "$ODOO_INIT_MODULES" ] && [ "$ODOO_INIT_MODULES" != "none" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --init $ODOO_INIT_MODULES"
 fi
 
+# ── Start Cloudflare Tunnel (background) ─────────────────────────────
+if [ -n "$CLOUDFLARE_TUNNEL_CREDENTIALS" ]; then
+    echo "=== Starting Cloudflare Tunnel ==="
+    echo "$CLOUDFLARE_TUNNEL_CREDENTIALS" > /etc/cloudflared/credentials.json
+    chmod 600 /etc/cloudflared/credentials.json
+    cloudflared tunnel --config /etc/cloudflared/config.yml run &
+    echo "cloudflared started (pid $!)"
+else
+    echo "=== Cloudflare Tunnel disabled (CLOUDFLARE_TUNNEL_CREDENTIALS not set) ==="
+fi
+
 # Execute the original entrypoint
 exec /entrypoint.sh "$@" $EXTRA_ARGS
