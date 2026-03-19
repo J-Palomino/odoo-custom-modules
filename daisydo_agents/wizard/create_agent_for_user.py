@@ -14,7 +14,6 @@ import random
 import re
 import secrets
 
-import requests
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 
@@ -131,33 +130,12 @@ class CreateAgentForUser(models.TransientModel):
             code = f"{base_code[:26]}-{suffix}"
             suffix += 1
 
-        # --- 2. Create chatflow on Daisy+ ---
-        ai_svc = self.env["daisy.ai.service"]
-        base_url = ai_svc._get_daisy_api_base()
+        # --- 2. Clone template chatflow on Daisy+ ---
+        odoo_url = self.env["ir.config_parameter"].sudo().get_param(
+            "web.base.url", "https://letsgomint.us"
+        )
 
-        chatflow_id = None
-        try:
-            resp = requests.post(
-                f"{base_url}/chatflows",
-                json={
-                    "name": agent_name,
-                    "description": f"AI assistant for {target.name}",
-                    "type": "agentflow",
-                },
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=15,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            chatflow_id = data.get("id") or data.get("chatflowId")
-            _logger.info("Created Daisy+ chatflow '%s' (id=%s)", agent_name, chatflow_id)
-        except requests.exceptions.RequestException as e:
-            _logger.warning("Failed to create chatflow on Daisy+: %s — agent will need manual config", e)
-
-        # --- 3. Generate Odoo API key for the target user ---
+        # Generate API key first (needed for MCP credential injection)
         raw_key = secrets.token_hex(30)
         key_index = raw_key[:8]
 
@@ -177,17 +155,31 @@ class CreateAgentForUser(models.TransientModel):
             key_hash,
         ])
         apikey_id = self.env.cr.fetchone()[0]
-        _logger.info(
-            "Created API key (id=%s) for user %s — agent: %s",
-            apikey_id, target.login, agent_name,
-        )
+        _logger.info("Created API key (id=%s) for user %s — agent: %s", apikey_id, target.login, agent_name)
 
-        # --- 4. Build MCP connection config ---
-        odoo_url = self.env["ir.config_parameter"].sudo().get_param(
-            "web.base.url", "https://letsgomint.us"
-        )
+        # MCP credentials to inject into the cloned flowData
+        mcp_credentials = {
+            "odoo_url": odoo_url,
+            "odoo_username": target.login,
+            "odoo_api_key": raw_key,
+            "mcp_server_url": "https://fastapi-mcp-production.up.railway.app",
+        }
 
-        # --- 5. Create the agent ---
+        # Clone from template
+        template_id = self.env["ir.config_parameter"].sudo().get_param("daisy.template_chatflow_id", "")
+        ai_svc = self.env["daisy.ai.service"]
+        chatflow_id = None
+
+        if template_id:
+            chatflow_id = ai_svc.clone_chatflow(api_key, template_id, agent_name, mcp_credentials)
+            if chatflow_id:
+                _logger.info("Cloned chatflow '%s' from template %s → %s", agent_name, template_id, chatflow_id)
+            else:
+                _logger.warning("Clone failed for template %s — agent will need manual chatflow config", template_id)
+        else:
+            _logger.warning("No template chatflow configured (Settings → Daisy+). Agent needs manual chatflow setup.")
+
+        # --- 3. Create the agent ---
         agent = self.env["daisy.agent"].create({
             "name": agent_name,
             "code": code,
@@ -198,10 +190,10 @@ class CreateAgentForUser(models.TransientModel):
             "daisy_agency_id": chatflow_id or "",
             "ai_personality": self.ai_personality,
             "manager_id": target.id,
-            "mcp_odoo_url": odoo_url,
-            "mcp_odoo_username": target.login,
-            "mcp_odoo_api_key": raw_key,
-            "mcp_server_url": "https://fastapi-mcp-production.up.railway.app",
+            "mcp_odoo_url": mcp_credentials["odoo_url"],
+            "mcp_odoo_username": mcp_credentials["odoo_username"],
+            "mcp_odoo_api_key": mcp_credentials["odoo_api_key"],
+            "mcp_server_url": mcp_credentials["mcp_server_url"],
             "state": "draft",
         })
 
