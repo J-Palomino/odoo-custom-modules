@@ -17,7 +17,7 @@
         'views/push_subscription_views.xml',
         'views/push_site_views.xml',
     ],
-    'external_dependencies': {'python': ['pywebpush', 'py_vapid']},
+    'external_dependencies': {'python': ['pywebpush']},
     'installable': True,
     'application': False,
     'auto_install': False,
