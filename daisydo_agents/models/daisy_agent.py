@@ -69,19 +69,6 @@ class DaisyAgent(models.Model):
     # --- Email Project ---
     mail_project_id = fields.Many2one("project.project", string="Email Project", readonly=True)
 
-    # --- Manager (user this agent reports to / assists) ---
-    manager_id = fields.Many2one(
-        "res.users",
-        string="Reports To",
-        help="The employee this agent was created for. Agent inherits their Odoo permissions via MCP.",
-    )
-
-    # --- MCP Connection (Odoo ↔ Daisy+ bridge) ---
-    mcp_odoo_url = fields.Char(string="Odoo URL", help="Odoo instance URL for MCP connection")
-    mcp_odoo_username = fields.Char(string="Odoo Login", help="Login of the user whose API key is used")
-    mcp_odoo_api_key = fields.Char(string="Odoo API Key", help="API key generated for the manager user")
-    mcp_server_url = fields.Char(string="MCP Server URL", default="https://fastapi-mcp-production.up.railway.app")
-
     # --- Livechat ---
     livechat_channel_ids = fields.Many2many("im_livechat.channel", string="Livechat Channels")
     max_concurrent_chats = fields.Integer(default=10)
@@ -140,18 +127,62 @@ class DaisyAgent(models.Model):
                 ("daisy_ai_generated", "=", True),
             ])
 
+    # ---- Configuration check ----
+
+    def _get_effective_api_key(self):
+        """Return agent's API key, falling back to global system parameter."""
+        self.ensure_one()
+        if self.daisy_api_key:
+            return self.daisy_api_key
+        return self.env["ir.config_parameter"].sudo().get_param("daisy_bot.api_key", "")
+
+    def _get_effective_agency_id(self):
+        """Return agent's agency ID, falling back to global api_url."""
+        self.ensure_one()
+        if self.daisy_agency_id:
+            return self.daisy_agency_id
+        global_url = self.env["ir.config_parameter"].sudo().get_param("daisy_bot.api_url", "")
+        if "/prediction/" in global_url:
+            return global_url.rsplit("/prediction/", 1)[-1].strip("/")
+        return ""
+
+    @api.onchange("daisy_api_key", "daisy_agency_id")
+    def _onchange_warn_missing_config(self):
+        """Show inline warning when key fields are empty."""
+        warnings = []
+        if not self.daisy_api_key:
+            global_key = self.env["ir.config_parameter"].sudo().get_param("daisy_bot.api_key", "")
+            if global_key:
+                warnings.append("No API key set — will use the global key from System Parameters.")
+            else:
+                warnings.append("No API key set and no global fallback configured.")
+        if not self.daisy_agency_id:
+            warnings.append("No chatflow selected — the agent won't know which AI to use.")
+        if warnings:
+            return {
+                "warning": {
+                    "title": "Incomplete Configuration",
+                    "message": "\n".join(warnings),
+                }
+            }
+
     # ---- Lifecycle actions ----
 
     def action_hire(self):
         self.ensure_one()
         if self.state != "draft":
             raise UserError("Can only hire agents in Draft state.")
-        if not self.daisy_api_key:
-            raise UserError("Set a Daisy+ API Key before hiring.")
+        effective_key = self._get_effective_api_key()
+        if not effective_key:
+            raise UserError(
+                "No API key available. Set a Daisy+ API Key on this agent, "
+                "or configure a global key in Settings → Technical → System Parameters "
+                "(daisy_bot.api_key)."
+            )
 
         # Validate API key
         ai_svc = self.env["daisy.ai.service"]
-        result = ai_svc.validate_api_key(self.daisy_api_key)
+        result = ai_svc.validate_api_key(effective_key)
         if not result.get("valid"):
             raise UserError(f"Invalid API key: {result.get('error', 'unknown error')}")
 
