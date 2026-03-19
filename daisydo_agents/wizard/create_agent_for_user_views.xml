@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ WIZARD FORM ============ -->
+    <record id="create_agent_for_user_view_form" model="ir.ui.view">
+        <field name="name">daisy.agent.create.for.user.form</field>
+        <field name="model">daisy.agent.create.for.user</field>
+        <field name="arch" type="xml">
+            <form string="Create Agent for Employee">
+                <group>
+                    <group string="Employee">
+                        <field name="target_user_id"
+                               options="{'no_create': True}"
+                               placeholder="Select an employee..."/>
+                        <field name="agent_first_name"
+                               placeholder="Leave blank for random name"/>
+                        <field name="preview_name" readonly="1"
+                               invisible="not target_user_id"/>
+                    </group>
+                    <group string="Daisy+ Connection">
+                        <field name="daisy_api_key" password="True"/>
+                        <field name="daisy_agency_id"
+                               placeholder="Chatflow ID from Daisy+"/>
+                        <field name="ai_personality"/>
+                    </group>
+                </group>
+                <div class="alert alert-info" role="alert"
+                     invisible="not target_user_id">
+                    <p class="mb-0">
+                        This will create an AI agent named
+                        <strong><field name="preview_name" class="d-inline" readonly="1"/></strong>
+                        that reports to
+                        <strong><field name="target_user_id" class="d-inline" readonly="1"
+                                       options="{'no_open': True}"/></strong>.
+                        An Odoo API key will be generated in their name for the MCP connection.
+                    </p>
+                </div>
+                <footer>
+                    <button name="action_create_agent" string="Create Agent"
+                            type="object" class="btn-primary"
+                            invisible="not target_user_id"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ WIZARD ACTION ============ -->
+    <record id="create_agent_for_user_action" model="ir.actions.act_window">
+        <field name="name">Create Agent for Employee</field>
+        <field name="res_model">daisy.agent.create.for.user</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

@@ -69,6 +69,19 @@ class DaisyAgent(models.Model):
     # --- Email Project ---
     mail_project_id = fields.Many2one("project.project", string="Email Project", readonly=True)
 
+    # --- Manager (user this agent reports to / assists) ---
+    manager_id = fields.Many2one(
+        "res.users",
+        string="Reports To",
+        help="The employee this agent was created for. Agent inherits their Odoo permissions via MCP.",
+    )
+
+    # --- MCP Connection (Odoo ↔ Daisy+ bridge) ---
+    mcp_odoo_url = fields.Char(string="Odoo URL", help="Odoo instance URL for MCP connection")
+    mcp_odoo_username = fields.Char(string="Odoo Login", help="Login of the user whose API key is used")
+    mcp_odoo_api_key = fields.Char(string="Odoo API Key", help="API key generated for the manager user")
+    mcp_server_url = fields.Char(string="MCP Server URL", default="https://fastapi-mcp-production.up.railway.app")
+
     # --- Livechat ---
     livechat_channel_ids = fields.Many2many("im_livechat.channel", string="Livechat Channels")
     max_concurrent_chats = fields.Integer(default=10)
