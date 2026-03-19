@@ -10,7 +10,7 @@ class MintEmbedPage(models.Model):
     _name = 'mint.embed.page'
     _description = 'Embeddable Info Page'
     _order = 'sequence, name'
-    slug_unique = models.Constraint(
+    _slug_unique = models.Constraint(
         'UNIQUE(slug)',
         'Page slug must be unique.',
     )

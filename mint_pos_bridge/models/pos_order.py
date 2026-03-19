@@ -152,7 +152,7 @@ class MintPosOrder(models.Model):
         compute='_compute_wait_minutes',
     )
 
-    dutchie_checkout_uniq = models.Constraint(
+    _dutchie_checkout_uniq = models.Constraint(
         'UNIQUE(company_id, dutchie_checkout_id)',
         'Dutchie checkout ID must be unique per store.',
     )

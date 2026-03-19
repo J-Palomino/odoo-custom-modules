@@ -20,7 +20,7 @@ class PushSite(models.Model):
     subscription_count = fields.Integer(string='Subscribers',
                                         compute='_compute_subscription_count')
 
-    code_unique = models.Constraint(
+    _code_unique = models.Constraint(
         'UNIQUE(code)',
         'Site code must be unique.',
     )

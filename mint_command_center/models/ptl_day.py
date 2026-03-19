@@ -52,7 +52,7 @@ class PtlDay(models.Model):
         compute='_compute_is_florida',
     )
 
-    date_company_uniq = models.Constraint(
+    _date_company_uniq = models.Constraint(
         'unique(date, company_id)',
         'Only one PTL day per store per date is allowed.',
     )

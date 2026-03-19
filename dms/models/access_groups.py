@@ -104,7 +104,7 @@ class DmsAccessGroups(models.Model):
         for record in self:
             record.count_directories = len(record.directory_ids)
 
-    name_uniq = models.Constraint(
+    _name_uniq = models.Constraint(
         "unique (name)",
         "The name of the group must be unique!",
     )

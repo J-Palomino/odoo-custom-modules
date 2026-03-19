@@ -63,7 +63,7 @@ class MintPosEmployeeCredential(models.Model):
 
     active = fields.Boolean(default=True)
 
-    employee_company_uniq = models.Constraint(
+    _employee_company_uniq = models.Constraint(
         'UNIQUE(employee_id, company_id)',
         'An employee can only have one credential per store.',
     )

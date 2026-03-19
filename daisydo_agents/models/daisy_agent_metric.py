@@ -17,7 +17,7 @@ class DaisyAgentMetric(models.Model):
     avg_confidence = fields.Float()
     resolution_rate = fields.Float(compute="_compute_resolution_rate", store=True)
 
-    agent_date_unique = models.Constraint(
+    _agent_date_unique = models.Constraint(
         "UNIQUE(agent_id, date)",
         "One metric record per agent per day.",
     )

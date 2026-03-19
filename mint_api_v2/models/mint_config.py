@@ -16,7 +16,7 @@ class MintConfig(models.Model):
     description = fields.Text(string="Description")
     is_active = fields.Boolean(string="Active", default=True)
 
-    key_unique = models.Constraint(
+    _key_unique = models.Constraint(
         'unique(key)',
         'Config key must be unique.',
     )

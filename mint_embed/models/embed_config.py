@@ -12,7 +12,7 @@ class MintEmbedConfig(models.Model):
     _name = 'mint.embed.config'
     _description = 'Embed Widget Configuration'
     _order = 'create_date desc'
-    embed_key_unique = models.Constraint(
+    _embed_key_unique = models.Constraint(
         'UNIQUE(embed_key)',
         'Embed key must be unique.',
     )

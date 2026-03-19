@@ -32,7 +32,7 @@ class PushSubscription(models.Model):
     created_at = fields.Datetime(string='Created At', default=fields.Datetime.now)
     fail_count = fields.Integer(string='Consecutive Failures', default=0)
 
-    endpoint_unique = models.Constraint(
+    _endpoint_unique = models.Constraint(
         'UNIQUE(endpoint)',
         'Subscription endpoint must be unique.',
     )

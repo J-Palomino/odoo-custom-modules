@@ -58,7 +58,7 @@ class ResPartner(models.Model):
         string='Dutchie Purchases',
     )
 
-    dutchie_customer_id_unique = models.Constraint(
+    _dutchie_customer_id_unique = models.Constraint(
         'UNIQUE(x_dutchie_customer_id)',
         'Dutchie Customer ID must be unique.',
     )

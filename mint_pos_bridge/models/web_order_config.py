@@ -66,7 +66,7 @@ class WebOrderConfig(models.Model):
 
     sequence = fields.Integer(default=10)
 
-    company_uniq = models.Constraint(
+    _company_uniq = models.Constraint(
         'UNIQUE(company_id)',
         'Only one web order config per store.',
     )

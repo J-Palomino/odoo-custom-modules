@@ -6,7 +6,7 @@ class ComplianceVariance(models.Model):
     _description = 'Compliance Variance — Regulatory approval tracker'
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'submission_date desc, id desc'
-    reference_unique = models.Constraint(
+    _reference_unique = models.Constraint(
         'unique(reference)',
         'Variance reference must be unique.',
     )

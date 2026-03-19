@@ -63,7 +63,7 @@ class DMSCategory(models.Model):
     count_directories = fields.Integer(compute="_compute_count_directories")
     count_files = fields.Integer(compute="_compute_count_files")
 
-    name_uniq = models.Constraint(
+    _name_uniq = models.Constraint(
         "unique (name)",
         "Category name already exists!",
     )

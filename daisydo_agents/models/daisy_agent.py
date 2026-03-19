@@ -84,7 +84,7 @@ class DaisyAgent(models.Model):
     total_messages_sent = fields.Integer(compute="_compute_message_stats")
     metric_ids = fields.One2many("daisy.agent.metric", "agent_id", string="Daily Metrics")
 
-    code_unique = models.Constraint(
+    _code_unique = models.Constraint(
         "UNIQUE(code)",
         "Agent code must be unique.",
     )
