@@ -5,22 +5,22 @@ Wizard: Create a Daisy Agent for an employee.
 1. Admin picks a target user (the person the agent will assist)
 2. Generates a random first name + target user's first name as last name
 3. Creates an Odoo API key in the target user's name
-4. Stores the MCP connection config (Odoo URL + API key + username)
-5. Creates the daisy.agent record reporting to the target user
+4. Calls Daisy+ API to create a new chatflow for this agent
+5. Stores MCP connection config (Odoo URL + API key + username)
+6. Creates the daisy.agent record reporting to the target user
 """
-import hashlib
 import logging
-import os
 import random
 import re
 import secrets
 
+import requests
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
-# Random first names for agents — diverse, gender-neutral-leaning, short
+# Random first names for agents — diverse, short
 AGENT_FIRST_NAMES = [
     "Ada", "Aiden", "Aria", "Atlas", "Avery", "Blake", "Briar", "Cairo",
     "Cleo", "Coda", "Cora", "Cypress", "Dana", "Delta", "Eden", "Ellis",
@@ -46,16 +46,6 @@ class CreateAgentForUser(models.TransientModel):
         domain=[("active", "=", True), ("share", "=", False)],
         help="The employee this agent will assist. The agent reports to them.",
     )
-    daisy_api_key = fields.Char(
-        string="Daisy+ API Key",
-        required=True,
-        help="API key for the Daisy+ platform (used for AI responses)",
-    )
-    daisy_agency_id = fields.Char(
-        string="Chatflow ID",
-        required=True,
-        help="Daisy+ chatflow/agency ID for this agent",
-    )
     agent_first_name = fields.Char(
         string="Agent First Name",
         help="Leave blank to auto-generate a random name",
@@ -75,6 +65,12 @@ class CreateAgentForUser(models.TransientModel):
         default="friendly",
         string="Personality",
     )
+    # Only shown if no global key is configured
+    daisy_api_key = fields.Char(
+        string="Daisy+ API Key",
+        help="Only needed if no global key is configured in Settings",
+    )
+    has_global_key = fields.Boolean(compute="_compute_has_global_key")
 
     @api.depends("target_user_id", "agent_first_name")
     def _compute_preview_name(self):
@@ -86,6 +82,22 @@ class CreateAgentForUser(models.TransientModel):
             last = (wiz.target_user_id.name or "").split()[0]
             wiz.preview_name = f"{first} {last}"
 
+    def _compute_has_global_key(self):
+        global_key = self.env["ir.config_parameter"].sudo().get_param("daisy.global_api_key", "")
+        for wiz in self:
+            wiz.has_global_key = bool(global_key)
+
+    def _get_api_key(self):
+        """Return the Daisy+ API key — prefer global, fall back to wizard field."""
+        global_key = self.env["ir.config_parameter"].sudo().get_param("daisy.global_api_key", "")
+        key = global_key or self.daisy_api_key
+        if not key:
+            raise UserError(
+                "No Daisy+ API key found. Either set a global key in "
+                "Settings → Daisy+ or enter one in this wizard."
+            )
+        return key.strip()
+
     def action_create_agent(self):
         self.ensure_one()
         target = self.target_user_id
@@ -93,12 +105,13 @@ class CreateAgentForUser(models.TransientModel):
         if not target.partner_id:
             raise UserError("Selected user has no partner record.")
 
+        api_key = self._get_api_key()
+
         # --- 1. Pick agent name ---
         target_first_name = (target.name or "User").split()[0]
         if self.agent_first_name:
             first_name = self.agent_first_name.strip()
         else:
-            # Pick a random name not already used by another agent with this last name
             used = set(
                 self.env["daisy.agent"]
                 .search([("name", "ilike", f"% {target_first_name}")])
@@ -106,29 +119,52 @@ class CreateAgentForUser(models.TransientModel):
             )
             available = [n for n in AGENT_FIRST_NAMES if n.lower() not in used]
             if not available:
-                available = AGENT_FIRST_NAMES  # all used, allow duplicates
+                available = AGENT_FIRST_NAMES
             first_name = random.choice(available)
 
         agent_name = f"{first_name} {target_first_name}"
         code = re.sub(r"[^a-z0-9]+", "-", agent_name.lower()).strip("-")[:30]
 
-        # Ensure code uniqueness
         base_code = code
         suffix = 2
         while self.env["daisy.agent"].search_count([("code", "=", code)]):
             code = f"{base_code[:26]}-{suffix}"
             suffix += 1
 
-        # --- 2. Generate Odoo API key for the target user ---
-        raw_key = secrets.token_hex(30)  # 60 char hex string
+        # --- 2. Create chatflow on Daisy+ ---
+        ai_svc = self.env["daisy.ai.service"]
+        base_url = ai_svc._get_daisy_api_base()
+
+        chatflow_id = None
+        try:
+            resp = requests.post(
+                f"{base_url}/chatflows",
+                json={
+                    "name": agent_name,
+                    "description": f"AI assistant for {target.name}",
+                    "type": "agentflow",
+                },
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            chatflow_id = data.get("id") or data.get("chatflowId")
+            _logger.info("Created Daisy+ chatflow '%s' (id=%s)", agent_name, chatflow_id)
+        except requests.exceptions.RequestException as e:
+            _logger.warning("Failed to create chatflow on Daisy+: %s — agent will need manual config", e)
+
+        # --- 3. Generate Odoo API key for the target user ---
+        raw_key = secrets.token_hex(30)
         key_index = raw_key[:8]
 
-        # Hash with passlib (Odoo's key crypt context)
         from passlib.context import CryptContext
         key_ctx = CryptContext(["pbkdf2_sha512"], pbkdf2_sha512__rounds=6000)
         key_hash = key_ctx.hash(raw_key)
 
-        # Insert directly into res_users_apikeys
         self.env.cr.execute("""
             INSERT INTO res_users_apikeys (name, user_id, scope, index, key, create_date)
             VALUES (%s, %s, %s, %s, %s, NOW() AT TIME ZONE 'utc')
@@ -142,46 +178,35 @@ class CreateAgentForUser(models.TransientModel):
         ])
         apikey_id = self.env.cr.fetchone()[0]
         _logger.info(
-            "Created API key (id=%s) for user %s [%s] — agent: %s",
-            apikey_id, target.login, target.id, agent_name,
+            "Created API key (id=%s) for user %s — agent: %s",
+            apikey_id, target.login, agent_name,
         )
 
-        # --- 3. Build MCP connection config ---
+        # --- 4. Build MCP connection config ---
         odoo_url = self.env["ir.config_parameter"].sudo().get_param(
             "web.base.url", "https://letsgomint.us"
         )
-        mcp_config = {
-            "odoo_url": odoo_url,
-            "odoo_username": target.login,
-            "odoo_api_key": raw_key,
-            "mcp_server_url": "https://fastapi-mcp-production.up.railway.app",
-            "mcp_sse_endpoint": "/mcp/sse",
-        }
 
-        # --- 4. Create the agent ---
+        # --- 5. Create the agent ---
         agent = self.env["daisy.agent"].create({
             "name": agent_name,
             "code": code,
             "role": f"AI Assistant to {target.name}",
             "bio": f"Personal AI assistant created for {target.name}. "
                    f"Connected to Odoo via MCP with {target.login}'s permissions.",
-            "daisy_api_key": self.daisy_api_key,
-            "daisy_agency_id": self.daisy_agency_id,
+            "daisy_api_key": api_key,
+            "daisy_agency_id": chatflow_id or "",
             "ai_personality": self.ai_personality,
             "manager_id": target.id,
-            "mcp_odoo_url": mcp_config["odoo_url"],
+            "mcp_odoo_url": odoo_url,
             "mcp_odoo_username": target.login,
             "mcp_odoo_api_key": raw_key,
-            "mcp_server_url": mcp_config["mcp_server_url"],
+            "mcp_server_url": "https://fastapi-mcp-production.up.railway.app",
             "state": "draft",
         })
 
-        _logger.info(
-            "Created agent '%s' (id=%s) for user %s",
-            agent_name, agent.id, target.login,
-        )
+        _logger.info("Created agent '%s' (id=%s) for user %s", agent_name, agent.id, target.login)
 
-        # Open the new agent form
         return {
             "type": "ir.actions.act_window",
             "name": agent_name,

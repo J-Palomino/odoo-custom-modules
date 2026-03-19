@@ -7,6 +7,7 @@
         <field name="model">daisy.agent.create.for.user</field>
         <field name="arch" type="xml">
             <form string="Create Agent for Employee">
+                <field name="has_global_key" invisible="1"/>
                 <group>
                     <group string="Employee">
                         <field name="target_user_id"
@@ -16,12 +17,16 @@
                                placeholder="Leave blank for random name"/>
                         <field name="preview_name" readonly="1"
                                invisible="not target_user_id"/>
-                    </group>
-                    <group string="Daisy+ Connection">
-                        <field name="daisy_api_key" password="True"/>
-                        <field name="daisy_agency_id"
-                               placeholder="Chatflow ID from Daisy+"/>
                         <field name="ai_personality"/>
+                    </group>
+                    <group string="Daisy+ API Key"
+                           invisible="has_global_key">
+                        <field name="daisy_api_key" password="True"
+                               placeholder="Enter Daisy+ API key"
+                               required="not has_global_key"/>
+                        <div class="text-muted">
+                            Set a global key in Settings to skip this step.
+                        </div>
                     </group>
                 </group>
                 <div class="alert alert-info" role="alert"
@@ -32,7 +37,8 @@
                         that reports to
                         <strong><field name="target_user_id" class="d-inline" readonly="1"
                                        options="{'no_open': True}"/></strong>.
-                        An Odoo API key will be generated in their name for the MCP connection.
+                        A new chatflow will be created on Daisy+ and an Odoo API key
+                        will be generated in their name for the MCP connection.
                     </p>
                 </div>
                 <footer>
