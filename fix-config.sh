@@ -148,6 +148,22 @@ echo "=== Persistent volume addons contents ==="
 ls -la /var/lib/odoo/addons/ 2>/dev/null || echo "No addons dir"
 ls -la /var/lib/odoo/addons/19.0/ 2>/dev/null || echo "No 19.0 dir"
 
+# Create placeholder files for known missing filestore entries (prevents recurring errors)
+echo "=== Creating filestore placeholders for orphaned references ==="
+for f in 80/80eb20a26a4c1b41d6312a93a948c86f49a985ed \
+         96/9667dcb4a161fe69b41a2476f4a78c309ca8a92d \
+         18/187ac5dc623b63f9d57c6c6b18945da9f84a787d \
+         29/292223f3ab3d90064af39468aba40d07fc907814; do
+    dir="/var/lib/odoo/filestore/odoo/$(dirname "$f")"
+    path="/var/lib/odoo/filestore/odoo/$f"
+    if [ ! -f "$path" ]; then
+        mkdir -p "$dir" 2>/dev/null || true
+        printf '\x89PNG\r\n\x1a\n' > "$path" 2>/dev/null || true
+        chown odoo:odoo "$path" 2>/dev/null || true
+        echo "Created placeholder: $path"
+    fi
+done
+
 # Clean stale model references from uninstalled modules (sign_oca, etc.)
 echo "=== Cleaning stale model references ==="
 if [ -n "$HOST" ]; then
@@ -176,6 +192,12 @@ try:
         cur.execute("DELETE FROM ir_model WHERE model = %s", (model,))
         if cur.rowcount:
             print(f"Removed stale ir_model: {model} ({cur.rowcount} rows)")
+
+    # Mark ghost modules as uninstalled so they stop polluting startup logs
+    for mod in ('daisydo_mcp',):
+        cur.execute("UPDATE ir_module_module SET state = 'uninstalled' WHERE name = %s AND state != 'uninstalled'", (mod,))
+        if cur.rowcount:
+            print(f"Marked module '{mod}' as uninstalled")
 
     # Clean orphaned ir.attachment records pointing to missing filestore files
     cur.execute("""
