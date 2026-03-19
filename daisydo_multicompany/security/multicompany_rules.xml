@@ -227,17 +227,6 @@
     </record>
 
     <!-- ============================================================ -->
-    <!-- SIGNATURES (sign_oca)                                        -->
-    <!-- ============================================================ -->
-
-    <record id="rule_sign_oca_request_company" model="ir.rule">
-        <field name="name">Sign Request: multi-company isolation</field>
-        <field name="model_id" ref="sign_oca.model_sign_oca_request"/>
-        <field name="domain_force">[('company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]</field>
-        <field name="global" eval="True"/>
-    </record>
-
-    <!-- ============================================================ -->
     <!-- eLEARNING (website_slides)                                   -->
     <!-- ============================================================ -->
 

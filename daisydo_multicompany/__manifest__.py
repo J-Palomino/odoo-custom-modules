@@ -36,7 +36,6 @@ auto-generate a matching Sale Order in the vendor's company.
         "mail",
         "im_livechat",
         "website_slides",
-        "sign_oca",
     ],
     "data": [
         "security/multicompany_rules.xml",

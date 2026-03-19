@@ -193,11 +193,14 @@ try:
         if cur.rowcount:
             print(f"Removed stale ir_model: {model} ({cur.rowcount} rows)")
 
-    # Mark ghost modules as uninstalled so they stop polluting startup logs
+    # Remove ghost modules that don't exist in the codebase
     for mod in ('daisydo_mcp',):
-        cur.execute("UPDATE ir_module_module SET state = 'uninstalled' WHERE name = %s AND state != 'uninstalled'", (mod,))
+        cur.execute("DELETE FROM ir_model_data WHERE module = %s", (mod,))
+        deleted_data = cur.rowcount
+        cur.execute("DELETE FROM ir_module_module_dependency WHERE module_id IN (SELECT id FROM ir_module_module WHERE name = %s)", (mod,))
+        cur.execute("DELETE FROM ir_module_module WHERE name = %s", (mod,))
         if cur.rowcount:
-            print(f"Marked module '{mod}' as uninstalled")
+            print(f"Removed ghost module '{mod}' from DB ({deleted_data} data records)")
 
     # Clean orphaned ir.attachment records pointing to missing filestore files
     cur.execute("""
