@@ -2,15 +2,11 @@ tunnel: 4a3d78d6-ec7a-4fdd-9871-0ef470e785ee
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:
-  # Websocket/longpolling traffic
+  # All traffic routes through nginx, which handles websocket/http routing
   - hostname: odoo.wtfextracts.com
-    path: /websocket
-    service: http://localhost:8072
-  - hostname: odoo.wtfextracts.com
-    path: /longpolling
-    service: http://localhost:8072
-  # All other Odoo traffic (UI, API, JSON-RPC)
-  - hostname: odoo.wtfextracts.com
-    service: http://localhost:8069
+    service: http://localhost:8080
+    originRequest:
+      noTLSVerify: true
+      httpHostHeader: odoo.wtfextracts.com
   # Catch-all (required by cloudflared)
   - service: http_status:404
