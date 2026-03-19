@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data noupdate="1">
-        <!-- Default Daisy+ Chat Channel -->
+        <!-- Default Chat Channel -->
         <record id="daisy_livechat_channel" model="im_livechat.channel">
-            <field name="name">Daisy+ Support</field>
-            <field name="button_text">Chat with Daisy</field>
+            <field name="name">Mint Support</field>
+            <field name="button_text">Chat with us</field>
             <field name="default_message">Hello! How can I help you today?</field>
             <field name="ai_enabled">True</field>
             <field name="auto_greet_enabled">True</field>
             <field name="auto_greet_delay">3</field>
-            <field name="auto_greet_message">Hi! 👋 I'm Daisy, your AI assistant. How can I help you today?</field>
-            <field name="widget_primary_color">#FFD400</field>
-            <field name="widget_header_text">Daisy+ Chat</field>
+            <field name="auto_greet_message">Hi! 👋 How can I help you today?</field>
+            <field name="widget_primary_color">#00954c</field>
+            <field name="widget_header_text">Mint Chat</field>
             <field name="widget_placeholder">Type your message...</field>
             <field name="ai_handoff_threshold">0.7</field>
         </record>

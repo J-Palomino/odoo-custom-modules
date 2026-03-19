@@ -4,8 +4,8 @@ from markupsafe import Markup
 
 from odoo import models
 
-_BOT_NAME = os.environ.get('BRAND_BOT_NAME', 'DaisyBot')
-_BRAND_NAME = os.environ.get('BRAND_NAME', 'Daisy+')
+_BOT_NAME = os.environ.get('BRAND_BOT_NAME', 'MintBot')
+_BRAND_NAME = os.environ.get('BRAND_NAME', 'Mint')
 
 
 class MailBotDaisy(models.AbstractModel):

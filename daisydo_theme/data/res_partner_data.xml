@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo noupdate="1">
-    <!-- Rebrand OdooBot → DaisyBot with daisy logo avatar -->
+    <!-- Rebrand OdooBot → MintBot with logo avatar -->
     <record id="base.partner_root" model="res.partner">
-        <field name="name">DaisyBot</field>
+        <field name="name">MintBot</field>
         <field name="image_1920" type="base64" file="daisydo_theme/static/src/img/logo.png"/>
     </record>
 

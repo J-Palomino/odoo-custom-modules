@@ -7,11 +7,11 @@ from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
-_BRAND_NAME = os.environ.get('BRAND_NAME', 'Daisy+')
-_PRIMARY_COLOR = os.environ.get('BRAND_PRIMARY_COLOR', '#FFD400')
+_BRAND_NAME = os.environ.get('BRAND_NAME', 'Mint')
+_PRIMARY_COLOR = os.environ.get('BRAND_PRIMARY_COLOR', '#00954c')
 _LIVECHAT_GREETING = os.environ.get(
     'LIVECHAT_GREETING',
-    "Hi! 👋 I'm Daisy, your AI assistant. How can I help you today?",
+    "Hi! 👋 How can I help you today?",
 )
 
 

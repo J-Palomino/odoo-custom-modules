@@ -8,9 +8,9 @@
         <field name="arch" type="xml">
             <xpath expr="//notebook" position="inside">
                 <!-- Daisy+ API Configuration Tab -->
-                <page string="Daisy+ AI" name="daisy_config">
+                <page string="AI Chat" name="daisy_config">
                     <group>
-                        <group string="Daisy+ Connection">
+                        <group string="AI Connection">
                             <field name="ai_enabled"/>
                             <field name="daisy_api_key" password="True" invisible="not ai_enabled"
                                    placeholder="Enter your Daisy+ API key"/>
@@ -58,7 +58,7 @@
                         <group string="Preview">
                             <div class="daisy-widget-preview">
                                 <div class="preview-title">Widget Preview</div>
-                                <div class="preview-widget" style="background-color: #FFD400; width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                                <div class="preview-widget" style="background-color: #00954c; width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
                                     <span style="font-size: 24px;">💬</span>
                                 </div>
                             </div>
