@@ -226,16 +226,43 @@ try:
         cur.execute("ALTER TABLE product_template ADD COLUMN last_adjustment_id INTEGER")
         print("=== Pre-created inventory_status columns on product_template ===")
 
-    # Migrate S3 attachments: strip idrive_e2:// prefix for native fsspec s3:// location
-    cur.execute("""
-        UPDATE ir_attachment
-        SET store_fname = REPLACE(store_fname, 'idrive_e2://', '')
-        WHERE store_fname LIKE 'idrive_e2://%'
-    """)
-    if cur.rowcount:
-        print(f"=== Migrated {cur.rowcount} S3 attachment references (idrive_e2:// -> native) ===")
-    else:
-        print("=== No S3 attachments to migrate ===")
+    # Configure fs_storage backend for iDrive e2 S3 (if table exists)
+    # Uses env vars for credentials — never hardcoded
+    cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'fs_storage'")
+    if cur.fetchone():
+        s3_endpoint = os.environ.get("AWS_S3_ENDPOINT", "https://s3.us-southwest-1.idrivee2.com")
+        s3_bucket = os.environ.get("AWS_S3_BUCKET", "letsgomint-prod")
+        s3_region = os.environ.get("AWS_S3_REGION", "us-southwest-1")
+        s3_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        s3_secret = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+
+        if s3_key and s3_secret:
+            import json
+            options_json = json.dumps({
+                "endpoint_url": s3_endpoint,
+                "key": s3_key,
+                "secret": s3_secret,
+            })
+
+            # Upsert the idrive_e2 storage backend
+            cur.execute("SELECT id FROM fs_storage WHERE code = 'idrive_e2'")
+            row = cur.fetchone()
+            if row:
+                cur.execute("""
+                    UPDATE fs_storage SET
+                        options = %s,
+                        directory_path = %s
+                    WHERE code = 'idrive_e2'
+                """, (options_json, s3_bucket))
+                print(f"=== Updated fs_storage 'idrive_e2' → bucket={s3_bucket} ===")
+            else:
+                cur.execute("""
+                    INSERT INTO fs_storage (name, code, protocol, options, directory_path, create_uid, create_date, write_uid, write_date)
+                    VALUES ('iDrive e2 S3', 'idrive_e2', 's3', %s, %s, 1, NOW(), 1, NOW())
+                """, (options_json, s3_bucket))
+                print(f"=== Created fs_storage 'idrive_e2' → bucket={s3_bucket} ===")
+        else:
+            print("=== S3 credentials not set — skipping fs_storage config ===")
 
     # Enable stock tracking on all goods (Odoo 19: is_storable=True for stock.quant)
     cur.execute("""
