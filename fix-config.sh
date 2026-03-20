@@ -226,6 +226,17 @@ try:
         cur.execute("ALTER TABLE product_template ADD COLUMN last_adjustment_id INTEGER")
         print("=== Pre-created inventory_status columns on product_template ===")
 
+    # Migrate S3 attachments: strip idrive_e2:// prefix for native fsspec s3:// location
+    cur.execute("""
+        UPDATE ir_attachment
+        SET store_fname = REPLACE(store_fname, 'idrive_e2://', '')
+        WHERE store_fname LIKE 'idrive_e2://%'
+    """)
+    if cur.rowcount:
+        print(f"=== Migrated {cur.rowcount} S3 attachment references (idrive_e2:// -> native) ===")
+    else:
+        print("=== No S3 attachments to migrate ===")
+
     # Enable stock tracking on all goods (Odoo 19: is_storable=True for stock.quant)
     cur.execute("""
         UPDATE product_template
