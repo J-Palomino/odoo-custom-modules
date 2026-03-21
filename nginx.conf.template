@@ -39,27 +39,32 @@ http {
         }
 
         # Websocket — route to gevent worker (Odoo 19 bus)
-        # Hardcode Upgrade/Connection headers because Railway's LB
-        # strips them during TLS termination
         location /websocket {
             proxy_pass http://odoo-ws;
             proxy_http_version 1.1;
-            proxy_set_header Upgrade websocket;
-            proxy_set_header Connection Upgrade;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
             proxy_set_header Host $host;
-            proxy_set_header Origin "";
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Host $host;
             proxy_buffering off;
             proxy_cache off;
             proxy_read_timeout 86400;
             proxy_send_timeout 86400;
         }
 
-        # Legacy longpolling — removed in Odoo 19, redirect to websocket
+        # Longpolling — proxy to gevent (Odoo 19 still accepts it on gevent port)
         location /longpolling {
-            return 301 /websocket;
+            proxy_pass http://odoo-ws;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_read_timeout 86400;
         }
 
         # All other traffic — HTTP workers
