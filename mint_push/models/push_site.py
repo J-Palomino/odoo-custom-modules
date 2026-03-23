@@ -24,9 +24,10 @@ class PushSite(models.Model):
     subscription_count = fields.Integer(string='Subscribers',
                                         compute='_compute_subscription_count')
 
-    _sql_constraints = [
-        ('code_unique', 'UNIQUE(code)', 'Site code must be unique.'),
-    ]
+    _code_unique = models.Constraint(
+        'UNIQUE(code)',
+        'Site code must be unique.',
+    )
 
     def _compute_subscription_count(self):
         for site in self:

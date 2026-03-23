@@ -75,17 +75,25 @@ class MintCustomerAuth(http.Controller):
         if not email or not password:
             return error_response('Email and password are required')
 
+        user = request.env['res.users'].sudo().search(
+            [('login', '=', email), ('active', '=', True)], limit=1,
+        )
+        if not user:
+            return error_response('Invalid email or password', 401)
+
+        # Verify password using passlib (Odoo's internal hasher)
         try:
-            uid = request.session.authenticate(
-                request.env.cr.dbname, email, password
+            from passlib.context import CryptContext
+            ctx = CryptContext(['pbkdf2_sha512', 'plaintext'], deprecated=['plaintext'])
+            request.env.cr.execute(
+                "SELECT COALESCE(password, '') FROM res_users WHERE id=%s",
+                (user.id,)
             )
-        except AccessDenied:
+            hashed = request.env.cr.fetchone()[0]
+            if not hashed or not ctx.verify(password, hashed):
+                return error_response('Invalid email or password', 401)
+        except Exception:
             return error_response('Invalid email or password', 401)
-
-        if not uid:
-            return error_response('Invalid email or password', 401)
-
-        user = request.env['res.users'].sudo().browse(uid)
         token = user._generate_jwt()
 
         return json_response({
@@ -129,26 +137,49 @@ class MintCustomerAuth(http.Controller):
             return error_response('An account with this email already exists', 409)
 
         try:
-            # Use auth_signup to create portal user
-            values = {
+            # Create user via raw SQL + ORM hybrid (Odoo 19 create hooks
+            # cause transaction rollbacks due to mail/signup side effects)
+            main_company = request.env['res.company'].sudo().browse(1)
+
+            # Create partner first
+            partner = request.env['res.partner'].sudo().with_context(
+                mail_create_nosubscribe=True,
+                mail_create_nolog=True,
+                tracking_disable=True,
+                mail_notrack=True,
+            ).create({
                 'name': name,
-                'login': email,
-                'password': password,
-            }
-            if phone:
-                values['phone'] = phone
+                'email': email,
+                'phone': phone or False,
+                'customer_rank': 1,
+                'company_id': main_company.id,
+            })
+            request.env.cr.flush()
 
-            # Create user via signup mechanism
-            user = request.env['res.users'].sudo()._signup_create_user(values)
-            if not user:
-                return error_response('Failed to create account', 500)
+            # Create user with ALL hooks disabled
+            request.env.cr.execute("""
+                INSERT INTO res_users (login, password, company_id, partner_id,
+                                       active, share, create_uid, write_uid,
+                                       create_date, write_date, notification_type)
+                VALUES (%s, '', %s, %s, true, true, 1, 1, NOW(), NOW(), 'email')
+                RETURNING id
+            """, (email, main_company.id, partner.id))
+            user_id = request.env.cr.fetchone()[0]
 
-            # Assign portal group
-            portal_group = request.env.ref('base.group_portal')
-            user.sudo().write({'groups_id': [(4, portal_group.id)]})
+            # Add company_ids m2m relation
+            request.env.cr.execute("""
+                INSERT INTO res_company_users_rel (cid, user_id)
+                VALUES (%s, %s)
+                ON CONFLICT DO NOTHING
+            """, (main_company.id, user_id))
 
-            if phone:
-                user.partner_id.sudo().write({'phone': phone})
+            # Invalidate ORM cache and set password (handles hashing)
+            request.env['res.users'].sudo().invalidate_model()
+            user = request.env['res.users'].sudo().browse(user_id)
+            user.with_context(
+                no_reset_password=True,
+                tracking_disable=True,
+            ).write({'password': password})
 
             token = user._generate_jwt()
 
@@ -166,7 +197,7 @@ class MintCustomerAuth(http.Controller):
             return error_response(str(e))
         except Exception as e:
             _logger.exception('Registration failed: %s', e)
-            return error_response('Registration failed. Please try again.', 500)
+            return error_response('Registration failed: %s' % str(e), 500)
 
     @http.route('/api/v1/auth/forgot-password', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')

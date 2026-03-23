@@ -100,8 +100,9 @@ fi
 # scanned before /opt/extra-addons/ — we need the Docker version)
 for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_financial_risk \
     purchase_price_precision mint_automations mint_maintenance_form mint_command_center mint_embed \
+    mint_push mint_banner mint_customer_api mint_dutchie_sync mint_mail_whitelist mint_inventory_ops \
     daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
-    mint_oauth_only base_accounting_kit base_account_budget sign_oca \
+    mint_oauth_only mint_redis_session base_accounting_kit base_account_budget sign_oca \
     dms dms_field hr_dms_field \
     fs_storage fs_attachment fs_attachment_s3 server_environment \
     spreadsheet_oca spreadsheet_dashboard_oca \
@@ -125,7 +126,7 @@ done
 # These modules cause registry failures during update (view validation errors,
 # incompatible versions, missing dependencies)
 echo "=== Scanning for broken modules to remove ==="
-for mod in slack_sync spreadsheet_oca spreadsheet_dashboard_oca sign_oca; do
+for mod in slack_sync sign_oca; do
     # Check /opt/extra-addons (Docker image baked-in modules)
     if [ -d "/opt/extra-addons/$mod" ]; then
         echo "=== Removing broken module $mod at /opt/extra-addons/$mod ==="
@@ -146,6 +147,140 @@ done
 echo "=== Persistent volume addons contents ==="
 ls -la /var/lib/odoo/addons/ 2>/dev/null || echo "No addons dir"
 ls -la /var/lib/odoo/addons/19.0/ 2>/dev/null || echo "No 19.0 dir"
+
+# Create placeholder files for known missing filestore entries (prevents recurring errors)
+echo "=== Creating filestore placeholders for orphaned references ==="
+for f in 80/80eb20a26a4c1b41d6312a93a948c86f49a985ed \
+         96/9667dcb4a161fe69b41a2476f4a78c309ca8a92d \
+         18/187ac5dc623b63f9d57c6c6b18945da9f84a787d \
+         29/292223f3ab3d90064af39468aba40d07fc907814; do
+    dir="/var/lib/odoo/filestore/odoo/$(dirname "$f")"
+    path="/var/lib/odoo/filestore/odoo/$f"
+    if [ ! -f "$path" ]; then
+        mkdir -p "$dir" 2>/dev/null || true
+        printf '\x89PNG\r\n\x1a\n' > "$path" 2>/dev/null || true
+        chown odoo:odoo "$path" 2>/dev/null || true
+        echo "Created placeholder: $path"
+    fi
+done
+
+# Clean stale model references from uninstalled modules (sign_oca, etc.)
+echo "=== Cleaning stale model references ==="
+if [ -n "$HOST" ]; then
+    python3 << 'PYCLEAN' 2>&1
+import os, sys
+try:
+    import psycopg2
+except ImportError:
+    print("psycopg2 not available, skipping stale model cleanup")
+    sys.exit(0)
+
+host = os.environ.get("HOST", "localhost")
+port = os.environ.get("PORT", "5432")
+user = os.environ.get("USER", "odoo")
+password = os.environ.get("PASSWORD", os.environ.get("ODOO_DB_PASSWORD", ""))
+dbname = os.environ.get("ODOO_DB_NAME", "odoo")
+
+try:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    # Remove stale ir.model entries for uninstalled modules
+    for model in ('sign.oca.field', 'sign.oca.role', 'sign.oca.request',
+                  'sign.oca.item', 'sign.oca.template', 'sign.oca.type'):
+        cur.execute("DELETE FROM ir_model WHERE model = %s", (model,))
+        if cur.rowcount:
+            print(f"Removed stale ir_model: {model} ({cur.rowcount} rows)")
+
+    # Remove ghost modules that don't exist in the codebase
+    for mod in ('daisydo_mcp',):
+        cur.execute("DELETE FROM ir_model_data WHERE module = %s", (mod,))
+        deleted_data = cur.rowcount
+        cur.execute("DELETE FROM ir_module_module_dependency WHERE module_id IN (SELECT id FROM ir_module_module WHERE name = %s)", (mod,))
+        cur.execute("DELETE FROM ir_module_module WHERE name = %s", (mod,))
+        if cur.rowcount:
+            print(f"Removed ghost module '{mod}' from DB ({deleted_data} data records)")
+
+    # Clean orphaned ir.attachment records pointing to missing filestore files
+    cur.execute("""
+        DELETE FROM ir_attachment
+        WHERE store_fname IS NOT NULL
+          AND store_fname != ''
+          AND id NOT IN (SELECT res_id FROM ir_model_data WHERE model = 'ir.attachment')
+          AND create_date < NOW() - INTERVAL '30 days'
+          AND res_model IS NULL
+    """)
+    if cur.rowcount:
+        print(f"Cleaned {cur.rowcount} orphaned attachments")
+
+    # Pre-create inventory_status column for mint_inventory_ops (avoids serialization conflicts)
+    cur.execute("""
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'product_template' AND column_name = 'inventory_status'
+    """)
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE product_template ADD COLUMN inventory_status VARCHAR DEFAULT 'active'")
+        cur.execute("ALTER TABLE product_template ADD COLUMN discontinue_reason TEXT")
+        cur.execute("ALTER TABLE product_template ADD COLUMN discontinue_date DATE")
+        cur.execute("ALTER TABLE product_template ADD COLUMN last_adjustment_id INTEGER")
+        print("=== Pre-created inventory_status columns on product_template ===")
+
+    # Configure fs_storage backend for iDrive e2 S3 (if table exists)
+    # Uses env vars for credentials — never hardcoded
+    cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'fs_storage'")
+    if cur.fetchone():
+        s3_endpoint = os.environ.get("AWS_S3_ENDPOINT", "https://s3.us-southwest-1.idrivee2.com")
+        s3_bucket = os.environ.get("AWS_S3_BUCKET", "letsgomint-prod")
+        s3_region = os.environ.get("AWS_S3_REGION", "us-southwest-1")
+        s3_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        s3_secret = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+
+        if s3_key and s3_secret:
+            import json
+            options_json = json.dumps({
+                "endpoint_url": s3_endpoint,
+                "key": s3_key,
+                "secret": s3_secret,
+            })
+
+            # Upsert the idrive_e2 storage backend
+            cur.execute("SELECT id FROM fs_storage WHERE code = 'idrive_e2'")
+            row = cur.fetchone()
+            if row:
+                cur.execute("""
+                    UPDATE fs_storage SET
+                        options = %s,
+                        directory_path = %s
+                    WHERE code = 'idrive_e2'
+                """, (options_json, s3_bucket))
+                print(f"=== Updated fs_storage 'idrive_e2' → bucket={s3_bucket} ===")
+            else:
+                cur.execute("""
+                    INSERT INTO fs_storage (name, code, protocol, options, directory_path, create_uid, create_date, write_uid, write_date)
+                    VALUES ('iDrive e2 S3', 'idrive_e2', 's3', %s, %s, 1, NOW(), 1, NOW())
+                """, (options_json, s3_bucket))
+                print(f"=== Created fs_storage 'idrive_e2' → bucket={s3_bucket} ===")
+        else:
+            print("=== S3 credentials not set — skipping fs_storage config ===")
+
+    # Enable stock tracking on all goods (Odoo 19: is_storable=True for stock.quant)
+    cur.execute("""
+        UPDATE product_template
+        SET is_storable = true
+        WHERE type = 'consu' AND (is_storable = false OR is_storable IS NULL)
+    """)
+    if cur.rowcount:
+        print(f"=== Enabled stock tracking on {cur.rowcount} product templates ===")
+    else:
+        print("=== All product templates already storable ===")
+
+    cur.close()
+    conn.close()
+except Exception as e:
+    print(f"WARNING: stale model cleanup failed: {e}")
+PYCLEAN
+fi
 
 # Fix mail_message and mail_mail missing primary keys (pre-existing DB issue)
 # Uses Python/psycopg2 since psql may not be installed in the Docker image
@@ -306,7 +441,7 @@ fi
 # Copy new modules to persistent volume so Odoo's data_dir scan finds them
 echo "=== Syncing custom modules to persistent addons ==="
 mkdir -p /var/lib/odoo/addons/19.0
-for mod in mint_maintenance_form mint_automations mint_oauth_only; do
+for mod in mint_maintenance_form mint_automations mint_oauth_only mint_inventory_ops; do
     if [ -d "/opt/extra-addons/$mod" ]; then
         echo "Copying $mod to /var/lib/odoo/addons/19.0/$mod"
         rm -rf "/var/lib/odoo/addons/19.0/$mod"
@@ -329,6 +464,35 @@ echo "=== Check dependency modules on disk ==="
 ls -d /usr/lib/python3/dist-packages/odoo/addons/maintenance/ 2>/dev/null && echo "MAINTENANCE: OK" || echo "MAINTENANCE: MISSING"
 ls -d /usr/lib/python3/dist-packages/odoo/addons/website/ 2>/dev/null && echo "WEBSITE: OK" || echo "WEBSITE: MISSING"
 
+# ── Start nginx reverse proxy for websocket routing ──────────────────
+NGINX_PORT="${PORT:-8080}"
+echo "=== Configuring nginx on port $NGINX_PORT ==="
+sed "s/__NGINX_PORT__/$NGINX_PORT/g" /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+nginx -t 2>&1 && echo "nginx config OK" || echo "WARNING: nginx config test failed"
+nginx
+echo "=== nginx started (pid $(cat /run/nginx.pid 2>/dev/null || echo 'unknown')) ==="
+
+# Ensure gevent_port is set in config for websocket support
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "gevent_port" "$CONFIG_FILE"; then
+        sed -i 's/gevent_port\s*=\s*.*/gevent_port = 8072/g' "$CONFIG_FILE"
+    else
+        echo "gevent_port = 8072" >> "$CONFIG_FILE"
+    fi
+    echo "gevent_port = 8072 set in config"
+fi
+
+# Apply ODOO_WORKERS env var override (default: 6)
+WORKERS="${ODOO_WORKERS:-6}"
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "workers" "$CONFIG_FILE"; then
+        sed -i "s/workers\s*=\s*[0-9]*/workers = $WORKERS/g" "$CONFIG_FILE"
+    else
+        echo "workers = $WORKERS" >> "$CONFIG_FILE"
+    fi
+    echo "workers = $WORKERS set in config"
+fi
+
 # Build extra args from environment variables
 EXTRA_ARGS=""
 if [ -n "$ODOO_UPDATE_MODULES" ] && [ "$ODOO_UPDATE_MODULES" != "none" ]; then
@@ -338,6 +502,17 @@ fi
 if [ -n "$ODOO_INIT_MODULES" ] && [ "$ODOO_INIT_MODULES" != "none" ]; then
     echo "=== Installing modules: $ODOO_INIT_MODULES ==="
     EXTRA_ARGS="$EXTRA_ARGS --init $ODOO_INIT_MODULES"
+fi
+
+# ── Start Cloudflare Tunnel (background) ─────────────────────────────
+if [ -n "$CLOUDFLARE_TUNNEL_CREDENTIALS" ]; then
+    echo "=== Starting Cloudflare Tunnel ==="
+    echo "$CLOUDFLARE_TUNNEL_CREDENTIALS" > /etc/cloudflared/credentials.json
+    chmod 600 /etc/cloudflared/credentials.json
+    cloudflared tunnel --config /etc/cloudflared/config.yml run &
+    echo "cloudflared started (pid $!)"
+else
+    echo "=== Cloudflare Tunnel disabled (CLOUDFLARE_TUNNEL_CREDENTIALS not set) ==="
 fi
 
 # Execute the original entrypoint

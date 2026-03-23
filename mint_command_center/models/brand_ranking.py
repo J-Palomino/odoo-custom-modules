@@ -36,8 +36,7 @@ class BrandRanking(models.Model):
     score = fields.Float(string='Score')
     notes = fields.Text(string='Notes')
 
-    _sql_constraints = [
-        ('brand_company_date_uniq',
-         'unique(brand_id, company_id, ranking_date, period)',
-         'Only one ranking per brand per store per date/period.'),
-    ]
+    _brand_company_date_uniq = models.Constraint(
+        'unique(brand_id, company_id, ranking_date, period)',
+        'Only one ranking per brand per store per date/period.',
+    )

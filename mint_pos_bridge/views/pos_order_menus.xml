@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ── Main action (Kanban default) ────────────────────────────── -->
+
+    <record id="action_pos_orders" model="ir.actions.act_window">
+        <field name="name">POS Orders</field>
+        <field name="res_model">mint.pos.order</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="view_pos_order_search"/>
+        <field name="context">{'search_default_filter_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No POS orders yet
+            </p>
+            <p>
+                Orders from the website checkout and Dutchie walk-in transactions
+                will appear here automatically.
+            </p>
+        </field>
+    </record>
+
+    <!-- All orders action (list default) -->
+    <record id="action_pos_orders_all" model="ir.actions.act_window">
+        <field name="name">All Orders</field>
+        <field name="res_model">mint.pos.order</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="search_view_id" ref="view_pos_order_search"/>
+    </record>
+
+    <!-- Employee credentials action -->
+    <record id="action_pos_employee_credentials" model="ir.actions.act_window">
+        <field name="name">POS Credentials</field>
+        <field name="res_model">mint.pos.employee.credential</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ── Root menu ───────────────────────────────────────────────── -->
+
+    <menuitem id="menu_pos_bridge_root"
+              name="POS Bridge"
+              sequence="45"
+              web_icon="mint_pos_bridge,static/description/icon.png"
+              groups="group_pos_budtender"/>
+
+    <!-- Orders submenu -->
+    <menuitem id="menu_pos_orders"
+              name="Orders"
+              parent="menu_pos_bridge_root"
+              sequence="10"/>
+
+    <menuitem id="menu_pos_orders_active"
+              name="Active Orders"
+              parent="menu_pos_orders"
+              action="action_pos_orders"
+              sequence="10"/>
+
+    <menuitem id="menu_pos_orders_all"
+              name="All Orders"
+              parent="menu_pos_orders"
+              action="action_pos_orders_all"
+              sequence="20"/>
+
+    <!-- Settings submenu (managers only) -->
+    <menuitem id="menu_pos_settings"
+              name="Settings"
+              parent="menu_pos_bridge_root"
+              sequence="90"
+              groups="group_pos_manager"/>
+
+    <menuitem id="menu_pos_credentials"
+              name="Employee Credentials"
+              parent="menu_pos_settings"
+              action="action_pos_employee_credentials"
+              sequence="10"/>
+
+    <menuitem id="menu_web_order_config"
+              name="Web Order Config"
+              parent="menu_pos_settings"
+              action="mint_pos_bridge.action_web_order_config"
+              sequence="20"/>
+
+</odoo>

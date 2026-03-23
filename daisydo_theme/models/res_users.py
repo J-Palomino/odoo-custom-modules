@@ -7,7 +7,7 @@ from odoo import models, _
 from odoo.exceptions import AccessDenied
 
 _logger = logging.getLogger(__name__)
-_BOT_NAME = os.environ.get('BRAND_BOT_NAME', 'DaisyBot')
+_BOT_NAME = os.environ.get('BRAND_BOT_NAME', 'MintBot')
 
 
 class ResUsersDaisy(models.Model):

@@ -52,6 +52,7 @@
                         <group>
                             <field name="code"/>
                             <field name="email"/>
+                            <field name="manager_id"/>
                             <field name="mail_project_id" invisible="state == 'draft'"/>
                             <field name="user_id" readonly="1"/>
                         </group>
@@ -85,6 +86,31 @@
                                 <field name="max_concurrent_chats"/>
                             </group>
                             <field name="livechat_channel_ids" widget="many2many_tags"/>
+                        </page>
+                        <page string="MCP Connection" name="mcp"
+                              invisible="not mcp_odoo_url">
+                            <group>
+                                <group string="Odoo Credentials">
+                                    <field name="mcp_odoo_url"/>
+                                    <field name="mcp_odoo_username"/>
+                                    <field name="mcp_odoo_api_key" password="True"/>
+                                </group>
+                                <group string="MCP Server">
+                                    <field name="mcp_server_url"/>
+                                </group>
+                            </group>
+                            <div class="alert alert-secondary mt-2" role="alert">
+                                <p class="mb-1"><strong>Daisy+ MCP Config:</strong></p>
+                                <code>
+                                    X-Odoo-Username: <field name="mcp_odoo_username" class="d-inline" readonly="1"/>
+                                </code><br/>
+                                <code>
+                                    X-Odoo-API-Key: (hidden — click field above to reveal)
+                                </code><br/>
+                                <code>
+                                    SSE Endpoint: <field name="mcp_server_url" class="d-inline" readonly="1"/>/mcp/sse
+                                </code>
+                            </div>
                         </page>
                         <page string="About" name="about">
                             <field name="bio" placeholder="Background, skills, personality notes..."/>
@@ -149,12 +175,15 @@
             <list string="Agents" decoration-muted="state == 'terminated'"
                   decoration-warning="state == 'suspended'">
                 <header>
+                    <button name="%(create_agent_for_user_action)d" string="Create for Employee"
+                            type="action" class="btn-primary" icon="fa-user-plus"/>
                     <button name="%(daisy_agent_import_action)d" string="Sync from Daisy+"
-                            type="action" class="btn-primary" icon="fa-cloud-download"/>
+                            type="action" class="btn-secondary" icon="fa-cloud-download"/>
                 </header>
                 <field name="name"/>
                 <field name="code"/>
                 <field name="role"/>
+                <field name="manager_id" optional="show" string="Reports To"/>
                 <field name="ai_personality"/>
                 <field name="active_conversations"/>
                 <field name="total_conversations"/>
@@ -174,8 +203,10 @@
         <field name="arch" type="xml">
             <kanban string="Agents" default_group_by="state">
                 <header>
+                    <button name="%(create_agent_for_user_action)d" string="Create for Employee"
+                            type="action" class="btn-primary" icon="fa-user-plus"/>
                     <button name="%(daisy_agent_import_action)d" string="Sync from Daisy+"
-                            type="action" class="btn-primary" icon="fa-cloud-download"/>
+                            type="action" class="btn-secondary" icon="fa-cloud-download"/>
                 </header>
                 <field name="name"/>
                 <field name="role"/>

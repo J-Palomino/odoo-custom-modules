@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!-- Filter "Responsible" field by selected team's members -->
+    <record id="maintenance_request_form_filter_responsible" model="ir.ui.view">
+        <field name="name">maintenance.request.form.filter.responsible</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_request_view_form"/>
+        <field name="arch" type="xml">
+            <field name="user_id" position="attributes">
+                <attribute name="domain">[('id', 'in', maintenance_team_id.member_ids.ids)]</attribute>
+            </field>
+        </field>
+    </record>
+
+    <!-- Add "Team" column to Equipment list view -->
+    <record id="equipment_tree_add_team" model="ir.ui.view">
+        <field name="name">maintenance.equipment.tree.add.team</field>
+        <field name="model">maintenance.equipment</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_view_tree"/>
+        <field name="arch" type="xml">
+            <field name="category_id" position="after">
+                <field name="maintenance_team_id" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+    <!-- Add team filters to Equipment search view -->
+    <record id="equipment_search_add_team" model="ir.ui.view">
+        <field name="name">maintenance.equipment.search.add.team</field>
+        <field name="model">maintenance.equipment</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_view_search"/>
+        <field name="arch" type="xml">
+            <field name="category_id" position="after">
+                <field name="maintenance_team_id"/>
+                <filter string="IT" name="filter_it" domain="[('maintenance_team_id', '=', 2)]"/>
+                <filter string="Engineering" name="filter_engineering" domain="[('maintenance_team_id', '=', 4)]"/>
+                <filter string="Facilities" name="filter_facilities" domain="[('maintenance_team_id', '=', 11)]"/>
+                <filter string="Graphics" name="filter_graphics" domain="[('maintenance_team_id', '=', 3)]"/>
+                <filter string="Group by Team" name="group_team" context="{'group_by': 'maintenance_team_id'}"/>
+            </field>
+        </field>
+    </record>
+</odoo>

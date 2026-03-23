@@ -10,6 +10,8 @@
                 <field name="site_id" optional="show"/>
                 <field name="name"/>
                 <field name="body" widget="char"/>
+                <field name="company_ids" widget="many2many_tags" optional="show"/>
+                <field name="region" optional="hide"/>
                 <field name="sent_count"/>
                 <field name="total_count"/>
                 <field name="state" widget="badge"
@@ -49,6 +51,14 @@
                             <field name="icon" readonly="state == 'sent'"/>
                             <field name="image" readonly="state == 'sent'"/>
                         </group>
+                    </group>
+                    <group string="Targeting">
+                        <field name="company_ids" widget="many2many_tags"
+                               domain="[('parent_id', '!=', False)]"
+                               options="{'no_create': True}"
+                               readonly="state == 'sent'"/>
+                        <field name="region" readonly="state == 'sent'"
+                               placeholder="e.g., arizona"/>
                     </group>
                     <group string="Delivery Results" invisible="state == 'draft'">
                         <group>

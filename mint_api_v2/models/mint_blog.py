@@ -39,9 +39,10 @@ class MintBlog(models.Model):
     meta_title = fields.Char(string="Meta Title")
     meta_description = fields.Text(string="Meta Description")
 
-    _sql_constraints = [
-        ('slug_unique', 'UNIQUE(slug)', 'Blog post slug must be unique!'),
-    ]
+    _slug_unique = models.Constraint(
+        'UNIQUE(slug)',
+        'Blog post slug must be unique!',
+    )
 
     @api.model
     def get_published_posts(self, limit=None):
@@ -71,6 +72,7 @@ class MintBlogTag(models.Model):
     slug = fields.Char(string="URL Slug")
     color = fields.Integer(string="Color Index")
 
-    _sql_constraints = [
-        ('name_unique', 'UNIQUE(name)', 'Tag name must be unique!'),
-    ]
+    _name_unique = models.Constraint(
+        'UNIQUE(name)',
+        'Tag name must be unique!',
+    )

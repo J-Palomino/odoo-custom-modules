@@ -45,8 +45,7 @@ class DutchiePurchase(models.Model):
         help='JSON array of {product, sku, qty, price} from Dutchie dispensations report.',
     )
 
-    _sql_constraints = [
-        ('receipt_unique',
-         'UNIQUE(receipt_no, company_id)',
-         'Receipt number must be unique per store.'),
-    ]
+    _receipt_unique = models.Constraint(
+        'UNIQUE(receipt_no, company_id)',
+        'Receipt number must be unique per store.',
+    )

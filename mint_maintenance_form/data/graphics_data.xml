@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <data noupdate="1">
+        <!-- Graphics Maintenance Team -->
+        <record id="team_graphics" model="maintenance.team">
+            <field name="name">Graphics</field>
+        </record>
+
+        <!-- Graphics Equipment Categories -->
+        <record id="categ_graphics_in_store_signage" model="maintenance.equipment.category">
+            <field name="name">In-Store Signage / POS Displays</field>
+        </record>
+        <record id="categ_graphics_digital_menu_boards" model="maintenance.equipment.category">
+            <field name="name">Digital Menu Boards</field>
+        </record>
+        <record id="categ_graphics_print_materials" model="maintenance.equipment.category">
+            <field name="name">Print Materials</field>
+        </record>
+        <record id="categ_graphics_vehicle_wraps" model="maintenance.equipment.category">
+            <field name="name">Vehicle Wraps / Fleet Graphics</field>
+        </record>
+        <record id="categ_graphics_social_digital" model="maintenance.equipment.category">
+            <field name="name">Social Media / Digital Assets</field>
+        </record>
+        <record id="categ_graphics_window_graphics" model="maintenance.equipment.category">
+            <field name="name">Window Graphics / Decals</field>
+        </record>
+        <record id="categ_graphics_banners_outdoor" model="maintenance.equipment.category">
+            <field name="name">Banners / Outdoor Signage</field>
+        </record>
+        <record id="categ_graphics_apparel" model="maintenance.equipment.category">
+            <field name="name">Apparel / Merchandise</field>
+        </record>
+
+        <!-- Graphics Equipment Records -->
+        <record id="equip_graphics_in_store_signage" model="maintenance.equipment">
+            <field name="name">In-Store Signage / POS Displays</field>
+            <field name="category_id" ref="categ_graphics_in_store_signage"/>
+        </record>
+        <record id="equip_graphics_digital_menu_boards" model="maintenance.equipment">
+            <field name="name">Digital Menu Boards</field>
+            <field name="category_id" ref="categ_graphics_digital_menu_boards"/>
+        </record>
+        <record id="equip_graphics_print_materials" model="maintenance.equipment">
+            <field name="name">Print Materials</field>
+            <field name="category_id" ref="categ_graphics_print_materials"/>
+        </record>
+        <record id="equip_graphics_vehicle_wraps" model="maintenance.equipment">
+            <field name="name">Vehicle Wraps / Fleet Graphics</field>
+            <field name="category_id" ref="categ_graphics_vehicle_wraps"/>
+        </record>
+        <record id="equip_graphics_social_digital" model="maintenance.equipment">
+            <field name="name">Social Media / Digital Assets</field>
+            <field name="category_id" ref="categ_graphics_social_digital"/>
+        </record>
+        <record id="equip_graphics_window_graphics" model="maintenance.equipment">
+            <field name="name">Window Graphics / Decals</field>
+            <field name="category_id" ref="categ_graphics_window_graphics"/>
+        </record>
+        <record id="equip_graphics_banners_outdoor" model="maintenance.equipment">
+            <field name="name">Banners / Outdoor Signage</field>
+            <field name="category_id" ref="categ_graphics_banners_outdoor"/>
+        </record>
+        <record id="equip_graphics_apparel" model="maintenance.equipment">
+            <field name="name">Apparel / Merchandise</field>
+            <field name="category_id" ref="categ_graphics_apparel"/>
+        </record>
+    </data>
+</odoo>

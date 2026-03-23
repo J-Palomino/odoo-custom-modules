@@ -10,6 +10,19 @@ class ResConfigSettings(models.TransientModel):
         config_parameter="daisy.api_base_url",
         default="https://daisy.plus/api/v1",
     )
+    daisy_global_api_key = fields.Char(
+        string="Daisy+ Global API Key",
+        config_parameter="daisy.global_api_key",
+        help="Shared API key used when creating new agents. "
+             "If set, admins won't need to enter it each time.",
+    )
+    daisy_template_chatflow_id = fields.Char(
+        string="Template Chatflow ID",
+        config_parameter="daisy.template_chatflow_id",
+        help="Chatflow to clone when creating new agents. "
+             "This should be a fully configured agentflow with MCP tool node. "
+             "New agents get a copy with their own Odoo credentials injected.",
+    )
 
     # --- Go2RTC Media Server ---
     go2rtc_api_url = fields.Char(

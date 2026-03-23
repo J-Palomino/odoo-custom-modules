@@ -1,32 +1,33 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=62
+ARG CACHEBUST=98
+# Force Docker to bust cache for all subsequent layers when CACHEBUST changes
+RUN echo "Build cache key: $CACHEBUST"
 
 USER root
 
-# Install git (needed for OCA module cloning)
+# Install git (needed for OCA module cloning), nginx (websocket reverse proxy), and cloudflared (tunnel)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends git nginx curl \
+    && curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb \
+    && dpkg -i /tmp/cloudflared.deb \
+    && rm -f /tmp/cloudflared.deb \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/nginx /etc/cloudflared
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
 
 # ── OCA storage modules (S3 attachments) ──────────────────────────────
-RUN git clone --depth 1 --branch 19.0 https://github.com/OCA/storage.git /tmp/oca-storage \
-    && cp -r /tmp/oca-storage/fs_storage /opt/extra-addons/fs_storage \
-    && cp -r /tmp/oca-storage/fs_attachment /opt/extra-addons/fs_attachment \
-    && cp -r /tmp/oca-storage/fs_attachment_s3 /opt/extra-addons/fs_attachment_s3 \
-    && rm -rf /tmp/oca-storage \
-    && git clone --depth 1 --branch 19.0 https://github.com/OCA/server-env.git /tmp/oca-server-env \
-    && cp -r /tmp/oca-server-env/server_environment /opt/extra-addons/server_environment \
-    && rm -rf /tmp/oca-server-env \
-    && chown -R odoo:odoo /opt/extra-addons/fs_storage /opt/extra-addons/fs_attachment \
-       /opt/extra-addons/fs_attachment_s3 /opt/extra-addons/server_environment
+# Patched locally: server_environment dependency removed from fs_storage
+# (its monkeypatching of add_to_registry breaks Odoo 19 model registration)
+COPY --chown=odoo:odoo fs_storage /opt/extra-addons/fs_storage
+COPY --chown=odoo:odoo fs_attachment /opt/extra-addons/fs_attachment
+COPY --chown=odoo:odoo fs_attachment_s3 /opt/extra-addons/fs_attachment_s3
 
 # ── Mint custom modules ──────────────────────────────────────────────
 COPY --chown=odoo:odoo avancir_inventory /opt/extra-addons/avancir_inventory
@@ -42,7 +43,11 @@ COPY --chown=odoo:odoo mint_embed /opt/extra-addons/mint_embed
 COPY --chown=odoo:odoo mint_oauth_only /opt/extra-addons/mint_oauth_only
 COPY --chown=odoo:odoo mint_customer_api /opt/extra-addons/mint_customer_api
 COPY --chown=odoo:odoo mint_dutchie_sync /opt/extra-addons/mint_dutchie_sync
+COPY --chown=odoo:odoo mint_pos_bridge /opt/extra-addons/mint_pos_bridge
+COPY --chown=odoo:odoo mint_redis_session /opt/extra-addons/mint_redis_session
+COPY --chown=odoo:odoo mint_inventory_ops /opt/extra-addons/mint_inventory_ops
 COPY --chown=odoo:odoo mint_mail_whitelist /opt/extra-addons/mint_mail_whitelist
+COPY --chown=odoo:odoo mint_posthog /opt/extra-addons/mint_posthog
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
@@ -83,7 +88,7 @@ COPY --chown=odoo:odoo mgmtsystem_quality /opt/extra-addons/mgmtsystem_quality
 
 # ── OCA modules (flattened from submodules) ──────────────────────────
 COPY --chown=odoo:odoo vault /opt/extra-addons/vault
-COPY --chown=odoo:odoo sign_oca /opt/extra-addons/sign_oca
+# sign_oca removed — not Odoo 19 compatible, leaving orphaned DB refs
 COPY --chown=odoo:odoo base_cancel_confirm /opt/extra-addons/base_cancel_confirm
 COPY --chown=odoo:odoo base_substate /opt/extra-addons/base_substate
 COPY --chown=odoo:odoo base_technical_features /opt/extra-addons/base_technical_features
@@ -118,12 +123,17 @@ RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 M
 RUN test -f /opt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MODULE VERIFIED" || (echo "MINT_THEME MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
 RUN test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MINT_MAINTENANCE_FORM MODULE VERIFIED" || (echo "MINT_MAINTENANCE_FORM MODULE MISSING" && exit 1)
-RUN test -f /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
-RUN test -f /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
+RUN grep "version" /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
+RUN grep "version" /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
+RUN grep "push_subscription_views" /opt/extra-addons/mint_push/__manifest__.py | head -1 && echo "LOAD ORDER CHECK OK"
 RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_dutchie_sync/__manifest__.py && echo "MINT_DUTCHIE_SYNC VERIFIED" || (echo "MINT_DUTCHIE_SYNC MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_pos_bridge/__manifest__.py && echo "MINT_POS_BRIDGE VERIFIED" || (echo "MINT_POS_BRIDGE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_redis_session/__manifest__.py && echo "MINT_REDIS_SESSION VERIFIED" || (echo "MINT_REDIS_SESSION MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_inventory_ops/__manifest__.py && echo "MINT_INVENTORY_OPS VERIFIED" || (echo "MINT_INVENTORY_OPS MISSING" && exit 1)
+RUN python3 -c "compile(open('/opt/extra-addons/mint_pos_bridge/models/pos_order.py').read(), 'pos_order.py', 'exec')" && echo "POS_ORDER SYNTAX OK" || (echo "POS_ORDER SYNTAX ERROR" && head -60 /opt/extra-addons/mint_pos_bridge/models/pos_order.py && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
@@ -139,7 +149,7 @@ RUN for mod in base_accounting_kit base_account_budget; do \
     done
 
 # Verify OCA modules
-RUN for mod in sign_oca spreadsheet_oca spreadsheet_dashboard_oca \
+RUN for mod in spreadsheet_oca spreadsheet_dashboard_oca \
       base_cancel_confirm base_substate base_technical_features date_range \
       bi_sql_editor report_qweb_element_page_visibility report_xlsx report_xlsx_helper report_xml sql_request_abstract \
       account_analytic_tag account_invoice_start_end_dates \
@@ -161,7 +171,7 @@ RUN for mod in base_tier_validation base_tier_validation_formula \
     done
 
 # Verify OCA storage modules
-RUN for mod in fs_storage fs_attachment fs_attachment_s3 server_environment; do \
+RUN for mod in fs_storage fs_attachment fs_attachment_s3; do \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
 
@@ -174,10 +184,19 @@ RUN for mod in dms dms_field hr_dms_field; do \
 RUN chmod +x /opt/extra-addons/mint_theme/generate-theme.sh
 RUN chmod +x /opt/extra-addons/daisydo_theme/generate-theme.sh
 
-# Copy config file as backup and fix script
+# Copy config file as backup, nginx template, and fix script
 COPY odoo.conf /etc/odoo/odoo.conf
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY fix-config.sh /fix-config.sh
 RUN chmod +x /fix-config.sh
+
+# ── Cloudflare Tunnel config ──────────────────────────────────────────
+COPY cloudflared-config.yml /etc/cloudflared/config.yml
+COPY start-tunnel.sh /start-tunnel.sh
+RUN chmod +x /start-tunnel.sh
+
+# Expose nginx port (Railway routes traffic here)
+EXPOSE 8080
 
 # Run as root — fix-config.sh handles user switch via /entrypoint.sh
 ENTRYPOINT ["/fix-config.sh"]

@@ -13,12 +13,16 @@ URL_TEMPLATE_MAP = {
 }
 
 
-class PushSendWizard(models.TransientModel):
-    _name = 'mint.push.send.wizard'
-    _description = 'Send Push Notification'
+class PushSendWizardExt(models.TransientModel):
+    _inherit = 'mint.push.send.wizard'
 
-    title = fields.Char(string='Title', required=True)
-    body = fields.Text(string='Body', required=True)
+    # Additional targeting fields
+    company_ids = fields.Many2many(
+        'res.company', string='Target Stores',
+        domain="[('parent_id', '!=', False)]",
+        help='Leave empty to send to all subscribers')
+    region = fields.Char(string='Region',
+        help='Filter by region slug (e.g., "arizona")')
     url_template = fields.Selection([
         ('custom', 'Custom URL'),
         ('home', 'Home Page'),
@@ -26,9 +30,6 @@ class PushSendWizard(models.TransientModel):
         ('store', 'Store Locator'),
         ('menu', 'Online Menu'),
     ], string='URL Template', default='custom')
-    url = fields.Char(string='URL', default='https://letsgomint.us')
-    icon = fields.Char(string='Icon URL', default='/favicon.png')
-    image = fields.Char(string='Image URL')
 
     @api.onchange('url_template')
     def _onchange_url_template(self):
@@ -40,13 +41,18 @@ class PushSendWizard(models.TransientModel):
         self.ensure_one()
 
         # Create campaign record
-        campaign = self.env['mint.push.campaign'].create({
+        campaign_vals = {
             'name': self.title,
             'body': self.body,
             'url': self.url,
             'icon': self.icon,
             'image': self.image,
-        })
+        }
+        if self.company_ids:
+            campaign_vals['company_ids'] = [(6, 0, self.company_ids.ids)]
+        if self.region:
+            campaign_vals['region'] = self.region
+        campaign = self.env['mint.push.campaign'].create(campaign_vals)
 
         # Send it
         campaign.send_notification()

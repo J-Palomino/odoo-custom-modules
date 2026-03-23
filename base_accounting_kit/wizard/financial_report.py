@@ -28,6 +28,11 @@ class FinancialReport(models.TransientModel):
     _inherit = "account.report"
     _description = "Financial Reports"
 
+    @api.autovacuum
+    def _transient_vacuum(self):
+        """Override: skip vacuum — base account.report raises on variant deletion."""
+        return
+
     section_main_report_ids = fields.Many2many(string="Section Of",
                                                comodel_name='account.report',
                                                relation="account_financial_report_section_rel",

@@ -17,9 +17,10 @@ class DaisyAgentMetric(models.Model):
     avg_confidence = fields.Float()
     resolution_rate = fields.Float(compute="_compute_resolution_rate", store=True)
 
-    _sql_constraints = [
-        ("agent_date_unique", "UNIQUE(agent_id, date)", "One metric record per agent per day."),
-    ]
+    _agent_date_unique = models.Constraint(
+        "UNIQUE(agent_id, date)",
+        "One metric record per agent per day.",
+    )
 
     @api.depends("conversations_handled", "conversations_resolved")
     def _compute_resolution_rate(self):

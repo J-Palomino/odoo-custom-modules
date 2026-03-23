@@ -5,4 +5,5 @@ from . import brand_ranking
 from . import compliance_variance
 from . import push_subscription
 from . import push_notification
+from . import push_campaign
 from . import push_banner

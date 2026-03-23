@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint Dutchie Sync',
-    'version': '19.0.1.1.0',
+    'version': '19.0.2.0.0',
     'application': True,
     'category': 'Sales',
-    'summary': 'Dutchie customer sync, home store assignment, and purchase tracking',
+    'summary': 'Dutchie customer sync, home store assignment, purchase tracking, and real-time product sync',
     'author': 'MintDeals',
     'website': 'https://mintdeals.com',
     'license': 'LGPL-3',
@@ -12,6 +12,7 @@
         'base',
         'loyalty',
         'mail',
+        'product',
     ],
     'data': [
         'security/ir.model.access.csv',

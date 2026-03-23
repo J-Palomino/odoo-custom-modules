@@ -33,7 +33,7 @@ def _ensure_page_layouts(env):
 
 def _rebrand_odoobot(env):
     """Rename OdooBot to the branded bot name on the partner record for uid=1."""
-    bot_name = os.environ.get('BRAND_BOT_NAME', 'DaisyBot')
+    bot_name = os.environ.get('BRAND_BOT_NAME', 'MintBot')
     bot_email = os.environ.get('BRAND_BOT_EMAIL', 'daisybot@daisyerp.com')
     try:
         partner = env.ref('base.partner_root', raise_if_not_found=False)
@@ -46,7 +46,7 @@ def _rebrand_odoobot(env):
 
 def _set_company_branding(env):
     """Set company/website names and configure base URL from env vars."""
-    brand_name = os.environ.get('BRAND_NAME', 'Daisy+')
+    brand_name = os.environ.get('BRAND_NAME', 'Mint')
     brand_domain = os.environ.get('BRAND_DOMAIN', '')
 
     company = env['res.company'].browse(1)
@@ -110,7 +110,7 @@ def _configure_ice_servers(env):
 
 def _rebrand_views(env):
     """Replace hardcoded brand strings in XML view templates (ORM approach)."""
-    brand_name = os.environ.get('BRAND_NAME', 'Daisy+')
+    brand_name = os.environ.get('BRAND_NAME', 'Mint')
     if brand_name == 'Daisy+':
         return  # Default — no replacement needed
 

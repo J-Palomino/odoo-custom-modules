@@ -103,7 +103,23 @@ class DiscussChannel(models.Model):
                 api_key = ICP.get_param('daisy_bot.api_key', '')
 
                 if not api_url or not api_key:
-                    _logger.warning("Daisy Bot: api_url or api_key not configured in System Parameters")
+                    _logger.warning(
+                        "Daisy Bot: api_url or api_key not configured in System Parameters. "
+                        "Set daisy_bot.api_url and daisy_bot.api_key in Settings > Technical > System Parameters."
+                    )
+                    # Post a visible notice so the user isn't left waiting
+                    channel = env['discuss.channel'].browse(channel_id)
+                    channel.with_context(mail_create_nosubscribe=True).message_post(
+                        body=Markup(
+                            "<em>Daisy is not configured yet. "
+                            "An administrator needs to set the API key in "
+                            "Settings → Technical → System Parameters "
+                            "(daisy_bot.api_url and daisy_bot.api_key).</em>"
+                        ),
+                        message_type='notification',
+                        subtype_xmlid='mail.mt_note',
+                        author_id=daisy_partner_id,
+                    )
                     return
 
                 # Session ID ties conversation memory to this channel + user

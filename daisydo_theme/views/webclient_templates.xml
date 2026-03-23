@@ -95,7 +95,7 @@
                 /* Nuke ALL Odoo brand promotion variants (website, website_sale, etc.) */
                 .o_brand_promotion { font-size: 0 !important; visibility: hidden !important; }
                 .o_brand_promotion::after {
-                    content: 'Grown with Daisy 🌼';
+                    content: 'Powered by Mint';
                     font-size: .875rem !important;
                     visibility: visible !important;
                     display: inline !important;
@@ -197,7 +197,7 @@
     <!-- Override page title -->
     <template id="daisydo_title" inherit_id="web.layout" name="DaisyERP Title">
         <xpath expr="//title" position="replace">
-            <title><t t-esc="title or 'Daisy+'"/></title>
+            <title><t t-esc="title or 'Mint'"/></title>
         </xpath>
     </template>
 
@@ -205,7 +205,7 @@
     <template id="daisydo_brand_promotion" inherit_id="web.brand_promotion" name="DaisyERP Brand">
         <xpath expr="//div[hasclass('o_brand_promotion')]" position="replace">
             <div class="o_brand_promotion">
-                <span class="small">Grown with <strong>Daisy</strong> 🌼</span>
+                <span class="small">Powered by <strong>Mint</strong></span>
             </div>
         </xpath>
     </template>

@@ -7,11 +7,11 @@ from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
-_BRAND_NAME = os.environ.get('BRAND_NAME', 'Daisy+')
-_PRIMARY_COLOR = os.environ.get('BRAND_PRIMARY_COLOR', '#FFD400')
+_BRAND_NAME = os.environ.get('BRAND_NAME', 'Mint')
+_PRIMARY_COLOR = os.environ.get('BRAND_PRIMARY_COLOR', '#00954c')
 _LIVECHAT_GREETING = os.environ.get(
     'LIVECHAT_GREETING',
-    "Hi! 👋 I'm Daisy, your AI assistant. How can I help you today?",
+    "Hi! 👋 How can I help you today?",
 )
 
 
@@ -118,6 +118,31 @@ class DaisyChatChannel(models.Model):
             # Placeholder for analytics computation
             channel.total_ai_conversations = 0
             channel.ai_resolution_rate = 0.0
+
+    @api.onchange("ai_enabled", "daisy_api_key", "daisy_agency_id")
+    def _onchange_warn_missing_config(self):
+        """Show inline warning when AI is enabled but credentials are missing."""
+        if not self.ai_enabled:
+            return
+        warnings = []
+        if not self.daisy_api_key:
+            global_key = self.env["ir.config_parameter"].sudo().get_param("daisy_bot.api_key", "")
+            if global_key:
+                warnings.append("No API key set — will use the global key from System Parameters.")
+            else:
+                warnings.append(
+                    "No API key set and no global fallback configured. "
+                    "AI responses will not work until a key is provided."
+                )
+        if not self.daisy_agency_id:
+            warnings.append("No chatflow selected — the channel won't know which AI to use.")
+        if warnings:
+            return {
+                "warning": {
+                    "title": "Incomplete AI Configuration",
+                    "message": "\n".join(warnings),
+                }
+            }
 
     @api.onchange("daisy_api_key")
     def _onchange_daisy_api_key(self):

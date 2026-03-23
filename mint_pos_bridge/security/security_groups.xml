@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Budtender: view/update orders for their store only -->
+        <record id="group_pos_budtender" model="res.groups">
+            <field name="name">Mint POS / Budtender</field>
+            <field name="comment">View and update POS orders for assigned store(s). Cannot see Dutchie credentials or other stores' data.</field>
+        </record>
+
+        <!-- Manager: all stores, settings, employee management -->
+        <record id="group_pos_manager" model="res.groups">
+            <field name="name">Mint POS / Manager</field>
+            <field name="comment">Full POS access across all stores. Can manage employee credentials and view all order data.</field>
+            <field name="implied_ids" eval="[(4, ref('group_pos_budtender'))]"/>
+        </record>
+
+    </data>
+</odoo>

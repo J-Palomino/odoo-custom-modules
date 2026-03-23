@@ -438,7 +438,7 @@ body {
 }
 
 .accounts-dashboard-wrap .box-3 .main-title {
-    background: #FFD400;
+    background: var(--daisy-primary, #00954c);
     color: #fff;
 }
 
@@ -580,7 +580,7 @@ body {
     width: auto;
     height: 20px;
     color: #fff;
-    background-color: #E5BF00 !important;
+    background-color: var(--daisy-hover, #007e40) !important;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -724,7 +724,7 @@ body {
     justify-content: center;
     align-content: center;
     padding: .3rem;
-    background: #E5BF00;
+    background: var(--daisy-hover, #007e40);
     color: #fff;
     border-radius: 10px;
     width: auto !important;
@@ -744,7 +744,7 @@ body {
     align-content: center;
     padding: .3rem;
     background:
-        #E5BF00;
+        var(--daisy-hover, #007e40);
     color:
         #fff;
     border-radius: 10px;
@@ -764,7 +764,7 @@ body {
     align-content: center;
     padding: .3rem;
     background:
-        #E5BF00;
+        var(--daisy-hover, #007e40);
     color:
         #fff;
     border-radius: 10px;
@@ -785,7 +785,7 @@ body {
     align-content: center;
     padding: .3rem;
     background:
-        #E5BF00;
+        var(--daisy-hover, #007e40);
     color:
         #fff;
     border-radius: 10px;
@@ -934,7 +934,7 @@ body {
     background-size: auto;
     height: 20px;
     width: 100%;
-    background-color: #FFD400;
+    background-color: var(--daisy-primary, #00954c);
 }
 
 // The unordered list
@@ -1124,8 +1124,8 @@ progress::-moz-progress-bar {
 .accounts-dashboard-wrap .btn-primary {
 
     color: #1a1a1a;
-    background-color: #FFD400;
-    border-color: #E5BF00;
+    background-color: var(--daisy-primary, #00954c);
+    border-color: var(--daisy-hover, #007e40);
 
 }
 
@@ -1265,7 +1265,7 @@ width: 33.33333333% !important;
     margin-left: 195px;
 }
 .new-div{
-    background-color: #E5BF00;
+    background-color: var(--daisy-hover, #007e40);
     height: 70px;
     width: 7px;
     margin-left: 500px;

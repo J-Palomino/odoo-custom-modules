@@ -9,8 +9,8 @@ _logger = logging.getLogger(__name__)
 
 def post_init_hook(env):
     """Update default livechat channel with brand env vars."""
-    brand_name = os.environ.get('BRAND_NAME', 'Daisy+')
-    primary_color = os.environ.get('BRAND_PRIMARY_COLOR', '#FFD400')
+    brand_name = os.environ.get('BRAND_NAME', 'Mint')
+    primary_color = os.environ.get('BRAND_PRIMARY_COLOR', '#00954c')
     channel_name = os.environ.get('LIVECHAT_CHANNEL_NAME', f'{brand_name} Support')
     button_text = os.environ.get('LIVECHAT_BUTTON_TEXT', f'Chat with {brand_name}')
     greeting = os.environ.get(

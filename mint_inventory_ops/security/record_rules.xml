@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Multi-company isolation for adjustments -->
+    <record id="rule_adjustment_company" model="ir.rule">
+        <field name="name">Inventory Adjustment: multi-company</field>
+        <field name="model_id" ref="model_mint_inventory_adjustment"/>
+        <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <!-- Adjustment lines follow parent company -->
+    <record id="rule_adjustment_line_company" model="ir.rule">
+        <field name="name">Adjustment Line: multi-company</field>
+        <field name="model_id" ref="model_mint_inventory_adjustment_line"/>
+        <field name="domain_force">['|', ('adjustment_id.company_id', '=', False), ('adjustment_id.company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>

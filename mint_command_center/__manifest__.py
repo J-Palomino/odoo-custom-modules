@@ -1,6 +1,6 @@
 {
     'name': 'Mint Marketing',
-    'version': '19.0.2.1.0',
+    'version': '19.0.2.3.0',
     'category': 'Marketing',
     'summary': 'Marketing Platform for Mint Cannabis',
     'description': """
@@ -27,8 +27,14 @@
     'license': 'LGPL-3',
     'depends': [
         'mail',
+        'bus',
         'mint_push',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'mint_command_center/static/src/outdated_page_watcher_patch.js',
+        ],
+    },
     'external_dependencies': {
         'python': ['pywebpush'],
     },
@@ -42,6 +48,8 @@
         'views/compliance_views.xml',
         'views/push_site_views.xml',
         'views/push_views.xml',
+        'views/push_campaign_views.xml',
+        'views/push_send_wizard_views.xml',
         'views/banner_views.xml',
         'views/menu.xml',
     ],

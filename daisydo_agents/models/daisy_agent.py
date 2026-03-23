@@ -84,9 +84,10 @@ class DaisyAgent(models.Model):
     total_messages_sent = fields.Integer(compute="_compute_message_stats")
     metric_ids = fields.One2many("daisy.agent.metric", "agent_id", string="Daily Metrics")
 
-    _sql_constraints = [
-        ("code_unique", "UNIQUE(code)", "Agent code must be unique."),
-    ]
+    _code_unique = models.Constraint(
+        "UNIQUE(code)",
+        "Agent code must be unique.",
+    )
 
     def _compute_feed_count(self):
         for agent in self:
@@ -127,18 +128,62 @@ class DaisyAgent(models.Model):
                 ("daisy_ai_generated", "=", True),
             ])
 
+    # ---- Configuration check ----
+
+    def _get_effective_api_key(self):
+        """Return agent's API key, falling back to global system parameter."""
+        self.ensure_one()
+        if self.daisy_api_key:
+            return self.daisy_api_key
+        return self.env["ir.config_parameter"].sudo().get_param("daisy_bot.api_key", "")
+
+    def _get_effective_agency_id(self):
+        """Return agent's agency ID, falling back to global api_url."""
+        self.ensure_one()
+        if self.daisy_agency_id:
+            return self.daisy_agency_id
+        global_url = self.env["ir.config_parameter"].sudo().get_param("daisy_bot.api_url", "")
+        if "/prediction/" in global_url:
+            return global_url.rsplit("/prediction/", 1)[-1].strip("/")
+        return ""
+
+    @api.onchange("daisy_api_key", "daisy_agency_id")
+    def _onchange_warn_missing_config(self):
+        """Show inline warning when key fields are empty."""
+        warnings = []
+        if not self.daisy_api_key:
+            global_key = self.env["ir.config_parameter"].sudo().get_param("daisy_bot.api_key", "")
+            if global_key:
+                warnings.append("No API key set — will use the global key from System Parameters.")
+            else:
+                warnings.append("No API key set and no global fallback configured.")
+        if not self.daisy_agency_id:
+            warnings.append("No chatflow selected — the agent won't know which AI to use.")
+        if warnings:
+            return {
+                "warning": {
+                    "title": "Incomplete Configuration",
+                    "message": "\n".join(warnings),
+                }
+            }
+
     # ---- Lifecycle actions ----
 
     def action_hire(self):
         self.ensure_one()
         if self.state != "draft":
             raise UserError("Can only hire agents in Draft state.")
-        if not self.daisy_api_key:
-            raise UserError("Set a Daisy+ API Key before hiring.")
+        effective_key = self._get_effective_api_key()
+        if not effective_key:
+            raise UserError(
+                "No API key available. Set a Daisy+ API Key on this agent, "
+                "or configure a global key in Settings → Technical → System Parameters "
+                "(daisy_bot.api_key)."
+            )
 
         # Validate API key
         ai_svc = self.env["daisy.ai.service"]
-        result = ai_svc.validate_api_key(self.daisy_api_key)
+        result = ai_svc.validate_api_key(effective_key)
         if not result.get("valid"):
             raise UserError(f"Invalid API key: {result.get('error', 'unknown error')}")
 

@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Form View -->
+    <record id="view_adjustment_form" model="ir.ui.view">
+        <field name="name">mint.inventory.adjustment.form</field>
+        <field name="model">mint.inventory.adjustment</field>
+        <field name="arch" type="xml">
+            <form string="Inventory Adjustment">
+                <header>
+                    <button name="action_submit" string="Submit" type="object"
+                            class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_approve" string="Approve" type="object"
+                            class="btn-primary"
+                            invisible="state != 'submitted'"
+                            groups="mint_inventory_ops.group_inventory_manager"/>
+                    <button name="action_do_reject" string="Reject" type="object"
+                            class="btn-danger"
+                            invisible="state != 'submitted'"
+                            groups="mint_inventory_ops.group_inventory_manager"/>
+                    <button name="action_apply" string="Apply" type="object"
+                            class="btn-success"
+                            invisible="state != 'approved'"
+                            groups="mint_inventory_ops.group_inventory_manager"
+                            confirm="Apply this adjustment? Stock quantities will be updated."/>
+                    <button name="action_reset_draft" string="Reset to Draft" type="object"
+                            invisible="state != 'rejected'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,submitted,approved,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Details">
+                            <field name="adjustment_type"
+                                   readonly="state not in ('draft',)"/>
+                            <field name="company_id"
+                                   readonly="state not in ('draft',)"/>
+                            <field name="warehouse_id"
+                                   readonly="state not in ('draft',)"/>
+                            <field name="dest_warehouse_id"
+                                   invisible="adjustment_type != 'move'"
+                                   readonly="state not in ('draft',)"/>
+                        </group>
+                        <group string="Compliance">
+                            <field name="metrc_tag"/>
+                            <field name="batch_number"/>
+                            <field name="line_count"/>
+                            <field name="total_quantity"/>
+                        </group>
+                    </group>
+                    <group string="Reason" invisible="adjustment_type not in ('destroy', 'discontinue')">
+                        <field name="reason" nolabel="1"
+                               placeholder="Required: explain why this operation is needed"
+                               readonly="state not in ('draft', 'submitted')"/>
+                    </group>
+
+                    <notebook>
+                        <page string="Lines" name="lines">
+                            <field name="line_ids"
+                                   readonly="state not in ('draft',)">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="product_id"/>
+                                    <field name="sku"/>
+                                    <field name="brand"/>
+                                    <field name="current_qty"/>
+                                    <field name="new_qty"
+                                           invisible="parent.adjustment_type not in ('adjust', 'restore', 'convert')"/>
+                                    <field name="quantity"
+                                           invisible="parent.adjustment_type in ('adjust', 'restore')"/>
+                                    <field name="thc" optional="hide"/>
+                                    <field name="cbd" optional="hide"/>
+                                    <field name="metrc_tag" optional="hide"/>
+                                    <field name="notes" optional="hide"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Approval" name="approval"
+                              invisible="state == 'draft'">
+                            <group>
+                                <group>
+                                    <field name="submitted_by"/>
+                                    <field name="submitted_at"/>
+                                </group>
+                                <group>
+                                    <field name="approved_by"/>
+                                    <field name="approved_at"/>
+                                </group>
+                            </group>
+                            <group invisible="state != 'rejected'">
+                                <field name="rejected_by"/>
+                                <field name="rejected_reason"/>
+                            </group>
+                        </page>
+                        <page string="Stock Transfer" name="picking"
+                              invisible="not picking_id">
+                            <group>
+                                <field name="picking_id"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="view_adjustment_list" model="ir.ui.view">
+        <field name="name">mint.inventory.adjustment.list</field>
+        <field name="model">mint.inventory.adjustment</field>
+        <field name="arch" type="xml">
+            <list string="Inventory Adjustments" default_order="create_date desc">
+                <field name="name"/>
+                <field name="adjustment_type"/>
+                <field name="company_id"/>
+                <field name="warehouse_id"/>
+                <field name="line_count"/>
+                <field name="total_quantity"/>
+                <field name="submitted_by"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state == 'submitted'"
+                       decoration-success="state in ('approved', 'done')"
+                       decoration-danger="state == 'rejected'"/>
+                <field name="create_date"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Kanban View -->
+    <record id="view_adjustment_kanban" model="ir.ui.view">
+        <field name="name">mint.inventory.adjustment.kanban</field>
+        <field name="model">mint.inventory.adjustment</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state">
+                <field name="name"/>
+                <field name="adjustment_type"/>
+                <field name="state"/>
+                <field name="company_id"/>
+                <field name="line_count"/>
+                <templates>
+                    <t t-name="card">
+                        <strong><field name="name"/></strong>
+                        <field name="adjustment_type"/>
+                        <div>
+                            <field name="company_id"/>
+                            <span class="float-end"><field name="line_count"/> items</span>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_adjustment_search" model="ir.ui.view">
+        <field name="name">mint.inventory.adjustment.search</field>
+        <field name="model">mint.inventory.adjustment</field>
+        <field name="arch" type="xml">
+            <search string="Adjustments">
+                <field name="name"/>
+                <field name="company_id"/>
+                <field name="adjustment_type"/>
+                <filter name="draft" string="Draft" domain="[('state', '=', 'draft')]"/>
+                <filter name="submitted" string="Pending Approval" domain="[('state', '=', 'submitted')]"/>
+                <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
+                <filter name="done" string="Done" domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter name="adjust" string="Adjustments" domain="[('adjustment_type', '=', 'adjust')]"/>
+                <filter name="move" string="Transfers" domain="[('adjustment_type', '=', 'move')]"/>
+                <filter name="destroy" string="Destroyed" domain="[('adjustment_type', '=', 'destroy')]"/>
+                <separator/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_type" string="Type" context="{'group_by': 'adjustment_type'}"/>
+                <filter name="group_company" string="Store" context="{'group_by': 'company_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_adjustment" model="ir.actions.act_window">
+        <field name="name">Inventory Adjustments</field>
+        <field name="res_model">mint.inventory.adjustment</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="search_view_id" ref="view_adjustment_search"/>
+        <field name="context">{'search_default_submitted': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first inventory adjustment
+            </p>
+            <p>
+                Adjust quantities, transfer between stores, destroy or discontinue products.
+                All adjustments require manager approval before being applied.
+            </p>
+        </field>
+    </record>
+
+</odoo>

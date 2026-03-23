@@ -1,14 +1,122 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-    <template id="request_form" name="Maintenance Request Form">
+    <!-- ============================================================ -->
+    <!-- /fixit — Routing page                                        -->
+    <!-- ============================================================ -->
+    <template id="routing_page" name="Fix-It Routing Page">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <div class="row justify-content-center">
+                        <div class="col-lg-8 text-center">
+                            <h1 class="mb-2">How can we help?</h1>
+                            <p class="text-muted mb-5">
+                                Choose the type of request you need to submit.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="row justify-content-center g-4">
+                        <div class="col-md-5">
+                            <a href="/it-requests" class="text-decoration-none">
+                                <div class="card h-100 shadow-sm">
+                                    <div class="text-center pt-4">
+                                        <img src="/web/image/166480" alt="IT Support"
+                                             style="max-height: 240px; object-fit: contain;"/>
+                                    </div>
+                                    <div class="card-body text-center p-4">
+                                        <h3 class="card-title mb-3 text-dark">IT Request</h3>
+                                        <p class="card-text text-muted">
+                                            Computer, printer, scanner, POS equipment,
+                                            and other hardware or IT issues.
+                                        </p>
+                                        <span class="btn btn-primary btn-lg mt-2">
+                                            Submit IT Request
+                                        </span>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                        <div class="col-md-5">
+                            <a href="/maintenance-requests" class="text-decoration-none">
+                                <div class="card h-100 shadow-sm">
+                                    <div class="text-center pt-4">
+                                        <img src="/web/image/166056" alt="Maintenance Tech"
+                                             style="max-height: 240px; object-fit: contain;"/>
+                                    </div>
+                                    <div class="card-body text-center p-4">
+                                        <h3 class="card-title mb-3 text-dark">Maintenance Request</h3>
+                                        <p class="card-text text-muted">
+                                            HVAC, plumbing, electrical, janitorial,
+                                            building access, and other facilities issues.
+                                        </p>
+                                        <span class="btn btn-success btn-lg mt-2">
+                                            Submit Maintenance Request
+                                        </span>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="row justify-content-center mt-3">
+                        <div class="col-md-10">
+                            <a href="/engineering-requests" class="text-decoration-none">
+                                <div class="card shadow-sm">
+                                    <div class="card-body d-flex align-items-center justify-content-between px-4 py-3">
+                                        <div class="d-flex align-items-center">
+                                            <i class="fa fa-code me-3" style="font-size: 28px; color: #6f42c1;"/>
+                                            <div>
+                                                <h5 class="mb-0 text-dark">Engineering Request</h5>
+                                                <small class="text-muted">Websites, e-commerce, chat, apps, AI/LLMs, and new software</small>
+                                            </div>
+                                        </div>
+                                        <span class="btn btn-outline-secondary">Submit</span>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="row justify-content-center mt-3">
+                        <div class="col-md-10">
+                            <a href="/graphics-requests" class="text-decoration-none">
+                                <div class="card shadow-sm">
+                                    <div class="card-body d-flex align-items-center justify-content-between px-4 py-3">
+                                        <div class="d-flex align-items-center">
+                                            <i class="fa fa-paint-brush me-3" style="font-size: 28px; color: #e83e8c;"/>
+                                            <div>
+                                                <h5 class="mb-0 text-dark">Graphics Request</h5>
+                                                <small class="text-muted">Signage, menu boards, print materials, vehicle wraps, and digital assets</small>
+                                            </div>
+                                        </div>
+                                        <span class="btn btn-outline-secondary">Submit</span>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="row justify-content-center mt-5">
+                        <div class="col-lg-8 text-center">
+                            <a href="/tickets" class="text-muted">
+                                View your existing requests &#x2192;
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!-- Shared request form body (rendered by IT + Engineering)       -->
+    <!-- ============================================================ -->
+    <template id="engineering_request_form" name="Engineering Request Form">
         <t t-call="website.layout">
             <div id="wrap" class="oe_structure">
                 <div class="container py-5">
                     <div class="row justify-content-center">
                         <div class="col-lg-8">
-                            <h1 class="mb-2">Submit a Maintenance Request</h1>
+                            <h1 class="mb-2"><t t-esc="form_title"/></h1>
                             <p class="text-muted mb-4">
-                                Use this form to submit IT, graphics, or internal maintenance requests.
+                                <t t-esc="form_subtitle"/>
                             </p>
 
                             <t t-if="error">
@@ -23,139 +131,753 @@
                             </t>
 
                             <t t-if="not success">
-                                <form action="/maintenance/request" method="post">
+                                <!-- Data for JS -->
+                                <script type="application/json" id="subtype-data"><t t-out="subtype_options_json"/></script>
+                                <input type="hidden" id="saved_equipment_type"
+                                       t-att-value="form_values.get('equipment_type', '')"/>
+                                <input type="hidden" id="saved_subtype"
+                                       t-att-value="form_values.get('subtype', '')"/>
+
+                                <form t-att-action="form_action" method="post" enctype="multipart/form-data">
                                     <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
+                                    <!-- Your Name & Email -->
                                     <div class="row">
                                         <div class="col-md-6 mb-3">
                                             <label for="submitter_name" class="form-label fw-bold">
                                                 Your Name <span class="text-danger">*</span>
                                             </label>
-                                            <input type="text" class="form-control" id="submitter_name"
-                                                   name="submitter_name" required="required"
-                                                   placeholder="Your full name"
-                                                   t-att-value="form_values.get('submitter_name', '')"/>
+                                            <t t-if="is_logged_in">
+                                                <input type="text" class="form-control" id="submitter_name"
+                                                       name="submitter_name" readonly="readonly"
+                                                       t-att-value="form_values.get('submitter_name', '')"
+                                                       style="background-color: #f8f9fa;"/>
+                                            </t>
+                                            <t t-else="">
+                                                <input type="text" class="form-control" id="submitter_name"
+                                                       name="submitter_name" required="required"
+                                                       placeholder="Your full name"
+                                                       t-att-value="form_values.get('submitter_name', '')"/>
+                                            </t>
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <label for="submitter_email" class="form-label fw-bold">
                                                 Your Email <span class="text-danger">*</span>
                                             </label>
-                                            <input type="email" class="form-control" id="submitter_email"
-                                                   name="submitter_email" required="required"
-                                                   placeholder="your.email@mintcannabis.com"
-                                                   t-att-value="form_values.get('submitter_email', '')"/>
+                                            <t t-if="is_logged_in">
+                                                <input type="email" class="form-control" id="submitter_email"
+                                                       name="submitter_email" readonly="readonly"
+                                                       t-att-value="form_values.get('submitter_email', '')"
+                                                       style="background-color: #f8f9fa;"/>
+                                            </t>
+                                            <t t-else="">
+                                                <input type="email" class="form-control" id="submitter_email"
+                                                       name="submitter_email" required="required"
+                                                       placeholder="your.email@mintcannabis.com"
+                                                       t-att-value="form_values.get('submitter_email', '')"/>
+                                            </t>
                                         </div>
                                     </div>
 
-                                    <div class="mb-3">
-                                        <label for="name" class="form-label fw-bold">
-                                            Request Title <span class="text-danger">*</span>
-                                        </label>
-                                        <input type="text" class="form-control" id="name" name="name"
-                                               required="required"
-                                               placeholder="Brief description of the issue"
-                                               t-att-value="form_values.get('name', '')"/>
+                                    <!-- State & Store -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="state" class="form-label fw-bold">State</label>
+                                            <select class="form-select" id="state" name="state">
+                                                <option value="">-- Select State --</option>
+                                                <t t-foreach="states" t-as="s">
+                                                    <option t-att-value="s"
+                                                            t-att-selected="s == form_values.get('state', '')">
+                                                        <t t-esc="s"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="company_id" class="form-label fw-bold">Store / Location</label>
+                                            <select class="form-select" id="company_id" name="company_id" disabled="disabled">
+                                                <option value="">-- Select a state first --</option>
+                                                <t t-foreach="companies" t-as="c">
+                                                    <option t-att-value="c['id']"
+                                                            t-att-data-state="c['state']"
+                                                            t-att-selected="str(c['id']) == form_values.get('company_id', '')">
+                                                        <t t-esc="c['name']"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
                                     </div>
 
+                                    <!-- Equipment Type & Sub-type -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="equipment_type" class="form-label fw-bold">
+                                                Equipment Type <span class="text-danger">*</span>
+                                            </label>
+                                            <select class="form-select" id="equipment_type"
+                                                    name="equipment_type" required="required">
+                                                <option value="">-- Select Type --</option>
+                                                <t t-foreach="equipment_types" t-as="et">
+                                                    <option t-att-value="et[0]"
+                                                            t-att-selected="et[0] == form_values.get('equipment_type', '')">
+                                                        <t t-esc="et[1]"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3" id="subtype_wrapper" style="display:none">
+                                            <label for="subtype" class="form-label fw-bold">Specify</label>
+                                            <select class="form-select" id="subtype" name="subtype">
+                                                <option value="">-- Select --</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Priority -->
                                     <div class="mb-3">
-                                        <label for="maintenance_team_id" class="form-label fw-bold">
-                                            Team <span class="text-danger">*</span>
+                                        <label for="priority" class="form-label fw-bold">
+                                            Priority <span class="text-danger">*</span>
                                         </label>
-                                        <select class="form-select" id="maintenance_team_id"
-                                                name="maintenance_team_id" required="required">
-                                            <option value="">-- Select a Team --</option>
-                                            <t t-foreach="teams" t-as="team">
-                                                <option t-att-value="team.id"
-                                                        t-att-selected="str(team.id) == form_values.get('maintenance_team_id', '')">
-                                                    <t t-esc="team.name"/>
+                                        <select class="form-select w-50" id="priority"
+                                                name="priority" required="required">
+                                            <t t-foreach="priorities" t-as="p">
+                                                <option t-att-value="p[0]"
+                                                        t-att-selected="p[0] == form_values.get('priority', '2')">
+                                                    <t t-esc="p[1]"/>
                                                 </option>
                                             </t>
                                         </select>
                                     </div>
 
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label for="priority" class="form-label fw-bold">Priority</label>
-                                            <select class="form-select" id="priority" name="priority">
-                                                <t t-foreach="priorities" t-as="p">
-                                                    <option t-att-value="p[0]"
-                                                            t-att-selected="p[0] == form_values.get('priority', '2')">
-                                                        <t t-esc="p[1]"/>
-                                                    </option>
-                                                </t>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-6 mb-3">
-                                            <label for="maintenance_type" class="form-label fw-bold">Type</label>
-                                            <select class="form-select" id="maintenance_type" name="maintenance_type">
-                                                <option value="">-- Select Type --</option>
-                                                <t t-foreach="maintenance_types" t-as="mt">
-                                                    <option t-att-value="mt[0]"
-                                                            t-att-selected="mt[0] == form_values.get('maintenance_type', '')">
-                                                        <t t-esc="mt[1]"/>
-                                                    </option>
-                                                </t>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label for="company_id" class="form-label fw-bold">Store / Location</label>
-                                            <select class="form-select" id="company_id" name="company_id">
-                                                <option value="">-- Select Store --</option>
-                                                <t t-foreach="companies" t-as="company">
-                                                    <option t-att-value="company.id"
-                                                            t-att-selected="str(company.id) == form_values.get('company_id', '')">
-                                                        <t t-esc="company.name"/>
-                                                    </option>
-                                                </t>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-6 mb-3">
-                                            <label for="category_id" class="form-label fw-bold">Equipment Category</label>
-                                            <select class="form-select" id="category_id" name="category_id">
-                                                <option value="">-- Select Category --</option>
-                                                <t t-foreach="categories" t-as="cat">
-                                                    <option t-att-value="cat.id"
-                                                            t-att-selected="str(cat.id) == form_values.get('category_id', '')">
-                                                        <t t-esc="cat.name"/>
-                                                    </option>
-                                                </t>
-                                            </select>
-                                        </div>
-                                    </div>
-
+                                    <!-- Description -->
                                     <div class="mb-3">
                                         <label for="description" class="form-label fw-bold">
-                                            Description <span class="text-danger">*</span>
+                                            Description of Issue <span class="text-danger">*</span>
                                         </label>
                                         <textarea class="form-control" id="description" name="description"
                                                   rows="5" required="required"
                                                   placeholder="Describe the issue in detail..."><t t-esc="form_values.get('description', '')"/></textarea>
                                     </div>
 
+                                    <!-- Photos -->
                                     <div class="mb-4">
-                                        <label for="schedule_date" class="form-label fw-bold">
-                                            Preferred Schedule Date
+                                        <label for="photos" class="form-label fw-bold">
+                                            Photos / Screenshots
                                         </label>
-                                        <input type="date" class="form-control w-50" id="schedule_date"
-                                               name="schedule_date"
-                                               t-att-value="form_values.get('schedule_date', '')"/>
-                                        <div class="form-text">Optional — leave blank if no date preference.</div>
+                                        <input type="file" class="form-control" id="photos"
+                                               name="photos" multiple="multiple"
+                                               accept="image/*,.pdf"/>
+                                        <div class="form-text">
+                                            Optional — attach photos or screenshots of the issue (max 5 files, 10 MB each).
+                                        </div>
                                     </div>
 
                                     <button type="submit" class="btn btn-primary btn-lg">
                                         Submit Request
                                     </button>
                                 </form>
+
+                                <script>
+                                    (function () {
+                                        var subtypeData = JSON.parse(
+                                            document.getElementById('subtype-data').textContent || '{}'
+                                        );
+                                        var savedSubtype = document.getElementById('saved_subtype').value || '';
+
+                                        var stateSelect = document.getElementById('state');
+                                        var storeSelect = document.getElementById('company_id');
+                                        var equipSelect = document.getElementById('equipment_type');
+                                        var subtypeWrapper = document.getElementById('subtype_wrapper');
+                                        var subtypeSelect = document.getElementById('subtype');
+
+                                        var allStores = [];
+                                        Array.from(storeSelect.options).forEach(function (opt) {
+                                            if (opt.value) {
+                                                allStores.push({
+                                                    value: opt.value,
+                                                    text: opt.text,
+                                                    state: opt.dataset.state || '',
+                                                    selected: opt.selected
+                                                });
+                                            }
+                                        });
+
+                                        function filterStores(reset) {
+                                            var state = stateSelect.value;
+                                            var prev = storeSelect.value;
+                                            storeSelect.innerHTML = '';
+                                            var ph = document.createElement('option');
+                                            ph.value = '';
+                                            if (!state) {
+                                                ph.textContent = '-- Select a state first --';
+                                                storeSelect.appendChild(ph);
+                                                storeSelect.disabled = true;
+                                                storeSelect.value = '';
+                                                return;
+                                            }
+                                            ph.textContent = '-- Select Store --';
+                                            storeSelect.appendChild(ph);
+                                            storeSelect.disabled = false;
+                                            var matches = [];
+                                            allStores.forEach(function (s) {
+                                                if (s.state === state) {
+                                                    var el = document.createElement('option');
+                                                    el.value = s.value;
+                                                    el.textContent = s.text;
+                                                    if (!reset &amp;&amp; s.value === prev) el.selected = true;
+                                                    storeSelect.appendChild(el);
+                                                    matches.push(s);
+                                                }
+                                            });
+                                            if (matches.length === 1) {
+                                                storeSelect.value = matches[0].value;
+                                            } else if (reset) {
+                                                storeSelect.value = '';
+                                            }
+                                        }
+                                        stateSelect.addEventListener('change', function () { filterStores(true); });
+                                        filterStores(false);
+
+                                        function updateSubtype(reset) {
+                                            var opts = subtypeData[equipSelect.value];
+                                            subtypeSelect.innerHTML = '';
+                                            var ph = document.createElement('option');
+                                            ph.value = '';
+                                            ph.textContent = '-- Select --';
+                                            subtypeSelect.appendChild(ph);
+                                            if (opts) {
+                                                opts.forEach(function (o) {
+                                                    var el = document.createElement('option');
+                                                    el.value = o[0];
+                                                    el.textContent = o[1];
+                                                    if (!reset &amp;&amp; o[0] === savedSubtype) el.selected = true;
+                                                    subtypeSelect.appendChild(el);
+                                                });
+                                                subtypeWrapper.style.display = '';
+                                                subtypeSelect.disabled = false;
+                                                if (opts.length === 1) {
+                                                    subtypeSelect.value = opts[0][0];
+                                                }
+                                            } else {
+                                                subtypeWrapper.style.display = 'none';
+                                                subtypeSelect.disabled = true;
+                                                subtypeSelect.value = '';
+                                            }
+                                            if (reset) savedSubtype = '';
+                                        }
+                                        equipSelect.addEventListener('change', function () { updateSubtype(true); });
+                                        updateSubtype(false);
+                                    })();
+                                </script>
                             </t>
 
                             <t t-if="success">
-                                <a href="/maintenance/request" class="btn btn-outline-primary mt-3">
+                                <a t-att-href="form_action" class="btn btn-outline-primary mt-3">
                                     Submit Another Request
                                 </a>
                             </t>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!-- /maintenance-requests — Facilities Maintenance Request Form  -->
+    <!-- ============================================================ -->
+    <template id="facilities_request_form" name="Facilities Maintenance Request Form">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <div class="row justify-content-center">
+                        <div class="col-lg-8">
+                            <h1 class="mb-2">Maintenance Request</h1>
+                            <p class="text-muted mb-4">
+                                Submit a facilities maintenance request. This creates a ticket assigned to the Facilities team.
+                            </p>
+
+                            <t t-if="error">
+                                <div class="alert alert-danger" role="alert">
+                                    <t t-esc="error"/>
+                                </div>
+                            </t>
+                            <t t-if="success">
+                                <div class="alert alert-success" role="alert">
+                                    <t t-esc="success"/>
+                                </div>
+                            </t>
+
+                            <t t-if="not success">
+                                <!-- Data for JS -->
+                                <script type="application/json" id="subtype-data"><t t-out="subtype_options_json"/></script>
+                                <input type="hidden" id="saved_equipment_type"
+                                       t-att-value="form_values.get('equipment_type', '')"/>
+                                <input type="hidden" id="saved_subtype"
+                                       t-att-value="form_values.get('subtype', '')"/>
+
+                                <form action="/maintenance-requests" method="post" enctype="multipart/form-data">
+                                    <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+
+                                    <!-- Your Name & Email -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="submitter_name" class="form-label fw-bold">
+                                                Your Name <span class="text-danger">*</span>
+                                            </label>
+                                            <t t-if="is_logged_in">
+                                                <input type="text" class="form-control" id="submitter_name"
+                                                       name="submitter_name" readonly="readonly"
+                                                       t-att-value="form_values.get('submitter_name', '')"
+                                                       style="background-color: #f8f9fa;"/>
+                                            </t>
+                                            <t t-else="">
+                                                <input type="text" class="form-control" id="submitter_name"
+                                                       name="submitter_name" required="required"
+                                                       placeholder="Your full name"
+                                                       t-att-value="form_values.get('submitter_name', '')"/>
+                                            </t>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="submitter_email" class="form-label fw-bold">
+                                                Your Email <span class="text-danger">*</span>
+                                            </label>
+                                            <t t-if="is_logged_in">
+                                                <input type="email" class="form-control" id="submitter_email"
+                                                       name="submitter_email" readonly="readonly"
+                                                       t-att-value="form_values.get('submitter_email', '')"
+                                                       style="background-color: #f8f9fa;"/>
+                                            </t>
+                                            <t t-else="">
+                                                <input type="email" class="form-control" id="submitter_email"
+                                                       name="submitter_email" required="required"
+                                                       placeholder="your.email@mintcannabis.com"
+                                                       t-att-value="form_values.get('submitter_email', '')"/>
+                                            </t>
+                                        </div>
+                                    </div>
+
+                                    <!-- State & Store -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="state" class="form-label fw-bold">State</label>
+                                            <select class="form-select" id="state" name="state">
+                                                <option value="">-- Select State --</option>
+                                                <t t-foreach="states" t-as="s">
+                                                    <option t-att-value="s"
+                                                            t-att-selected="s == form_values.get('state', '')">
+                                                        <t t-esc="s"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="company_id" class="form-label fw-bold">Store / Location</label>
+                                            <select class="form-select" id="company_id" name="company_id" disabled="disabled">
+                                                <option value="">-- Select a state first --</option>
+                                                <t t-foreach="companies" t-as="c">
+                                                    <option t-att-value="c['id']"
+                                                            t-att-data-state="c['state']"
+                                                            t-att-selected="str(c['id']) == form_values.get('company_id', '')">
+                                                        <t t-esc="c['name']"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Category & Sub-type (dynamic from DB) -->
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="equipment_type" class="form-label fw-bold">
+                                                Category <span class="text-danger">*</span>
+                                            </label>
+                                            <select class="form-select" id="equipment_type"
+                                                    name="equipment_type" required="required">
+                                                <option value="">-- Select Category --</option>
+                                                <t t-foreach="equipment_types" t-as="et">
+                                                    <option t-att-value="et[0]"
+                                                            t-att-selected="et[0] == form_values.get('equipment_type', '')">
+                                                        <t t-esc="et[1]"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3" id="subtype_wrapper" style="display:none">
+                                            <label for="subtype" class="form-label fw-bold">Specify</label>
+                                            <select class="form-select" id="subtype" name="subtype">
+                                                <option value="">-- Select --</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Priority -->
+                                    <div class="mb-3">
+                                        <label for="priority" class="form-label fw-bold">
+                                            Priority <span class="text-danger">*</span>
+                                        </label>
+                                        <select class="form-select w-50" id="priority"
+                                                name="priority" required="required">
+                                            <t t-foreach="priorities" t-as="p">
+                                                <option t-att-value="p[0]"
+                                                        t-att-selected="p[0] == form_values.get('priority', '2')">
+                                                    <t t-esc="p[1]"/>
+                                                </option>
+                                            </t>
+                                        </select>
+                                    </div>
+
+                                    <!-- Description -->
+                                    <div class="mb-3">
+                                        <label for="description" class="form-label fw-bold">
+                                            Description of Issue <span class="text-danger">*</span>
+                                        </label>
+                                        <textarea class="form-control" id="description" name="description"
+                                                  rows="5" required="required"
+                                                  placeholder="Describe the issue in detail..."><t t-esc="form_values.get('description', '')"/></textarea>
+                                    </div>
+
+                                    <!-- Photos -->
+                                    <div class="mb-4">
+                                        <label for="photos" class="form-label fw-bold">
+                                            Photos / Screenshots
+                                        </label>
+                                        <input type="file" class="form-control" id="photos"
+                                               name="photos" multiple="multiple"
+                                               accept="image/*,.pdf"/>
+                                        <div class="form-text">
+                                            Optional — attach photos or screenshots of the issue (max 5 files, 10 MB each).
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-success btn-lg">
+                                        Submit Request
+                                    </button>
+                                </form>
+
+                                <script>
+                                    (function () {
+                                        var subtypeData = JSON.parse(
+                                            document.getElementById('subtype-data').textContent || '{}'
+                                        );
+                                        var savedSubtype = document.getElementById('saved_subtype').value || '';
+
+                                        var stateSelect = document.getElementById('state');
+                                        var storeSelect = document.getElementById('company_id');
+                                        var equipSelect = document.getElementById('equipment_type');
+                                        var subtypeWrapper = document.getElementById('subtype_wrapper');
+                                        var subtypeSelect = document.getElementById('subtype');
+
+                                        var allStores = [];
+                                        Array.from(storeSelect.options).forEach(function (opt) {
+                                            if (opt.value) {
+                                                allStores.push({
+                                                    value: opt.value,
+                                                    text: opt.text,
+                                                    state: opt.dataset.state || '',
+                                                    selected: opt.selected
+                                                });
+                                            }
+                                        });
+
+                                        function filterStores(reset) {
+                                            var state = stateSelect.value;
+                                            var prev = storeSelect.value;
+                                            storeSelect.innerHTML = '';
+                                            var ph = document.createElement('option');
+                                            ph.value = '';
+                                            if (!state) {
+                                                ph.textContent = '-- Select a state first --';
+                                                storeSelect.appendChild(ph);
+                                                storeSelect.disabled = true;
+                                                storeSelect.value = '';
+                                                return;
+                                            }
+                                            ph.textContent = '-- Select Store --';
+                                            storeSelect.appendChild(ph);
+                                            storeSelect.disabled = false;
+                                            var matches = [];
+                                            allStores.forEach(function (s) {
+                                                if (s.state === state) {
+                                                    var el = document.createElement('option');
+                                                    el.value = s.value;
+                                                    el.textContent = s.text;
+                                                    if (!reset &amp;&amp; s.value === prev) el.selected = true;
+                                                    storeSelect.appendChild(el);
+                                                    matches.push(s);
+                                                }
+                                            });
+                                            if (matches.length === 1) {
+                                                storeSelect.value = matches[0].value;
+                                            } else if (reset) {
+                                                storeSelect.value = '';
+                                            }
+                                        }
+                                        stateSelect.addEventListener('change', function () { filterStores(true); });
+                                        filterStores(false);
+
+                                        function updateSubtype(reset) {
+                                            var opts = subtypeData[equipSelect.value];
+                                            subtypeSelect.innerHTML = '';
+                                            var ph = document.createElement('option');
+                                            ph.value = '';
+                                            ph.textContent = '-- Select --';
+                                            subtypeSelect.appendChild(ph);
+                                            if (opts) {
+                                                opts.forEach(function (o) {
+                                                    var el = document.createElement('option');
+                                                    el.value = o[0];
+                                                    el.textContent = o[1];
+                                                    if (!reset &amp;&amp; o[0] === savedSubtype) el.selected = true;
+                                                    subtypeSelect.appendChild(el);
+                                                });
+                                                subtypeWrapper.style.display = '';
+                                                subtypeSelect.disabled = false;
+                                                if (opts.length === 1) {
+                                                    subtypeSelect.value = opts[0][0];
+                                                }
+                                            } else {
+                                                subtypeWrapper.style.display = 'none';
+                                                subtypeSelect.disabled = true;
+                                                subtypeSelect.value = '';
+                                            }
+                                            if (reset) savedSubtype = '';
+                                        }
+                                        equipSelect.addEventListener('change', function () { updateSubtype(true); });
+                                        updateSubtype(false);
+                                    })();
+                                </script>
+                            </t>
+
+                            <t t-if="success">
+                                <a href="/maintenance-requests" class="btn btn-outline-success mt-3">
+                                    Submit Another Request
+                                </a>
+                            </t>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!-- /tickets — Unified request list                              -->
+    <!-- ============================================================ -->
+    <template id="request_list" name="My Service Requests">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h1 class="mb-0">My Open Requests</h1>
+                        <a href="/fixit" class="btn btn-primary">
+                            New Request
+                        </a>
+                    </div>
+
+                    <t t-if="not requests">
+                        <div class="alert alert-info">
+                            You have no open requests.
+                        </div>
+                    </t>
+
+                    <t t-if="requests">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Request</th>
+                                        <th>Type</th>
+                                        <th>Store</th>
+                                        <th>Equipment</th>
+                                        <th>Priority</th>
+                                        <th>Status</th>
+                                        <th>Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="requests" t-as="r">
+                                        <tr style="cursor:pointer"
+                                            t-attf-onclick="window.location='/tickets/#{r['id']}'">
+                                            <td>
+                                                <a t-attf-href="/tickets/#{r['id']}" class="text-decoration-none">
+                                                    <strong><t t-esc="r['name']"/></strong>
+                                                </a>
+                                            </td>
+                                            <td>
+                                                <t t-if="r['request_type'] == 'Facilities'">
+                                                    <span class="badge bg-success"><t t-esc="r['request_type']"/></span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="badge bg-primary"><t t-esc="r['request_type']"/></span>
+                                                </t>
+                                            </td>
+                                            <td><t t-esc="r['company']"/></td>
+                                            <td><t t-esc="r['equipment']"/></td>
+                                            <td>
+                                                <t t-if="r['priority'] == 'High'">
+                                                    <span class="badge bg-danger"><t t-esc="r['priority']"/></span>
+                                                </t>
+                                                <t t-elif="r['priority'] == 'Normal'">
+                                                    <span class="badge bg-warning text-dark"><t t-esc="r['priority']"/></span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="badge bg-secondary"><t t-esc="r['priority']"/></span>
+                                                </t>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-info text-dark"><t t-esc="r['stage']"/></span>
+                                            </td>
+                                            <td><t t-esc="r['request_date']"/></td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!-- /tickets/<id> — Request detail                               -->
+    <!-- ============================================================ -->
+    <template id="request_detail" name="Service Request Detail">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <!-- Breadcrumb -->
+                    <nav aria-label="breadcrumb" class="mb-4">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="/tickets">My Requests</a></li>
+                            <li class="breadcrumb-item active" t-esc="req.name"/>
+                        </ol>
+                    </nav>
+
+                    <!-- Header -->
+                    <div class="d-flex justify-content-between align-items-start mb-4">
+                        <div>
+                            <h1 class="mb-1" t-esc="req.name"/>
+                            <div class="text-muted">
+                                Submitted <t t-esc="req.request_date"/>
+                                <t t-if="req.company_id">
+                                    · <t t-esc="req.company_id.name"/>
+                                </t>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <t t-if="request_type == 'Facilities'">
+                                <span class="badge bg-success fs-6"><t t-esc="request_type"/></span>
+                            </t>
+                            <t t-else="">
+                                <span class="badge bg-primary fs-6"><t t-esc="request_type"/></span>
+                            </t>
+                            <span class="badge bg-info fs-6 ms-1"
+                                  t-esc="req.stage_id.name or 'New'"/>
+                            <br/>
+                            <span class="badge mt-1"
+                                  t-att-class="'bg-danger' if req.priority == '3' else ('bg-warning text-dark' if req.priority == '2' else 'bg-secondary')">
+                                <t t-esc="priority_labels.get(req.priority, 'Normal')"/>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Details card -->
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6" t-if="req.equipment_id">
+                                    <strong>Equipment:</strong>
+                                    <t t-esc="req.equipment_id.name"/>
+                                </div>
+                                <div class="col-md-6" t-if="req.maintenance_team_id">
+                                    <strong>Team:</strong>
+                                    <t t-esc="req.maintenance_team_id.name"/>
+                                </div>
+                            </div>
+                            <t t-if="req.description">
+                                <hr/>
+                                <div t-out="req.description"/>
+                            </t>
+                        </div>
+                    </div>
+
+                    <!-- Attachments -->
+                    <t t-if="attachments">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <strong>Attachments</strong>
+                            </div>
+                            <div class="card-body">
+                                <t t-foreach="attachments" t-as="att">
+                                    <a t-attf-href="/web/content/#{att.id}?download=true"
+                                       class="btn btn-sm btn-outline-secondary me-2 mb-2">
+                                        <t t-esc="att.name"/>
+                                    </a>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Message thread -->
+                    <h3 class="mb-3">Messages</h3>
+
+                    <t t-if="not messages">
+                        <div class="alert alert-light">
+                            No messages yet. Use the form below to add details or ask a question.
+                        </div>
+                    </t>
+
+                    <t t-foreach="messages" t-as="msg">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <strong t-esc="msg.author_id.name or 'System'"/>
+                                    <small class="text-muted"
+                                           t-esc="msg.date"
+                                           t-options="{'widget': 'datetime', 'format': 'MM/dd/yyyy hh:mm a'}"/>
+                                </div>
+                                <div class="mt-2" t-out="msg.body"/>
+                                <t t-if="msg.attachment_ids">
+                                    <div class="mt-2">
+                                        <t t-foreach="msg.attachment_ids" t-as="att">
+                                            <a t-attf-href="/web/content/#{att.id}?download=true"
+                                               class="btn btn-sm btn-outline-secondary me-1">
+                                                <t t-esc="att.name"/>
+                                            </a>
+                                        </t>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Reply form -->
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <strong>Reply</strong>
+                        </div>
+                        <div class="card-body">
+                            <form t-attf-action="/tickets/#{req.id}/reply"
+                                  method="post" enctype="multipart/form-data">
+                                <input type="hidden" name="csrf_token"
+                                       t-att-value="request.csrf_token()"/>
+                                <div class="mb-3">
+                                    <textarea class="form-control" name="message"
+                                              rows="4" required="required"
+                                              placeholder="Type your reply..."/>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Attach files (optional)</label>
+                                    <input type="file" class="form-control"
+                                           name="attachments" multiple="multiple"
+                                           accept="image/*,.pdf"/>
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    Send Reply
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </div>

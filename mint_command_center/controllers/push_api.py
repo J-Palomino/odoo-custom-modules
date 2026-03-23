@@ -10,7 +10,7 @@ These routes match what the frontend (src/pwa/push.ts) expects:
 import json
 import logging
 
-from odoo import http
+from odoo import http, fields
 from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
@@ -103,27 +103,57 @@ class PushAPI(http.Controller):
                 if site:
                     site_id = site.id
 
+            # Resolve store by slug (optional)
+            store_id = False
+            store_slug = data.get('store_slug')
+            if store_slug:
+                store = request.env['res.company'].sudo().search(
+                    [('x_slug', '=', store_slug)], limit=1)
+                if store:
+                    store_id = store.id
+
+            region = data.get('region') or ''
+
+            # GPS coordinates (optional, from cached location)
+            latitude = data.get('latitude')
+            longitude = data.get('longitude')
+
             # Upsert: reactivate if it already exists, or create new
             existing = Subscription.search([('endpoint', '=', endpoint)], limit=1)
             if existing:
                 vals = {
-                    'p256dh': p256dh,
-                    'auth': auth,
+                    'key_p256dh': p256dh,
+                    'key_auth': auth,
                     'is_active': True,
                     'user_agent': request.httprequest.headers.get('User-Agent', ''),
                 }
                 if site_id:
                     vals['site_id'] = site_id
+                if store_id:
+                    vals['store_id'] = store_id
+                if region:
+                    vals['region'] = region
+                if latitude is not None and longitude is not None:
+                    vals['latitude'] = float(latitude)
+                    vals['longitude'] = float(longitude)
+                    vals['geo_updated_at'] = fields.Datetime.now()
                 existing.write(vals)
             else:
-                Subscription.create({
+                create_vals = {
                     'endpoint': endpoint,
-                    'p256dh': p256dh,
-                    'auth': auth,
+                    'key_p256dh': p256dh,
+                    'key_auth': auth,
                     'is_active': True,
                     'site_id': site_id,
+                    'store_id': store_id,
+                    'region': region,
                     'user_agent': request.httprequest.headers.get('User-Agent', ''),
-                })
+                }
+                if latitude is not None and longitude is not None:
+                    create_vals['latitude'] = float(latitude)
+                    create_vals['longitude'] = float(longitude)
+                    create_vals['geo_updated_at'] = fields.Datetime.now()
+                Subscription.create(create_vals)
 
             return _json({'ok': True})
         except Exception as e:

@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_pos_order_budtender,mint.pos.order.budtender,model_mint_pos_order,group_pos_budtender,1,1,0,0
+access_pos_order_manager,mint.pos.order.manager,model_mint_pos_order,group_pos_manager,1,1,1,1
+access_pos_order_line_budtender,mint.pos.order.line.budtender,model_mint_pos_order_line,group_pos_budtender,1,0,0,0
+access_pos_order_line_manager,mint.pos.order.line.manager,model_mint_pos_order_line,group_pos_manager,1,1,1,1
+access_pos_employee_cred_manager,mint.pos.employee.credential.manager,model_mint_pos_employee_credential,group_pos_manager,1,1,1,1
+access_web_order_config_manager,mint.web.order.config.manager,model_mint_web_order_config,group_pos_manager,1,1,1,1

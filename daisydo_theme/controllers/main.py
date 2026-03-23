@@ -8,7 +8,7 @@ from odoo.addons.auth_oauth.controllers.main import OAuthLogin
 
 _logger = logging.getLogger(__name__)
 
-_BRAND_NAME = os.environ.get('BRAND_NAME', 'Daisy+')
+_BRAND_NAME = os.environ.get('BRAND_NAME', 'Mint')
 _PRIMARY_COLOR = os.environ.get('ODOO_BRAND_PRIMARY',
                                 os.environ.get('BRAND_PRIMARY_COLOR', '#00954c'))
 
