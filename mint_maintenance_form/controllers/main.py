@@ -478,21 +478,21 @@ class MaintenanceFormController(http.Controller):
         )
 
     # ------------------------------------------------------------------
-    # /dutchie-requests — Dutchie / POS form
+    # /vendor-requests — 3rd-party vendor form (Dutchie, etc.)
     # ------------------------------------------------------------------
     @http.route(
-        "/dutchie-requests",
+        ["/vendor-requests", "/dutchie-requests"],
         type="http",
         auth="user",
         website=True,
         methods=["GET", "POST"],
     )
-    def dutchie_request_form(self, **post):
+    def vendor_request_form(self, **post):
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
-            "form_title": "Dutchie Request",
-            "form_subtitle": "Submit a Dutchie request for POS issues, menu sync, online ordering, or Dutchie platform problems.",
-            "form_action": "/dutchie-requests",
+            "form_title": "Vendor Request",
+            "form_subtitle": "Submit a request for third-party vendor issues — Dutchie POS, menu sync, online ordering, and other vendor platforms.",
+            "form_action": "/vendor-requests",
         }
 
         if request.httprequest.method == "GET":
@@ -510,8 +510,8 @@ class MaintenanceFormController(http.Controller):
         return self._handle_form_post(
             team_id=DUTCHIE_TEAM_ID,
             template=template,
-            success_msg="Your Dutchie request has been submitted successfully!",
-            default_title="Dutchie Request",
+            success_msg="Your vendor request has been submitted successfully!",
+            default_title="Vendor Request",
             extra_ctx=form_ctx,
             **post,
         )
