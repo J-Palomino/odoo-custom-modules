@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=97
+ARG CACHEBUST=98
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 RUN echo "Build cache key: $CACHEBUST"
 
@@ -23,16 +23,11 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openp
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
 
 # ── OCA storage modules (S3 attachments) ──────────────────────────────
-RUN git clone --depth 1 --branch 19.0 https://github.com/OCA/storage.git /tmp/oca-storage \
-    && cp -r /tmp/oca-storage/fs_storage /opt/extra-addons/fs_storage \
-    && cp -r /tmp/oca-storage/fs_attachment /opt/extra-addons/fs_attachment \
-    && cp -r /tmp/oca-storage/fs_attachment_s3 /opt/extra-addons/fs_attachment_s3 \
-    && rm -rf /tmp/oca-storage \
-    && git clone --depth 1 --branch 19.0 https://github.com/OCA/server-env.git /tmp/oca-server-env \
-    && cp -r /tmp/oca-server-env/server_environment /opt/extra-addons/server_environment \
-    && rm -rf /tmp/oca-server-env \
-    && chown -R odoo:odoo /opt/extra-addons/fs_storage /opt/extra-addons/fs_attachment \
-       /opt/extra-addons/fs_attachment_s3 /opt/extra-addons/server_environment
+# Patched locally: server_environment dependency removed from fs_storage
+# (its monkeypatching of add_to_registry breaks Odoo 19 model registration)
+COPY --chown=odoo:odoo fs_storage /opt/extra-addons/fs_storage
+COPY --chown=odoo:odoo fs_attachment /opt/extra-addons/fs_attachment
+COPY --chown=odoo:odoo fs_attachment_s3 /opt/extra-addons/fs_attachment_s3
 
 # ── Mint custom modules ──────────────────────────────────────────────
 COPY --chown=odoo:odoo avancir_inventory /opt/extra-addons/avancir_inventory
@@ -74,7 +69,7 @@ COPY --chown=odoo:odoo hr_dms_field /opt/extra-addons/hr_dms_field
 
 # ── OCA modules (flattened from submodules) ──────────────────────────
 COPY --chown=odoo:odoo vault /opt/extra-addons/vault
-COPY --chown=odoo:odoo sign_oca /opt/extra-addons/sign_oca
+# sign_oca removed — not Odoo 19 compatible, leaving orphaned DB refs
 COPY --chown=odoo:odoo base_cancel_confirm /opt/extra-addons/base_cancel_confirm
 COPY --chown=odoo:odoo base_substate /opt/extra-addons/base_substate
 COPY --chown=odoo:odoo base_technical_features /opt/extra-addons/base_technical_features
@@ -135,7 +130,7 @@ RUN for mod in base_accounting_kit base_account_budget; do \
     done
 
 # Verify OCA modules
-RUN for mod in sign_oca spreadsheet_oca spreadsheet_dashboard_oca \
+RUN for mod in spreadsheet_oca spreadsheet_dashboard_oca \
       base_cancel_confirm base_substate base_technical_features date_range \
       bi_sql_editor report_qweb_element_page_visibility report_xlsx report_xlsx_helper report_xml sql_request_abstract \
       account_analytic_tag account_invoice_start_end_dates \
@@ -148,7 +143,7 @@ RUN for mod in sign_oca spreadsheet_oca spreadsheet_dashboard_oca \
     done
 
 # Verify OCA storage modules
-RUN for mod in fs_storage fs_attachment fs_attachment_s3 server_environment; do \
+RUN for mod in fs_storage fs_attachment fs_attachment_s3; do \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
 
