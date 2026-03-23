@@ -24,6 +24,7 @@ ENGINEERING_TEAM_ID = 4
 ENGINEERING_TEAM_IDS = [IT_TEAM_ID, ENGINEERING_TEAM_ID]
 FACILITIES_TEAM_ID = 11
 GRAPHICS_TEAM_ID = 3
+DUTCHIE_TEAM_ID = 13
 NEW_REQUEST_STAGE = 1
 
 PRIORITY_OPTIONS = [
@@ -472,6 +473,45 @@ class MaintenanceFormController(http.Controller):
             template=template,
             success_msg="Your graphics request has been submitted successfully!",
             default_title="Graphics Request",
+            extra_ctx=form_ctx,
+            **post,
+        )
+
+    # ------------------------------------------------------------------
+    # /dutchie-requests — Dutchie / POS form
+    # ------------------------------------------------------------------
+    @http.route(
+        "/dutchie-requests",
+        type="http",
+        auth="user",
+        website=True,
+        methods=["GET", "POST"],
+    )
+    def dutchie_request_form(self, **post):
+        template = "mint_maintenance_form.engineering_request_form"
+        form_ctx = {
+            "form_title": "Dutchie Request",
+            "form_subtitle": "Submit a Dutchie request for POS issues, menu sync, online ordering, or Dutchie platform problems.",
+            "form_action": "/dutchie-requests",
+        }
+
+        if request.httprequest.method == "GET":
+            prefill, logged_in = self._get_user_prefill()
+            return request.render(
+                template,
+                self._form_context(
+                    DUTCHIE_TEAM_ID,
+                    form_values=prefill,
+                    is_logged_in=logged_in,
+                    **form_ctx,
+                ),
+            )
+
+        return self._handle_form_post(
+            team_id=DUTCHIE_TEAM_ID,
+            template=template,
+            success_msg="Your Dutchie request has been submitted successfully!",
+            default_title="Dutchie Request",
             extra_ctx=form_ctx,
             **post,
         )
