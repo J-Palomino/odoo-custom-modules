@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals REST API v2',
-    'version': '19.0.3.0.0',
+    'version': '19.0.3.1.0',
     'category': 'Website',
     'summary': 'REST API endpoints for MintDeals frontend (native Odoo controllers)',
     'description': """

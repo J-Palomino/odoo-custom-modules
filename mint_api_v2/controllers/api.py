@@ -220,12 +220,18 @@ class MintDealsAPI(http.Controller):
             _logger.error("Error serving store image %s/%s: %s", store_id, field, e)
             return error_response(str(e), 500)
 
-    @http.route('/api/v1/store_image/<int:store_id>/logo', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    @http.route([
+        '/api/v1/store_image/<int:store_id>/logo',
+        '/api/v1/stores/<int:store_id>/logo',
+    ], type='http', auth='none', methods=['GET'], csrf=False, cors='*')
     def get_store_logo(self, store_id):
         """Serve store logo image."""
         return self._serve_company_image(store_id, 'logo')
 
-    @http.route('/api/v1/store_image/<int:store_id>/hero', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    @http.route([
+        '/api/v1/store_image/<int:store_id>/hero',
+        '/api/v1/stores/<int:store_id>/hero',
+    ], type='http', auth='none', methods=['GET'], csrf=False, cors='*')
     def get_store_hero(self, store_id):
         """Serve store hero image."""
         return self._serve_company_image(store_id, 'hero_image')
