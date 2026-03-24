@@ -4,6 +4,7 @@ MintDeals REST API v2 - Using Odoo native HTTP controllers.
 
 All endpoints return JSON responses and are accessible at /api/v1/
 """
+import base64
 import json
 import logging
 from datetime import datetime
@@ -87,9 +88,9 @@ class MintDealsAPI(http.Controller):
             'about': getattr(company, 'about', None),
             'description': getattr(company, 'description', None),
             'tickertape': getattr(company, 'tickertape', None),
-            'image_url': f"/web/image/res.company/{company.id}/logo" if company.logo else None,
+            'image_url': f"/api/v1/stores/{company.id}/image/logo" if company.logo else None,
             'hero_image_url': getattr(company, 'hero_image_url', None) or (
-                f"/web/image/res.company/{company.id}/hero_image" if getattr(company, 'hero_image', None) else None
+                f"/api/v1/stores/{company.id}/image/hero_image" if getattr(company, 'hero_image', None) else None
             ),
             'hours': hours_dict if hours_dict else None,
             'region': {
@@ -182,6 +183,46 @@ class MintDealsAPI(http.Controller):
             return json_response(self._company_to_dict(company))
         except Exception as e:
             _logger.error("Error getting store by dutchie_id %s: %s", dutchie_id, e)
+            return error_response(str(e), 500)
+
+    # ==================== STORE IMAGES ====================
+
+    @http.route('/api/v1/stores/<int:store_id>/image/<string:field>', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_store_image(self, store_id, field='logo'):
+        """Serve store image binary fields publicly (logo or hero_image)."""
+        allowed_fields = ('logo', 'hero_image')
+        if field not in allowed_fields:
+            return error_response("Invalid image field", 400)
+
+        try:
+            company = request.env["res.company"].sudo().browse(store_id)
+            if not company.exists():
+                return error_response("Store not found", 404)
+
+            image_data = getattr(company, field, None)
+            if not image_data:
+                return error_response("No image found", 404)
+
+            image_bytes = base64.b64decode(image_data)
+
+            # Detect content type from magic bytes
+            content_type = 'image/png'
+            if image_bytes[:3] == b'\xff\xd8\xff':
+                content_type = 'image/jpeg'
+            elif image_bytes[:4] == b'RIFF':
+                content_type = 'image/webp'
+
+            return Response(
+                image_bytes,
+                status=200,
+                content_type=content_type,
+                headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, max-age=86400',
+                }
+            )
+        except Exception as e:
+            _logger.error("Error serving store image %s/%s: %s", store_id, field, e)
             return error_response(str(e), 500)
 
     # ==================== PRODUCTS ====================
