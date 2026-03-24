@@ -119,6 +119,11 @@ RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODUL
 RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
 
+# Verify mint_posthog module
+RUN test -f /opt/extra-addons/mint_posthog/__manifest__.py && echo "MINT_POSTHOG MODULE VERIFIED" || (echo "MINT_POSTHOG MODULE MISSING" && exit 1)
+RUN python3 -c "import ast; ast.literal_eval(open('/opt/extra-addons/mint_posthog/__manifest__.py').read())" && echo "MINT_POSTHOG MANIFEST PARSE OK" || (echo "MINT_POSTHOG MANIFEST PARSE FAILED" && exit 1)
+RUN test -f /opt/extra-addons/mint_posthog/static/src/posthog_boot.js && echo "MINT_POSTHOG JS ASSET VERIFIED" || (echo "MINT_POSTHOG JS ASSET MISSING" && exit 1)
+
 # Verify DaisyDo modules
 RUN for mod in daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook; do \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \

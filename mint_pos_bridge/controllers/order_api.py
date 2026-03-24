@@ -160,8 +160,8 @@ class MintPosOrderAPI(http.Controller):
         order_vals = {
             'partner_id': partner.id if partner else False,
             'company_id': company.id,
-            'dutchie_checkout_id': data.get('dutchie_checkout_id', ''),
-            'dutchie_receipt_no': data.get('dutchie_receipt_no', ''),
+            'dutchie_checkout_id': data.get('dutchie_checkout_id') or False,
+            'dutchie_receipt_no': data.get('dutchie_receipt_no') or False,
             'state': data.get('state', 'placed'),
             'order_type': order_type,
             'payment_method': payment_method,
@@ -422,8 +422,8 @@ class MintPosOrderAPI(http.Controller):
         for order_data in orders_data:
             try:
                 company_id = order_data.get('company_id')
-                receipt_no = order_data.get('dutchie_receipt_no', '')
-                checkout_id = order_data.get('dutchie_checkout_id', '')
+                receipt_no = order_data.get('dutchie_receipt_no') or ''
+                checkout_id = order_data.get('dutchie_checkout_id') or ''
 
                 # Try to find existing order
                 existing = None

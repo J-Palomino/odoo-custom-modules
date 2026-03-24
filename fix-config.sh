@@ -101,6 +101,7 @@ fi
 for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_financial_risk \
     purchase_price_precision mint_automations mint_maintenance_form mint_command_center mint_embed \
     mint_push mint_banner mint_customer_api mint_dutchie_sync mint_mail_whitelist mint_inventory_ops \
+    mint_posthog daisy_error_handler \
     daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
     mint_oauth_only mint_redis_session base_accounting_kit base_account_budget sign_oca \
     dms dms_field hr_dms_field \
@@ -280,6 +281,64 @@ try:
 except Exception as e:
     print(f"WARNING: stale model cleanup failed: {e}")
 PYCLEAN
+fi
+
+# Clean stale ir.ui.view records referencing removed Odoo 17/18 fields
+# purchase.order views with "locked" / "lock_confirmed_po" cause validation warnings on startup
+echo "=== Cleaning stale purchase.order views ==="
+if [ -n "$HOST" ]; then
+    python3 << 'PYVIEWS' 2>&1
+import os, sys
+try:
+    import psycopg2
+except ImportError:
+    print("psycopg2 not available, skipping stale view cleanup")
+    sys.exit(0)
+
+host = os.environ.get("HOST", "localhost")
+port = os.environ.get("PORT", "5432")
+user = os.environ.get("USER", "odoo")
+password = os.environ.get("PASSWORD", os.environ.get("ODOO_DB_PASSWORD", ""))
+dbname = os.environ.get("ODOO_DB_NAME", "odoo")
+
+try:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    # Find ir_ui_view records for purchase.order that reference the removed
+    # "locked" / "lock_confirmed_po" fields (leftover from Odoo 17/18)
+    cur.execute("""
+        SELECT id, name, key
+        FROM ir_ui_view
+        WHERE model = 'purchase.order'
+          AND arch_db::text LIKE '%%lock_confirmed_po%%'
+    """)
+    rows = cur.fetchall()
+    if rows:
+        ids = [r[0] for r in rows]
+        for vid, vname, vkey in rows:
+            print(f"Deleting stale view id={vid} name={vname} key={vkey}")
+
+        # Delete related ir_model_data first (external IDs pointing to these views)
+        cur.execute("""
+            DELETE FROM ir_model_data
+            WHERE model = 'ir.ui.view' AND res_id = ANY(%s)
+        """, (ids,))
+        if cur.rowcount:
+            print(f"Removed {cur.rowcount} ir_model_data records for stale views")
+
+        # Delete the stale views themselves
+        cur.execute("DELETE FROM ir_ui_view WHERE id = ANY(%s)", (ids,))
+        print(f"Deleted {cur.rowcount} stale purchase.order view(s)")
+    else:
+        print("No stale purchase.order views found — OK")
+
+    cur.close()
+    conn.close()
+except Exception as e:
+    print(f"WARNING: stale view cleanup failed: {e}")
+PYVIEWS
 fi
 
 # Fix mail_message and mail_mail missing primary keys (pre-existing DB issue)

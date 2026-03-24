@@ -152,10 +152,18 @@ class MintPosOrder(models.Model):
         compute='_compute_wait_minutes',
     )
 
-    _dutchie_checkout_uniq = models.Constraint(
-        'UNIQUE(company_id, dutchie_checkout_id)',
-        'Dutchie checkout ID must be unique per store.',
-    )
+    def init(self):
+        """Create partial unique index that ignores NULL/empty checkout IDs.
+
+        Walk-in POS orders have no dutchie_checkout_id, so we must exclude
+        NULL and '' to avoid violating uniqueness on blank values.
+        """
+        self.env.cr.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS mint_pos_order_dutchie_checkout_uniq
+            ON mint_pos_order (company_id, dutchie_checkout_id)
+            WHERE dutchie_checkout_id IS NOT NULL
+              AND dutchie_checkout_id != ''
+        """)
 
     @api.model_create_multi
     def create(self, vals_list):
