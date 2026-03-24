@@ -88,9 +88,9 @@ class MintDealsAPI(http.Controller):
             'about': getattr(company, 'about', None),
             'description': getattr(company, 'description', None),
             'tickertape': getattr(company, 'tickertape', None),
-            'image_url': f"/api/v1/stores/{company.id}/image/logo" if company.logo else None,
+            'image_url': f"/api/v1/store-image/{company.id}/logo" if company.logo else None,
             'hero_image_url': getattr(company, 'hero_image_url', None) or (
-                f"/api/v1/stores/{company.id}/image/hero_image" if getattr(company, 'hero_image', None) else None
+                f"/api/v1/store-image/{company.id}/hero" if getattr(company, 'hero_image', None) else None
             ),
             'hours': hours_dict if hours_dict else None,
             'region': {
@@ -187,13 +187,8 @@ class MintDealsAPI(http.Controller):
 
     # ==================== STORE IMAGES ====================
 
-    @http.route('/api/v1/stores/<int:store_id>/image/<string:field>', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
-    def get_store_image(self, store_id, field='logo'):
-        """Serve store image binary fields publicly (logo or hero_image)."""
-        allowed_fields = ('logo', 'hero_image')
-        if field not in allowed_fields:
-            return error_response("Invalid image field", 400)
-
+    def _serve_company_image(self, store_id, field):
+        """Serve a binary image field from res.company."""
         try:
             company = request.env["res.company"].sudo().browse(store_id)
             if not company.exists():
@@ -224,6 +219,16 @@ class MintDealsAPI(http.Controller):
         except Exception as e:
             _logger.error("Error serving store image %s/%s: %s", store_id, field, e)
             return error_response(str(e), 500)
+
+    @http.route('/api/v1/store-image/<int:store_id>/logo', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_store_logo(self, store_id):
+        """Serve store logo image."""
+        return self._serve_company_image(store_id, 'logo')
+
+    @http.route('/api/v1/store-image/<int:store_id>/hero', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_store_hero(self, store_id):
+        """Serve store hero image."""
+        return self._serve_company_image(store_id, 'hero_image')
 
     # ==================== PRODUCTS ====================
 
