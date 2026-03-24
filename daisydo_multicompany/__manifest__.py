@@ -1,6 +1,6 @@
 {
     "name": "DaisyERP Multi-Company Isolation",
-    "version": "19.0.2.1.0",
+    "version": "19.0.2.2.0",
     "post_init_hook": "post_init_hook",
     "category": "Technical",
     "summary": "Record rules + intercompany transactions for multi-company setups",
@@ -34,8 +34,6 @@ auto-generate a matching Sale Order in the vendor's company.
         "product",
         "website",
         "mail",
-        "im_livechat",
-        "website_slides",
     ],
     "data": [
         "security/multicompany_rules.xml",
