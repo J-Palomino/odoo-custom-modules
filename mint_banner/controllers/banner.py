@@ -101,6 +101,8 @@ class MintBannerAPI(http.Controller):
                 'brand': b.brand or '',
                 'search_term': b.search_term or '',
                 'sequence': b.sequence,
+                'regions': getattr(b, 'x_regions', '') or '',
+                'store_slugs': getattr(b, 'x_store_slugs', '') or '',
             })
 
         return json_response(result)
