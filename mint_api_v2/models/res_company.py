@@ -3,7 +3,12 @@
 Store model - extends res.company for dispensary locations.
 Each company represents a store location with cannabis-specific fields.
 """
+import base64
+import logging
+
 from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 
 class ResCompany(models.Model):
@@ -61,6 +66,53 @@ class ResCompany(models.Model):
     region_id = fields.Many2one('mint.region', string="Region")
     amenity_ids = fields.Many2many('mint.amenity', string="Amenities")
     service_ids = fields.Many2many('mint.service', string="Services")
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'hero_image' in vals:
+            for company in self:
+                if company.hero_image and company.slug:
+                    company._sync_hero_to_r2()
+                elif not company.hero_image:
+                    super(ResCompany, company).write({'hero_image_url': False})
+        # If slug changed and hero_image exists but no URL yet, upload
+        if 'slug' in vals:
+            for company in self:
+                if company.hero_image and company.slug and not company.hero_image_url:
+                    company._sync_hero_to_r2()
+        return res
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        for record in records:
+            if record.hero_image and record.slug:
+                record._sync_hero_to_r2()
+        return records
+
+    def _sync_hero_to_r2(self):
+        """Upload hero_image to Cloudflare R2 and set hero_image_url."""
+        self.ensure_one()
+        try:
+            image_bytes = base64.b64decode(self.hero_image)
+            content_type, ext = self._detect_image_type(image_bytes)
+            key = f"stores/{self.slug}/hero.{ext}"
+
+            from ..utils.r2_upload import upload_to_r2
+            url = upload_to_r2(image_bytes, key, content_type)
+            super(ResCompany, self).write({'hero_image_url': url})
+            _logger.info("Synced hero image to R2 for %s: %s", self.slug, url)
+        except Exception:
+            _logger.exception("Failed to sync hero image to R2 for %s", self.slug)
+
+    @staticmethod
+    def _detect_image_type(image_bytes):
+        """Detect image MIME type and extension from magic bytes."""
+        if image_bytes[:3] == b'\xff\xd8\xff':
+            return 'image/jpeg', 'jpg'
+        if image_bytes[:4] == b'RIFF':
+            return 'image/webp', 'webp'
+        return 'image/png', 'png'
 
     @api.model
     def get_active_stores(self):
