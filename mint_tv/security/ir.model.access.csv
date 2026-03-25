@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_tv_layout_user,mint.tv.layout user,model_mint_tv_layout,base.group_user,1,1,1,1
+access_tv_book_user,mint.tv.book user,model_mint_tv_book,base.group_user,1,1,1,1
+access_tv_kiosk_user,mint.tv.kiosk user,model_mint_tv_kiosk,base.group_user,1,1,1,1

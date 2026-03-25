@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Form View -->
+    <record id="mint_tv_layout_form" model="ir.ui.view">
+        <field name="name">mint.tv.layout.form</field>
+        <field name="model">mint.tv.layout</field>
+        <field name="arch" type="xml">
+            <form string="TV Layout">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Lobby Wall"/></h1>
+                    </div>
+                    <group>
+                        <group string="Grid">
+                            <field name="cols"/>
+                            <field name="rows"/>
+                            <field name="cell_count"/>
+                        </group>
+                        <group string="Settings">
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="slideshow_interval"/>
+                            <field name="sequence"/>
+                            <field name="active" invisible="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Media" name="media">
+                            <field name="media_ids" widget="many2many_binary"/>
+                        </page>
+                        <page string="Display URLs" name="urls">
+                            <div class="alert alert-info">
+                                <p>Point each TV browser to its cell URL:</p>
+                                <p><code><field name="nodecg_url" readonly="1"/>/bundles/mintmedia/graphics/display.html?layout=<field name="id" readonly="1"/>&amp;cell=N</code></p>
+                                <p>Replace <code>N</code> with the cell number (0 to <field name="cell_count" readonly="1"/> - 1).</p>
+                            </div>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Tree View -->
+    <record id="mint_tv_layout_tree" model="ir.ui.view">
+        <field name="name">mint.tv.layout.tree</field>
+        <field name="model">mint.tv.layout</field>
+        <field name="arch" type="xml">
+            <list string="TV Layouts">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="cols"/>
+                <field name="rows"/>
+                <field name="cell_count"/>
+                <field name="slideshow_interval"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Kanban View -->
+    <record id="mint_tv_layout_kanban" model="ir.ui.view">
+        <field name="name">mint.tv.layout.kanban</field>
+        <field name="model">mint.tv.layout</field>
+        <field name="arch" type="xml">
+            <kanban>
+                <templates>
+                    <t t-name="card">
+                        <field name="name" class="fw-bold fs-5"/>
+                        <div class="text-muted">
+                            <field name="cols"/>x<field name="rows"/> grid
+                            — <field name="cell_count"/> cells
+                        </div>
+                        <div t-if="record.slideshow_interval.raw_value" class="text-muted">
+                            Slideshow: <field name="slideshow_interval"/>s
+                        </div>
+                        <field name="company_id" groups="base.group_multi_company"/>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="mint_tv_layout_action" model="ir.actions.act_window">
+        <field name="name">TV Layouts</field>
+        <field name="res_model">mint.tv.layout</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first TV layout
+            </p>
+            <p>
+                Configure grid displays for in-store TVs.
+                Each layout splits media across a configurable grid.
+            </p>
+        </field>
+    </record>
+
+</odoo>

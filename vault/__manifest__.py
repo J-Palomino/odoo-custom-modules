@@ -11,7 +11,6 @@
     "author": "initOS GmbH, Odoo Community Association (OCA)",
     "category": "Vault",
     "depends": ["base_setup", "web"],
-    "post_init_hook": "_vault_post_init",
     "data": [
         "security/vault_security.xml",
         "security/ir.model.access.csv",

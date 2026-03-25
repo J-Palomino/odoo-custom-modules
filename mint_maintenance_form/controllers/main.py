@@ -22,10 +22,18 @@ ALLOWED_MIMETYPES = {
 IT_TEAM_ID = 2
 ENGINEERING_TEAM_ID = 4
 ENGINEERING_TEAM_IDS = [IT_TEAM_ID, ENGINEERING_TEAM_ID]
-FACILITIES_TEAM_ID = 11
+INTERNAL_MAINTENANCE_TEAM_ID = 1
 GRAPHICS_TEAM_ID = 3
 DUTCHIE_TEAM_ID = 13
+WEBSITES_TEAM_ID = 14
 NEW_REQUEST_STAGE = 1
+
+# Category-based team routing: when a ticket's equipment belongs to one of
+# these categories, override the assigned team regardless of which form
+# submitted it.
+CATEGORY_TEAM_OVERRIDES = {
+    "Websites": WEBSITES_TEAM_ID,
+}
 
 PRIORITY_OPTIONS = [
     ("0", "Very Low"),
@@ -317,6 +325,10 @@ class MaintenanceFormController(http.Controller):
         # When team_id is a list, use the first for the created record
         assigned_team = team_id[0] if isinstance(team_id, list) else team_id
 
+        # Category-based team routing override
+        if category in CATEGORY_TEAM_OVERRIDES:
+            assigned_team = CATEGORY_TEAM_OVERRIDES[category]
+
         vals = {
             "name": title,
             "description": desc_html,
@@ -333,6 +345,9 @@ class MaintenanceFormController(http.Controller):
             equip = request.env["maintenance.equipment"].sudo().browse(equipment_id)
             if equip.technician_user_id:
                 vals["user_id"] = equip.technician_user_id.id
+            # Route to a different team based on equipment category
+            if equip.category_id and equip.category_id.name in CATEGORY_TEAM_OVERRIDES:
+                vals["maintenance_team_id"] = CATEGORY_TEAM_OVERRIDES[equip.category_id.name]
 
         if company_id:
             vals["company_id"] = int(company_id)
@@ -534,14 +549,14 @@ class MaintenanceFormController(http.Controller):
             return request.render(
                 template,
                 self._form_context(
-                    FACILITIES_TEAM_ID,
+                    INTERNAL_MAINTENANCE_TEAM_ID,
                     form_values=prefill,
                     is_logged_in=logged_in,
                 ),
             )
 
         return self._handle_form_post(
-            team_id=FACILITIES_TEAM_ID,
+            team_id=INTERNAL_MAINTENANCE_TEAM_ID,
             template=template,
             success_msg="Your maintenance request has been submitted successfully!",
             default_title="Maintenance Request",
