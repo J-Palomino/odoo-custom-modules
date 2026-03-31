@@ -365,6 +365,7 @@ class MintDealsAPI(http.Controller):
             'valid_until': discount.valid_until.isoformat() if discount.valid_until else None,
             'is_active': discount.is_active,
             'is_featured': getattr(discount, 'is_featured', False),
+            'deal_classification': getattr(discount, 'deal_classification', 'sale'),
             'store_ids': discount.store_ids.ids if discount.store_ids else [],
             'product_ids': discount.product_ids.ids if discount.product_ids else [],
             'category_ids': discount.category_ids.ids if discount.category_ids else [],
