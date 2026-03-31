@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================ -->
+    <!-- STOCK.PICKING FORM: Receipt view customizations              -->
+    <!-- Per Natalie's annotations on Dist/IN/00017:                  -->
+    <!--   1. Hide Operation Type field                               -->
+    <!--   2. Filter Destination Location to warehouse (internal) locs-->
+    <!--   3. Partial receives: native via Odoo backorder — add hint  -->
+    <!-- ============================================================ -->
+    <record id="stock_picking_form_receipt_cleanup" model="ir.ui.view">
+        <field name="name">po_enhance: Receipt Form Cleanup</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml">
+            <data>
+                <!-- 1. Hide Operation Type (redundant — already shown in breadcrumb/header) -->
+                <xpath expr="//field[@name='picking_type_id']" position="attributes">
+                    <attribute name="invisible">1</attribute>
+                </xpath>
+
+                <!-- 2. Filter Destination Location to internal warehouse locations only -->
+                <xpath expr="//field[@name='location_dest_id']" position="attributes">
+                    <attribute name="domain">[('usage', '=', 'internal')]</attribute>
+                </xpath>
+
+                <!-- 3. Add help text for partial receives above the move lines -->
+                <xpath expr="//field[@name='move_ids_without_package']" position="before">
+                    <div class="alert alert-info mb-2" role="alert"
+                         invisible="state != 'assigned'">
+                        <strong>Partial Receive:</strong>
+                        To receive a partial shipment, edit the <em>Quantity</em> column
+                        to the amount actually received, then click <em>Validate</em>.
+                        A backorder will be created for the remaining items.
+                    </div>
+                </xpath>
+            </data>
+        </field>
+    </record>
+
+</odoo>
