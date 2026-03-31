@@ -5,6 +5,9 @@ from odoo import api, fields, models
 class PurchaseOrder(models.Model):
     _inherit = "purchase.order"
 
+    # MT-82: Secondary PO title (shorthand summary)
+    x_po_title = fields.Char(string="PO Title", help="Short summary of PO contents")
+
     # Priority (replaces star widget with High/Medium/Low)
     x_priority_level = fields.Selection([
         ('low', 'Low'),
@@ -87,6 +90,20 @@ class PurchaseOrder(models.Model):
     x_vendor_contact = fields.Char(string="Vendor Contact")
     x_comment_date = fields.Char(string="Comment Date")
     x_comments = fields.Text(string="Comments")
+
+    # MT-69: Prevent setting status to "received" without a validated receipt
+    @api.constrains('x_order_status')
+    def _check_received_has_transfer(self):
+        for order in self:
+            if order.x_order_status == 'received':
+                done_pickings = order.picking_ids.filtered(
+                    lambda p: p.state == 'done'
+                )
+                if not done_pickings:
+                    raise models.ValidationError(
+                        "Cannot set status to 'Received' without a validated "
+                        "inventory transfer. Please process the receipt first."
+                    )
 
     @api.depends('order_line.product_qty')
     def _compute_unit_count(self):
