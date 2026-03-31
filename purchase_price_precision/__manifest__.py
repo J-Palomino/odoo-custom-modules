@@ -1,6 +1,6 @@
 {
     "name": "Purchase Enhancements",
-    "version": "19.0.2.0.0",
+    "version": "19.0.5.0.0",
     "category": "Purchase",
     "summary": "Order tracking, packaging, shipping & artwork fields for purchase orders",
     "description": """
