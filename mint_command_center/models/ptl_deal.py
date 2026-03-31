@@ -42,6 +42,24 @@ class PtlDeal(models.Model):
         string='Discount Type',
     )
     discount_value = fields.Float(string='Discount Value')
+    sales_details = fields.Text(
+        string='Sales Details',
+        help='Formatted pricing text displayed to customers (PTL Column D)',
+    )
+    sale_type = fields.Selection(
+        selection=[
+            ('edlp', 'EDLP'),
+            ('weekly_bundle', 'Weekly Bundle'),
+            ('special_offer', 'Special Offer'),
+            ('bogo', 'BOGO'),
+        ],
+        string='Sale Type',
+        help='PTL Column E — sale classification',
+    )
+    details_exclusions = fields.Text(
+        string='Details & Exclusions',
+        help='Product details, exclusions, and conditions (PTL Column C)',
+    )
     description = fields.Text(string='Description')
     sequence = fields.Integer(string='Sequence', default=10)
     is_featured = fields.Boolean(string='Featured')
