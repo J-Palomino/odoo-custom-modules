@@ -3,29 +3,10 @@ from odoo import api, fields, models
 
 class PtlDeal(models.Model):
     _name = 'mint.ptl.deal'
-    _description = 'PTL Deal — Individual deal within a PTL day'
+    _description = 'PTL Deal — Reusable deal template referenced by PTL days'
     _order = 'sequence, id'
 
     name = fields.Char(string='Deal Name', required=True)
-    ptl_day_id = fields.Many2one(
-        'mint.ptl.day',
-        string='PTL Day',
-        required=True,
-        ondelete='cascade',
-        index=True,
-    )
-    company_id = fields.Many2one(
-        related='ptl_day_id.company_id',
-        string='Store',
-        store=True,
-        index=True,
-    )
-    date = fields.Date(
-        related='ptl_day_id.date',
-        string='Date',
-        store=True,
-        index=True,
-    )
     brand_id = fields.Many2one(
         'res.partner',
         string='Brand',
@@ -60,6 +41,14 @@ class PtlDeal(models.Model):
         string='Details & Exclusions',
         help='Product details, exclusions, and conditions (PTL Column C)',
     )
+    store_ids = fields.Many2many(
+        'res.company',
+        'mint_ptl_deal_store_rel',
+        'deal_id',
+        'company_id',
+        string='Available Stores',
+        help='Stores where this deal is available. Leave empty for all stores.',
+    )
     description = fields.Text(string='Description')
     sequence = fields.Integer(string='Sequence', default=10)
     is_featured = fields.Boolean(string='Featured')
@@ -73,3 +62,19 @@ class PtlDeal(models.Model):
         string='Status',
         default='pending',
     )
+    day_ids = fields.Many2many(
+        'mint.ptl.day',
+        'mint_ptl_day_deal_rel',
+        'deal_id',
+        'day_id',
+        string='PTL Days',
+    )
+    day_count = fields.Integer(
+        string='Days Active',
+        compute='_compute_day_count',
+    )
+
+    @api.depends('day_ids')
+    def _compute_day_count(self):
+        for rec in self:
+            rec.day_count = len(rec.day_ids)

@@ -2,19 +2,19 @@
 <odoo>
     <data noupdate="1">
 
-        <!-- PTL Day: multi-company isolation -->
+        <!-- PTL Day: visible to all (no company isolation — one day per date) -->
         <record id="rule_ptl_day_company" model="ir.rule">
-            <field name="name">PTL Day: multi-company</field>
+            <field name="name">PTL Day: all users</field>
             <field name="model_id" ref="model_mint_ptl_day"/>
-            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+            <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[(4, ref('base.group_user'))]"/>
         </record>
 
-        <!-- PTL Deal: multi-company isolation -->
+        <!-- PTL Deal: visible to all (shared templates, store filtering via store_ids) -->
         <record id="rule_ptl_deal_company" model="ir.rule">
-            <field name="name">PTL Deal: multi-company</field>
+            <field name="name">PTL Deal: all users</field>
             <field name="model_id" ref="model_mint_ptl_deal"/>
-            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+            <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[(4, ref('base.group_user'))]"/>
         </record>
 
