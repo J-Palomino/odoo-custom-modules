@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================ -->
+    <!-- FORM VIEW: Hide Ask Confirmation + fix Deliver To            -->
+    <!-- ============================================================ -->
+    <record id="purchase_order_form_header_cleanup" model="ir.ui.view">
+        <field name="name">po_enhance: Header Cleanup</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="priority">20</field>
+        <field name="arch" type="xml">
+            <data>
+                <!-- Hide "Receipt Reminder Email" checkbox (Natalie: "Remove Ask Confirmation") -->
+                <xpath expr="//field[@name='receipt_reminder_email']" position="attributes">
+                    <attribute name="invisible">1</attribute>
+                </xpath>
+                <!-- Hide Deliver To / Dropship Address (not used — POs go to warehouse via picking_type_id) -->
+                <xpath expr="//field[@name='dest_address_id']" position="attributes">
+                    <attribute name="invisible">1</attribute>
+                </xpath>
+            </data>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- FORM VIEW: Order Tracking Header (before notebook)           -->
+    <!-- Consolidated: statuses here only (not duplicated in tab)     -->
+    <!-- Removed stray 0.00 inline field, moved costs to tab         -->
+    <!-- ============================================================ -->
+    <record id="purchase_order_form_tracking_header" model="ir.ui.view">
+        <field name="name">po_enhance: Order Tracking Header</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="before">
+                <group string="Order Tracking" name="order_tracking">
+                    <group>
+                        <field name="x_order_status" widget="badge"
+                            decoration-info="x_order_status == 'draft'"
+                            decoration-warning="x_order_status in ('in_production','in_transit')"
+                            decoration-success="x_order_status in ('received','complete')"
+                            decoration-danger="x_order_status == 'cancelled'"/>
+                        <field name="x_payment_status"/>
+                        <field name="x_shipment_status"/>
+                    </group>
+                    <group>
+                        <field name="x_state_region"/>
+                        <field name="x_current_due"/>
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- FORM VIEW: Packaging Tracking Tab                            -->
+    <!-- Cleaned up: removed duplicate statuses (now in header only)  -->
+    <!-- Moved costs here from header. Added Reorder checkbox.        -->
+    <!-- ============================================================ -->
+    <record id="purchase_order_form_packaging_tracking" model="ir.ui.view">
+        <field name="name">po_enhance: Packaging Tracking Tab</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <data>
+                <xpath expr="//page[@name='products']" position="before">
+                    <page string="Packaging Tracking" name="packaging_tracking">
+                        <field name="x_order_status" widget="statusbar"
+                            statusbar_visible="draft,confirmed,in_production,shipped,received,billed"/>
+                        <group>
+                            <group string="Costs &amp; Invoice">
+                                <field name="x_invoice_no"/>
+                                <field name="x_shipping_cost_total"/>
+                                <field name="x_additional_costs_total"/>
+                                <field name="x_current_due"/>
+                            </group>
+                            <group string="Shipping">
+                                <field name="x_by_sea"/>
+                                <field name="x_by_air"/>
+                                <field name="x_by_ground"/>
+                                <field name="x_tracking"/>
+                            </group>
+                        </group>
+                        <group>
+                            <group string="Artwork">
+                                <field name="x_artwork_created"/>
+                                <field name="x_artwork_approved"/>
+                                <field name="x_artwork_submitted"/>
+                                <field name="x_artwork_link"/>
+                                <field name="x_reorder"/>
+                            </group>
+                            <group string="Vendor &amp; Notes">
+                                <field name="x_vendor_contact"/>
+                                <field name="x_comment_date"/>
+                                <field name="x_comments"/>
+                            </group>
+                        </group>
+                    </page>
+                </xpath>
+                <!-- Hide native Billing Status (replaced by x_payment_status) -->
+                <xpath expr="//field[@name='invoice_status']" position="attributes">
+                    <attribute name="invisible">1</attribute>
+                </xpath>
+            </data>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- FORM VIEW: Shipping costs in footer                          -->
+    <!-- ============================================================ -->
+    <record id="purchase_order_form_footer_costs" model="ir.ui.view">
+        <field name="name">po_enhance: Shipping in Products Total</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[hasclass('oe_subtotal_footer')]" position="inside">
+                <field name="x_shipping_cost_total" string="Shipping Cost"/>
+                <field name="x_additional_costs_total" string="Additional Costs"/>
+                <div class="oe_subtotal_footer_separator">
+                    <field name="x_grand_total" string="Grand Total (incl. Shipping)"
+                        class="oe_subtotal_footer_separator"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- FORM VIEW: Line item packaging fields (tree)                 -->
+    <!-- ============================================================ -->
+    <record id="purchase_order_form_line_packaging_tree" model="ir.ui.view">
+        <field name="name">po_enhance: Line Packaging Fields (tree)</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='order_line']/list/field[@name='price_subtotal']" position="after">
+                <field name="x_product_category" optional="hide"/>
+                <field name="x_product_type" optional="hide"/>
+                <field name="x_brand" optional="hide"/>
+                <field name="x_size" optional="hide"/>
+                <field name="x_additional_costs" optional="hide"/>
+                <field name="x_processing_fee" optional="hide"/>
+                <field name="x_shipping_cost" optional="hide"/>
+                <field name="x_cost_per_unit_incl" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- FORM VIEW: Line item packaging details (form)                -->
+    <!-- ============================================================ -->
+    <record id="purchase_order_form_line_packaging_form" model="ir.ui.view">
+        <field name="name">po_enhance: Line Packaging Details (form)</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='order_line']/form//page[@name='notes']" position="after">
+                <page string="Packaging Details" name="packaging_details">
+                    <group>
+                        <group>
+                            <field name="x_product_category"/>
+                            <field name="x_product_type"/>
+                            <field name="x_brand"/>
+                            <field name="x_size"/>
+                        </group>
+                        <group>
+                            <field name="x_additional_costs"/>
+                            <field name="x_processing_fee"/>
+                            <field name="x_shipping_cost"/>
+                            <field name="x_cost_per_unit_incl"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- LIST VIEW: Natalie's annotations                             -->
+    <!--   1. Replace star priority with High/Medium/Low              -->
+    <!--   2. Add unit count column                                   -->
+    <!--   3. Add Expected Arrival (date_planned)                     -->
+    <!--   4. Add Current Due                                         -->
+    <!--   5. Replace Billing Status with Payment Status              -->
+    <!--   6. Order Status badge                                      -->
+    <!-- ============================================================ -->
+    <record id="purchase_order_tree_enhancements" model="ir.ui.view">
+        <field name="name">po_enhance: List View Enhancements</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_view_list"/>
+        <field name="arch" type="xml">
+            <!-- 1. Replace star priority with High/Medium/Low selection -->
+            <xpath expr="//field[@name='priority']" position="replace">
+                <field name="x_priority_level" widget="badge"
+                    decoration-danger="x_priority_level == 'high'"
+                    decoration-warning="x_priority_level == 'medium'"
+                    decoration-info="x_priority_level == 'low'"
+                    optional="show"/>
+            </xpath>
+            <!-- 2. Add unit count after vendor (partner_id) -->
+            <xpath expr="//field[@name='partner_id']" position="after">
+                <field name="x_unit_count" string="Units" optional="show"/>
+            </xpath>
+            <!-- 3. Add Expected Arrival -->
+            <xpath expr="//field[@name='date_planned']" position="attributes">
+                <attribute name="optional">show</attribute>
+                <attribute name="string">Expected Arrival</attribute>
+            </xpath>
+            <!-- 4. Add Current Due after amount_total -->
+            <xpath expr="//field[@name='amount_total']" position="after">
+                <field name="x_current_due" string="Current Due" optional="show"/>
+            </xpath>
+            <!-- 5. Replace Billing Status with Payment Status -->
+            <xpath expr="//field[@name='invoice_status']" position="replace">
+                <field name="x_payment_status" string="Payment Status" widget="badge"
+                    decoration-warning="x_payment_status == 'deposit_due'"
+                    decoration-info="x_payment_status == 'partial_paid'"
+                    decoration-success="x_payment_status == 'paid_in_full'"
+                    optional="show"/>
+            </xpath>
+            <!-- 6. Order Status badge -->
+            <xpath expr="//field[@name='state']" position="after">
+                <field name="x_order_status" widget="badge"
+                    decoration-info="x_order_status == 'draft'"
+                    decoration-warning="x_order_status in ('in_production','in_transit')"
+                    decoration-success="x_order_status in ('received','complete')"
+                    decoration-danger="x_order_status == 'cancelled'"
+                    optional="show"/>
+            </xpath>
+            <!-- Grand Total column -->
+            <xpath expr="//field[@name='amount_total']" position="after">
+                <field name="x_grand_total" string="Grand Total" optional="show"/>
+            </xpath>
+            <xpath expr="//field[@name='amount_untaxed']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Also apply Grand Total to the KPIs list -->
+    <record id="purchase_order_kpis_list_grand_total" model="ir.ui.view">
+        <field name="name">po_enhance: KPIs Grand Total</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_kpis_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='amount_total']" position="after">
+                <field name="x_grand_total" string="Grand Total" optional="show"/>
+            </xpath>
+            <xpath expr="//field[@name='amount_untaxed']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
