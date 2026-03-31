@@ -128,7 +128,7 @@
                             <p class="text-muted mt-3">
                                 <small>
                                     Already completed it?
-                                    <a href="/fixit">Try again</a> &mdash;
+                                    <a href="/fixit">Try again</a> &#8212;
                                     make sure you clicked through every slide.
                                 </small>
                             </p>
