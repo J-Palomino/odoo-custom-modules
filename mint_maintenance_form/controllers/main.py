@@ -67,7 +67,7 @@ class MaintenanceFormController(http.Controller):
             .search_count([
                 ("channel_id", "=", FIXIT_COURSE_ID),
                 ("partner_id", "=", partner.id),
-                ("completed", "=", True),
+                ("member_status", "=", "completed"),
             ])
         )
         if completed:
