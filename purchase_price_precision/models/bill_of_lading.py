@@ -38,7 +38,7 @@ class BillOfLading(models.Model):
         store=True,
     )
     date_shipped = fields.Date(string="Ship Date", tracking=True)
-    date_expected = fields.Date(
+    date_expected = fields.Datetime(
         string="Expected Arrival",
         related="purchase_order_id.date_planned",
         readonly=False,
