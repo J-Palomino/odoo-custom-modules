@@ -26,7 +26,6 @@
         'bus',
         'mint_push',
         'mint_banner',
-        'mint_api_v2',
     ],
     'assets': {
         'web.assets_backend': [
