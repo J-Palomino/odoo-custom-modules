@@ -1,4 +1,48 @@
+import json
+import logging
+import threading
+import urllib.request
+from datetime import timedelta
+
 from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
+
+WEBHOOK_URL_PARAM = 'mint.ptl_sync.webhook_url'
+DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production.up.railway.app/api/webhook/ptl-discount-sync'
+API_KEY_PARAM = 'mint.inventory_service.api_key'
+
+# AZ store company_id → Dutchie UUID
+STORE_UUID_MAP = {
+    2: 'f8dbdb94-7bea-4741-a3a9-6631d8430544',   # 75th
+    3: 'a4d8b494-b542-4f69-acb8-cf67d6a6c3aa',   # Bell Rd
+    7: 'b5f4110e-6eb8-428b-aaaa-b4271d5eb327',   # Buckeye
+    11: '1b81f825-ab2e-45c2-9ad7-add16236e95a',  # El Mirage
+    18: '242ef5f9-5fc9-41ef-bf44-5a7a4a2954a9',  # Mesa
+    22: '1e30427d-d8db-4e60-84c8-8487d1d6bcd6',  # Northern
+    27: '86441745-c533-4602-9264-f3a30db9753b',  # Scottsdale
+    32: '92fd0875-cc39-479b-9fbd-0a7db947c694',  # Tempe
+}
+
+DAY_NAME_MAP = {
+    0: 'monday', 1: 'tuesday', 2: 'wednesday', 3: 'thursday',
+    4: 'friday', 5: 'saturday', 6: 'sunday',
+}
+
+DISCOUNT_TYPE_MAP = {
+    'percent': 'percent',
+    'fixed': 'fixed',
+    'bogo': 'bogo',
+    'bundle': 'bogo',
+    'price': 'price_to_amount',
+}
+
+CALC_METHOD_MAP = {
+    'percent': 'PERCENT_OFF',
+    'fixed': 'DOLLAR_OFF',
+    'bogo': 'BOGO',
+    'price_to_amount': 'PRICE_TO_AMOUNT_TOTAL',
+}
 
 
 class PtlDay(models.Model):
@@ -50,12 +94,194 @@ class PtlDay(models.Model):
     @api.depends('date')
     def _compute_name(self):
         for rec in self:
-            if rec.date:
-                rec.name = str(rec.date)
-            else:
-                rec.name = 'New PTL Day'
+            rec.name = str(rec.date) if rec.date else 'New PTL Day'
 
     @api.depends('deal_ids')
     def _compute_deal_count(self):
         for rec in self:
             rec.deal_count = len(rec.deal_ids)
+
+    # ─── Publish Action ──────────────────────────────────────────────────
+
+    def action_publish(self):
+        """Publish: sync deals → mint.discount, compute day-of-week, push to Redis."""
+        self.ensure_one()
+
+        Discount = self.env['mint.discount'].sudo()
+        discount_ids = []
+
+        for deal in self.deal_ids:
+            discount = self._ensure_discount(deal)
+            Discount._recompute_day_booleans(discount)
+            discount_ids.append(discount.id)
+
+        # Push to inventory service
+        self._push_discounts_to_redis(discount_ids)
+
+        self.write({'state': 'published'})
+        self.message_post(
+            body=f"Published {len(discount_ids)} deal(s) to frontend.",
+            message_type='comment',
+        )
+
+    def _ensure_discount(self, deal):
+        """Create or update the mint.discount record for a PTL deal."""
+        Discount = self.env['mint.discount'].sudo()
+        vals = self._deal_to_discount_vals(deal)
+
+        if deal.discount_id:
+            deal.discount_id.write(vals)
+            return deal.discount_id
+
+        vals['source'] = 'ptl'
+        discount = Discount.create(vals)
+        deal.write({'discount_id': discount.id})
+        return discount
+
+    def _deal_to_discount_vals(self, deal):
+        """Map ptl.deal fields → mint.discount values."""
+        disc_type = DISCOUNT_TYPE_MAP.get(deal.discount_type, 'percent')
+
+        # Normalize discount amount
+        if disc_type == 'percent' and deal.discount_value > 1:
+            amount = deal.discount_value / 100.0
+        else:
+            amount = deal.discount_value
+
+        vals = {
+            'name': deal.name,
+            'description': deal.sales_details or '',
+            'terms': deal.details_exclusions or '',
+            'discount_type': disc_type,
+            'discount_amount': amount,
+            'is_active': True,
+            'is_featured': deal.is_featured,
+            'is_available_online': True,
+            'ptl_deal_id': deal.id,
+            'dutchie_discount_id': f'ptl_{deal.id}',
+        }
+
+        # Date range from linked PTL days
+        day_dates = deal.day_ids.mapped('date')
+        if day_dates:
+            vals['valid_from'] = min(day_dates)
+            vals['valid_until'] = max(day_dates)
+
+        # Store targeting
+        if deal.store_ids:
+            vals['store_ids'] = [(6, 0, deal.store_ids.ids)]
+
+        # Brand targeting (ptl.deal uses res.partner, mint.discount uses mint.brand)
+        if deal.brand_id:
+            brand = self.env['mint.brand'].search([
+                ('name', '=ilike', deal.brand_id.name),
+            ], limit=1)
+            if brand:
+                vals['brand_ids'] = [(6, 0, [brand.id])]
+
+        # Category targeting (ptl.deal uses char, mint.discount uses product.category)
+        if deal.product_category:
+            cats = self.env['product.category'].search([
+                ('name', '=ilike', deal.product_category),
+            ])
+            if cats:
+                vals['category_ids'] = [(6, 0, cats.ids)]
+
+        return vals
+
+    # ─── Webhook Push to Inventory Service ───────────────────────────────
+
+    def _push_discounts_to_redis(self, discount_ids):
+        """Push PTL discounts to inventory service (fire-and-forget)."""
+        if not discount_ids:
+            return
+
+        discounts = self.env['mint.discount'].sudo().browse(discount_ids)
+
+        # Resolve store → Dutchie UUID mapping
+        # Group discounts by store UUID
+        store_payloads = {}  # uuid → [discount_dicts]
+
+        for discount in discounts:
+            store_ids = discount.store_ids.ids if discount.store_ids else list(STORE_UUID_MAP.keys())
+            for store_id in store_ids:
+                uuid = STORE_UUID_MAP.get(store_id)
+                if not uuid:
+                    continue
+                if uuid not in store_payloads:
+                    store_payloads[uuid] = []
+                store_payloads[uuid].append(self._discount_to_webhook_payload(discount, uuid))
+
+        # Fire webhook per store (async, fire-and-forget)
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        webhook_url = get_param(WEBHOOK_URL_PARAM, DEFAULT_WEBHOOK_URL)
+        api_key = get_param(API_KEY_PARAM, '')
+
+        for uuid, deals in store_payloads.items():
+            payload = json.dumps({
+                'location_id': uuid,
+                'source': 'ptl',
+                'discounts': deals,
+            }).encode('utf-8')
+
+            def _fire(url, data, key):
+                try:
+                    req = urllib.request.Request(
+                        url, data=data,
+                        headers={
+                            'Content-Type': 'application/json',
+                            'X-API-Key': key,
+                        },
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        _logger.info('PTL webhook %s: %s', uuid[:12], resp.status)
+                except Exception as e:
+                    _logger.warning('PTL webhook failed for %s: %s', uuid[:12], e)
+
+            thread = threading.Thread(target=_fire, args=(webhook_url, payload, api_key))
+            thread.daemon = True
+            thread.start()
+
+        _logger.info('PTL publish: fired webhooks for %d stores, %d discounts',
+                      len(store_payloads), len(discount_ids))
+
+    def _discount_to_webhook_payload(self, discount, location_uuid):
+        """Convert mint.discount → inventory service webhook payload."""
+        calc_method = CALC_METHOD_MAP.get(discount.discount_type, 'PERCENT_OFF')
+
+        # Build brand/category targeting JSONB
+        brands = None
+        if discount.brand_ids:
+            brands = {'ids': discount.brand_ids.ids, 'isExclusion': False}
+
+        categories = None
+        if discount.category_ids:
+            categories = {'ids': discount.category_ids.ids, 'isExclusion': False}
+
+        products = None
+        if discount.product_ids:
+            products = {'ids': discount.product_ids.ids, 'isExclusion': False}
+
+        return {
+            'source_external_id': str(discount.id),
+            'discount_id': discount.id + 100000,
+            'discount_name': discount.name,
+            'discount_code': discount.code or None,
+            'discount_amount': discount.discount_amount,
+            'calculation_method': calc_method,
+            'is_active': discount.is_active,
+            'valid_from': discount.valid_from.isoformat() if discount.valid_from else None,
+            'valid_until': discount.valid_until.isoformat() if discount.valid_until else None,
+            'monday': discount.monday,
+            'tuesday': discount.tuesday,
+            'wednesday': discount.wednesday,
+            'thursday': discount.thursday,
+            'friday': discount.friday,
+            'saturday': discount.saturday,
+            'sunday': discount.sunday,
+            'brands': brands,
+            'product_categories': categories,
+            'products': products,
+            'sales_details': discount.description or None,
+            'deal_classification': discount.deal_classification or 'sale',
+        }

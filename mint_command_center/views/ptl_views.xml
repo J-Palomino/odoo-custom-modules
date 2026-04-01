@@ -10,6 +10,12 @@
         <field name="arch" type="xml">
             <form>
                 <header>
+                    <button name="action_publish"
+                            string="Publish to Frontend"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state == 'published'"
+                            confirm="This will sync all deals to the live website. Continue?"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="draft,confirmed,published"/>
                 </header>

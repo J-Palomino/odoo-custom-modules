@@ -62,6 +62,12 @@ class PtlDeal(models.Model):
         string='Status',
         default='pending',
     )
+    discount_id = fields.Many2one(
+        'mint.discount',
+        string='Discount Record',
+        help='The mint.discount record synced to Redis for this deal.',
+        ondelete='set null',
+    )
     day_ids = fields.Many2many(
         'mint.ptl.day',
         'mint_ptl_day_deal_rel',
