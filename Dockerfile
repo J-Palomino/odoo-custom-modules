@@ -1,9 +1,10 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=106
+ARG CACHEBUST=107
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
-RUN echo "Build cache key: $CACHEBUST"
+# Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
+RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
 
 USER root
 
