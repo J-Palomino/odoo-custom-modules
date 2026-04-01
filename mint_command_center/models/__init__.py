@@ -1,5 +1,6 @@
 from . import ptl_day
 from . import ptl_deal
+from . import mint_discount_ext
 from . import hotbox_deal
 from . import brand_ranking
 from . import compliance_variance
