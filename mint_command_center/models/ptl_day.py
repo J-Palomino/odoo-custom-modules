@@ -101,6 +101,13 @@ class PtlDay(models.Model):
         for rec in self:
             rec.deal_count = len(rec.deal_ids)
 
+    # ─── Daily Cron (called via ir.cron on mint.ptl.day) ─────────────────
+
+    @api.model
+    def _cron_daily_lifecycle(self):
+        """Delegates to mint.discount._cron_ptl_daily_lifecycle()."""
+        self.env['mint.discount']._cron_ptl_daily_lifecycle()
+
     # ─── Publish Action ──────────────────────────────────────────────────
 
     def action_publish(self):
