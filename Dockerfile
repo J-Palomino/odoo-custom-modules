@@ -104,7 +104,6 @@ RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync
 RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MODULE VERIFIED" || (echo "MINT_THEME MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
-RUN echo "=== PURCHASE MODULE VERSION ===" && grep "version" /opt/extra-addons/purchase_price_precision/__manifest__.py && grep "x_po_title" /opt/extra-addons/purchase_price_precision/models/purchase_order.py && echo "=== x_po_title FOUND ===" || echo "=== x_po_title MISSING ==="
 RUN test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MINT_MAINTENANCE_FORM MODULE VERIFIED" || (echo "MINT_MAINTENANCE_FORM MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
