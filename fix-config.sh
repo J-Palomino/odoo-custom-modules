@@ -441,7 +441,7 @@ fi
 # Copy new modules to persistent volume so Odoo's data_dir scan finds them
 echo "=== Syncing custom modules to persistent addons ==="
 mkdir -p /var/lib/odoo/addons/19.0
-for mod in mint_maintenance_form mint_automations mint_oauth_only mint_inventory_ops; do
+for mod in mint_maintenance_form mint_automations mint_oauth_only mint_inventory_ops purchase_price_precision; do
     if [ -d "/opt/extra-addons/$mod" ]; then
         echo "Copying $mod to /var/lib/odoo/addons/19.0/$mod"
         rm -rf "/var/lib/odoo/addons/19.0/$mod"
