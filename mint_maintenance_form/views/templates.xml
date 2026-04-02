@@ -121,7 +121,7 @@
                                 training course on how to use Fix-It. It only takes about
                                 <strong>15 minutes</strong>.
                             </p>
-                            <a t-attf-href="/slides/#{course_id}"
+                            <a t-att-href="course_url"
                                class="btn btn-primary btn-lg mb-3">
                                 Start the Course
                             </a>

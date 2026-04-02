@@ -72,9 +72,10 @@ class MaintenanceFormController(http.Controller):
         )
         if completed:
             return None
+        course = request.env["slide.channel"].sudo().browse(FIXIT_COURSE_ID)
         return request.render(
             "mint_maintenance_form.course_required",
-            {"course_id": FIXIT_COURSE_ID},
+            {"course_id": FIXIT_COURSE_ID, "course_url": course.website_url or f"/slides/{FIXIT_COURSE_ID}"},
         )
 
     def _check_request_access(self, maint_req, user):
