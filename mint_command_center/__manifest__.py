@@ -32,9 +32,6 @@
         'web.assets_backend': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',
         ],
-        'web.assets_frontend_lazy': [
-            'mint_command_center/static/src/outdated_page_watcher_patch.js',
-        ],
     },
     'data': [
         'security/security_groups.xml',
