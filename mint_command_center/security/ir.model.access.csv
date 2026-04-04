@@ -20,3 +20,12 @@ access_push_campaign_manager,mint.push.campaign.manager,model_mint_push_campaign
 access_push_send_wizard,mint.push.send.wizard,mint_push.model_mint_push_send_wizard,group_marketing,1,1,1,1
 access_push_banner_viewer,mint.push.banner.viewer,model_mint_push_banner,group_viewer,1,0,0,0
 access_push_banner_manager,mint.push.banner.manager,model_mint_push_banner,group_marketing,1,1,1,1
+access_deal_submission_viewer,mint.deal.submission.viewer,model_mint_deal_submission,group_viewer,1,0,0,0
+access_deal_submission_vendor_mgr,mint.deal.submission.vendor_mgr,model_mint_deal_submission,group_vendor_manager,1,1,1,1
+access_deal_submission_ptl_mgr,mint.deal.submission.ptl_mgr,model_mint_deal_submission,group_ptl_manager,1,1,1,0
+access_brand_calendar_viewer,mint.brand.calendar.entry.viewer,model_mint_brand_calendar_entry,group_viewer,1,0,0,0
+access_brand_calendar_vendor_mgr,mint.brand.calendar.entry.vendor_mgr,model_mint_brand_calendar_entry,group_vendor_manager,1,1,1,1
+access_brand_calendar_ptl_mgr,mint.brand.calendar.entry.ptl_mgr,model_mint_brand_calendar_entry,group_ptl_manager,1,1,1,1
+access_deal_reject_wizard,mint.deal.reject.wizard,model_mint_deal_reject_wizard,group_ptl_manager,1,1,1,1
+access_deal_reject_wizard_vendor,mint.deal.reject.wizard.vendor,model_mint_deal_reject_wizard,group_vendor_manager,1,1,1,1
+access_stock_check_wizard,mint.stock.check.wizard,model_mint_stock_check_wizard,group_ptl_manager,1,1,1,1

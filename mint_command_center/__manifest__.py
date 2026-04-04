@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.2.2.0',
+    'version': '19.0.3.0.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -8,15 +8,25 @@
         55 stores across AZ, FL, MI, NV, MO, IL.
 
         Core models:
-          - PTL Calendar (Product Timeline): Daily promotional schedules per store
+          - PTL Calendar (Product Timeline): Daily promotional schedules per market
+          - Deal Submissions: Vendor deal submission inbox with approval workflow
+          - Brand Calendar: Scheduled brand promotion slots
           - Hot Box: Quick promotional deals
           - Brand Rankings: Brand performance tracking per store/period
+          - Compliance Variances: Regulatory approval tracker
+          - Stock Check: Inventory verification against Dutchie API
 
         Features:
+          - Multi-market PTL calendars (AZ, NV, FL, MI, MO, IL)
+          - Deal approval workflow (pending → approved/rejected → live → expired)
+          - Vendor deal submission form (/vendor-deals)
+          - Brand calendar with add-to-PTL workflow
+          - Stock check wizard with majority-rule logic
           - Multi-company isolation (deals per store)
           - Calendar, kanban, list, and form views
           - Security groups with role-based access
           - Mail thread integration for collaboration
+          - Webhook sync to inventory service (Redis)
     """,
     'author': 'Mint Dispensaries',
     'website': 'https://mintdispensaries.com',
@@ -24,6 +34,7 @@
     'depends': [
         'mail',
         'bus',
+        'website',
         'mint_push',
         'mint_banner',
         'mint_api_v2',
@@ -32,13 +43,19 @@
         'web.assets_backend': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',
         ],
+        'web.assets_frontend_lazy': [
+            'mint_command_center/static/src/outdated_page_watcher_patch.js',
+        ],
     },
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
         'security/record_rules.xml',
         'data/ptl_cron_data.xml',
+        'data/push_site_data.xml',
         'views/ptl_views.xml',
+        'views/deal_submission_views.xml',
+        'views/brand_calendar_views.xml',
         'views/hotbox_views.xml',
         'views/brand_ranking_views.xml',
         'views/compliance_views.xml',
@@ -47,6 +64,9 @@
         'views/push_send_wizard_views.xml',
         'views/push_campaign_views.xml',
         'views/banner_views.xml',
+        'views/deal_reject_wizard_views.xml',
+        'views/stock_check_wizard_views.xml',
+        'views/vendor_submission_templates.xml',
         'views/menu.xml',
     ],
     'post_init_hook': 'post_init_hook',

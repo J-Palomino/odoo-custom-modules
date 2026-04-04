@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== Deal Submission Views ==================== -->
+
+    <!-- Form View -->
+    <record id="view_deal_submission_form" model="ir.ui.view">
+        <field name="name">mint.deal.submission.form</field>
+        <field name="model">mint.deal.submission</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_start_review" string="Start Review"
+                            type="object" class="btn-primary"
+                            invisible="state != 'new'"/>
+                    <button name="action_approve" string="Approve"
+                            type="object" class="btn-primary"
+                            invisible="state not in ('new', 'under_review')"/>
+                    <button name="action_reject" string="Reject"
+                            type="object" class="btn-danger"
+                            invisible="state not in ('new', 'under_review')"/>
+                    <button name="action_convert_to_deal" string="Convert to PTL Deal"
+                            type="object" class="btn-success"
+                            invisible="state != 'approved'"
+                            confirm="This will create a new PTL Deal from this submission. Continue?"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="new,under_review,approved,converted"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Deal Name"/></h1>
+                    </div>
+                    <div class="alert alert-danger" role="alert"
+                         invisible="state != 'rejected'">
+                        <strong>Rejected:</strong>
+                        <field name="rejection_reason" nolabel="1" readonly="1"/>
+                    </div>
+                    <div class="alert alert-success" role="alert"
+                         invisible="state != 'converted'">
+                        <strong>Converted to Deal:</strong>
+                        <field name="deal_id" nolabel="1" readonly="1"/>
+                    </div>
+                    <group>
+                        <group string="Vendor Information">
+                            <field name="vendor_name"/>
+                            <field name="vendor_email" widget="email"/>
+                            <field name="vendor_contact"/>
+                            <field name="vendor_phone" widget="phone"/>
+                            <field name="brand_id"/>
+                        </group>
+                        <group string="Deal Details">
+                            <field name="product_category"/>
+                            <field name="discount_type"/>
+                            <field name="discount_value"/>
+                            <field name="original_price"/>
+                            <field name="sales_details"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Targeting">
+                            <field name="market_id" options="{'no_create': True}"/>
+                            <field name="store_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"/>
+                        </group>
+                        <group string="Date Preferences">
+                            <field name="preferred_start_date"/>
+                            <field name="preferred_end_date"/>
+                            <field name="preferred_days"/>
+                        </group>
+                    </group>
+                    <group string="Details &amp; Exclusions">
+                        <field name="details_exclusions" nolabel="1"
+                               placeholder="Product exclusions and conditions..."/>
+                    </group>
+                    <group string="Review" invisible="not reviewed_by">
+                        <group>
+                            <field name="reviewed_by"/>
+                            <field name="reviewed_at"/>
+                        </group>
+                        <group>
+                            <field name="reviewer_notes"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="view_deal_submission_list" model="ir.ui.view">
+        <field name="name">mint.deal.submission.list</field>
+        <field name="model">mint.deal.submission</field>
+        <field name="arch" type="xml">
+            <list string="Deal Submissions"
+                  decoration-info="state == 'new'"
+                  decoration-warning="state == 'under_review'"
+                  decoration-success="state in ('approved', 'converted')"
+                  decoration-danger="state == 'rejected'">
+                <field name="create_date" string="Submitted"/>
+                <field name="vendor_name"/>
+                <field name="name"/>
+                <field name="product_category"/>
+                <field name="discount_type"/>
+                <field name="discount_value"/>
+                <field name="market_id"/>
+                <field name="preferred_start_date"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'new'"
+                       decoration-warning="state == 'under_review'"
+                       decoration-success="state in ('approved', 'converted')"
+                       decoration-danger="state == 'rejected'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Kanban View (review board) -->
+    <record id="view_deal_submission_kanban" model="ir.ui.view">
+        <field name="name">mint.deal.submission.kanban</field>
+        <field name="model">mint.deal.submission</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state">
+                <field name="vendor_name"/>
+                <field name="name"/>
+                <field name="product_category"/>
+                <field name="market_id"/>
+                <field name="state"/>
+                <templates>
+                    <t t-name="card">
+                        <field name="name" class="fw-bold"/>
+                        <field name="vendor_name" class="text-muted"/>
+                        <div class="d-flex justify-content-between">
+                            <field name="product_category"/>
+                            <field name="market_id"/>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_deal_submission_search" model="ir.ui.view">
+        <field name="name">mint.deal.submission.search</field>
+        <field name="model">mint.deal.submission</field>
+        <field name="arch" type="xml">
+            <search string="Search Submissions">
+                <field name="name"/>
+                <field name="vendor_name"/>
+                <field name="brand_id"/>
+                <field name="market_id"/>
+                <filter name="new" string="New" domain="[('state', '=', 'new')]"/>
+                <filter name="under_review" string="Under Review" domain="[('state', '=', 'under_review')]"/>
+                <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
+                <filter name="rejected" string="Rejected" domain="[('state', '=', 'rejected')]"/>
+                <filter name="converted" string="Converted" domain="[('state', '=', 'converted')]"/>
+                <separator/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_market" string="Market" context="{'group_by': 'market_id'}"/>
+                <filter name="group_vendor" string="Vendor" context="{'group_by': 'vendor_name'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_deal_submission" model="ir.actions.act_window">
+        <field name="name">Deal Submissions</field>
+        <field name="res_model">mint.deal.submission</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="search_view_id" ref="view_deal_submission_search"/>
+        <field name="context">{'search_default_new': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No deal submissions yet
+            </p>
+            <p>
+                Vendors submit deals via the /vendor-deals form.
+                Review, approve, and convert submissions into PTL Deals.
+            </p>
+        </field>
+    </record>
+
+</odoo>

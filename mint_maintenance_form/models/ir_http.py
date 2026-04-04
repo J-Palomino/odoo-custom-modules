@@ -14,6 +14,7 @@ EXTRA_CONTROLLER_MODULES = [
     'mint_api_v2',
     'mint_push',
     'mint_theme',
+    'mint_command_center',
     'daisy_bot',
     'vault',
     'account_financial_risk',

@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <template id="vendor_deal_form" name="Vendor Deal Submission">
+        <t t-call="website.layout">
+            <div class="container py-5" style="max-width: 720px;">
+
+                <h1 class="mb-2">Submit a Deal</h1>
+                <p class="text-muted mb-4">
+                    Use this form to submit a promotional deal for review by the Mint marketing team.
+                </p>
+
+                <!-- Error Alert -->
+                <t t-if="error">
+                    <div class="alert alert-danger" role="alert">
+                        <t t-esc="error"/>
+                    </div>
+                </t>
+
+                <!-- Success Alert -->
+                <t t-if="success">
+                    <div class="alert alert-success" role="alert">
+                        <t t-esc="success"/>
+                    </div>
+                </t>
+
+                <!-- Form (hidden after success) -->
+                <t t-if="not success">
+                    <form method="POST" action="/vendor-deals" class="needs-validation" novalidate="">
+                        <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+
+                        <!-- Vendor Info -->
+                        <fieldset class="mb-4">
+                            <legend class="h5 mb-3">Vendor Information</legend>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label" for="vendor_name">Brand / Company Name *</label>
+                                    <input type="text" class="form-control" id="vendor_name"
+                                           name="vendor_name" required=""
+                                           t-att-value="form_values.get('vendor_name', '')"/>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="vendor_email">Email *</label>
+                                    <input type="email" class="form-control" id="vendor_email"
+                                           name="vendor_email" required=""
+                                           t-att-value="form_values.get('vendor_email', '')"/>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="vendor_contact">Contact Person</label>
+                                    <input type="text" class="form-control" id="vendor_contact"
+                                           name="vendor_contact"
+                                           t-att-value="form_values.get('vendor_contact', '')"/>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="vendor_phone">Phone</label>
+                                    <input type="tel" class="form-control" id="vendor_phone"
+                                           name="vendor_phone"
+                                           t-att-value="form_values.get('vendor_phone', '')"/>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <!-- Deal Details -->
+                        <fieldset class="mb-4">
+                            <legend class="h5 mb-3">Deal Details</legend>
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label" for="deal_name">Deal Name *</label>
+                                    <input type="text" class="form-control" id="deal_name"
+                                           name="deal_name" required=""
+                                           placeholder="e.g. 30% Off All Flower"
+                                           t-att-value="form_values.get('deal_name', '')"/>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="product_category">Product Category</label>
+                                    <select class="form-select" id="product_category" name="product_category">
+                                        <option value="">-- Select --</option>
+                                        <t t-foreach="categories" t-as="cat">
+                                            <option t-att-value="cat[0]"
+                                                    t-att-selected="form_values.get('product_category') == cat[0]">
+                                                <t t-esc="cat[1]"/>
+                                            </option>
+                                        </t>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="discount_type">Discount Type</label>
+                                    <select class="form-select" id="discount_type" name="discount_type">
+                                        <option value="">-- Select --</option>
+                                        <t t-foreach="discount_types" t-as="dt">
+                                            <option t-att-value="dt[0]"
+                                                    t-att-selected="form_values.get('discount_type') == dt[0]">
+                                                <t t-esc="dt[1]"/>
+                                            </option>
+                                        </t>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="original_price">MSRP ($)</label>
+                                    <input type="number" class="form-control" id="original_price"
+                                           name="original_price" step="0.01" min="0"
+                                           t-att-value="form_values.get('original_price', '')"/>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="discount_value">Discount Value</label>
+                                    <input type="number" class="form-control" id="discount_value"
+                                           name="discount_value" step="0.01" min="0"
+                                           placeholder="e.g. 30 for 30%"
+                                           t-att-value="form_values.get('discount_value', '')"/>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="market_id">Market</label>
+                                    <select class="form-select" id="market_id" name="market_id">
+                                        <option value="">-- Select --</option>
+                                        <t t-foreach="markets" t-as="m">
+                                            <option t-att-value="m.id"
+                                                    t-att-selected="form_values.get('market_id') == str(m.id)">
+                                                <t t-esc="m.name"/>
+                                            </option>
+                                        </t>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="sales_details">Sales Details / Pricing Display</label>
+                                    <textarea class="form-control" id="sales_details"
+                                              name="sales_details" rows="2"
+                                              placeholder="e.g. ~~$50~~ $35 | 30% Off"><t t-esc="form_values.get('sales_details', '')"/></textarea>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="details_exclusions">Details &amp; Exclusions</label>
+                                    <textarea class="form-control" id="details_exclusions"
+                                              name="details_exclusions" rows="2"
+                                              placeholder="Any limits, exclusions, or conditions..."><t t-esc="form_values.get('details_exclusions', '')"/></textarea>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <!-- Date Preferences -->
+                        <fieldset class="mb-4">
+                            <legend class="h5 mb-3">Date Preferences</legend>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label" for="preferred_start_date">Start Date</label>
+                                    <input type="date" class="form-control" id="preferred_start_date"
+                                           name="preferred_start_date"
+                                           t-att-value="form_values.get('preferred_start_date', '')"/>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="preferred_end_date">End Date</label>
+                                    <input type="date" class="form-control" id="preferred_end_date"
+                                           name="preferred_end_date"
+                                           t-att-value="form_values.get('preferred_end_date', '')"/>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="preferred_days">Preferred Days</label>
+                                    <input type="text" class="form-control" id="preferred_days"
+                                           name="preferred_days"
+                                           placeholder="e.g. Mon, Wed, Fri"
+                                           t-att-value="form_values.get('preferred_days', '')"/>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <button type="submit" class="btn btn-primary btn-lg w-100">
+                            Submit Deal for Review
+                        </button>
+                    </form>
+                </t>
+
+            </div>
+        </t>
+    </template>
+
+</odoo>

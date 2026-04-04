@@ -1,18 +1,16 @@
 /** @odoo-module **/
 import { OutdatedPageWatcherService } from "@bus/outdated_page_watcher_service";
 import { patch } from "@web/core/utils/patch";
-import { session } from "@web/session";
 
-// Suppress the "page is out of date" notification for everyone except Juan
-// (uid 2). The default behavior shows a persistent sticky warning every time
-// the websocket reconnects after deploy. Juan keeps it so he can monitor
-// deploy health.
+// Suppress the "page is out of date" notification entirely. The default
+// behavior shows a persistent sticky warning every time the websocket
+// reconnects (e.g. after autovacuum or brief worker saturation). The
+// previous patch did window.location.reload() which interrupted saves
+// and corrupted form data. Now we simply ignore it — users can manually
+// refresh if needed.
 patch(OutdatedPageWatcherService.prototype, {
     showOutdatedPageNotification() {
-        if (session.uid === 2) {
-            // Let the original notification show for Juan
-            return super.showOutdatedPageNotification(...arguments);
-        }
-        // No-op for everyone else
+        // No-op: suppress the notification without reloading.
+        // A silent reload mid-save causes data loss and form corruption.
     },
 });

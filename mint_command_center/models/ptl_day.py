@@ -12,18 +12,6 @@ WEBHOOK_URL_PARAM = 'mint.ptl_sync.webhook_url'
 DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production.up.railway.app/api/webhook/ptl-discount-sync'
 API_KEY_PARAM = 'mint.inventory_service.api_key'
 
-# AZ store company_id → Dutchie UUID
-STORE_UUID_MAP = {
-    2: 'f8dbdb94-7bea-4741-a3a9-6631d8430544',   # 75th
-    3: 'a4d8b494-b542-4f69-acb8-cf67d6a6c3aa',   # Bell Rd
-    7: 'b5f4110e-6eb8-428b-aaaa-b4271d5eb327',   # Buckeye
-    11: '1b81f825-ab2e-45c2-9ad7-add16236e95a',  # El Mirage
-    18: '242ef5f9-5fc9-41ef-bf44-5a7a4a2954a9',  # Mesa
-    22: '1e30427d-d8db-4e60-84c8-8487d1d6bcd6',  # Northern
-    27: '86441745-c533-4602-9264-f3a30db9753b',  # Scottsdale
-    32: '92fd0875-cc39-479b-9fbd-0a7db947c694',  # Tempe
-}
-
 DAY_NAME_MAP = {
     0: 'monday', 1: 'tuesday', 2: 'wednesday', 3: 'thursday',
     4: 'friday', 5: 'saturday', 6: 'sunday',
@@ -63,6 +51,15 @@ class PtlDay(models.Model):
         index=True,
         tracking=True,
     )
+    market_id = fields.Many2one(
+        'mint.region',
+        string='Market',
+        required=True,
+        index=True,
+        tracking=True,
+        default=lambda self: self._default_market_id(),
+        help='Market/region this PTL day targets',
+    )
     state = fields.Selection(
         selection=[
             ('draft', 'Draft'),
@@ -88,18 +85,40 @@ class PtlDay(models.Model):
     notes = fields.Text(string='Notes')
 
     _sql_constraints = [
-        ('date_uniq', 'unique(date)', 'Only one PTL day per date is allowed.'),
+        ('date_market_uniq', 'unique(date, market_id)',
+         'Only one PTL day per date per market is allowed.'),
     ]
 
-    @api.depends('date')
+    @api.model
+    def _default_market_id(self):
+        return self.env['mint.region'].search([('code', '=', 'AZ')], limit=1).id
+
+    @api.depends('date', 'market_id')
     def _compute_name(self):
         for rec in self:
-            rec.name = str(rec.date) if rec.date else 'New PTL Day'
+            code = rec.market_id.code if rec.market_id else ''
+            if rec.date:
+                rec.name = f"{rec.date} [{code}]" if code else str(rec.date)
+            else:
+                rec.name = 'New PTL Day'
 
     @api.depends('deal_ids')
     def _compute_deal_count(self):
         for rec in self:
             rec.deal_count = len(rec.deal_ids)
+
+    # ─── Dynamic Store UUID Map ──────────────────────────────────────────
+
+    def _get_store_uuid_map(self):
+        """Build company_id → Dutchie UUID map from res.company records."""
+        domain = [
+            ('is_dispensary', '=', True),
+            ('dutchie_store_id', '!=', False),
+        ]
+        if self.market_id:
+            domain.append(('region_id', '=', self.market_id.id))
+        stores = self.env['res.company'].sudo().search(domain)
+        return {s.id: s.dutchie_store_id for s in stores if s.dutchie_store_id}
 
     # ─── Daily Cron (called via ir.cron on mint.ptl.day) ─────────────────
 
@@ -130,6 +149,21 @@ class PtlDay(models.Model):
             body=f"Published {len(discount_ids)} deal(s) to frontend.",
             message_type='comment',
         )
+
+    def action_open_stock_check(self):
+        """Open stock check wizard pre-filled with this day's deals."""
+        return {
+            'name': 'Check Stock',
+            'type': 'ir.actions.act_window',
+            'res_model': 'mint.stock.check.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {
+                'default_ptl_day_id': self.id,
+                'default_deal_ids': [(6, 0, self.deal_ids.ids)],
+                'default_market_id': self.market_id.id if self.market_id else False,
+            },
+        }
 
     def _ensure_discount(self, deal):
         """Create or update the mint.discount record for a PTL deal."""
@@ -204,15 +238,20 @@ class PtlDay(models.Model):
             return
 
         discounts = self.env['mint.discount'].sudo().browse(discount_ids)
+        store_uuid_map = self._get_store_uuid_map()
 
-        # Resolve store → Dutchie UUID mapping
+        if not store_uuid_map:
+            _logger.warning('PTL publish: no stores with Dutchie UUIDs found for market %s',
+                            self.market_id.code if self.market_id else '(none)')
+            return
+
         # Group discounts by store UUID
         store_payloads = {}  # uuid → [discount_dicts]
 
         for discount in discounts:
-            store_ids = discount.store_ids.ids if discount.store_ids else list(STORE_UUID_MAP.keys())
+            store_ids = discount.store_ids.ids if discount.store_ids else list(store_uuid_map.keys())
             for store_id in store_ids:
-                uuid = STORE_UUID_MAP.get(store_id)
+                uuid = store_uuid_map.get(store_id)
                 if not uuid:
                     continue
                 if uuid not in store_payloads:

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_deal_reject_wizard_form" model="ir.ui.view">
+        <field name="name">mint.deal.reject.wizard.form</field>
+        <field name="model">mint.deal.reject.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Reject Deal">
+                <group>
+                    <field name="reason" placeholder="Explain why this deal is being rejected..."/>
+                </group>
+                <footer>
+                    <button name="action_confirm" string="Confirm Rejection"
+                            type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

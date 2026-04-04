@@ -28,3 +28,12 @@ def post_init_hook(env):
         'priority': 50,
     })
     _logger.info('PTL daily lifecycle cron created')
+
+    # Backfill market_id for existing PTL days (migration from unique(date)
+    # to unique(date, market_id))
+    az_region = env['mint.region'].search([('code', '=', 'AZ')], limit=1)
+    if az_region:
+        days_without_market = env['mint.ptl.day'].search([('market_id', '=', False)])
+        if days_without_market:
+            days_without_market.write({'market_id': az_region.id})
+            _logger.info('Backfilled market_id=AZ for %d PTL days', len(days_without_market))

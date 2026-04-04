@@ -19,11 +19,29 @@
               action="action_ptl_day"
               sequence="10"/>
 
+    <menuitem id="menu_ptl_review_queue"
+              name="Review Queue"
+              parent="menu_ptl"
+              action="action_ptl_deal_review_queue"
+              sequence="15"/>
+
     <menuitem id="menu_ptl_deals"
               name="All PTL Deals"
               parent="menu_ptl"
               action="action_ptl_deal"
               sequence="20"/>
+
+    <menuitem id="menu_brand_calendar"
+              name="Brand Calendar"
+              parent="menu_ptl"
+              action="action_brand_calendar_entry"
+              sequence="18"/>
+
+    <menuitem id="menu_deal_submissions"
+              name="Deal Submissions"
+              parent="menu_ptl"
+              action="action_deal_submission"
+              sequence="25"/>
 
     <!-- ── Hot Box Section ── -->
     <menuitem id="menu_hotbox"
