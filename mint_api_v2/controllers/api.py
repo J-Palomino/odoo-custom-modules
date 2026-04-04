@@ -72,9 +72,9 @@ class MintDealsAPI(http.Controller):
             'is_24hours': getattr(company, 'is_24hours', False),
             'license_number': getattr(company, 'license_number', None),
             'geo': {
-                'lat': getattr(company, 'latitude', None),
-                'lng': getattr(company, 'longitude', None),
-            } if getattr(company, 'latitude', None) else None,
+                'lat': company.partner_id.partner_latitude,
+                'lng': company.partner_id.partner_longitude,
+            } if company.partner_id and company.partner_id.partner_latitude else None,
             'street': company.street,
             'street2': company.street2,
             'city': company.city,
