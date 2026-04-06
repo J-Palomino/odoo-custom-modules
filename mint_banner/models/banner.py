@@ -53,6 +53,8 @@ class MintBanner(models.Model):
     active = fields.Boolean(string='Active', default=True)
     date_start = fields.Date(string='Start Date')
     date_end = fields.Date(string='End Date')
+    x_regions = fields.Char(string='Regions', help='Comma-separated region slugs. Leave empty = show on all regions.')
+    x_store_slugs = fields.Char(string='Store Slugs', help='Comma-separated store slugs. Leave empty = show on all stores in targeted regions.')
     company_id = fields.Many2one('res.company', string='Company', default=lambda self: self.env.company)
 
     publish_status = fields.Selection(

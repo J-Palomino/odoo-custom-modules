@@ -23,6 +23,10 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openp
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
 
+# Remove stale module copies from default addons path (prevents Odoo
+# from loading old versions instead of our fresh copies in extra-addons)
+RUN rm -rf /var/lib/odoo/addons/19.0/mint_*
+
 # ── OCA storage modules (S3 attachments) ──────────────────────────────
 # Patched locally: server_environment dependency removed from fs_storage
 # (its monkeypatching of add_to_registry breaks Odoo 19 model registration)
