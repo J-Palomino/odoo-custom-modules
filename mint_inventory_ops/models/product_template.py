@@ -4,6 +4,9 @@ from odoo import models, fields
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
+    x_brand = fields.Char(string='Brand')
+    x_category = fields.Char(string='Category')
+
     inventory_status = fields.Selection([
         ('active', 'Active'),
         ('hold', 'On Hold'),
