@@ -52,7 +52,6 @@
         'security/ir.model.access.csv',
         'security/record_rules.xml',
         'data/ptl_cron_data.xml',
-        'data/push_site_data.xml',
         'views/ptl_views.xml',
         'views/deal_submission_views.xml',
         'views/brand_calendar_views.xml',
