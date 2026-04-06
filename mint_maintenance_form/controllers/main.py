@@ -373,17 +373,30 @@ class MaintenanceFormController(http.Controller):
             "email_cc": submitter_email,
         }
 
+        if company_id:
+            vals["company_id"] = int(company_id)
+
         if equipment_id:
-            vals["equipment_id"] = equipment_id
             equip = request.env["maintenance.equipment"].sudo().browse(equipment_id)
-            if equip.technician_user_id:
-                vals["user_id"] = equip.technician_user_id.id
+            # Ensure equipment company matches the request company to avoid
+            # multi-company constraint violations.  Shared equipment (company_id
+            # = False) is safe; a mismatch must be resolved before linking.
+            if equip.company_id and company_id and equip.company_id.id != int(company_id):
+                # Equipment belongs to a different company — clear it so
+                # the request is created without the equipment link.
+                _logger.info(
+                    "Skipping equipment_id %s (%s) — belongs to company %s, "
+                    "request is for company %s",
+                    equipment_id, equip.name,
+                    equip.company_id.id, company_id,
+                )
+            else:
+                vals["equipment_id"] = equipment_id
+                if equip.technician_user_id:
+                    vals["user_id"] = equip.technician_user_id.id
             # Route to a different team based on equipment category
             if equip.category_id and equip.category_id.name in CATEGORY_TEAM_OVERRIDES:
                 vals["maintenance_team_id"] = CATEGORY_TEAM_OVERRIDES[equip.category_id.name]
-
-        if company_id:
-            vals["company_id"] = int(company_id)
 
         if request.env.uid and request.env.uid != request.env.ref("base.public_user").id:
             vals["owner_user_id"] = request.env.uid

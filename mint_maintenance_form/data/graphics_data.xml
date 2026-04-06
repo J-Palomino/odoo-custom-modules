@@ -37,41 +37,49 @@
             <field name="name">In-Store Signage / POS Displays</field>
             <field name="category_id" ref="categ_graphics_in_store_signage"/>
             <field name="maintenance_team_id" ref="team_graphics"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_graphics_digital_menu_boards" model="maintenance.equipment">
             <field name="name">Digital Menu Boards</field>
             <field name="category_id" ref="categ_graphics_digital_menu_boards"/>
             <field name="maintenance_team_id" ref="team_graphics"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_graphics_print_materials" model="maintenance.equipment">
             <field name="name">Print Materials</field>
             <field name="category_id" ref="categ_graphics_print_materials"/>
             <field name="maintenance_team_id" ref="team_graphics"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_graphics_vehicle_wraps" model="maintenance.equipment">
             <field name="name">Vehicle Wraps / Fleet Graphics</field>
             <field name="category_id" ref="categ_graphics_vehicle_wraps"/>
             <field name="maintenance_team_id" ref="team_graphics"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_graphics_social_digital" model="maintenance.equipment">
             <field name="name">Social Media / Digital Assets</field>
             <field name="category_id" ref="categ_graphics_social_digital"/>
             <field name="maintenance_team_id" ref="team_graphics"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_graphics_window_graphics" model="maintenance.equipment">
             <field name="name">Window Graphics / Decals</field>
             <field name="category_id" ref="categ_graphics_window_graphics"/>
             <field name="maintenance_team_id" ref="team_graphics"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_graphics_banners_outdoor" model="maintenance.equipment">
             <field name="name">Banners / Outdoor Signage</field>
             <field name="category_id" ref="categ_graphics_banners_outdoor"/>
             <field name="maintenance_team_id" ref="team_graphics"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_graphics_apparel" model="maintenance.equipment">
             <field name="name">Apparel / Merchandise</field>
             <field name="category_id" ref="categ_graphics_apparel"/>
             <field name="maintenance_team_id" ref="team_graphics"/>
+            <field name="company_id" eval="False"/>
         </record>
     </data>
 </odoo>
