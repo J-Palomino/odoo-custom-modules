@@ -65,14 +65,14 @@
                         </group>
                     </group>
                     <group string="Background Image">
-                        <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['hero'])]}">
-                            <strong>Hero Banner:</strong> 1600 × 400 px (4:1 ratio). Text overlays left side, product image right side. Max-height 400px desktop, 200px mobile.
+                        <div class="alert alert-info" role="alert" invisible="slot not in ('hero',)">
+                            <strong>Hero Banner:</strong> 1600 &#215; 400 px (4:1 ratio). Text overlays left side, product image right side. Max-height 400px desktop, 200px mobile.
                         </div>
-                        <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['after-flower', 'after-pre-rolls', 'after-vapes', 'after-edibles', 'after-concentrates', 'brand-spotlight'])]}">
-                            <strong>Category / Spotlight Banner:</strong> 1200 × 300 px. Displayed at 20-30% opacity behind gradient. Use bold, high-contrast images.
+                        <div class="alert alert-info" role="alert" invisible="slot not in ('after-flower', 'after-pre-rolls', 'after-vapes', 'after-edibles', 'after-concentrates', 'brand-spotlight')">
+                            <strong>Category / Spotlight Banner:</strong> 1200 &#215; 300 px. Displayed at 20-30% opacity behind gradient. Use bold, high-contrast images.
                         </div>
-                        <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['deals-popup'])]}">
-                            <strong>Deals Popup:</strong> 800 × 600 px. Shown as a floating modal on desktop.
+                        <div class="alert alert-info" role="alert" invisible="slot not in ('deals-popup',)">
+                            <strong>Deals Popup:</strong> 800 &#215; 600 px. Shown as a floating modal on desktop.
                         </div>
                         <field name="image_url" placeholder="https://res.cloudinary.com/..."/>
                         <field name="image" widget="image"/>
