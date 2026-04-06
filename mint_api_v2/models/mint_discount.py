@@ -32,6 +32,14 @@ class MintDiscount(models.Model):
     is_featured = fields.Boolean(string="Featured", default=False)
     is_available_online = fields.Boolean(string="Available Online", default=True)
 
+    # Deal classification (controls display on website /deals page)
+    deal_classification = fields.Selection([
+        ('sale', 'Sale'),
+        ('daily', 'Daily Deal'),
+        ('first_time', 'First-Time Customer'),
+    ], string="Deal Classification", default='sale',
+       help="Controls how this discount appears on the website deals page")
+
     # Validity
     valid_from = fields.Date(string="Valid From", required=True, default=fields.Date.today)
     valid_until = fields.Date(string="Valid Until")

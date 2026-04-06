@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================ -->
+    <!-- BILL OF LADING: Form View                                    -->
+    <!-- ============================================================ -->
+    <record id="view_bill_of_lading_form" model="ir.ui.view">
+        <field name="name">purchase.bill.of.lading.form</field>
+        <field name="model">purchase.bill.of.lading</field>
+        <field name="arch" type="xml">
+            <form string="Bill of Lading">
+                <header>
+                    <button name="action_send" type="object" string="Send"
+                        class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_in_transit" type="object" string="Mark In Transit"
+                        class="btn-primary" invisible="state != 'sent'"/>
+                    <button name="action_receive" type="object" string="Mark Received"
+                        class="btn-primary" invisible="state != 'in_transit'"/>
+                    <button name="action_verify" type="object" string="Verify"
+                        class="btn-success" invisible="state != 'received'"/>
+                    <field name="state" widget="statusbar"
+                        statusbar_visible="draft,sent,in_transit,received,verified"/>
+                </header>
+                <div class="alert alert-warning" role="alert"
+                     invisible="not has_discrepancy">
+                    <strong>Discrepancies detected!</strong>
+                    Some received quantities don't match expected quantities.
+                    Please review the items below and add notes.
+                </div>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Order Information">
+                            <field name="purchase_order_id" readonly="state != 'draft'"/>
+                            <field name="partner_id" readonly="1"/>
+                            <field name="company_id" invisible="1"/>
+                        </group>
+                        <group string="Shipping">
+                            <field name="carrier"/>
+                            <field name="shipping_method"/>
+                            <field name="tracking_number"/>
+                            <field name="date_shipped"/>
+                            <field name="date_expected"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Receiving">
+                            <field name="received_by"/>
+                            <field name="date_received"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Items" name="items">
+                            <field name="line_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="product_id" readonly="state not in ('draft','sent')"/>
+                                    <field name="description"/>
+                                    <field name="qty_expected" readonly="state not in ('draft','sent')"/>
+                                    <field name="qty_received"/>
+                                    <field name="uom_id" readonly="state not in ('draft','sent')"/>
+                                    <field name="is_match" widget="boolean_toggle" readonly="1"/>
+                                    <field name="discrepancy_note"
+                                        placeholder="Note any issues..."/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Notes" name="notes">
+                            <field name="receiver_notes"
+                                placeholder="General notes about this shipment..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- BILL OF LADING: List View                                    -->
+    <!-- ============================================================ -->
+    <record id="view_bill_of_lading_list" model="ir.ui.view">
+        <field name="name">purchase.bill.of.lading.list</field>
+        <field name="model">purchase.bill.of.lading</field>
+        <field name="arch" type="xml">
+            <list string="Bills of Lading"
+                decoration-danger="has_discrepancy"
+                decoration-success="state == 'verified'"
+                decoration-muted="state == 'draft'">
+                <field name="name"/>
+                <field name="purchase_order_id"/>
+                <field name="partner_id"/>
+                <field name="date_shipped"/>
+                <field name="date_expected"/>
+                <field name="date_received"/>
+                <field name="received_by"/>
+                <field name="state" widget="badge"
+                    decoration-info="state == 'draft'"
+                    decoration-warning="state in ('sent','in_transit')"
+                    decoration-success="state in ('received','verified')"/>
+                <field name="has_discrepancy" widget="boolean"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- BILL OF LADING: Search View                                  -->
+    <!-- ============================================================ -->
+    <record id="view_bill_of_lading_search" model="ir.ui.view">
+        <field name="name">purchase.bill.of.lading.search</field>
+        <field name="model">purchase.bill.of.lading</field>
+        <field name="arch" type="xml">
+            <search string="Bills of Lading">
+                <field name="name"/>
+                <field name="purchase_order_id"/>
+                <field name="partner_id"/>
+                <filter name="discrepancies" string="Has Discrepancies"
+                    domain="[('has_discrepancy', '=', True)]"/>
+                <filter name="pending" string="Pending Verification"
+                    domain="[('state', '=', 'received')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_state" string="Status"
+                        context="{'group_by': 'state'}"/>
+                    <filter name="group_vendor" string="Vendor"
+                        context="{'group_by': 'partner_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- BILL OF LADING: Menu + Action                                -->
+    <!-- ============================================================ -->
+    <record id="action_bill_of_lading" model="ir.actions.act_window">
+        <field name="name">Bills of Lading</field>
+        <field name="res_model">purchase.bill.of.lading</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_bill_of_lading_search"/>
+    </record>
+
+    <menuitem id="menu_bill_of_lading"
+        name="Bills of Lading"
+        parent="purchase.menu_procurement_management"
+        action="action_bill_of_lading"
+        sequence="15"/>
+
+    <!-- ============================================================ -->
+    <!-- SEQUENCE                                                     -->
+    <!-- ============================================================ -->
+    <record id="seq_bill_of_lading" model="ir.sequence">
+        <field name="name">Bill of Lading</field>
+        <field name="code">purchase.bill.of.lading</field>
+        <field name="prefix">BOL/%(year)s/</field>
+        <field name="padding">4</field>
+    </record>
+
+</odoo>

@@ -86,6 +86,48 @@ class PurchaseOrder(models.Model):
     x_artwork_link = fields.Char(string="Artwork Link")
     x_reorder = fields.Boolean(string="Reorder")
 
+    # BOL (Bill of Lading) link
+    bol_ids = fields.One2many(
+        "purchase.bill.of.lading", "purchase_order_id",
+        string="Bills of Lading",
+    )
+    bol_count = fields.Integer(
+        string="BOL Count",
+        compute="_compute_bol_count",
+    )
+
+    def _compute_bol_count(self):
+        for order in self:
+            order.bol_count = len(order.bol_ids)
+
+    def action_create_bol(self):
+        """Create a Bill of Lading from this PO and populate lines."""
+        self.ensure_one()
+        bol = self.env["purchase.bill.of.lading"].create({
+            "purchase_order_id": self.id,
+        })
+        bol.action_create_from_po()
+        return {
+            "type": "ir.actions.act_window",
+            "res_model": "purchase.bill.of.lading",
+            "res_id": bol.id,
+            "view_mode": "form",
+            "target": "current",
+        }
+
+    def action_view_bols(self):
+        """Open the list of BOLs for this PO."""
+        self.ensure_one()
+        action = self.env.ref(
+            "purchase_price_precision.action_bill_of_lading"
+        ).read()[0]
+        if self.bol_count == 1:
+            action["views"] = [(False, "form")]
+            action["res_id"] = self.bol_ids[0].id
+        else:
+            action["domain"] = [("purchase_order_id", "=", self.id)]
+        return action
+
     # Vendor & Notes
     x_vendor_contact = fields.Char(string="Vendor Contact")
     x_comment_date = fields.Char(string="Comment Date")

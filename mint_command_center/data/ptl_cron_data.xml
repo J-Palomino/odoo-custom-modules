@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Cron is created programmatically in hooks.py post_init_hook -->
+</odoo>

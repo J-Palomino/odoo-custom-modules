@@ -22,10 +22,22 @@ ALLOWED_MIMETYPES = {
 IT_TEAM_ID = 2
 ENGINEERING_TEAM_ID = 4
 ENGINEERING_TEAM_IDS = [IT_TEAM_ID, ENGINEERING_TEAM_ID]
-FACILITIES_TEAM_ID = 11
+INTERNAL_MAINTENANCE_TEAM_ID = 1
 GRAPHICS_TEAM_ID = 3
 DUTCHIE_TEAM_ID = 13
+WEBSITES_TEAM_ID = 14
 NEW_REQUEST_STAGE = 1
+
+# Category-based team routing: when a ticket's equipment belongs to one of
+# these categories, override the assigned team regardless of which form
+# submitted it.
+CATEGORY_TEAM_OVERRIDES = {
+    "Websites": WEBSITES_TEAM_ID,
+}
+
+# eLearning course that must be completed before accessing Fix-It forms.
+# Set to None to disable the requirement.
+FIXIT_COURSE_ID = 62
 
 PRIORITY_OPTIONS = [
     ("0", "Very Low"),
@@ -36,6 +48,35 @@ PRIORITY_OPTIONS = [
 
 
 class MaintenanceFormController(http.Controller):
+
+    def _require_course(self):
+        """If FIXIT_COURSE_ID is set, check that the current user has
+        completed the eLearning course.  Returns None if the user may
+        proceed, or an HTTP response (redirect) if they must complete
+        the course first."""
+        if not FIXIT_COURSE_ID:
+            return None
+        user = request.env.user
+        # Internal / admin users bypass the requirement
+        if user.has_group("base.group_system"):
+            return None
+        partner = user.partner_id
+        completed = (
+            request.env["slide.channel.partner"]
+            .sudo()
+            .search_count([
+                ("channel_id", "=", FIXIT_COURSE_ID),
+                ("partner_id", "=", partner.id),
+                ("member_status", "=", "completed"),
+            ])
+        )
+        if completed:
+            return None
+        course = request.env["slide.channel"].sudo().browse(FIXIT_COURSE_ID)
+        return request.render(
+            "mint_maintenance_form.course_required",
+            {"course_id": FIXIT_COURSE_ID, "course_url": course.website_url or f"/slides/{FIXIT_COURSE_ID}"},
+        )
 
     def _check_request_access(self, maint_req, user):
         """Return True if user owns this request or is on the assigned team."""
@@ -317,6 +358,10 @@ class MaintenanceFormController(http.Controller):
         # When team_id is a list, use the first for the created record
         assigned_team = team_id[0] if isinstance(team_id, list) else team_id
 
+        # Category-based team routing override
+        if category in CATEGORY_TEAM_OVERRIDES:
+            assigned_team = CATEGORY_TEAM_OVERRIDES[category]
+
         vals = {
             "name": title,
             "description": desc_html,
@@ -333,6 +378,9 @@ class MaintenanceFormController(http.Controller):
             equip = request.env["maintenance.equipment"].sudo().browse(equipment_id)
             if equip.technician_user_id:
                 vals["user_id"] = equip.technician_user_id.id
+            # Route to a different team based on equipment category
+            if equip.category_id and equip.category_id.name in CATEGORY_TEAM_OVERRIDES:
+                vals["maintenance_team_id"] = CATEGORY_TEAM_OVERRIDES[equip.category_id.name]
 
         if company_id:
             vals["company_id"] = int(company_id)
@@ -358,6 +406,9 @@ class MaintenanceFormController(http.Controller):
         methods=["GET"],
     )
     def fixit_routing(self, **kw):
+        gate = self._require_course()
+        if gate:
+            return gate
         return request.render("mint_maintenance_form.routing_page")
 
     # ------------------------------------------------------------------
@@ -371,6 +422,10 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def it_request_form(self, **post):
+        gate = self._require_course()
+        if gate:
+            return gate
+
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
             "form_title": "IT Request",
@@ -410,6 +465,10 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def engineering_request_form(self, **post):
+        gate = self._require_course()
+        if gate:
+            return gate
+
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
             "form_title": "Engineering Request",
@@ -449,6 +508,10 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def graphics_request_form(self, **post):
+        gate = self._require_course()
+        if gate:
+            return gate
+
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
             "form_title": "Graphics Request",
@@ -488,6 +551,10 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def vendor_request_form(self, **post):
+        gate = self._require_course()
+        if gate:
+            return gate
+
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
             "form_title": "Vendor Request",
@@ -527,6 +594,10 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def facilities_request_form(self, **post):
+        gate = self._require_course()
+        if gate:
+            return gate
+
         template = "mint_maintenance_form.facilities_request_form"
 
         if request.httprequest.method == "GET":
@@ -534,14 +605,14 @@ class MaintenanceFormController(http.Controller):
             return request.render(
                 template,
                 self._form_context(
-                    FACILITIES_TEAM_ID,
+                    INTERNAL_MAINTENANCE_TEAM_ID,
                     form_values=prefill,
                     is_logged_in=logged_in,
                 ),
             )
 
         return self._handle_form_post(
-            team_id=FACILITIES_TEAM_ID,
+            team_id=INTERNAL_MAINTENANCE_TEAM_ID,
             template=template,
             success_msg="Your maintenance request has been submitted successfully!",
             default_title="Maintenance Request",

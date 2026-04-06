@@ -1,9 +1,10 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=99
+ARG CACHEBUST=108
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
-RUN echo "Build cache key: $CACHEBUST"
+# Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
+RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
 
 USER root
 
@@ -29,7 +30,7 @@ COPY --chown=odoo:odoo fs_storage /opt/extra-addons/fs_storage
 COPY --chown=odoo:odoo fs_attachment /opt/extra-addons/fs_attachment
 COPY --chown=odoo:odoo fs_attachment_s3 /opt/extra-addons/fs_attachment_s3
 
-# ── Mint custom modules ──────────────────────────────────────────────
+# ── Mint custom modules (CACHEBUST=103) ─────────────────────────────
 COPY --chown=odoo:odoo avancir_inventory /opt/extra-addons/avancir_inventory
 COPY --chown=odoo:odoo mint_api_v2 /opt/extra-addons/mint_api_v2
 COPY --chown=odoo:odoo mint_theme /opt/extra-addons/mint_theme

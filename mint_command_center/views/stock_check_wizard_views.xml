@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_stock_check_wizard_form" model="ir.ui.view">
+        <field name="name">mint.stock.check.wizard.form</field>
+        <field name="model">mint.stock.check.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Stock Check">
+                <!-- Setup phase -->
+                <group invisible="state != 'setup'">
+                    <group>
+                        <field name="ptl_day_id"/>
+                        <field name="market_id" options="{'no_create': True}"/>
+                    </group>
+                    <group>
+                        <field name="deal_ids" widget="many2many_tags"/>
+                    </group>
+                </group>
+
+                <!-- Results phase -->
+                <div invisible="state != 'done'">
+                    <field name="result_html" nolabel="1"/>
+                </div>
+
+                <field name="state" invisible="1"/>
+
+                <footer>
+                    <button name="action_check_stock" string="Check Stock"
+                            type="object" class="btn-primary"
+                            invisible="state != 'setup'"/>
+                    <button name="action_check_stock" string="Re-Check"
+                            type="object" class="btn-secondary"
+                            invisible="state != 'done'"/>
+                    <button string="Close" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

@@ -68,7 +68,7 @@
                         <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['hero'])]}">
                             <strong>Hero Banner:</strong> 1600 × 400 px (4:1 ratio). Text overlays left side, product image right side. Max-height 400px desktop, 200px mobile.
                         </div>
-                        <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['after-flower', 'after-vapes', 'after-edibles', 'after-concentrates', 'brand-spotlight'])]}">
+                        <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['after-flower', 'after-pre-rolls', 'after-vapes', 'after-edibles', 'after-concentrates', 'brand-spotlight'])]}">
                             <strong>Category / Spotlight Banner:</strong> 1200 × 300 px. Displayed at 20-30% opacity behind gradient. Use bold, high-contrast images.
                         </div>
                         <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['deals-popup'])]}">
@@ -83,6 +83,14 @@
                         </div>
                         <field name="product_image_url" placeholder="https://res.cloudinary.com/..."/>
                         <field name="product_image" widget="image"/>
+                    </group>
+                    <group string="Targeting">
+                        <group>
+                            <field name="x_regions" placeholder="arizona,florida,michigan"
+                                   help="Comma-separated region slugs. Leave empty = show on all regions."/>
+                            <field name="x_store_slugs" placeholder="tempe,mesa,bonita-springs"
+                                   help="Comma-separated store slugs. Leave empty = show on all stores in targeted regions. Overrides region targeting."/>
+                        </group>
                     </group>
                     <group string="Schedule">
                         <group>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <menuitem id="mint_tv_root" name="Mint TV" sequence="85"
+              web_icon="mint_tv,static/description/icon.png"/>
+
+    <menuitem id="mint_tv_layouts_menu" name="Layouts"
+              parent="mint_tv_root" action="mint_tv_layout_action" sequence="10"/>
+
+    <menuitem id="mint_tv_books_menu" name="Books"
+              parent="mint_tv_root" action="mint_tv_book_action" sequence="20"/>
+
+    <menuitem id="mint_tv_kiosks_menu" name="Kiosks"
+              parent="mint_tv_root" action="mint_tv_kiosk_action" sequence="30"/>
+</odoo>

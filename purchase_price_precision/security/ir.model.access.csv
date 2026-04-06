@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_bill_of_lading_user,purchase.bill.of.lading.user,model_purchase_bill_of_lading,purchase.group_purchase_user,1,1,1,0
+access_bill_of_lading_manager,purchase.bill.of.lading.manager,model_purchase_bill_of_lading,purchase.group_purchase_manager,1,1,1,1
+access_bill_of_lading_line_user,purchase.bill.of.lading.line.user,model_purchase_bill_of_lading_line,purchase.group_purchase_user,1,1,1,0
+access_bill_of_lading_line_manager,purchase.bill.of.lading.line.manager,model_purchase_bill_of_lading_line,purchase.group_purchase_manager,1,1,1,1

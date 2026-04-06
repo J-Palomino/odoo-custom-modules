@@ -72,9 +72,9 @@ class MintDealsAPI(http.Controller):
             'is_24hours': getattr(company, 'is_24hours', False),
             'license_number': getattr(company, 'license_number', None),
             'geo': {
-                'lat': getattr(company, 'latitude', None),
-                'lng': getattr(company, 'longitude', None),
-            } if getattr(company, 'latitude', None) else None,
+                'lat': company.partner_id.partner_latitude,
+                'lng': company.partner_id.partner_longitude,
+            } if company.partner_id and company.partner_id.partner_latitude else None,
             'street': company.street,
             'street2': company.street2,
             'city': company.city,
@@ -96,6 +96,8 @@ class MintDealsAPI(http.Controller):
             'region': {
                 'id': company.region_id.id,
                 'name': company.region_id.name,
+                'slug': getattr(company.region_id, 'slug', None),
+                'hero_image_url': getattr(company.region_id, 'hero_image_url', None),
             } if getattr(company, 'region_id', None) else None,
             'amenities': [
                 {'id': a.id, 'name': a.name, 'icon': a.icon}
@@ -185,6 +187,35 @@ class MintDealsAPI(http.Controller):
             _logger.error("Error getting store by dutchie_id %s: %s", dutchie_id, e)
             return error_response(str(e), 500)
 
+    # ==================== REGIONS ====================
+
+    def _region_to_dict(self, region):
+        """Convert mint.region record to dictionary."""
+        return {
+            'id': region.id,
+            'name': region.name,
+            'code': getattr(region, 'code', None),
+            'slug': getattr(region, 'slug', None),
+            'hero_image_url': getattr(region, 'hero_image_url', None) or (
+                f"/api/v1/region_image/{region.id}/hero" if getattr(region, 'hero_image', None) else None
+            ),
+            'store_count': getattr(region, 'store_count', 0),
+        }
+
+    @http.route('/api/v1/regions', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_regions(self, **kwargs):
+        """Get all regions with store counts."""
+        try:
+            Region = request.env["mint.region"].sudo()
+            regions = Region.search([], order="name asc")
+            return json_response({
+                'count': len(regions),
+                'items': [self._region_to_dict(r) for r in regions],
+            })
+        except Exception as e:
+            _logger.error("Error getting regions: %s", e)
+            return error_response(str(e), 500)
+
     # ==================== STORE IMAGES ====================
 
     def _serve_company_image(self, store_id, field):
@@ -220,15 +251,53 @@ class MintDealsAPI(http.Controller):
             _logger.error("Error serving store image %s/%s: %s", store_id, field, e)
             return error_response(str(e), 500)
 
-    @http.route('/api/v1/store_image/<int:store_id>/logo', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    @http.route([
+        '/api/v1/store_image/<int:store_id>/logo',
+        '/api/v1/stores/<int:store_id>/logo',
+    ], type='http', auth='none', methods=['GET'], csrf=False, cors='*')
     def get_store_logo(self, store_id):
         """Serve store logo image."""
         return self._serve_company_image(store_id, 'logo')
 
-    @http.route('/api/v1/store_image/<int:store_id>/hero', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    @http.route([
+        '/api/v1/store_image/<int:store_id>/hero',
+        '/api/v1/stores/<int:store_id>/hero',
+    ], type='http', auth='none', methods=['GET'], csrf=False, cors='*')
     def get_store_hero(self, store_id):
         """Serve store hero image."""
         return self._serve_company_image(store_id, 'hero_image')
+
+    @http.route('/api/v1/region_image/<int:region_id>/hero', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_region_hero(self, region_id):
+        """Serve region hero image."""
+        try:
+            region = request.env["mint.region"].sudo().browse(region_id)
+            if not region.exists():
+                return error_response("Region not found", 404)
+
+            image_data = getattr(region, 'hero_image', None)
+            if not image_data:
+                return error_response("No image found", 404)
+
+            image_bytes = base64.b64decode(image_data)
+            content_type = 'image/png'
+            if image_bytes[:3] == b'\xff\xd8\xff':
+                content_type = 'image/jpeg'
+            elif image_bytes[:4] == b'RIFF':
+                content_type = 'image/webp'
+
+            return Response(
+                image_bytes,
+                status=200,
+                content_type=content_type,
+                headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, max-age=86400',
+                }
+            )
+        except Exception as e:
+            _logger.error("Error serving region image %s: %s", region_id, e)
+            return error_response(str(e), 500)
 
     # ==================== PRODUCTS ====================
 
@@ -359,6 +428,7 @@ class MintDealsAPI(http.Controller):
             'valid_until': discount.valid_until.isoformat() if discount.valid_until else None,
             'is_active': discount.is_active,
             'is_featured': getattr(discount, 'is_featured', False),
+            'deal_classification': getattr(discount, 'deal_classification', 'sale'),
             'store_ids': discount.store_ids.ids if discount.store_ids else [],
             'product_ids': discount.product_ids.ids if discount.product_ids else [],
             'category_ids': discount.category_ids.ids if discount.category_ids else [],

@@ -20,6 +20,7 @@ class MintBanner(models.Model):
     slot = fields.Selection([
         ('hero', 'Hero (Top Carousel)'),
         ('after-flower', 'After Flower'),
+        ('after-pre-rolls', 'After Pre-Rolls'),
         ('after-vapes', 'After Vapes'),
         ('after-edibles', 'After Edibles'),
         ('after-concentrates', 'After Concentrates'),

@@ -3,7 +3,12 @@
 Store model - extends res.company for dispensary locations.
 Each company represents a store location with cannabis-specific fields.
 """
+import base64
+import logging
+
 from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 
 class ResCompany(models.Model):
@@ -62,6 +67,53 @@ class ResCompany(models.Model):
     amenity_ids = fields.Many2many('mint.amenity', string="Amenities")
     service_ids = fields.Many2many('mint.service', string="Services")
 
+    def write(self, vals):
+        res = super().write(vals)
+        if 'hero_image' in vals:
+            for company in self:
+                if company.hero_image and company.slug:
+                    company._sync_hero_to_r2()
+                elif not company.hero_image:
+                    super(ResCompany, company).write({'hero_image_url': False})
+        # If slug changed and hero_image exists but no URL yet, upload
+        if 'slug' in vals:
+            for company in self:
+                if company.hero_image and company.slug and not company.hero_image_url:
+                    company._sync_hero_to_r2()
+        return res
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        for record in records:
+            if record.hero_image and record.slug:
+                record._sync_hero_to_r2()
+        return records
+
+    def _sync_hero_to_r2(self):
+        """Upload hero_image to Cloudflare R2 and set hero_image_url."""
+        self.ensure_one()
+        try:
+            image_bytes = base64.b64decode(self.hero_image)
+            content_type, ext = self._detect_image_type(image_bytes)
+            key = f"stores/{self.slug}/hero.{ext}"
+
+            from ..utils.r2_upload import upload_to_r2
+            url = upload_to_r2(image_bytes, key, content_type)
+            super(ResCompany, self).write({'hero_image_url': url})
+            _logger.info("Synced hero image to R2 for %s: %s", self.slug, url)
+        except Exception:
+            _logger.exception("Failed to sync hero image to R2 for %s", self.slug)
+
+    @staticmethod
+    def _detect_image_type(image_bytes):
+        """Detect image MIME type and extension from magic bytes."""
+        if image_bytes[:3] == b'\xff\xd8\xff':
+            return 'image/jpeg', 'jpg'
+        if image_bytes[:4] == b'RIFF':
+            return 'image/webp', 'webp'
+        return 'image/png', 'png'
+
     @api.model
     def get_active_stores(self):
         """Return all active dispensary stores."""
@@ -104,6 +156,54 @@ class MintRegion(models.Model):
 
     name = fields.Char(string="Name", required=True)
     code = fields.Char(string="Code")
+    slug = fields.Char(string="URL Slug", index=True)
+    hero_image = fields.Binary(string="Hero Image")
+    hero_image_url = fields.Char(string="Hero Image URL")
+    store_ids = fields.One2many('res.company', 'region_id', string="Stores")
+    store_count = fields.Integer(string="Stores", compute="_compute_store_count")
+
+    def _compute_store_count(self):
+        for region in self:
+            region.store_count = len(region.store_ids.filtered(
+                lambda c: getattr(c, 'is_dispensary', False) and getattr(c, 'is_active', True)
+            ))
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'hero_image' in vals:
+            for region in self:
+                if region.hero_image and region.slug:
+                    region._sync_hero_to_r2()
+                elif not region.hero_image:
+                    super(MintRegion, region).write({'hero_image_url': False})
+        if 'slug' in vals:
+            for region in self:
+                if region.hero_image and region.slug and not region.hero_image_url:
+                    region._sync_hero_to_r2()
+        return res
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        for record in records:
+            if record.hero_image and record.slug:
+                record._sync_hero_to_r2()
+        return records
+
+    def _sync_hero_to_r2(self):
+        """Upload hero_image to Cloudflare R2 and set hero_image_url."""
+        self.ensure_one()
+        try:
+            image_bytes = base64.b64decode(self.hero_image)
+            content_type, ext = ResCompany._detect_image_type(image_bytes)
+            key = f"regions/{self.slug}/hero.{ext}"
+
+            from ..utils.r2_upload import upload_to_r2
+            url = upload_to_r2(image_bytes, key, content_type)
+            super(MintRegion, self).write({'hero_image_url': url})
+            _logger.info("Synced hero image to R2 for region %s: %s", self.slug, url)
+        except Exception:
+            _logger.exception("Failed to sync hero image to R2 for region %s", self.slug)
 
 
 class MintAmenity(models.Model):

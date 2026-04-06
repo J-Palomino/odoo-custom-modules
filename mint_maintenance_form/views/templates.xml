@@ -106,6 +106,40 @@
     </template>
 
     <!-- ============================================================ -->
+    <!-- Course-required gate (shown when eLearning not completed)    -->
+    <!-- ============================================================ -->
+    <template id="course_required" name="Course Required Gate">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <div class="row justify-content-center">
+                        <div class="col-lg-6 text-center">
+                            <div style="font-size: 64px; margin-bottom: 16px;">&#x1F393;</div>
+                            <h1 class="mb-3">Training Required</h1>
+                            <p class="text-muted mb-4" style="font-size: 1.1em;">
+                                Before you can submit requests, you need to complete a short
+                                training course on how to use Fix-It. It only takes about
+                                <strong>15 minutes</strong>.
+                            </p>
+                            <a t-att-href="course_url"
+                               class="btn btn-primary btn-lg mb-3">
+                                Start the Course
+                            </a>
+                            <p class="text-muted mt-3">
+                                <small>
+                                    Already completed it?
+                                    <a href="/fixit">Try again</a> &#8212;
+                                    make sure you clicked through every slide.
+                                </small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
     <!-- Shared request form body (rendered by IT + Engineering)       -->
     <!-- ============================================================ -->
     <template id="engineering_request_form" name="Engineering Request Form">

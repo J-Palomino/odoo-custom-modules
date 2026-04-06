@@ -1,6 +1,6 @@
 {
     "name": "Purchase Enhancements",
-    "version": "19.0.2.0.0",
+    "version": "19.0.5.0.0",
     "category": "Purchase",
     "summary": "Order tracking, packaging, shipping & artwork fields for purchase orders",
     "description": """
@@ -10,10 +10,12 @@
         - Line-level packaging details (category, brand, size, costs)
         - Grand total including shipping costs
     """,
-    "depends": ["purchase", "purchase_stock", "stock"],
+    "depends": ["purchase", "purchase_stock", "stock", "mail"],
     "data": [
+        "security/ir.model.access.csv",
         "views/purchase_order_views.xml",
         "views/stock_picking_views.xml",
+        "views/bill_of_lading_views.xml",
     ],
     "installable": True,
     "auto_install": False,
