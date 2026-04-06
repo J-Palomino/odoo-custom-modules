@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <data noupdate="1">
+        <!-- Engineering Equipment Categories -->
+        <record id="categ_eng_website" model="maintenance.equipment.category">
+            <field name="name">Website</field>
+        </record>
+        <record id="categ_eng_ecommerce" model="maintenance.equipment.category">
+            <field name="name">E-Commerce / Online Menu</field>
+        </record>
+        <record id="categ_eng_mobile" model="maintenance.equipment.category">
+            <field name="name">Mobile App</field>
+        </record>
+        <record id="categ_eng_ai_chat" model="maintenance.equipment.category">
+            <field name="name">AI / Chat</field>
+        </record>
+        <record id="categ_eng_erp" model="maintenance.equipment.category">
+            <field name="name">Internal Software / ERP</field>
+        </record>
+        <record id="categ_eng_data" model="maintenance.equipment.category">
+            <field name="name">Data / Reporting</field>
+        </record>
+        <record id="categ_eng_websites" model="maintenance.equipment.category">
+            <field name="name">Websites</field>
+        </record>
+
+        <!-- Engineering Equipment Records (team_id=4 = Engineering) -->
+        <record id="equip_eng_website" model="maintenance.equipment">
+            <field name="name">Website</field>
+            <field name="category_id" ref="categ_eng_website"/>
+            <field name="maintenance_team_id" eval="4"/>
+        </record>
+        <record id="equip_eng_ecommerce" model="maintenance.equipment">
+            <field name="name">E-Commerce / Online Menu</field>
+            <field name="category_id" ref="categ_eng_ecommerce"/>
+            <field name="maintenance_team_id" eval="4"/>
+        </record>
+        <record id="equip_eng_mobile" model="maintenance.equipment">
+            <field name="name">Mobile App</field>
+            <field name="category_id" ref="categ_eng_mobile"/>
+            <field name="maintenance_team_id" eval="4"/>
+        </record>
+        <record id="equip_eng_ai_chat" model="maintenance.equipment">
+            <field name="name">AI / Chat</field>
+            <field name="category_id" ref="categ_eng_ai_chat"/>
+            <field name="maintenance_team_id" eval="4"/>
+        </record>
+        <record id="equip_eng_erp" model="maintenance.equipment">
+            <field name="name">Internal Software / ERP</field>
+            <field name="category_id" ref="categ_eng_erp"/>
+            <field name="maintenance_team_id" eval="4"/>
+        </record>
+        <record id="equip_eng_data" model="maintenance.equipment">
+            <field name="name">Data / Reporting</field>
+            <field name="category_id" ref="categ_eng_data"/>
+            <field name="maintenance_team_id" eval="4"/>
+        </record>
+        <record id="equip_eng_websites" model="maintenance.equipment">
+            <field name="name">Websites</field>
+            <field name="category_id" ref="categ_eng_websites"/>
+            <field name="maintenance_team_id" eval="4"/>
+        </record>
+    </data>
+</odoo>
