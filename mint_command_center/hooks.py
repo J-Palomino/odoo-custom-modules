@@ -23,7 +23,6 @@ def post_init_hook(env):
         'code': 'model._cron_daily_lifecycle()',
         'interval_number': 1,
         'interval_type': 'days',
-        'numbercall': -1,
         'active': True,
         'priority': 50,
     })

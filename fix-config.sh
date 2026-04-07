@@ -1,6 +1,14 @@
 #!/bin/bash
 # Fix the odoo.conf on the persistent volume
 
+# Clean stale module copies from the persistent volume addons path.
+# The Dockerfile copies fresh modules to /opt/extra-addons/ but old copies
+# in /var/lib/odoo/addons/19.0/ take precedence. Remove them at startup.
+if [ -d "/var/lib/odoo/addons/19.0" ]; then
+    rm -rf /var/lib/odoo/addons/19.0/mint_*
+    echo "Cleaned stale mint_* modules from /var/lib/odoo/addons/19.0/"
+fi
+
 CONFIG_FILE="/var/lib/odoo/odoo.conf"
 
 # Map ODOO_DB_* env vars to what the official Odoo entrypoint expects
