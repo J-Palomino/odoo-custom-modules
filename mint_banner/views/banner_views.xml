@@ -64,33 +64,72 @@
                             <field name="search_term"/>
                         </group>
                     </group>
+                    <!-- WHERE THIS BANNER APPEARS -->
+                    <group string="Where This Banner Appears">
+                        <div class="alert alert-success" role="alert"
+                             invisible="slot != 'hero'">
+                            <strong>Hero Carousel</strong> — top of every store page<br/>
+                            <em>Pages:</em> /arizona/tempe, /arizona/tempe/products, /arizona/tempe/deals<br/>
+                            <em>Component:</em> StoreBanner (full-width carousel with arrows + dots)<br/>
+                            <em>Behavior:</em> Multiple hero banners rotate automatically (5s). Supports swipe on mobile.
+                        </div>
+                        <div class="alert alert-success" role="alert"
+                             invisible="slot not in ('after-flower', 'after-pre-rolls', 'after-vapes', 'after-edibles', 'after-concentrates')">
+                            <strong>Category Ad Banner</strong> — between product sections on store page<br/>
+                            <em>Page:</em> /arizona/tempe (main store page, between category grids)<br/>
+                            <em>Component:</em> CategoryAdBanner (rounded card with gradient background)<br/>
+                            <em>Behavior:</em> If multiple banners exist for this slot, one is randomly shown per page load. Background image renders at 20-30% opacity behind text.
+                        </div>
+                        <div class="alert alert-success" role="alert"
+                             invisible="slot != 'brand-spotlight'">
+                            <strong>Brand Spotlight</strong> — below hero carousel, above product sections<br/>
+                            <em>Page:</em> /arizona/tempe (main store page)<br/>
+                            <em>Component:</em> CategoryAdBanner (same as category ads)<br/>
+                            <em>Behavior:</em> Clicking filters products by brand name or search term.
+                        </div>
+                        <div class="alert alert-success" role="alert"
+                             invisible="slot != 'deals-popup'">
+                            <strong>Deals Popup</strong> — floating bottom-right popup on ALL pages<br/>
+                            <em>Pages:</em> Site-wide (except /deals pages)<br/>
+                            <em>Component:</em> DealsPopup (280px floating card)<br/>
+                            <em>Behavior:</em> Appears after 5-second delay. User can dismiss (24-hour cooldown). Only the first active deals-popup banner is shown.
+                        </div>
+                    </group>
                     <group string="Background Image">
-                        <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['hero'])]}">
-                            <strong>Hero Banner:</strong> 1600 × 400 px (4:1 ratio). Text overlays left side, product image right side. Max-height 400px desktop, 200px mobile.
+                        <div class="alert alert-info" role="alert"
+                             invisible="slot != 'hero'">
+                            <strong>Recommended:</strong> 1600 × 400 px (4:1 ratio). Max 2048×1024.<br/>
+                            Text overlays left side, product image right side. Max-height 400px desktop, 200px mobile.
                         </div>
-                        <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['after-flower', 'after-pre-rolls', 'after-vapes', 'after-edibles', 'after-concentrates', 'brand-spotlight'])]}">
-                            <strong>Category / Spotlight Banner:</strong> 1200 × 300 px. Displayed at 20-30% opacity behind gradient. Use bold, high-contrast images.
+                        <div class="alert alert-info" role="alert"
+                             invisible="slot not in ('after-flower', 'after-pre-rolls', 'after-vapes', 'after-edibles', 'after-concentrates', 'brand-spotlight')">
+                            <strong>Recommended:</strong> 1200 × 300 px. Max 2048×1024.<br/>
+                            Displayed at 20-30% opacity behind gradient. Use bold, high-contrast images.
                         </div>
-                        <div class="alert alert-info" role="alert" attrs="{'invisible': [('slot', 'not in', ['deals-popup'])]}">
-                            <strong>Deals Popup:</strong> 800 × 600 px. Shown as a floating modal on desktop.
+                        <div class="alert alert-info" role="alert"
+                             invisible="slot != 'deals-popup'">
+                            <strong>Recommended:</strong> 800 × 600 px. Max 2048×1024.<br/>
+                            Shown as a 280px-wide floating card image. Keep focal point centered.
                         </div>
-                        <field name="image_url" placeholder="https://res.cloudinary.com/..."/>
+                        <field name="image_url" placeholder="https://res.cloudinary.com/... (HTTPS only, allowed domains)"/>
                         <field name="image" widget="image"/>
                     </group>
-                    <group string="Product Image">
+                    <group string="Product Image (Optional)">
                         <div class="alert alert-warning" role="alert">
-                            <strong>Product Cutout:</strong> 384 × 384 px (square, transparent PNG). Rendered at 40-176px depending on banner size (Small/Medium/Large).
+                            <strong>Product Cutout:</strong> 384 × 384 px (square, transparent PNG). Max 512×512.<br/>
+                            Rendered at 40-176px depending on banner size.<br/>
+                            <em>Hero:</em> appears on right side. <em>Category:</em> appears on left side. <em>Deals Popup:</em> not used.
                         </div>
-                        <field name="product_image_url" placeholder="https://res.cloudinary.com/..."/>
+                        <field name="product_image_url" placeholder="https://res.cloudinary.com/... (HTTPS only)"/>
                         <field name="product_image" widget="image"/>
                     </group>
                     <group string="Targeting">
-                        <group>
-                            <field name="x_regions" placeholder="arizona,florida,michigan"
-                                   help="Comma-separated region slugs. Leave empty = show on all regions."/>
-                            <field name="x_store_slugs" placeholder="tempe,mesa,bonita-springs"
-                                   help="Comma-separated store slugs. Leave empty = show on all stores in targeted regions. Overrides region targeting."/>
-                        </group>
+                        <div class="alert alert-info" role="alert">
+                            Leave both fields empty to show this banner on <strong>all stores</strong>.
+                            Use comma-separated slugs to restrict (e.g. <em>arizona,michigan</em> or <em>tempe,mesa</em>).
+                        </div>
+                        <field name="regions" placeholder="arizona,michigan,florida (empty = all)"/>
+                        <field name="store_slugs" placeholder="tempe,mesa,detroit (empty = all)"/>
                     </group>
                     <group string="Schedule">
                         <group>
@@ -116,9 +155,12 @@
                 Create your first banner
             </p>
             <p>
-                Banners appear on the MintDeals storefront.
-                Use "Hero" for the top carousel on store and products pages.
-                Use "After Flower/Vapes/Edibles/Concentrates" for banners between product category sections.
+                <strong>Upload photos here → they appear on mintdeals.com store pages.</strong><br/><br/>
+                <strong>Hero</strong> — top carousel on store pages (e.g. /arizona/tempe). Multiple banners rotate.<br/>
+                <strong>After Flower / Pre-Rolls / Vapes / Edibles / Concentrates</strong> — ad banners between product sections.<br/>
+                <strong>Brand Spotlight</strong> — below hero, filters products by brand on click.<br/>
+                <strong>Deals Popup</strong> — floating popup on all pages (first active banner wins).<br/><br/>
+                Upload a JPG/PNG/WebP image or paste an external HTTPS URL. Use "Clear Frontend Cache" after changes.
             </p>
         </field>
     </record>
