@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=109
+ARG CACHEBUST=110
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -44,6 +44,14 @@ COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
+
+# ── Patch: neuter the "page is out of date" watcher (bus module) ────
+# The module-level patch in mint_command_center only suppresses the notification
+# display, but the original service races ahead during initialization. This
+# replaces the entire service file so the watcher never starts.
+COPY --chown=odoo:odoo patches/outdated_page_watcher_service.js \
+     /usr/lib/python3/dist-packages/odoo/addons/bus/static/src/outdated_page_watcher_service.js
+
 COPY --chown=odoo:odoo mint_embed /opt/extra-addons/mint_embed
 COPY --chown=odoo:odoo mint_oauth_only /opt/extra-addons/mint_oauth_only
 COPY --chown=odoo:odoo mint_customer_api /opt/extra-addons/mint_customer_api
