@@ -102,6 +102,7 @@ class MintCustomerAuth(http.Controller):
                 'id': user.id,
                 'name': user.partner_id.name,
                 'email': user.login,
+                'phone': user.partner_id.phone or user.partner_id.mobile or '',
                 'partner_id': user.partner_id.id,
             },
         })
@@ -189,6 +190,7 @@ class MintCustomerAuth(http.Controller):
                     'id': user.id,
                     'name': user.partner_id.name,
                     'email': user.login,
+                    'phone': user.partner_id.phone or user.partner_id.mobile or '',
                     'partner_id': user.partner_id.id,
                 },
             }, status=201)
@@ -245,6 +247,7 @@ class MintCustomerAuth(http.Controller):
                 'id': user.id,
                 'name': user.partner_id.name,
                 'email': user.login,
+                'phone': user.partner_id.phone or user.partner_id.mobile or '',
                 'partner_id': user.partner_id.id,
             },
         })
