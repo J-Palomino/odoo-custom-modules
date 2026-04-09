@@ -10,23 +10,25 @@
         inherit_id="portal.portal_my_home"
         priority="40"
         name="Recruitment Portal Home"
+        customize_show="True"
     >
-        <xpath expr="//div[hasclass('o_portal_docs')]" position="inside">
+        <xpath expr="//div[hasclass('o_portal_docs')]" position="before">
+            <t t-set="portal_service_category_enable" t-value="True" />
+        </xpath>
+        <div id="portal_service_category" position="inside">
             <t t-call="portal.portal_docs_entry">
-                <t t-set="icon" t-value="'/hr_recruitment/static/img/icon.svg'" />
                 <t t-set="title">Job Positions</t>
                 <t t-set="url" t-value="'/my/jobs'" />
                 <t t-set="text">Manage job listings</t>
                 <t t-set="placeholder_count" t-value="'job_count'" />
             </t>
             <t t-call="portal.portal_docs_entry">
-                <t t-set="icon" t-value="'/hr_recruitment/static/img/icon.svg'" />
                 <t t-set="title">Applicants</t>
                 <t t-set="url" t-value="'/my/applicants'" />
                 <t t-set="text">Review applications</t>
                 <t t-set="placeholder_count" t-value="'applicant_count'" />
             </t>
-        </xpath>
+        </div>
     </template>
 
     <!-- ============================================================ -->
