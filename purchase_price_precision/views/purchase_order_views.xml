@@ -119,14 +119,11 @@
             <data>
                 <xpath expr="//page[@name='products']" position="before">
                     <page string="Packaging Tracking" name="packaging_tracking">
-                        <field name="x_order_status" widget="statusbar"
-                            statusbar_visible="draft,confirmed,in_production,shipped,received,billed"/>
                         <group>
                             <group string="Costs &amp; Invoice">
                                 <field name="x_invoice_no" string="Vendor Invoice No"/>
                                 <field name="x_shipping_cost_total"/>
                                 <field name="x_additional_costs_total"/>
-                                <field name="x_current_due"/>
                                 <!-- MT-89: Distribute shipping + additional costs across line items by qty -->
                                 <button name="action_distribute_costs" type="object"
                                     string="Distribute Costs to Lines"
@@ -200,7 +197,7 @@
                 <field name="x_additional_costs" optional="hide"/>
                 <field name="x_processing_fee" optional="hide"/>
                 <field name="x_shipping_cost" optional="hide"/>
-                <field name="x_cost_per_unit_incl" optional="hide"/>
+                <field name="x_cost_per_unit_incl" optional="show"/>
             </xpath>
         </field>
     </record>
@@ -267,9 +264,10 @@
                 <attribute name="optional">show</attribute>
                 <attribute name="string">Expected Arrival</attribute>
             </xpath>
-            <!-- 4. Add Current Due after amount_total -->
+            <!-- 4. Add Current Due + Grand Total after amount_total (single xpath) -->
             <xpath expr="//field[@name='amount_total']" position="after">
                 <field name="x_current_due" string="Current Due" optional="show"/>
+                <field name="x_grand_total" string="Grand Total" optional="show"/>
             </xpath>
             <!-- 5. Replace Billing Status with Payment Status -->
             <xpath expr="//field[@name='invoice_status']" position="replace">
@@ -279,18 +277,17 @@
                     decoration-success="x_payment_status == 'paid_in_full'"
                     optional="show"/>
             </xpath>
-            <!-- 6. Order Status badge -->
+            <!-- 6. Hide native state + add Order Status badge -->
+            <xpath expr="//field[@name='state']" position="attributes">
+                <attribute name="column_invisible">1</attribute>
+            </xpath>
             <xpath expr="//field[@name='state']" position="after">
-                <field name="x_order_status" widget="badge"
+                <field name="x_order_status" string="Status" widget="badge"
                     decoration-info="x_order_status == 'draft'"
                     decoration-warning="x_order_status in ('in_production','in_transit')"
                     decoration-success="x_order_status in ('received','complete')"
                     decoration-danger="x_order_status == 'cancelled'"
                     optional="show"/>
-            </xpath>
-            <!-- Grand Total column -->
-            <xpath expr="//field[@name='amount_total']" position="after">
-                <field name="x_grand_total" string="Grand Total" optional="show"/>
             </xpath>
             <xpath expr="//field[@name='amount_untaxed']" position="attributes">
                 <attribute name="optional">hide</attribute>
