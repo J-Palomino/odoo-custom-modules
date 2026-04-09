@@ -75,6 +75,12 @@ class ResCompany(models.Model):
                     company._sync_hero_to_r2()
                 elif not company.hero_image:
                     super(ResCompany, company).write({'hero_image_url': False})
+        # Auto-sync logo changes to hero_image (so Trish can upload via the logo field)
+        if 'logo' in vals and 'hero_image' not in vals:
+            for company in self:
+                if company.logo and company.slug and company.is_dispensary:
+                    super(ResCompany, company).write({'hero_image': company.logo})
+                    company._sync_hero_to_r2()
         # If slug changed and hero_image exists but no URL yet, upload
         if 'slug' in vals:
             for company in self:
