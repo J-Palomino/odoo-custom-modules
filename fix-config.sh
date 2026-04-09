@@ -493,6 +493,19 @@ if [ -f "$CONFIG_FILE" ]; then
     echo "workers = $WORKERS set in config"
 fi
 
+# Ensure server_wide_modules includes mint_redis_session (Redis sessions)
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "server_wide_modules" "$CONFIG_FILE"; then
+        if ! grep -q "mint_redis_session" "$CONFIG_FILE"; then
+            sed -i "s/server_wide_modules\s*=\s*.*/& ,mint_redis_session/" "$CONFIG_FILE"
+            echo "Added mint_redis_session to server_wide_modules"
+        fi
+    else
+        echo "server_wide_modules = base,web,mint_redis_session" >> "$CONFIG_FILE"
+        echo "Set server_wide_modules = base,web,mint_redis_session"
+    fi
+fi
+
 # Build extra args from environment variables
 EXTRA_ARGS=""
 if [ -n "$ODOO_UPDATE_MODULES" ] && [ "$ODOO_UPDATE_MODULES" != "none" ]; then
