@@ -369,6 +369,46 @@ try:
             """)
             print("=== mail_mail_res_partner_rel FK recreated with CASCADE ===")
 
+    # Fix mail_message_res_partner_rel FK constraint — same issue for mail_message
+    # Prevents: "constraint: mail_message_res_partner_rel_mail_message_id_fkey"
+    cur.execute("""
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'mail_message_res_partner_rel' AND table_schema = 'public'
+    """)
+    if cur.fetchone():
+        cur.execute("""
+            DELETE FROM mail_message_res_partner_rel
+            WHERE mail_message_id NOT IN (SELECT id FROM mail_message)
+        """)
+        if cur.rowcount > 0:
+            print(f"=== Cleaned {cur.rowcount} orphaned mail_message_res_partner_rel rows ===")
+
+        cur.execute("""
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'mail_message_res_partner_rel_mail_message_id_fkey'
+        """)
+        if cur.fetchone():
+            cur.execute("""
+                ALTER TABLE mail_message_res_partner_rel
+                DROP CONSTRAINT mail_message_res_partner_rel_mail_message_id_fkey
+            """)
+            cur.execute("""
+                ALTER TABLE mail_message_res_partner_rel
+                ADD CONSTRAINT mail_message_res_partner_rel_mail_message_id_fkey
+                FOREIGN KEY (mail_message_id) REFERENCES mail_message(id) ON DELETE CASCADE
+            """)
+            print("=== mail_message_res_partner_rel FK recreated with CASCADE ===")
+
+    # Pre-create missing res_config_settings columns for daisydo_agents
+    for col in ('daisy_global_api_key', 'daisy_template_chatflow_id', 'go2rtc_api_url', 'go2rtc_public_url'):
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'res_config_settings' AND column_name = %s
+        """, (col,))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE res_config_settings ADD COLUMN {col} VARCHAR")
+            print(f"=== Pre-created column res_config_settings.{col} ===")
+
     cur.close()
     conn.close()
 except Exception as e:
