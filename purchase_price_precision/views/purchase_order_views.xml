@@ -143,7 +143,7 @@
                                 <field name="x_artwork_created"/>
                                 <field name="x_artwork_approved"/>
                                 <field name="x_artwork_submitted"/>
-                                <field name="x_artwork_link"/>
+                                <field name="x_artwork_link" widget="url"/>
                                 <field name="x_reorder"/>
                             </group>
                             <group string="Vendor &amp; Notes">
