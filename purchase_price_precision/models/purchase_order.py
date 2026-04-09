@@ -8,6 +8,12 @@ class PurchaseOrder(models.Model):
     # MT-82: Secondary PO title (shorthand summary)
     x_po_title = fields.Char(string="PO Title", help="Short summary of PO contents")
 
+    # Task 321: Vendor/external order number (e.g. Alibaba order #)
+    x_external_order_ref = fields.Char(
+        string="Vendor Order #",
+        help="External order reference from the vendor (e.g. Alibaba order number)",
+    )
+
     # Priority (replaces star widget with High/Medium/Low)
     x_priority_level = fields.Selection([
         ('low', 'Low'),
@@ -66,7 +72,6 @@ class PurchaseOrder(models.Model):
     x_invoice_no = fields.Char(string="Invoice No")
     x_shipping_cost_total = fields.Float(string="Total Shipping Cost")
     x_additional_costs_total = fields.Float(string="Total Additional Costs")
-    x_total_shipping_cost = fields.Float(string="Total Shipping Cost (alt)")
     x_grand_total = fields.Float(
         string="Grand Total incl. Shipping",
         compute="_compute_grand_total",
@@ -160,3 +165,19 @@ class PurchaseOrder(models.Model):
                 + (order.x_shipping_cost_total or 0)
                 + (order.x_additional_costs_total or 0)
             )
+
+    # MT-89: Distribute shipping + additional costs proportionally across lines
+    def action_distribute_costs(self):
+        """Distribute header-level shipping & additional costs to line items
+        proportionally by quantity, then recompute cost-per-unit-incl."""
+        self.ensure_one()
+        lines = self.order_line.filtered(lambda l: l.product_qty > 0)
+        if not lines:
+            return
+        total_qty = sum(lines.mapped('product_qty'))
+        shipping = self.x_shipping_cost_total or 0
+        additional = self.x_additional_costs_total or 0
+        for line in lines:
+            ratio = line.product_qty / total_qty
+            line.x_shipping_cost = round(shipping * ratio, 2)
+            line.x_additional_costs = round(additional * ratio, 2)
