@@ -528,5 +528,56 @@ else
     echo "=== Cloudflare Tunnel disabled (CLOUDFLARE_TUNNEL_CREDENTIALS not set) ==="
 fi
 
+# ── Patch Odoo to use Redis sessions ─────────────────────────────────
+# The mint_redis_session module can't load early enough via server_wide_modules
+# because odoo.addons.__path__ isn't populated yet. Instead, we inject a
+# sitecustomize snippet that patches Application.session_store at import time.
+if [ -n "$REDIS_SESSION_URL" ]; then
+    echo "=== Injecting Redis session store patch ==="
+    cat > /usr/lib/python3/dist-packages/odoo/addons/bus/redis_session_patch.py << 'PYREDIS'
+"""Injected by fix-config.sh — patches Application to use Redis sessions."""
+import os, logging
+_logger = logging.getLogger(__name__)
+
+def patch_session_store():
+    redis_url = os.environ.get('REDIS_SESSION_URL', '')
+    if not redis_url:
+        return
+    try:
+        import redis as redis_lib
+        client = redis_lib.Redis.from_url(
+            redis_url, decode_responses=True,
+            socket_connect_timeout=5, socket_timeout=5, retry_on_timeout=True,
+        )
+        client.ping()
+    except Exception:
+        _logger.exception("Redis session patch: cannot connect to Redis")
+        return
+
+    import sys
+    sys.path.insert(0, '/opt/extra-addons/mint_redis_session')
+    from session import RedisSessionStore
+    store = RedisSessionStore(redis_client=client)
+
+    import odoo.http
+    # Replace cached_property with a plain property returning our store
+    odoo.http.Application.session_store = property(lambda self: store)
+    _logger.info("Redis session store patched: %s", redis_url.split('@')[-1])
+
+patch_session_store()
+PYREDIS
+    # Import the patch from the bus module's __init__.py so it runs at startup
+    ODOO_HTTP="/usr/lib/python3/dist-packages/odoo/http.py"
+    if ! grep -q "redis_session_patch" "$ODOO_HTTP"; then
+        # Add import at the very end of http.py, after Application class is defined
+        echo "" >> "$ODOO_HTTP"
+        echo "# Injected: Redis session store (fix-config.sh)" >> "$ODOO_HTTP"
+        echo "from odoo.addons.bus import redis_session_patch  # noqa" >> "$ODOO_HTTP"
+        echo "Redis session patch injected into odoo/http.py"
+    else
+        echo "Redis session patch already present in odoo/http.py"
+    fi
+fi
+
 # Execute the original entrypoint
 exec /entrypoint.sh "$@" $EXTRA_ARGS
