@@ -5,7 +5,13 @@ _logger = logging.getLogger(__name__)
 
 
 def _setup_redis_session_store():
-    """Replace the default FilesystemSessionStore with RedisSessionStore."""
+    """Replace the default FilesystemSessionStore with RedisSessionStore.
+
+    This runs at import time (server_wide_modules), which is BEFORE
+    odoo.http.root is created.  We therefore patch the Application CLASS
+    so that whenever ``root.session_store`` is first accessed, it returns
+    our Redis store instead of the default filesystem one.
+    """
     redis_url = os.environ.get('REDIS_SESSION_URL', '')
 
     if not redis_url:
@@ -16,7 +22,7 @@ def _setup_redis_session_store():
         return
 
     try:
-        import redis as redis_lib  # noqa: F811
+        import redis as redis_lib
     except ImportError:
         _logger.error(
             "mint_redis_session: 'redis' package not installed — "
@@ -26,27 +32,27 @@ def _setup_redis_session_store():
 
     from . import session as redis_session
 
-    try:
-        store = redis_session.setup_redis_store(redis_lib, redis_url)
-        if store:
-            import odoo.http
-            # Override the cached_property — instance __dict__ takes priority
-            # over the class descriptor, so this permanently replaces the store
-            odoo.http.root.__dict__['session_store'] = store
-            _logger.info(
-                "mint_redis_session: Redis session store activated (%s)",
-                store.prefix,
-            )
-        else:
-            _logger.warning(
-                "mint_redis_session: setup returned None, "
-                "keeping filesystem sessions"
-            )
-    except Exception:
-        _logger.exception(
-            "mint_redis_session: Failed to initialize, "
-            "falling back to filesystem sessions"
+    store = redis_session.setup_redis_store(redis_lib, redis_url)
+    if not store:
+        _logger.warning(
+            "mint_redis_session: setup returned None, "
+            "keeping filesystem sessions"
         )
+        return
+
+    # Patch the Application class so the Redis store is used regardless
+    # of when odoo.http.root is created (it's None at this point).
+    import odoo.http
+    Application = odoo.http.Application
+
+    # Replace the cached_property with a simple property that always
+    # returns our Redis store.  This ensures every worker (including
+    # those forked later) uses Redis.
+    Application.session_store = property(lambda self: store)
+    _logger.info(
+        "mint_redis_session: Patched Application.session_store → Redis (%s)",
+        store.prefix,
+    )
 
 
 _setup_redis_session_store()
