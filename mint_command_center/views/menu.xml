@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
 
-    <!-- ==================== Top-Level Mint Marketing Menu ==================== -->
-
-    <menuitem id="menu_command_center_root"
-              name="Mint Marketing"
-              sequence="5"/>
+    <!-- Top-level menu now provided by mint_banner.menu_mint_banner_root.
+         The orphan menu_command_center_root xml id is auto-removed by
+         Odoo on upgrade (ir.model.data._process_end). -->
 
     <!-- ── PTL Section ── -->
     <menuitem id="menu_ptl"
               name="PTL"
-              parent="menu_command_center_root"
+              parent="mint_banner.menu_mint_banner_root"
               sequence="10"/>
 
     <menuitem id="menu_ptl_calendar"
@@ -46,21 +44,21 @@
     <!-- ── Hot Box Section ── -->
     <menuitem id="menu_hotbox"
               name="Hot Box"
-              parent="menu_command_center_root"
+              parent="mint_banner.menu_mint_banner_root"
               action="action_hotbox_deal"
               sequence="20"/>
 
     <!-- ── Brand Rankings ── -->
     <menuitem id="menu_brand_rankings"
               name="Brand Rankings"
-              parent="menu_command_center_root"
+              parent="mint_banner.menu_mint_banner_root"
               action="action_brand_ranking"
               sequence="30"/>
 
     <!-- ── Marketing Section ── -->
     <menuitem id="menu_marketing"
               name="Marketing"
-              parent="menu_command_center_root"
+              parent="mint_banner.menu_mint_banner_root"
               sequence="35"/>
 
     <menuitem id="menu_push_notifications"
@@ -90,7 +88,7 @@
     <!-- ── Compliance Section ── -->
     <menuitem id="menu_compliance"
               name="Compliance"
-              parent="menu_command_center_root"
+              parent="mint_banner.menu_mint_banner_root"
               sequence="40"/>
 
     <menuitem id="menu_compliance_variances"

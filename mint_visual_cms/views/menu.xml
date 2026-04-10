@@ -9,8 +9,8 @@
 
     <menuitem id="menu_visual_cms"
               name="Visual CMS"
-              parent="mint_banner.menu_mint_banner_root"
+              parent="mint_banner.menu_mint_marketing_cms"
               action="action_visual_cms"
-              sequence="5"/>
+              sequence="10"/>
 
 </odoo>

@@ -165,15 +165,21 @@
         </field>
     </record>
 
-    <!-- Menu: place under Mint Marketing if available, fallback to own root -->
+    <!-- Canonical top-level menu shared with mint_command_center, mint_embed, mint_visual_cms -->
     <menuitem id="menu_mint_banner_root"
-              name="Mint Marketing"
+              name="Marketing - Command Center"
               web_icon="mint_banner,static/description/icon.png"
-              sequence="90"/>
+              sequence="5"/>
+
+    <!-- CMS sub-panel: groups Visual CMS, Banners, Embeds -->
+    <menuitem id="menu_mint_marketing_cms"
+              name="CMS"
+              parent="menu_mint_banner_root"
+              sequence="10"/>
 
     <menuitem id="menu_mint_banner_config"
               name="Banners"
-              parent="menu_mint_banner_root"
+              parent="menu_mint_marketing_cms"
               action="action_mint_banner"
-              sequence="10"/>
+              sequence="20"/>
 </odoo>
