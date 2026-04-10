@@ -20,11 +20,11 @@ ALLOWED_MIMETYPES = {
 }
 
 IT_TEAM_ID = 2
-ENGINEERING_TEAM_ID = 4
-ENGINEERING_TEAM_IDS = [IT_TEAM_ID, ENGINEERING_TEAM_ID]
+MINT_TECH_TEAM_ID = 4
+MINT_TECH_TEAM_IDS = [IT_TEAM_ID, MINT_TECH_TEAM_ID]
 INTERNAL_MAINTENANCE_TEAM_ID = 1
-GRAPHICS_TEAM_ID = 3
-DUTCHIE_TEAM_ID = 13
+GRAPHICS_TEAM_ID = 12
+DUTCHIE_TEAM_ID = 16
 WEBSITES_TEAM_ID = 14
 NEW_REQUEST_STAGE = 1
 
@@ -484,8 +484,8 @@ class MaintenanceFormController(http.Controller):
 
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
-            "form_title": "Engineering Request",
-            "form_subtitle": "Submit an engineering request for websites, e-commerce, apps, AI/LLMs, chat, or new software.",
+            "form_title": "Mint Technology Request",
+            "form_subtitle": "Submit a Mint Technology request for websites, e-commerce, apps, AI/LLMs, chat, or new software.",
             "form_action": "/engineering-requests",
         }
 
@@ -494,7 +494,7 @@ class MaintenanceFormController(http.Controller):
             return request.render(
                 template,
                 self._form_context(
-                    ENGINEERING_TEAM_ID,
+                    MINT_TECH_TEAM_ID,
                     form_values=prefill,
                     is_logged_in=logged_in,
                     **form_ctx,
@@ -502,10 +502,10 @@ class MaintenanceFormController(http.Controller):
             )
 
         return self._handle_form_post(
-            team_id=ENGINEERING_TEAM_ID,
+            team_id=MINT_TECH_TEAM_ID,
             template=template,
-            success_msg="Your engineering request has been submitted successfully!",
-            default_title="Engineering Request",
+            success_msg="Your Mint Technology request has been submitted successfully!",
+            default_title="Mint Technology Request",
             extra_ctx=form_ctx,
             **post,
         )
