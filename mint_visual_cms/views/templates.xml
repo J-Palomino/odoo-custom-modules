@@ -19,48 +19,37 @@
                     </span>
                 </div>
 
-                <!-- Store grid grouped by state -->
-                <t t-set="current_state" t-value="''"/>
-                <t t-foreach="stores" t-as="s">
-                    <t t-if="s['state'] != current_state">
-                        <t t-if="current_state != ''">
-                            <!-- close previous row -->
+                <t t-foreach="stores_grouped" t-as="group">
+                    <h5 class="mt-4 mb-2 text-muted text-uppercase" style="font-size: 0.85rem; letter-spacing: 0.05em;">
+                        <t t-esc="group['state']"/>
+                    </h5>
+                    <div class="row g-3 mb-2">
+                        <t t-foreach="group['stores']" t-as="s">
+                            <t t-set="store_count" t-value="banner_summary.get(s['id'], 0)"/>
+                            <div class="col-lg-3 col-md-4 col-sm-6">
+                                <a t-attf-href="/visual-cms/#{s['slug']}"
+                                   class="card h-100 shadow-sm text-decoration-none vcms-store-card">
+                                    <div class="card-body d-flex flex-column">
+                                        <h6 class="card-title mb-1 text-dark">
+                                            <t t-esc="s['name']"/>
+                                        </h6>
+                                        <div class="mt-auto d-flex align-items-center gap-2">
+                                            <span t-if="store_count > 0"
+                                                  class="badge bg-success">
+                                                <t t-esc="store_count"/> banners
+                                            </span>
+                                            <span t-if="store_count == 0"
+                                                  class="badge bg-secondary">
+                                                No banners
+                                            </span>
+                                            <span class="ms-auto text-muted" style="font-size: 0.8rem;">
+                                                &#8594;
+                                            </span>
+                                        </div>
+                                    </div>
+                                </a>
                             </div>
                         </t>
-                        <h5 class="mt-4 mb-2 text-muted text-uppercase" style="font-size: 0.85rem; letter-spacing: 0.05em;">
-                            <t t-esc="s['state'] or 'Unknown State'"/>
-                        </h5>
-                        <div class="row g-3 mb-2">
-                        <t t-set="current_state" t-value="s['state']"/>
-                    </t>
-
-                    <t t-set="store_count" t-value="banner_summary.get(s['id'], 0)"/>
-                    <div class="col-lg-3 col-md-4 col-sm-6">
-                        <a t-attf-href="/visual-cms/#{s['slug']}"
-                           class="card h-100 shadow-sm text-decoration-none vcms-store-card">
-                            <div class="card-body d-flex flex-column">
-                                <h6 class="card-title mb-1 text-dark">
-                                    <t t-esc="s['name']"/>
-                                </h6>
-                                <div class="mt-auto d-flex align-items-center gap-2">
-                                    <span t-if="store_count > 0"
-                                          class="badge bg-success">
-                                        <t t-esc="store_count"/> banners
-                                    </span>
-                                    <span t-if="store_count == 0"
-                                          class="badge bg-secondary">
-                                        No banners
-                                    </span>
-                                    <span class="ms-auto text-muted" style="font-size: 0.8rem;">
-                                        &#8594;
-                                    </span>
-                                </div>
-                            </div>
-                        </a>
-                    </div>
-                </t>
-                <!-- close last row -->
-                <t t-if="stores">
                     </div>
                 </t>
             </div>

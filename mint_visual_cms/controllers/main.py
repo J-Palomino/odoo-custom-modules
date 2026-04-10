@@ -230,8 +230,19 @@ class VisualCMSController(http.Controller):
         stores = _get_stores()
         banner_summary = _get_store_banner_summary()
         global_count = banner_summary.pop('global', 0)
+
+        stores_grouped = []
+        current_state = object()
+        for s in stores:
+            state = s.get('state') or 'Unknown State'
+            if state != current_state:
+                stores_grouped.append({'state': state, 'stores': []})
+                current_state = state
+            stores_grouped[-1]['stores'].append(s)
+
         return request.render('mint_visual_cms.landing_page', {
             'stores': stores,
+            'stores_grouped': stores_grouped,
             'banner_summary': banner_summary,
             'global_count': global_count,
         })
