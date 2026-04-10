@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=112
+ARG CACHEBUST=113
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -44,6 +44,7 @@ COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
+COPY --chown=odoo:odoo mint_visual_cms /opt/extra-addons/mint_visual_cms
 COPY --chown=odoo:odoo mint_recruitment_portal /opt/extra-addons/mint_recruitment_portal
 
 # ── Patch: neuter the "page is out of date" watcher (bus module) ────
@@ -122,6 +123,7 @@ RUN grep "version" /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUS
 RUN grep "version" /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
 RUN grep "push_subscription_views" /opt/extra-addons/mint_push/__manifest__.py | head -1 && echo "LOAD ORDER CHECK OK"
 RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_visual_cms/__manifest__.py && echo "MINT_VISUAL_CMS MODULE VERIFIED" || (echo "MINT_VISUAL_CMS MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_dutchie_sync/__manifest__.py && echo "MINT_DUTCHIE_SYNC VERIFIED" || (echo "MINT_DUTCHIE_SYNC MISSING" && exit 1)
