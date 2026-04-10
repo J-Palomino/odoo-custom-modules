@@ -184,6 +184,10 @@ class MintPosOrderAPI(http.Controller):
             order_vals['dutchie_tax'] = data['dutchie_tax']
         if data.get('dutchie_total') is not None:
             order_vals['dutchie_total'] = data['dutchie_total']
+        if data.get('items_total'):
+            order_vals['items_total'] = int(data['items_total'])
+        if data.get('items_failed'):
+            order_vals['items_failed'] = int(data['items_failed'])
 
         # Create order
         Order = request.env['mint.pos.order'].sudo().with_company(company)
@@ -217,6 +221,7 @@ class MintPosOrderAPI(http.Controller):
             'order_id': order.id,
             'order_ref': order.name,
             'state': order.state,
+            'partner_id': order.partner_id.id if order.partner_id else None,
         })
 
     # ── GET /api/v1/pos/orders — List orders ─────────────────────────
@@ -254,6 +259,10 @@ class MintPosOrderAPI(http.Controller):
         if kw.get('dutchie_checkout_id'):
             domain.append(('dutchie_checkout_id', '=', kw['dutchie_checkout_id']))
 
+        # Filter by dutchie_receipt_no (TransactionReference from POS)
+        if kw.get('dutchie_receipt_no'):
+            domain.append(('dutchie_receipt_no', '=', kw['dutchie_receipt_no']))
+
         # Filter by phone (customer lookup)
         if kw.get('phone'):
             phone = _normalize_phone(kw['phone'])
@@ -280,6 +289,10 @@ class MintPosOrderAPI(http.Controller):
         # Filter by order ref (MINT-POS-XXXXX)
         if kw.get('order_ref'):
             domain.append(('name', '=', kw['order_ref']))
+
+        # Filter by source (web, dutchie_sync, odoo_pos, walk_in)
+        if kw.get('source'):
+            domain.append(('source', '=', kw['source']))
 
         limit = min(int(kw.get('limit', 50)), 200)
         offset = int(kw.get('offset', 0))
@@ -471,7 +484,10 @@ class MintPosOrderAPI(http.Controller):
                         'tax_total': totals.get('taxes', order_data.get('tax_total', 0)),
                         'total': totals.get('total', order_data.get('total', 0)),
                         'notes': order_data.get('notes', ''),
+                        'source': order_data.get('source', 'dutchie_sync'),
                     }
+                    if order_data.get('dutchie_shipment_id'):
+                        order_vals['dutchie_shipment_id'] = order_data['dutchie_shipment_id']
                     if order_data.get('placed_at'):
                         order_vals['placed_at'] = order_data['placed_at']
 
@@ -564,6 +580,10 @@ class MintPosOrderAPI(http.Controller):
             'dutchie_order_number': order.dutchie_order_number or '',
             'payment_confirmed_at': order.payment_confirmed_at,
             'dutchie_total': order.dutchie_total,
+            'items_total': order.items_total,
+            'items_failed': order.items_failed,
+            'source': order.source or '',
+            'dutchie_shipment_id': order.dutchie_shipment_id or '',
             'budtender': order.budtender_id.name if order.budtender_id else None,
             'notes': order.notes or '',
             'items': [{
@@ -584,7 +604,7 @@ class MintPosOrderAPI(http.Controller):
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
     def get_web_order_config(self):
         """Get web order configuration for all stores (for BullMQ worker)."""
-        if not self._check_api_key():
+        if not _verify_api_key():
             return _json({'error': 'Forbidden'}, 403)
 
         ConfigAPI = request.env['mint.web.order.config.api'].sudo()
@@ -595,7 +615,7 @@ class MintPosOrderAPI(http.Controller):
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
     def get_web_order_config_for_store(self, store_slug):
         """Get web order configuration for a specific store."""
-        if not self._check_api_key():
+        if not _verify_api_key():
             return _json({'error': 'Forbidden'}, 403)
 
         ConfigAPI = request.env['mint.web.order.config.api'].sudo()
@@ -608,7 +628,7 @@ class MintPosOrderAPI(http.Controller):
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
     def cancel_order(self):
         """Cancel an order by shipment ID or order ref."""
-        if not self._check_api_key():
+        if not _verify_api_key():
             return _json({'error': 'Forbidden'}, 403)
 
         try:
@@ -678,21 +698,23 @@ class MintPosOrderAPI(http.Controller):
 
         Order = request.env['mint.pos.order'].sudo()
 
-        # _read_group: count orders grouped by state and company_id
-        groups = Order._read_group(
+        # read_group: count orders grouped by state and company_id
+        groups = Order.read_group(
             domain,
+            fields=['id'],
             groupby=['company_id', 'state'],
-            aggregates=['__count'],
+            lazy=False,
         )
 
         # Build response: list of {company_id, company_name, state, count}
         stats = []
-        for company, state, count in groups:
+        for g in groups:
+            company = g.get('company_id')
             stats.append({
-                'company_id': company.id if company else None,
-                'company_name': company.name if company else 'Unknown',
-                'state': state or 'unknown',
-                'count': count,
+                'company_id': company[0] if company else None,
+                'company_name': company[1] if company else 'Unknown',
+                'state': g.get('state') or 'unknown',
+                'count': g.get('__count', 0),
             })
 
         # Also include store metadata for label enrichment

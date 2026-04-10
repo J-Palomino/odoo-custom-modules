@@ -39,6 +39,12 @@
         'views/pos_order_menus.xml',
         'views/web_order_config_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'mint_pos_bridge/static/src/css/pos_kanban.css',
+            'mint_pos_bridge/static/src/js/pos_kanban_live.js',
+        ],
+    },
     'installable': True,
     'auto_install': False,
     'application': True,

@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
+import json
 import logging
+import threading
+
 from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
@@ -146,6 +149,30 @@ class MintPosOrder(models.Model):
     dutchie_tax = fields.Float(string='Dutchie Tax', digits=(12, 2))
     dutchie_total = fields.Float(string='Dutchie Total', digits=(12, 2))
 
+    # Web order item sync tracking (set by BullMQ webOrder processor)
+    items_total = fields.Integer(string='Items Submitted', default=0)
+    items_failed = fields.Integer(string='Items Failed', default=0)
+
+    # Source tracking for deduplication (odoo_pos orders skip order-sync)
+    source = fields.Selection(
+        [
+            ('web', 'Web Checkout'),
+            ('dutchie_sync', 'Dutchie Sync'),
+            ('odoo_pos', 'Odoo POS'),
+            ('walk_in', 'Walk-In'),
+        ],
+        string='Source',
+        default='web',
+        index=True,
+    )
+
+    # Dutchie shipment ID for lane-change relay
+    dutchie_shipment_id = fields.Char(
+        string='Dutchie Shipment ID',
+        index=True,
+        copy=False,
+    )
+
     # Computed: time since placed (for kanban color)
     wait_minutes = fields.Integer(
         string='Wait (min)',
@@ -208,7 +235,59 @@ class MintPosOrder(models.Model):
                 },
             )
 
+        # Relay lane change to Dutchie when dragged in Odoo kanban
+        # Skip if this write came from Dutchie sync (avoid loop)
+        if not self.env.context.get('from_dutchie_sync'):
+            for order in self:
+                if order.dutchie_shipment_id:
+                    self._fire_lane_change_webhook(order, new_state)
+
         return res
+
+    def _fire_lane_change_webhook(self, order, new_state):
+        """Fire webhook to inventory service to update Dutchie swimlane."""
+        webhook_url = self.env['ir.config_parameter'].sudo().get_param(
+            'mint_pos_dutchie.lane_change_webhook_url',
+            'https://mintinvsvc-production-6aa5.up.railway.app/api/webhook/lane-change',
+        )
+        api_key = self.env['ir.config_parameter'].sudo().get_param(
+            'mint_customer_api.checkout_api_key', '',
+        )
+
+        payload = {
+            'order_id': order.id,
+            'order_ref': order.name,
+            'new_state': new_state,
+            'dutchie_shipment_id': order.dutchie_shipment_id,
+            'company_id': order.company_id.id,
+            'store_slug': order.company_id.x_slug if hasattr(order.company_id, 'x_slug') else '',
+        }
+
+        def _post():
+            import urllib.request
+            try:
+                data = json.dumps(payload).encode('utf-8')
+                req = urllib.request.Request(
+                    webhook_url,
+                    data=data,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-Api-Key': api_key,
+                    },
+                    method='POST',
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    _logger.info(
+                        'Lane change webhook fired for %s → %s (status %s)',
+                        order.name, new_state, resp.status,
+                    )
+            except Exception:
+                _logger.exception(
+                    'Failed to fire lane change webhook for %s', order.name,
+                )
+
+        thread = threading.Thread(target=_post, daemon=True)
+        thread.start()
 
     @api.model
     def _get_notification_messages(self):

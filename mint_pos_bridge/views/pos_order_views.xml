@@ -13,7 +13,8 @@
         <field name="arch" type="xml">
             <kanban default_group_by="state" on_create="quick_create"
                     quick_create_view="mint_pos_bridge.view_pos_order_form_quick"
-                    class="o_kanban_small_column">
+                    class="o_mint_pos_kanban"
+                    js_class="mint_pos_kanban_live">
                 <field name="state"/>
                 <field name="partner_id"/>
                 <field name="company_id"/>
@@ -24,13 +25,17 @@
                 <field name="order_type"/>
                 <field name="payment_method"/>
                 <field name="is_prepaid"/>
+                <field name="budtender_id"/>
+                <field name="source"/>
+                <field name="dutchie_shipment_id"/>
                 <progressbar field="state"
-                    colors='{"placed": "info", "confirmed": "warning", "preparing": "warning", "ready": "success", "picked_up": "success", "completed": "muted", "cancelled": "danger"}'/>
+                    colors='{"lobby": "info", "online_orders": "info", "sales_floor": "warning", "processing": "warning", "pickup": "success", "deli_counter": "success", "placed": "info", "confirmed": "warning", "preparing": "warning", "ready": "success", "picked_up": "success", "completed": "muted", "cancelled": "danger"}'/>
                 <templates>
                     <t t-name="card">
-                        <div t-attf-class="#{record.wait_minutes.raw_value > 15 ? 'border-start border-danger border-3' : record.wait_minutes.raw_value > 10 ? 'border-start border-warning border-3' : ''}">
-                            <div class="d-flex justify-content-between">
-                                <strong>
+                        <div t-attf-class="o_mint_pos_card #{record.wait_minutes.raw_value > 15 ? 'o_mint_pos_card_urgent' : record.wait_minutes.raw_value > 10 ? 'o_mint_pos_card_warning' : ''}">
+                            <!-- Header: order # + wait time -->
+                            <div class="d-flex justify-content-between align-items-center">
+                                <strong class="fs-6">
                                     <field name="name"/>
                                 </strong>
                                 <span class="badge rounded-pill"
@@ -38,17 +43,37 @@
                                     <field name="wait_minutes"/>m
                                 </span>
                             </div>
-                            <div class="text-muted small mt-1">
-                                <span t-if="record.is_prepaid.raw_value" class="badge text-bg-success fw-bold me-1">PREPAID</span>
-                                <field name="partner_id"/> |
-                                <field name="line_count"/> items
-                            </div>
-                            <div class="d-flex justify-content-between mt-2">
-                                <span class="fw-bold text-success">
-                                    $<field name="total"/>
+
+                            <!-- Customer + badges row -->
+                            <div class="d-flex align-items-center gap-1 mt-1">
+                                <span class="fw-semibold text-truncate" style="max-width: 120px;">
+                                    <field name="partner_id"/>
                                 </span>
+                                <span t-if="record.is_prepaid.raw_value"
+                                      class="badge text-bg-success fw-bold ms-auto"
+                                      style="font-size: 0.65rem;">PREPAID</span>
+                                <span t-if="record.source.raw_value == 'odoo_pos'"
+                                      class="badge text-bg-primary ms-auto"
+                                      style="font-size: 0.65rem;">POS</span>
+                            </div>
+
+                            <!-- Items + type -->
+                            <div class="d-flex justify-content-between align-items-center mt-2 text-muted small">
+                                <span><field name="line_count"/> items</span>
                                 <span class="badge text-bg-light">
                                     <field name="order_type"/>
+                                </span>
+                            </div>
+
+                            <!-- Total + budtender -->
+                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                <span class="fw-bold text-success fs-6">
+                                    $<field name="total"/>
+                                </span>
+                                <span t-if="record.budtender_id.raw_value"
+                                      class="text-muted small text-truncate"
+                                      style="max-width: 80px;">
+                                    <field name="budtender_id"/>
                                 </span>
                             </div>
                         </div>
@@ -155,6 +180,8 @@
                         <group string="Dutchie Reference">
                             <field name="dutchie_checkout_id"/>
                             <field name="dutchie_receipt_no"/>
+                            <field name="dutchie_shipment_id"/>
+                            <field name="source"/>
                         </group>
                     </group>
                     <group>
