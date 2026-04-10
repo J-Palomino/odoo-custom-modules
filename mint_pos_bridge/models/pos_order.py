@@ -238,13 +238,14 @@ class MintPosOrder(models.Model):
         # Relay lane change to Dutchie when dragged in Odoo kanban
         # Skip if this write came from Dutchie sync (avoid loop)
         if not self.env.context.get('from_dutchie_sync'):
+            cancel_reason = self.env.context.get('cancel_reason') or ''
             for order in self:
                 if order.dutchie_shipment_id:
-                    self._fire_lane_change_webhook(order, new_state)
+                    self._fire_lane_change_webhook(order, new_state, cancel_reason)
 
         return res
 
-    def _fire_lane_change_webhook(self, order, new_state):
+    def _fire_lane_change_webhook(self, order, new_state, reason=''):
         """Fire webhook to inventory service to update Dutchie swimlane."""
         webhook_url = self.env['ir.config_parameter'].sudo().get_param(
             'mint_pos_dutchie.lane_change_webhook_url',
@@ -261,6 +262,7 @@ class MintPosOrder(models.Model):
             'dutchie_shipment_id': order.dutchie_shipment_id,
             'company_id': order.company_id.id,
             'store_slug': order.company_id.x_slug if hasattr(order.company_id, 'x_slug') else '',
+            'reason': reason or '',
         }
 
         def _post():

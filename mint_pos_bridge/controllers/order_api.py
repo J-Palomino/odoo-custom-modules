@@ -352,7 +352,11 @@ class MintPosOrderAPI(http.Controller):
         if data.get('dutchie_total') is not None:
             vals['dutchie_total'] = data['dutchie_total']
 
-        order.write(vals)
+        reason = (data.get('reason') or '').strip()
+        if new_state == 'cancelled' and reason:
+            vals['notes'] = (order.notes or '') + '\nCancelled: ' + reason
+
+        order.with_context(cancel_reason=reason).write(vals)
 
         _logger.info('POS order %s state -> %s', order.name, new_state)
 
