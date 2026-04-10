@@ -263,7 +263,16 @@ class VisualCMSController(http.Controller):
         zone_counts = _get_zone_banner_counts(company_id)
 
         base_url = _get_frontend_base_url()
-        preview_url = f"{base_url}/{store['region']}/{store['slug']}"
+        store_url = f"{base_url}/{store['region']}/{store['slug']}"
+        preview_url = store_url  # back-compat: top-of-page button
+
+        # Per-zone preview URLs. The frontend reads ?preview=1&slot=X and
+        # scrolls to / highlights the matching [data-vcms-slot] element
+        # (or triggers the deals popup overlay for slot=deals-popup).
+        zone_preview_urls = {}
+        for z in ZONES:
+            slot = z.get('slot') or z['id']
+            zone_preview_urls[z['id']] = f"{store_url}?preview=1&slot={slot}"
 
         vcms_json = json.dumps({
             'companyId': company_id or False,
@@ -276,6 +285,7 @@ class VisualCMSController(http.Controller):
             'stores': stores,
             'zones': ZONES,
             'zone_counts': zone_counts,
+            'zone_preview_urls': zone_preview_urls,
             'company_id': company_id,
             'preview_url': preview_url,
             'vcms_json': vcms_json,

@@ -11,6 +11,7 @@
     let activeSlot = null;
     let activeZoneEl = null;
     let panelOpen = false;
+    let storeSlug = null;
 
     // ── DOM refs (set on init) ──────────────────────────────────────
     let panel, panelTitle, panelBody, panelClose, publishBtn, storeSelector;
@@ -43,11 +44,12 @@
         return '/odoo/mint.banner/' + bannerId;
     }
 
-    function getOdooNewUrl(slot, companyId) {
+    function getOdooNewUrl(slot, companyId, slug) {
         var url = '/odoo/mint.banner/new';
         var params = [];
         if (slot) params.push('default_slot=' + encodeURIComponent(slot));
         if (companyId) params.push('default_company_id=' + companyId);
+        if (slug) params.push('default_store_slugs=' + encodeURIComponent(slug));
         if (params.length) url += '?' + params.join('&');
         return url;
     }
@@ -130,7 +132,7 @@
         var footer = document.createElement('div');
         footer.className = 'vcms-panel__actions';
         footer.innerHTML =
-            '<a href="' + getOdooNewUrl(slot, companyId) + '" target="_blank" class="btn btn-primary btn-sm flex-grow-1">' +
+            '<a href="' + getOdooNewUrl(slot, companyId, storeSlug) + '" target="_blank" class="btn btn-primary btn-sm flex-grow-1">' +
             '+ Add Banner</a>' +
             '<button class="btn btn-outline-secondary btn-sm vcms-refresh-btn" title="Refresh">&#8635;</button>';
         panel.appendChild(footer);
@@ -256,6 +258,14 @@
         storeSelector = document.getElementById('vcmsStoreSelector');
 
         if (!panel) return; // Not on wireframe page
+
+        // Read the store slug for the wireframe being edited so new banners
+        // get default_store_slugs prefilled. Without this, banners default to
+        // empty store_slugs and end up showing on every store via the
+        // "empty list = global" rule in the FE filter.
+        if (window.__vcms && window.__vcms.storeSlug) {
+            storeSlug = window.__vcms.storeSlug;
+        }
 
         // Zone click handlers
         document.querySelectorAll('.vcms-zone--editable').forEach(function (zone) {

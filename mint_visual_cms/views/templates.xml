@@ -129,6 +129,13 @@
                                     <span class="vcms-zone__dims" t-if="zone.get('dimensions')">
                                         <t t-esc="zone['dimensions']"/>
                                     </span>
+                                    <a t-att-href="zone_preview_urls.get(zone['id'])"
+                                       target="_blank"
+                                       rel="noopener"
+                                       class="vcms-zone__preview-link"
+                                       title="Open the live store page and jump to this zone">
+                                        View on site &#8599;
+                                    </a>
                                 </div>
 
                                 <div class="vcms-zone__body">

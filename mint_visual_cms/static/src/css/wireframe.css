@@ -74,6 +74,24 @@
     font-family: monospace;
 }
 
+.vcms-zone__preview-link {
+    margin-left: auto;
+    font-size: 0.72rem;
+    color: #0d6efd;
+    text-decoration: none;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.vcms-zone__preview-link:hover {
+    background: #e7f1ff;
+    border-color: #0d6efd;
+    text-decoration: none;
+}
+
 .vcms-zone__body {
     padding: 12px 14px;
     display: flex;
