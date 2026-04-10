@@ -175,7 +175,7 @@
     <menuitem id="menu_mint_marketing_cms"
               name="CMS"
               parent="menu_mint_banner_root"
-              sequence="10"/>
+              sequence="5"/>
 
     <menuitem id="menu_mint_banner_config"
               name="Banners"
