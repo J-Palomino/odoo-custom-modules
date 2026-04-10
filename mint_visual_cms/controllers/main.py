@@ -134,9 +134,12 @@ def _get_frontend_base_url():
 
 
 def _get_stores():
-    """Return list of store dicts with id, name, slug, region, state."""
+    """Return list of store dicts with id, name, slug, region, state.
+
+    Sorted by (state, name) so consumers can group consecutively by state.
+    """
     companies = request.env['res.company'].sudo().search(
-        [('parent_id', '!=', False)], order='name asc',
+        [('parent_id', '!=', False)],
     )
     stores = []
     for c in companies:
@@ -152,6 +155,7 @@ def _get_stores():
             'region': region or 'locations',
             'state': state_name,
         })
+    stores.sort(key=lambda s: (s['state'] or '\uffff', s['name']))
     return stores
 
 
