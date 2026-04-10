@@ -50,6 +50,61 @@ class MintCustomerProfile(http.Controller):
             },
         })
 
+    @http.route('/api/v1/customer/loyalty', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def get_loyalty(self, **kw):
+        """Get customer loyalty points and available rewards."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        partner = user.partner_id.sudo()
+
+        # Find loyalty program
+        program = request.env['loyalty.program'].sudo().search(
+            [('program_type', '=', 'loyalty')], limit=1
+        )
+        if not program:
+            return json_response({'loyalty': {'points': 0, 'program_name': 'Mint Rewards', 'point_name': 'Points', 'available_rewards': []}})
+
+        card = request.env['loyalty.card'].sudo().search([
+            ('partner_id', '=', partner.id),
+            ('program_id', '=', program.id),
+        ], limit=1)
+
+        points = card.points if card else 0
+
+        # Get available rewards
+        rewards = []
+        for reward in program.reward_ids:
+            rewards.append({
+                'id': reward.id,
+                'name': reward.display_name,
+                'type': reward.reward_type,
+                'required_points': reward.required_points,
+                'discount': reward.discount if reward.reward_type == 'discount' else None,
+                'discount_max': reward.discount_max_amount,
+                'eligible': points >= reward.required_points,
+            })
+
+        return json_response({
+            'loyalty': {
+                'program_name': program.name,
+                'points': points,
+                'point_name': program.portal_point_name or 'Points',
+                'card_id': card.id if card else None,
+                'total_spend': getattr(partner, 'x_dutchie_total_spend', 0) or 0,
+                'visit_count': getattr(partner, 'x_dutchie_visit_count', 0) or 0,
+                'available_rewards': rewards,
+            },
+        })
+
     @http.route('/api/v1/customer/profile', type='http', auth='none',
                 methods=['PUT', 'OPTIONS'], csrf=False, cors='*')
     def update_profile(self, **kw):

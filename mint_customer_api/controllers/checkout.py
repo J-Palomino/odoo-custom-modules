@@ -462,11 +462,8 @@ class MintCheckout(http.Controller):
         partner = None
 
         if phone and len(phone) >= 10:
-            # Search phone and mobile fields — exact suffix match (last 10 digits)
             partner = Partner.search([
-                '|',
-                ('phone', 'like', phone[-10:]),
-                ('mobile', 'like', phone[-10:]),
+                ('phone', 'ilike', phone[-10:]),
             ], limit=1)
 
         if not partner and email:

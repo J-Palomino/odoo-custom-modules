@@ -44,7 +44,7 @@ WATCHED_FIELDS = set(FIELD_MAP.keys())
 
 # Inventory service webhook URL (Railway internal or public)
 WEBHOOK_URL_PARAM = 'mint.dutchie_sync.webhook_url'
-DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production.up.railway.app/api/webhook/odoo-product-change'
+DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production-6aa5.up.railway.app/api/webhook/odoo-product-change'
 
 
 def _get_location_ids(template):

@@ -525,6 +525,35 @@ class MintDealsAPI(http.Controller):
             'read_time': getattr(blog, 'read_time', None),
         }
 
+    @http.route('/api/v1/brands', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_brands(self, **kwargs):
+        """Get all cannabis brands with logos and metadata."""
+        try:
+            Brand = request.env['mint.brand'].sudo()
+            brands = Brand.search([], order='name asc')
+
+            result = []
+            for brand in brands:
+                logo_url = None
+                if brand.logo:
+                    logo_url = f"/web/image/mint.brand/{brand.id}/logo"
+                elif brand.logo_url:
+                    logo_url = brand.logo_url
+
+                result.append({
+                    'id': brand.id,
+                    'name': brand.name,
+                    'slug': brand.slug,
+                    'logo_url': logo_url,
+                    'description': brand.description or None,
+                    'website': brand.website or None,
+                })
+
+            return json_response({'brands': result, 'count': len(result)})
+        except Exception as e:
+            _logger.exception('Failed to fetch brands')
+            return json_response({'error': str(e)}, status=500)
+
     @http.route('/api/v1/blog', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
     def get_blog_posts(self, **kwargs):
         """Get published blog posts."""
