@@ -1,6 +1,6 @@
 {
     "name": "Purchase Enhancements",
-    "version": "19.0.7.3.0",
+    "version": "19.0.7.2.0",
     "category": "Purchase",
     "summary": "Order tracking, packaging, shipping & artwork fields for purchase orders",
     "description": """
@@ -16,7 +16,7 @@
         "data/purchase_data.xml",
         "views/purchase_order_views.xml",
         "views/stock_picking_views.xml",
-        # "views/bill_of_lading_views.xml",  # disabled — see models/__init__.py
+        "views/bill_of_lading_views.xml",
     ],
     "installable": True,
     "auto_install": False,
