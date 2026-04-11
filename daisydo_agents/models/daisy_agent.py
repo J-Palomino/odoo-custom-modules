@@ -32,6 +32,18 @@ class DaisyAgent(models.Model):
     partner_id = fields.Many2one("res.partner", related="user_id.partner_id", string="Partner", store=True)
     user_group_ids = fields.Many2many(related="user_id.group_ids", string="User Groups", readonly=True)
     email = fields.Char(compute="_compute_email", store=True)
+    manager_id = fields.Many2one(
+        "res.users",
+        string="Reports To",
+        help="Employee this agent assists. Set by the create-agent-for-user wizard.",
+    )
+    active = fields.Boolean(default=True)
+
+    # --- MCP credentials (set by create-agent-for-user wizard) ---
+    mcp_odoo_url = fields.Char(string="MCP Odoo URL")
+    mcp_odoo_username = fields.Char(string="MCP Odoo Username")
+    mcp_odoo_api_key = fields.Char(string="MCP Odoo API Key")
+    mcp_server_url = fields.Char(string="MCP Server URL")
 
     # --- Daisy+ AI config ---
     daisy_api_key = fields.Char(string="Daisy+ API Key")
