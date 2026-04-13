@@ -177,19 +177,6 @@
               action="action_mint_banner"
               sequence="10"/>
 
-    <!-- Reparent stock marketing menus under the unified Marketing root -->
-    <record id="mass_mailing.mass_mailing_menu_root" model="ir.ui.menu">
-        <field name="parent_id" ref="menu_mint_banner_root"/>
-        <field name="sequence">115</field>
-    </record>
-
-    <record id="mass_mailing_sms.mass_mailing_sms_menu_root" model="ir.ui.menu">
-        <field name="parent_id" ref="menu_mint_banner_root"/>
-        <field name="sequence">120</field>
-    </record>
-
-    <record id="marketing_card.card_menu" model="ir.ui.menu">
-        <field name="parent_id" ref="menu_mint_banner_root"/>
-        <field name="sequence">125</field>
-    </record>
+    <!-- TODO: reparent mass_mailing / mass_mailing_sms / marketing_card menus
+         once those modules are confirmed installed in production -->
 </odoo>
