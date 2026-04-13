@@ -23,6 +23,8 @@ class MintDiscount(models.Model):
         ('fixed', 'Fixed Amount Off'),
         ('price_to_amount', 'Price To Amount'),
         ('bogo', 'Buy One Get One'),
+        ('points_multiplier', 'Loyalty Points Multiplier'),
+        ('clearance', 'Clearance (Near Expiry)'),
     ], string="Discount Type", required=True, default='percent')
     discount_amount = fields.Float(string="Discount Amount")
     discount_percent = fields.Float(string="Discount Percentage")
@@ -85,6 +87,11 @@ class MintDiscount(models.Model):
         'category_id',
         string="Excluded Categories"
     )
+    excluded_skus = fields.Text(
+        string="Excluded SKUs",
+        help="Newline- or comma-separated SKUs to exclude from this discount. "
+             "Matched case-insensitively against product default_code.",
+    )
 
     # Targeting - Brands
     brand_ids = fields.Many2many(
@@ -93,6 +100,14 @@ class MintDiscount(models.Model):
         'discount_id',
         'brand_id',
         string="Brands"
+    )
+    exclude_brand_ids = fields.Many2many(
+        'mint.brand',
+        'mint_discount_exclude_brand_rel',
+        'discount_id',
+        'brand_id',
+        string="Excluded Brands",
+        help="Products from these brands are excluded from this discount.",
     )
 
     # Eligibility rules
@@ -134,6 +149,14 @@ class MintDiscount(models.Model):
             domain.append(('store_ids', 'in', [store_id]))
         return self.search(domain)
 
+    def _excluded_sku_set(self):
+        """Parse excluded_skus into a normalized set of uppercase SKU strings."""
+        self.ensure_one()
+        if not self.excluded_skus:
+            return set()
+        raw = self.excluded_skus.replace(',', '\n')
+        return {tok.strip().upper() for tok in raw.split('\n') if tok.strip()}
+
     def applies_to_product(self, product):
         """Check if this discount applies to a given product."""
         self.ensure_one()
@@ -142,6 +165,11 @@ class MintDiscount(models.Model):
         if product.id in self.exclude_product_ids.ids:
             return False
         if product.categ_id.id in self.exclude_category_ids.ids:
+            return False
+        excluded_skus = self._excluded_sku_set()
+        if excluded_skus and product.default_code and product.default_code.upper() in excluded_skus:
+            return False
+        if self.exclude_brand_ids and product.brand_id.id in self.exclude_brand_ids.ids:
             return False
 
         # Check inclusions

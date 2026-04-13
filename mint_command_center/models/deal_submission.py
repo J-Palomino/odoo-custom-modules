@@ -29,6 +29,8 @@ class DealSubmission(models.Model):
             ('bogo', 'BOGO'),
             ('bundle', 'Bundle Deal'),
             ('price', 'Set Price'),
+            ('points_multiplier', 'Loyalty Points Multiplier'),
+            ('clearance', 'Clearance (Near Expiry)'),
         ],
         string='Discount Type',
     )

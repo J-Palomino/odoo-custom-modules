@@ -245,6 +245,13 @@
                                    placeholder="Product exclusions and conditions..."/>
                         </group>
                     </group>
+                    <group string="Exclusion Rules">
+                        <field name="excluded_skus" nolabel="1"
+                               placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002&#10;CRT-PINEAPPLE"/>
+                        <field name="excluded_brand_ids" widget="many2many_tags"
+                               options="{'no_create_edit': True}"
+                               placeholder="Brands to exclude from this deal"/>
+                    </group>
                     <group string="Availability">
                         <field name="store_ids" widget="many2many_tags"
                                options="{'no_create': True}"
@@ -328,6 +335,11 @@
                 <filter name="edlp" string="EDLP" domain="[('sale_type', '=', 'edlp')]"/>
                 <filter name="weekly_bundle" string="Weekly Bundle" domain="[('sale_type', '=', 'weekly_bundle')]"/>
                 <filter name="special_offer" string="Special Offer" domain="[('sale_type', '=', 'special_offer')]"/>
+                <separator/>
+                <filter name="points_multiplier" string="Loyalty Points Multiplier"
+                        domain="[('discount_type', '=', 'points_multiplier')]"/>
+                <filter name="clearance" string="Clearance"
+                        domain="[('discount_type', '=', 'clearance')]"/>
                 <separator/>
                 <filter name="pending" string="Pending" domain="[('state', '=', 'pending')]"/>
                 <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>

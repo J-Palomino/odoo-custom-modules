@@ -165,27 +165,31 @@
         </field>
     </record>
 
-    <!-- Canonical top-level menu shared with mint_command_center, mint_embed, mint_visual_cms.
-         The action= is required: without it, Odoo's web client walks the menu
-         tree depth-first when the top-level is clicked and auto-runs the first
-         leaf action it finds (Visual CMS → ir.actions.act_url target='self'),
-         which navigates the user out of Odoo entirely. Pointing to the Banners
-         list keeps the click inside the Odoo backend. -->
+    <!-- Top-level Marketing menu — absorbs Email/SMS/Marketing Card as children -->
     <menuitem id="menu_mint_banner_root"
-              name="Marketing - Command Center"
+              name="Marketing"
               web_icon="mint_banner,static/description/icon.png"
-              action="action_mint_banner"
-              sequence="5"/>
-
-    <!-- CMS sub-panel: groups Visual CMS, Banners, Embeds -->
-    <menuitem id="menu_mint_marketing_cms"
-              name="CMS"
-              parent="menu_mint_banner_root"
               sequence="5"/>
 
     <menuitem id="menu_mint_banner_config"
               name="Banners"
-              parent="menu_mint_marketing_cms"
+              parent="menu_mint_banner_root"
               action="action_mint_banner"
-              sequence="20"/>
+              sequence="10"/>
+
+    <!-- Reparent stock marketing menus under the unified Marketing root -->
+    <record id="mass_mailing.mass_mailing_menu_root" model="ir.ui.menu">
+        <field name="parent_id" ref="menu_mint_banner_root"/>
+        <field name="sequence">115</field>
+    </record>
+
+    <record id="mass_mailing_sms.mass_mailing_sms_menu_root" model="ir.ui.menu">
+        <field name="parent_id" ref="menu_mint_banner_root"/>
+        <field name="sequence">120</field>
+    </record>
+
+    <record id="marketing_card.card_menu" model="ir.ui.menu">
+        <field name="parent_id" ref="menu_mint_banner_root"/>
+        <field name="sequence">125</field>
+    </record>
 </odoo>

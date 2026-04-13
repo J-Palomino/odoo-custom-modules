@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Banners',
-    'version': '19.0.1.5.0',
+    'version': '19.0.1.6.0',
     'category': 'Website',
     'summary': 'Admin-managed category banners for MintDeals storefront',
     'description': """MintDeals Banners
@@ -9,7 +9,7 @@
     'author': 'MintDeals',
     'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
-    'depends': ['base'],
+    'depends': ['base', 'mass_mailing', 'mass_mailing_sms', 'marketing_card'],
     'data': [
         'security/ir.model.access.csv',
         'views/banner_views.xml',

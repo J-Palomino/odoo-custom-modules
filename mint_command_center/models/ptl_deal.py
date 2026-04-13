@@ -21,10 +21,15 @@ class PtlDeal(models.Model):
             ('bogo', 'BOGO'),
             ('bundle', 'Bundle Deal'),
             ('price', 'Set Price'),
+            ('points_multiplier', 'Loyalty Points Multiplier'),
+            ('clearance', 'Clearance (Near Expiry)'),
         ],
         string='Discount Type',
     )
-    discount_value = fields.Float(string='Discount Value')
+    discount_value = fields.Float(
+        string='Discount Value',
+        help='For points_multiplier, this is the points multiplier (e.g. 2.0 = 2x points).',
+    )
     original_price = fields.Float(
         string='Original / MSRP Price',
         help='Manufacturer suggested retail price — used to compute display text',
@@ -46,6 +51,19 @@ class PtlDeal(models.Model):
     details_exclusions = fields.Text(
         string='Details & Exclusions',
         help='Product details, exclusions, and conditions (PTL Column C)',
+    )
+    excluded_skus = fields.Text(
+        string='Excluded SKUs',
+        help='Newline- or comma-separated SKUs to exclude from this deal. '
+             'Matching is case-insensitive against product default_code.',
+    )
+    excluded_brand_ids = fields.Many2many(
+        'res.partner',
+        'mint_ptl_deal_excluded_brand_rel',
+        'deal_id',
+        'partner_id',
+        string='Excluded Brands',
+        help='Products from these brands are excluded from this deal.',
     )
     store_ids = fields.Many2many(
         'res.company',
@@ -183,6 +201,21 @@ class PtlDeal(models.Model):
                     rec.display_text = f"${msrp:.0f} Value! Only ${val:.2f}"
                 else:
                     rec.display_text = f"${val:.2f} Bundle"
+            elif dtype == 'points_multiplier' and val:
+                mult = val if val >= 1 else 1 / val if val else 0
+                if mult == int(mult):
+                    rec.display_text = f"{int(mult)}x Points"
+                else:
+                    rec.display_text = f"{mult:.1f}x Points"
+            elif dtype == 'clearance':
+                pct = (val if val > 1 else val * 100) if val else 0
+                if msrp and pct:
+                    sale = msrp * (1 - pct / 100)
+                    rec.display_text = f"Clearance: ~~${msrp:.0f}~~ ${sale:.2f} | {pct:.0f}% Off"
+                elif pct:
+                    rec.display_text = f"Clearance: {pct:.0f}% Off"
+                else:
+                    rec.display_text = "Clearance"
             else:
                 rec.display_text = ''
 

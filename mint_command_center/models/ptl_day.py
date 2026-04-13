@@ -9,7 +9,7 @@ from odoo import api, fields, models
 _logger = logging.getLogger(__name__)
 
 WEBHOOK_URL_PARAM = 'mint.ptl_sync.webhook_url'
-DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production.up.railway.app/api/webhook/ptl-discount-sync'
+DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production-6aa5.up.railway.app/api/webhook/ptl-discount-sync'
 API_KEY_PARAM = 'mint.inventory_service.api_key'
 
 DAY_NAME_MAP = {
@@ -23,6 +23,8 @@ DISCOUNT_TYPE_MAP = {
     'bogo': 'bogo',
     'bundle': 'bogo',
     'price': 'price_to_amount',
+    'points_multiplier': 'points_multiplier',
+    'clearance': 'clearance',
 }
 
 CALC_METHOD_MAP = {
@@ -30,6 +32,8 @@ CALC_METHOD_MAP = {
     'fixed': 'DOLLAR_OFF',
     'bogo': 'BOGO',
     'price_to_amount': 'PRICE_TO_AMOUNT_TOTAL',
+    'points_multiplier': 'POINTS_MULTIPLIER',
+    'clearance': 'CLEARANCE_PERCENT_OFF',
 }
 
 
@@ -200,6 +204,7 @@ class PtlDay(models.Model):
             'is_available_online': True,
             'ptl_deal_id': deal.id,
             'dutchie_discount_id': f'ptl_{deal.id}',
+            'excluded_skus': deal.excluded_skus or False,
         }
 
         # Date range from linked PTL days
@@ -219,6 +224,13 @@ class PtlDay(models.Model):
             ], limit=1)
             if brand:
                 vals['brand_ids'] = [(6, 0, [brand.id])]
+
+        if deal.excluded_brand_ids:
+            excluded = self.env['mint.brand'].search([
+                ('name', 'in', deal.excluded_brand_ids.mapped('name')),
+            ])
+            if excluded:
+                vals['exclude_brand_ids'] = [(6, 0, excluded.ids)]
 
         # Category targeting (ptl.deal uses char, mint.discount uses product.category)
         if deal.product_category:
@@ -299,6 +311,8 @@ class PtlDay(models.Model):
         brands = None
         if discount.brand_ids:
             brands = {'ids': discount.brand_ids.ids, 'isExclusion': False}
+        elif discount.exclude_brand_ids:
+            brands = {'ids': discount.exclude_brand_ids.ids, 'isExclusion': True}
 
         categories = None
         if discount.category_ids:
@@ -307,6 +321,8 @@ class PtlDay(models.Model):
         products = None
         if discount.product_ids:
             products = {'ids': discount.product_ids.ids, 'isExclusion': False}
+
+        excluded_skus = sorted(discount._excluded_sku_set()) if discount.excluded_skus else None
 
         return {
             'source_external_id': str(discount.id),
@@ -328,6 +344,7 @@ class PtlDay(models.Model):
             'brands': brands,
             'product_categories': categories,
             'products': products,
+            'excluded_skus': excluded_skus,
             'sales_details': discount.description or None,
             'deal_classification': discount.deal_classification or 'sale',
         }

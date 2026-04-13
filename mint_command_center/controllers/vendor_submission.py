@@ -24,6 +24,8 @@ DISCOUNT_TYPES = [
     ('bogo', 'Buy One Get One'),
     ('bundle', 'Bundle Deal (e.g. 2 for $24)'),
     ('price', 'Set Price (e.g. $50 Each)'),
+    ('points_multiplier', 'Loyalty Points Multiplier (e.g. 2x Points)'),
+    ('clearance', 'Clearance — Near Expiry'),
 ]
 
 
