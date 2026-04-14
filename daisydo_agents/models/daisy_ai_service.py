@@ -41,7 +41,7 @@ class DaisyAIServiceAgent(models.AbstractModel):
         return api_key, agency_id
 
     @api.model
-    def _call_daisy_api_for_agent(self, agent, message, history=None, conversation_id=None, override_config=None):
+    def _call_daisy_api_for_agent(self, agent, message, history=None, conversation_id=None, override_config=None, session_id=None):
         """Call Daisy+ prediction API using an agent's own credentials."""
         api_key, agency_id = self._resolve_agent_credentials(agent)
 
@@ -74,8 +74,11 @@ class DaisyAIServiceAgent(models.AbstractModel):
             }
             if conversation_id:
                 payload["chatId"] = conversation_id
-            if override_config:
-                payload["overrideConfig"] = override_config
+            merged_override = dict(override_config or {})
+            if session_id:
+                merged_override["sessionId"] = session_id
+            if merged_override:
+                payload["overrideConfig"] = merged_override
 
             _logger.info(
                 "[%s] Daisy+ API request for agent %s → %s/prediction/%s",
