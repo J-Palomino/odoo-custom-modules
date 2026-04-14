@@ -217,20 +217,12 @@ class PtlDay(models.Model):
         if deal.store_ids:
             vals['store_ids'] = [(6, 0, deal.store_ids.ids)]
 
-        # Brand targeting (ptl.deal uses res.partner, mint.discount uses mint.brand)
+        # Brand targeting — direct mint.brand reference
         if deal.brand_id:
-            brand = self.env['mint.brand'].search([
-                ('name', '=ilike', deal.brand_id.name),
-            ], limit=1)
-            if brand:
-                vals['brand_ids'] = [(6, 0, [brand.id])]
+            vals['brand_ids'] = [(6, 0, [deal.brand_id.id])]
 
         if deal.excluded_brand_ids:
-            excluded = self.env['mint.brand'].search([
-                ('name', 'in', deal.excluded_brand_ids.mapped('name')),
-            ])
-            if excluded:
-                vals['exclude_brand_ids'] = [(6, 0, excluded.ids)]
+            vals['exclude_brand_ids'] = [(6, 0, deal.excluded_brand_ids.ids)]
 
         # Category targeting (ptl.deal uses char, mint.discount uses product.category)
         if deal.product_category:

@@ -8,7 +8,7 @@ class BrandCalendarEntry(models.Model):
     _order = 'date, brand_id'
 
     brand_id = fields.Many2one(
-        'res.partner',
+        'mint.brand',
         string='Brand',
         required=True,
         index=True,

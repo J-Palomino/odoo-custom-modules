@@ -14,9 +14,9 @@ class DealSubmission(models.Model):
     vendor_contact = fields.Char(string='Contact Person')
     vendor_phone = fields.Char(string='Phone')
     brand_id = fields.Many2one(
-        'res.partner',
-        string='Brand (Partner)',
-        help='Link to the brand partner record if one exists',
+        'mint.brand',
+        string='Brand',
+        help='Link to the brand record',
     )
 
     # --- Deal details ---

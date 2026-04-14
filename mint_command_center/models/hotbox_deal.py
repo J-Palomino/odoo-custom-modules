@@ -22,7 +22,7 @@ class HotboxDeal(models.Model):
         tracking=True,
     )
     brand_id = fields.Many2one(
-        'res.partner',
+        'mint.brand',
         string='Brand',
     )
     product_name = fields.Char(string='Product Name')

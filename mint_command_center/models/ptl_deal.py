@@ -9,7 +9,7 @@ class PtlDeal(models.Model):
 
     name = fields.Char(string='Deal Name', required=True, tracking=True)
     brand_id = fields.Many2one(
-        'res.partner',
+        'mint.brand',
         string='Brand',
         tracking=True,
     )
@@ -58,10 +58,10 @@ class PtlDeal(models.Model):
              'Matching is case-insensitive against product default_code.',
     )
     excluded_brand_ids = fields.Many2many(
-        'res.partner',
+        'mint.brand',
         'mint_ptl_deal_excluded_brand_rel',
         'deal_id',
-        'partner_id',
+        'brand_id',
         string='Excluded Brands',
         help='Products from these brands are excluded from this deal.',
     )
