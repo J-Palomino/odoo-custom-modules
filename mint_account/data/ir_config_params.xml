@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!--
+      JWT secret — generated on first install, never rotated automatically.
+      Controllers/auth.py reads this via ir.config_parameter and seeds a
+      cryptographic random value on first read if the key is missing or the
+      placeholder literal is still present. Do not commit a real secret.
+    -->
+    <record id="jwt_secret" model="ir.config_parameter">
+        <field name="key">mint_account.jwt_secret</field>
+        <field name="value">CHANGE_ME_ON_INSTALL</field>
+    </record>
+
+    <!-- Frontend URL used in password-reset emails. -->
+    <record id="frontend_url" model="ir.config_parameter">
+        <field name="key">mint_account.frontend_url</field>
+        <field name="value">https://letsgomint.us</field>
+    </record>
+
+    <!-- Access token TTL (seconds). Default 1h. -->
+    <record id="access_ttl" model="ir.config_parameter">
+        <field name="key">mint_account.access_ttl_seconds</field>
+        <field name="value">3600</field>
+    </record>
+
+    <!-- Refresh token TTL (seconds). Default 7d. -->
+    <record id="refresh_ttl" model="ir.config_parameter">
+        <field name="key">mint_account.refresh_ttl_seconds</field>
+        <field name="value">604800</field>
+    </record>
+</odoo>
