@@ -23,12 +23,11 @@
     'depends': [
         'base',
         'mail',
-        'auth_signup',
-        'mint_pos_bridge',
+        'mint_customer_api',  # owns /api/v1/auth/* + JWT helper on res.users
+        'mint_pos_bridge',    # owns pos.order model (read-side for /orders)
     ],
     'data': [
         'security/ir.model.access.csv',
-        'data/ir_config_params.xml',
     ],
     'installable': True,
     'auto_install': False,
