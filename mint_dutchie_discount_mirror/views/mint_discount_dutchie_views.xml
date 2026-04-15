@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Primary form view for mint.discount. Base module mint_api_v2 doesn't
+         ship a form view (auto-generated at runtime), so we define one here
+         that groups all Dutchie mirror fields into dedicated notebook tabs. -->
+    <record id="view_mint_discount_form_full" model="ir.ui.view">
+        <field name="name">mint.discount.form</field>
+        <field name="model">mint.discount</field>
+        <field name="arch" type="xml">
+            <form string="Discount">
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Discount name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Core">
+                            <field name="code"/>
+                            <field name="slug"/>
+                            <field name="source"/>
+                            <field name="dutchie_discount_id"/>
+                            <field name="external_id"/>
+                            <field name="is_active"/>
+                            <field name="is_featured"/>
+                            <field name="is_available_online"/>
+                            <field name="deal_classification"/>
+                        </group>
+                        <group string="Validity">
+                            <field name="valid_from"/>
+                            <field name="valid_until"/>
+                            <field name="start_time" widget="float_time"/>
+                            <field name="end_time" widget="float_time"/>
+                        </group>
+                    </group>
+                    <group string="Days of Week">
+                        <field name="monday"/>
+                        <field name="tuesday"/>
+                        <field name="wednesday"/>
+                        <field name="thursday"/>
+                        <field name="friday"/>
+                        <field name="saturday"/>
+                        <field name="sunday"/>
+                    </group>
+                    <notebook>
+                        <page string="Reward" name="reward">
+                            <group>
+                                <group>
+                                    <field name="discount_type"/>
+                                    <field name="discount_amount"/>
+                                    <field name="discount_percent"/>
+                                    <field name="threshold_type"/>
+                                    <field name="threshold_min"/>
+                                    <field name="threshold_max"/>
+                                    <field name="minimum_items_required"/>
+                                </group>
+                                <group string="Dutchie Reward Detail">
+                                    <field name="calculation_method_id"/>
+                                    <field name="discount_value"/>
+                                    <field name="highest_or_lowest"/>
+                                    <field name="apply_to_only_one_item"/>
+                                    <field name="item_group_type_id"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Targeting" name="targeting">
+                            <group>
+                                <group string="Include">
+                                    <field name="store_ids" widget="many2many_tags"/>
+                                    <field name="brand_ids" widget="many2many_tags"/>
+                                    <field name="category_ids" widget="many2many_tags"/>
+                                    <field name="product_ids" widget="many2many_tags"/>
+                                </group>
+                                <group string="Exclude">
+                                    <field name="exclude_brand_ids" widget="many2many_tags"/>
+                                    <field name="exclude_category_ids" widget="many2many_tags"/>
+                                    <field name="exclude_product_ids" widget="many2many_tags"/>
+                                    <field name="excluded_skus"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Dutchie Application" name="dutchie_application">
+                            <group>
+                                <group string="Application">
+                                    <field name="application_method"/>
+                                    <field name="can_stack_automatically"/>
+                                    <field name="require_manager_approval"/>
+                                    <field name="is_bundled_discount"/>
+                                    <field name="dutchie_is_deleted"/>
+                                </group>
+                                <group string="Redemption">
+                                    <field name="max_redemptions"/>
+                                    <field name="redemption_limit"/>
+                                    <field name="redemption_limit_period"/>
+                                    <field name="redemption_limit_counting_mode"/>
+                                    <field name="first_time_customer_only"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Dutchie Restrictions" name="dutchie_restrictions">
+                            <group>
+                                <group string="Raw Dutchie IDs">
+                                    <field name="brand_restriction_ids_raw"/>
+                                    <field name="category_restriction_ids_raw"/>
+                                    <field name="product_restriction_ids_raw"/>
+                                    <field name="inventory_tag_ids_raw"/>
+                                    <field name="weight_restrictions_raw"/>
+                                </group>
+                                <group string="Other">
+                                    <field name="customer_type_restriction"/>
+                                    <field name="order_type_restrictions_raw"/>
+                                    <field name="platform_type_restrictions_raw"/>
+                                    <field name="payment_restrictions_raw"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Display" name="display">
+                            <group>
+                                <group>
+                                    <field name="menu_display_name"/>
+                                    <field name="online_name"/>
+                                    <field name="menu_display_rank"/>
+                                    <field name="menu_display_image_url"/>
+                                </group>
+                                <group string="Brand-Funded">
+                                    <field name="brand_funded_dutchie_brand_id"/>
+                                    <field name="brand_funded_amount"/>
+                                    <field name="brand_funded_percent"/>
+                                    <field name="loyalty_point_value"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Copy" name="copy">
+                            <group>
+                                <field name="description"/>
+                                <field name="terms"/>
+                                <field name="image" widget="image"/>
+                                <field name="image_url"/>
+                            </group>
+                        </page>
+                        <page string="Meta" name="meta">
+                            <group>
+                                <field name="synced_at"/>
+                                <field name="ptl_deal_id"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>
