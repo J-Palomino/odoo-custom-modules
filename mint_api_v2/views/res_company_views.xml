@@ -17,4 +17,77 @@
             </xpath>
         </field>
     </record>
+
+    <record id="view_company_form_seo" model="ir.ui.view">
+        <field name="name">res.company.form.seo</field>
+        <field name="model">res.company</field>
+        <field name="inherit_id" ref="base.view_company_form"/>
+        <field name="priority">25</field>
+        <field name="arch" type="xml">
+            <!-- Append an SEO page to the company form notebook.
+                 The base company form ships with a <notebook> — we add a page to it. -->
+            <xpath expr="//notebook" position="inside">
+                    <page string="SEO" name="seo">
+                        <div class="alert alert-info" role="alert">
+                            <strong>Template tokens</strong> (use anywhere in the
+                            text fields below):
+                            <code>{store_name}</code>, <code>{city}</code>,
+                            <code>{state}</code>, <code>{state_short}</code>,
+                            <code>{region}</code>, <code>{zip}</code>,
+                            <code>{phone}</code>, <code>{brand}</code>,
+                            <code>{year}</code>.<br/>
+                            Example: <em>"Mint Cannabis Dispensary in {city},
+                            {state} | Open Daily | {year}"</em>
+                        </div>
+
+                        <group>
+                            <group string="Page Metadata">
+                                <field name="website_meta_title"
+                                       placeholder="{store_name} Dispensary - {city}, {state} | {brand}"/>
+                                <field name="website_meta_description"
+                                       placeholder="Visit {store_name} in {city}, {state} for premium cannabis products. Open daily."/>
+                                <field name="website_meta_keywords"
+                                       placeholder="dispensary {city}, cannabis {state}, marijuana {city}"/>
+                                <field name="x_seo_h1"
+                                       placeholder="Welcome to {store_name}"/>
+                            </group>
+                            <group string="Crawler Controls">
+                                <field name="x_seo_robots"/>
+                                <field name="x_seo_canonical_url"
+                                       placeholder="https://letsgomint.us/{region}/{store_slug}"/>
+                            </group>
+                        </group>
+
+                        <group string="Social Sharing (Open Graph / Twitter)">
+                            <group>
+                                <field name="website_meta_og_img"
+                                       string="OG Image URL (mixin)"
+                                       placeholder="https://cdn.example.com/og.png"
+                                       help="Optional. Use the upload field on the right for the standard workflow."/>
+                            </group>
+                            <group>
+                                <field name="x_seo_og_image" widget="image"
+                                       options="{'size': [1200, 630]}"/>
+                                <field name="x_seo_og_image_url"
+                                       help="Auto-populated when the upload above is saved. Or paste a CDN URL directly when stores host their own share image."/>
+                            </group>
+                        </group>
+
+                        <group string="LocalBusiness Schema (JSON-LD)">
+                            <group>
+                                <field name="x_seo_schema_type"/>
+                                <field name="x_seo_price_range"
+                                       placeholder="$$"/>
+                                <field name="x_seo_payment_accepted"
+                                       placeholder="Cash, Debit, CanPay"/>
+                            </group>
+                            <group>
+                                <field name="x_seo_same_as"
+                                       placeholder="https://www.facebook.com/yourstore&#10;https://www.instagram.com/yourstore&#10;https://www.google.com/maps/..."/>
+                            </group>
+                        </group>
+                    </page>
+            </xpath>
+        </field>
+    </record>
 </odoo>

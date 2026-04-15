@@ -12,7 +12,10 @@ _logger = logging.getLogger(__name__)
 
 
 class ResCompany(models.Model):
-    _inherit = "res.company"
+    # Inherit website.seo.metadata to get the standard SEO fields
+    # (website_meta_title/description/keywords/og_img) and the green/yellow
+    # SEO preview widget editors already know from product/blog forms.
+    _inherit = ["res.company", "website.seo.metadata"]
 
     # Store identification
     slug = fields.Char(string="URL Slug", index=True)
@@ -67,6 +70,66 @@ class ResCompany(models.Model):
     amenity_ids = fields.Many2many('mint.amenity', string="Amenities")
     service_ids = fields.Many2many('mint.service', string="Services")
 
+    # ===== SEO (extends website.seo.metadata) =====
+    # Templates accept tokens: {store_name} {city} {state} {state_short}
+    # {region} {zip} {phone} {brand} {year}. Fields left blank fall back to
+    # frontend defaults (current "{Store} - {City}, {State}" pattern).
+    x_seo_h1 = fields.Char(
+        string="H1 Heading",
+        help="Visible page heading. Falls back to store name when empty.",
+    )
+    x_seo_canonical_url = fields.Char(
+        string="Canonical URL Override",
+        help="Force a canonical URL. Leave blank to use the page URL.",
+    )
+    x_seo_robots = fields.Selection(
+        [
+            ('index,follow', 'Index, Follow (default)'),
+            ('noindex,follow', 'No Index, Follow'),
+            ('index,nofollow', 'Index, No Follow'),
+            ('noindex,nofollow', 'No Index, No Follow'),
+        ],
+        string="Robots Directive",
+        default='index,follow',
+        help="Hide soft-launched / pre-opening stores from search engines.",
+    )
+    x_seo_schema_type = fields.Selection(
+        [
+            ('Store', 'Store (default)'),
+            ('LocalBusiness', 'LocalBusiness'),
+            ('HealthAndBeautyBusiness', 'HealthAndBeautyBusiness'),
+            ('Pharmacy', 'Pharmacy'),
+        ],
+        string="Schema.org Type",
+        default='Store',
+    )
+    x_seo_price_range = fields.Char(
+        string="Price Range",
+        help="Used in LocalBusiness JSON-LD (e.g. '$$').",
+    )
+    x_seo_payment_accepted = fields.Char(
+        string="Payment Accepted",
+        help="Comma-separated list (e.g. 'Cash, Debit, CanPay').",
+    )
+    x_seo_same_as = fields.Text(
+        string="Social Profile URLs",
+        help=(
+            "One URL per line. Feeds JSON-LD sameAs[] so Google links the "
+            "knowledge panel to your social profiles."
+        ),
+    )
+    x_seo_og_image = fields.Binary(
+        string="Social Share Image (Upload)",
+        help="Recommended 1200x630. Auto-uploaded to R2 on save.",
+    )
+    x_seo_og_image_url = fields.Char(
+        string="Social Share Image URL",
+        help=(
+            "Auto-populated when an image is uploaded above. Or paste a "
+            "CDN-hosted URL directly when stores host their own share image."
+        ),
+    )
+
     def write(self, vals):
         res = super().write(vals)
         if 'hero_image' in vals:
@@ -86,6 +149,15 @@ class ResCompany(models.Model):
             for company in self:
                 if company.hero_image and company.slug and not company.hero_image_url:
                     company._sync_hero_to_r2()
+        # SEO OG image — upload binary to R2 and write back URL
+        if 'x_seo_og_image' in vals:
+            for company in self:
+                if company.x_seo_og_image and company.slug:
+                    company._sync_seo_og_to_r2()
+                elif not company.x_seo_og_image:
+                    # Only clear the URL if it looks R2-managed; preserve manually-pasted CDN URLs
+                    if company.x_seo_og_image_url and '/seo-og.' in company.x_seo_og_image_url:
+                        super(ResCompany, company).write({'x_seo_og_image_url': False})
         return res
 
     @api.model_create_multi
@@ -94,6 +166,8 @@ class ResCompany(models.Model):
         for record in records:
             if record.hero_image and record.slug:
                 record._sync_hero_to_r2()
+            if record.x_seo_og_image and record.slug:
+                record._sync_seo_og_to_r2()
         return records
 
     def _sync_hero_to_r2(self):
@@ -110,6 +184,21 @@ class ResCompany(models.Model):
             _logger.info("Synced hero image to R2 for %s: %s", self.slug, url)
         except Exception:
             _logger.exception("Failed to sync hero image to R2 for %s", self.slug)
+
+    def _sync_seo_og_to_r2(self):
+        """Upload x_seo_og_image to Cloudflare R2 and set x_seo_og_image_url."""
+        self.ensure_one()
+        try:
+            image_bytes = base64.b64decode(self.x_seo_og_image)
+            content_type, ext = self._detect_image_type(image_bytes)
+            key = f"stores/{self.slug}/seo-og.{ext}"
+
+            from ..utils.r2_upload import upload_to_r2
+            url = upload_to_r2(image_bytes, key, content_type)
+            super(ResCompany, self).write({'x_seo_og_image_url': url})
+            _logger.info("Synced SEO OG image to R2 for %s: %s", self.slug, url)
+        except Exception:
+            _logger.exception("Failed to sync SEO OG image to R2 for %s", self.slug)
 
     @staticmethod
     def _detect_image_type(image_bytes):
