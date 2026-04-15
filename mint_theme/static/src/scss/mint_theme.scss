@@ -671,3 +671,39 @@ html body .o_web_client .o_main_navbar .o_menu_sections a {
     }
   }
 }
+
+// ============================================================
+// MOBILE OFFCANVAS MENU FIX
+// ============================================================
+// The navbar sets --o-navbar-color to white for the dark green header.
+// The offcanvas mobile menu inherits white text on white background.
+// Odoo's own CSS sets `color: !important` (empty) on nav-link children
+// so we need high specificity to override everything.
+header#top nav.navbar .o_navbar_mobile {
+  // All text and links inside the mobile menu
+  &, * {
+    color: #212529 !important;
+  }
+
+  .nav-link,
+  .nav-item > .nav-link,
+  .nav-item > .nav-link > *,
+  .nav-item > .nav-link::after,
+  .dropdown-item,
+  .js_language_selector span,
+  a:not(.btn) {
+    color: #212529 !important;
+  }
+
+  .nav-link:hover,
+  .nav-link:focus,
+  .dropdown-item:hover,
+  a:not(.btn):hover {
+    color: #{$theme-primary} !important;
+  }
+
+  // Accordion arrows
+  .accordion-button::after {
+    filter: none !important;
+  }
+}
