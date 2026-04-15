@@ -108,9 +108,9 @@ class MintDealsAPI(http.Controller):
                 for s in getattr(company, 'service_ids', [])
             ],
             'seo': {
-                'title': getattr(company, 'website_meta_title', None) or None,
-                'description': getattr(company, 'website_meta_description', None) or None,
-                'keywords': getattr(company, 'website_meta_keywords', None) or None,
+                'title': getattr(company, 'x_seo_title', None) or None,
+                'description': getattr(company, 'x_seo_description', None) or None,
+                'keywords': getattr(company, 'x_seo_keywords', None) or None,
                 'h1': getattr(company, 'x_seo_h1', None) or None,
                 'canonical_url': getattr(company, 'x_seo_canonical_url', None) or None,
                 'robots': getattr(company, 'x_seo_robots', None) or None,
@@ -118,11 +118,7 @@ class MintDealsAPI(http.Controller):
                 'price_range': getattr(company, 'x_seo_price_range', None) or None,
                 'payment_accepted': getattr(company, 'x_seo_payment_accepted', None) or None,
                 'same_as': getattr(company, 'x_seo_same_as', None) or None,
-                'og_image_url': (
-                    getattr(company, 'x_seo_og_image_url', None)
-                    or getattr(company, 'website_meta_og_img', None)
-                    or None
-                ),
+                'og_image_url': getattr(company, 'x_seo_og_image_url', None) or None,
             },
         }
 

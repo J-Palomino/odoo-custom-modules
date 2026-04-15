@@ -12,10 +12,13 @@ _logger = logging.getLogger(__name__)
 
 
 class ResCompany(models.Model):
-    # Inherit website.seo.metadata to get the standard SEO fields
-    # (website_meta_title/description/keywords/og_img) and the green/yellow
-    # SEO preview widget editors already know from product/blog forms.
-    _inherit = ["res.company", "website.seo.metadata"]
+    # NOTE: We previously inherited website.seo.metadata to get the standard
+    # meta_title/description/keywords/og_img fields, but that mixin pulls in
+    # `is_seo_optimized` (a stored computed column). The auto_init that should
+    # create the column runs in a phase that itself queries res.company —
+    # chicken-and-egg, leaving res.company unqueryable. Use plain custom
+    # fields (x_seo_*) instead.
+    _inherit = "res.company"
 
     # Store identification
     slug = fields.Char(string="URL Slug", index=True)
@@ -70,10 +73,23 @@ class ResCompany(models.Model):
     amenity_ids = fields.Many2many('mint.amenity', string="Amenities")
     service_ids = fields.Many2many('mint.service', string="Services")
 
-    # ===== SEO (extends website.seo.metadata) =====
+    # ===== SEO (custom fields — see note at class top about why we don't
+    # inherit website.seo.metadata) =====
     # Templates accept tokens: {store_name} {city} {state} {state_short}
     # {region} {zip} {phone} {brand} {year}. Fields left blank fall back to
     # frontend defaults (current "{Store} - {City}, {State}" pattern).
+    x_seo_title = fields.Char(
+        string="SEO Title",
+        help="Page <title> tag. Supports template tokens.",
+    )
+    x_seo_description = fields.Text(
+        string="SEO Description",
+        help="<meta name='description'>. Supports template tokens.",
+    )
+    x_seo_keywords = fields.Char(
+        string="SEO Keywords",
+        help="<meta name='keywords'>. Supports template tokens.",
+    )
     x_seo_h1 = fields.Char(
         string="H1 Heading",
         help="Visible page heading. Falls back to store name when empty.",

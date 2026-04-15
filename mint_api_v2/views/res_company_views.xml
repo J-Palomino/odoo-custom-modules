@@ -42,11 +42,11 @@
 
                         <group>
                             <group string="Page Metadata">
-                                <field name="website_meta_title"
+                                <field name="x_seo_title"
                                        placeholder="{store_name} Dispensary - {city}, {state} | {brand}"/>
-                                <field name="website_meta_description"
+                                <field name="x_seo_description"
                                        placeholder="Visit {store_name} in {city}, {state} for premium cannabis products. Open daily."/>
-                                <field name="website_meta_keywords"
+                                <field name="x_seo_keywords"
                                        placeholder="dispensary {city}, cannabis {state}, marijuana {city}"/>
                                 <field name="x_seo_h1"
                                        placeholder="Welcome to {store_name}"/>
@@ -59,12 +59,6 @@
                         </group>
 
                         <group string="Social Sharing (Open Graph / Twitter)">
-                            <group>
-                                <field name="website_meta_og_img"
-                                       string="OG Image URL (mixin)"
-                                       placeholder="https://cdn.example.com/og.png"
-                                       help="Optional. Use the upload field on the right for the standard workflow."/>
-                            </group>
                             <group>
                                 <field name="x_seo_og_image" widget="image"
                                        options="{'size': [1200, 630]}"/>
