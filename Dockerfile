@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=121
+ARG CACHEBUST=122
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -43,6 +43,7 @@ COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financia
 COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price_precision
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
+COPY --chown=odoo:odoo mint_dutchie_discount_mirror /opt/extra-addons/mint_dutchie_discount_mirror
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
 COPY --chown=odoo:odoo mint_visual_cms /opt/extra-addons/mint_visual_cms
 COPY --chown=odoo:odoo mint_recruitment_portal /opt/extra-addons/mint_recruitment_portal
