@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint Dutchie Sync',
-    'version': '19.0.2.0.0',
+    'version': '19.0.3.0.0',
     'application': True,
     'category': 'Sales',
     'summary': 'Dutchie customer sync, home store assignment, purchase tracking, and real-time product sync',
