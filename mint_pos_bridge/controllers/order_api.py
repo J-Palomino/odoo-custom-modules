@@ -274,9 +274,16 @@ class MintPosOrderAPI(http.Controller):
 
         # Filter by partner_id (authenticated lookup — cheapest + most
         # precise, preferred over email/phone for signed-in users).
-        if kw.get('partner_id'):
+        # Read from the X-Partner-Id header first so the identifier never
+        # lands in nginx / Railway access logs. Query-param kept as a
+        # debug/curl fallback behind the same API-key gate.
+        partner_id_raw = (
+            request.httprequest.headers.get('X-Partner-Id')
+            or kw.get('partner_id')
+        )
+        if partner_id_raw:
             try:
-                domain.append(('partner_id', '=', int(kw['partner_id'])))
+                domain.append(('partner_id', '=', int(partner_id_raw)))
             except (TypeError, ValueError):
                 return _error('Invalid partner_id')
 
