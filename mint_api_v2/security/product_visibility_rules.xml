@@ -17,7 +17,6 @@
         -->
         <record id="group_warehouse_only" model="res.groups">
             <field name="name">Warehouse Only (hide cannabis products)</field>
-            <field name="category_id" ref="base.module_category_hidden"/>
         </record>
 
         <record id="rule_product_template_warehouse_hide_cannabis" model="ir.rule">
