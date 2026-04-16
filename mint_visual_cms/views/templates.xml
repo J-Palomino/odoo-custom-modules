@@ -167,9 +167,20 @@
                                     </t>
 
                                     <t t-if="not is_editable and zone['type'] == 'info'">
-                                        <div class="vcms-zone__auto-badge">
-                                            Edit in Settings
-                                        </div>
+                                        <t t-if="company_id">
+                                            <a t-attf-href="/odoo/res.company/#{company_id}"
+                                               target="_blank"
+                                               rel="noopener"
+                                               class="vcms-zone__auto-badge vcms-zone__auto-badge--link"
+                                               title="Opens the company form where this photo is uploaded">
+                                                Edit in Settings &#8599;
+                                            </a>
+                                        </t>
+                                        <t t-else="">
+                                            <div class="vcms-zone__auto-badge">
+                                                Edit in Settings
+                                            </div>
+                                        </t>
                                     </t>
                                 </div>
                             </div>
