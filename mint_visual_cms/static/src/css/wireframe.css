@@ -434,3 +434,30 @@
 .vcms-add-form__status--error {
     color: #dc3545;
 }
+
+.vcms-add-form__spec {
+    font-size: 0.75rem;
+    color: #495057;
+    background: #fff3cd;
+    border-left: 3px solid #ffc107;
+    padding: 4px 8px;
+    border-radius: 2px;
+}
+
+.vcms-add-form__image-check {
+    font-size: 0.72rem;
+    padding: 4px 0;
+    min-height: 1em;
+}
+
+.vcms-add-form__image-check--ok {
+    color: #198754;
+}
+
+.vcms-add-form__image-check--warn {
+    color: #b45309;
+}
+
+.vcms-add-form__image-check--info {
+    color: #6c757d;
+}

@@ -81,7 +81,7 @@
         if (existing) existing.remove();
     }
 
-    function renderPanelBanners(slotLabel, banners, slot, companyId) {
+    function renderPanelBanners(slotLabel, banners, slot, companyId, dimensions) {
         panelTitle.textContent = slotLabel + ' (' + banners.length + ')';
 
         var html = '';
@@ -151,7 +151,7 @@
         addBtn.addEventListener('click', function () {
             var form = panel.querySelector('.vcms-add-form');
             if (form) { form.remove(); return; }
-            form = buildAddForm(slot, companyId, slotLabel);
+            form = buildAddForm(slot, companyId, slotLabel, dimensions);
             footer.insertAdjacentElement('beforebegin', form);
             form.querySelector('input[name="name"]').focus();
         });
@@ -162,16 +162,33 @@
 
     // ── Inline add-banner form ──────────────────────────────────────
 
-    function buildAddForm(slot, companyId, slotLabel) {
+    function parseDimensions(text) {
+        // Accepts "1600 x 400 px (4:1)" or "1200x300 px" or similar.
+        // Returns {w, h} or null.
+        if (!text) return null;
+        var m = /(\d+)\s*[x×]\s*(\d+)/i.exec(text);
+        if (!m) return null;
+        return { w: parseInt(m[1], 10), h: parseInt(m[2], 10) };
+    }
+
+    function buildAddForm(slot, companyId, slotLabel, dimensions) {
         var form = document.createElement('div');
         form.className = 'vcms-add-form';
+        var spec = parseDimensions(dimensions);
+        var specHtml = '';
+        if (dimensions) {
+            specHtml = '<div class="vcms-add-form__spec">' +
+                'Recommended: <strong>' + escapeHtml(dimensions) + '</strong></div>';
+        }
         form.innerHTML =
             '<div class="vcms-add-form__header">New banner in ' + escapeHtml(slotLabel) + '</div>' +
+            specHtml +
             '<label>Name <span class="text-danger">*</span></label>' +
             '<input type="text" name="name" class="form-control form-control-sm" ' +
             'placeholder="e.g. Summer Sale Hero" required/>' +
             '<label>Image</label>' +
             '<input type="file" name="image" accept="image/*" class="form-control form-control-sm"/>' +
+            '<div class="vcms-add-form__image-check" aria-live="polite"></div>' +
             '<label>Link URL (optional)</label>' +
             '<input type="url" name="link_url" class="form-control form-control-sm" ' +
             'placeholder="https://..."/>' +
@@ -187,9 +204,51 @@
         form.querySelector('.vcms-add-submit').addEventListener('click', function () {
             submitAddForm(form, slot, companyId, slotLabel);
         });
-        // Submit on Enter in name field
         form.querySelector('input[name="name"]').addEventListener('keydown', function (e) {
             if (e.key === 'Enter') { e.preventDefault(); submitAddForm(form, slot, companyId, slotLabel); }
+        });
+
+        // Image dimension check — shows a warning banner when the
+        // uploaded file's pixel dimensions diverge from the zone's spec.
+        var fileInput = form.querySelector('input[name="image"]');
+        var checkEl = form.querySelector('.vcms-add-form__image-check');
+        fileInput.addEventListener('change', function () {
+            checkEl.textContent = '';
+            checkEl.className = 'vcms-add-form__image-check';
+            var file = fileInput.files[0];
+            if (!file) return;
+            var img = new Image();
+            img.onload = function () {
+                var actual = img.width + ' × ' + img.height + ' px';
+                if (!spec) {
+                    checkEl.textContent = 'Uploaded: ' + actual;
+                    checkEl.classList.add('vcms-add-form__image-check--info');
+                    return;
+                }
+                // Allow up to 10% size tolerance and a small aspect-ratio delta.
+                var wOk = Math.abs(img.width - spec.w) / spec.w <= 0.1;
+                var hOk = Math.abs(img.height - spec.h) / spec.h <= 0.1;
+                var ratioActual = img.width / img.height;
+                var ratioTarget = spec.w / spec.h;
+                var ratioOk = Math.abs(ratioActual - ratioTarget) / ratioTarget <= 0.05;
+                if (wOk && hOk) {
+                    checkEl.textContent = '✓ Matches target (' + actual + ')';
+                    checkEl.classList.add('vcms-add-form__image-check--ok');
+                } else if (ratioOk) {
+                    checkEl.textContent = 'Aspect ratio OK, but size is ' + actual +
+                        ' (target ' + spec.w + ' × ' + spec.h + ' px). Image will be scaled.';
+                    checkEl.classList.add('vcms-add-form__image-check--warn');
+                } else {
+                    checkEl.textContent = 'Wrong aspect ratio: uploaded ' + actual +
+                        ', target ' + spec.w + ' × ' + spec.h + ' px. Banner may display cropped or stretched.';
+                    checkEl.classList.add('vcms-add-form__image-check--warn');
+                }
+            };
+            img.onerror = function () {
+                checkEl.textContent = 'Unable to read image dimensions.';
+                checkEl.classList.add('vcms-add-form__image-check--warn');
+            };
+            img.src = URL.createObjectURL(file);
         });
 
         return form;
@@ -256,7 +315,7 @@
 
     // ── AJAX ────────────────────────────────────────────────────────
 
-    function loadSlotBanners(slot, companyId, slotLabel) {
+    function loadSlotBanners(slot, companyId, slotLabel, dimensions) {
         renderPanelLoading(slotLabel);
         openPanel();
 
@@ -265,7 +324,7 @@
             company_id: companyId || false,
         })
         .then(function (banners) {
-            renderPanelBanners(slotLabel, banners, slot, companyId);
+            renderPanelBanners(slotLabel, banners, slot, companyId, dimensions);
         })
         .catch(function (err) {
             panelBody.innerHTML = '<p class="text-danger">Failed to load banners: ' + escapeHtml(err.message) + '</p>';
@@ -374,6 +433,8 @@
                 var slot = zone.getAttribute('data-slot');
                 var companyId = zone.getAttribute('data-company-id');
                 var label = zone.querySelector('.vcms-zone__label').textContent.trim();
+                var dimsEl = zone.querySelector('.vcms-zone__dims');
+                var dimensions = dimsEl ? dimsEl.textContent.trim() : '';
 
                 if (!slot) return;
 
@@ -385,7 +446,7 @@
                 activeZoneEl = zone;
                 activeSlot = slot;
 
-                loadSlotBanners(slot, companyId, label);
+                loadSlotBanners(slot, companyId, label, dimensions);
             });
         });
 
