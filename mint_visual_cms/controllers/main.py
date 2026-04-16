@@ -318,3 +318,44 @@ class VisualCMSController(http.Controller):
         except Exception as e:
             _logger.warning('Visual CMS cache clear failed: %s', e)
             return {'status': 'error', 'message': str(e)}
+
+    @http.route('/visual-cms/api/create-banner', type='json', auth='user')
+    def api_create_banner(self, slot=None, company_id=None, store_slugs='',
+                          name=None, image=None, title='', link_url='',
+                          date_start=None, date_end=None, **kwargs):
+        """Create a mint.banner inline from the Visual CMS side panel.
+
+        The slot/company_id/store_slugs are pulled from the zone the
+        user is editing, so the caller never picks them manually —
+        this is what the wireframe JS sends automatically.
+        """
+        if not slot:
+            return {'error': 'slot is required'}
+        if not name or not str(name).strip():
+            return {'error': 'name is required'}
+
+        vals = {
+            'slot': slot,
+            'name': str(name).strip(),
+            'company_id': int(company_id) if company_id else False,
+            'store_slugs': store_slugs or '',
+            'title': title or '',
+            'link_url': link_url or '',
+            'active': True,
+        }
+        if image:
+            # Accept either data URL ("data:image/png;base64,…") or raw base64.
+            if isinstance(image, str) and image.startswith('data:') and ',' in image:
+                image = image.split(',', 1)[1]
+            vals['image'] = image
+        if date_start:
+            vals['date_start'] = date_start
+        if date_end:
+            vals['date_end'] = date_end
+
+        try:
+            banner = request.env['mint.banner'].sudo().create(vals)
+        except Exception as e:
+            _logger.exception('Visual CMS create-banner failed')
+            return {'error': str(e)}
+        return _banner_to_dict(banner)

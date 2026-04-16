@@ -392,3 +392,45 @@
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* Inline "Add Banner" form */
+.vcms-add-form {
+    border-top: 1px solid #dee2e6;
+    padding: 12px 16px 8px;
+    background: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.vcms-add-form__header {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 4px;
+}
+
+.vcms-add-form label {
+    font-size: 0.72rem;
+    color: #6c757d;
+    margin: 4px 0 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.vcms-add-form__actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.vcms-add-form__status {
+    font-size: 0.75rem;
+    color: #6c757d;
+    min-height: 1em;
+}
+
+.vcms-add-form__status--error {
+    color: #dc3545;
+}

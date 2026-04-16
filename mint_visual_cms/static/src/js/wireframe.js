@@ -128,12 +128,16 @@
         // Actions footer
         var existing = panel.querySelector('.vcms-panel__actions');
         if (existing) existing.remove();
+        var existingForm = panel.querySelector('.vcms-add-form');
+        if (existingForm) existingForm.remove();
 
         var footer = document.createElement('div');
         footer.className = 'vcms-panel__actions';
         footer.innerHTML =
-            '<a href="' + getOdooNewUrl(slot, companyId, storeSlug) + '" target="_blank" class="btn btn-primary btn-sm flex-grow-1">' +
-            '+ Add Banner</a>' +
+            '<button class="btn btn-primary btn-sm flex-grow-1 vcms-add-toggle-btn">' +
+            '+ Add Banner</button>' +
+            '<a href="' + getOdooNewUrl(slot, companyId, storeSlug) + '" target="_blank" ' +
+            'class="btn btn-outline-secondary btn-sm" title="Advanced editor (all fields)">&#9998;</a>' +
             '<button class="btn btn-outline-secondary btn-sm vcms-refresh-btn" title="Refresh">&#8635;</button>';
         panel.appendChild(footer);
 
@@ -142,8 +146,105 @@
             loadSlotBanners(slot, companyId, slotLabel);
         });
 
+        // Add Banner toggle — reveals inline form
+        var addBtn = footer.querySelector('.vcms-add-toggle-btn');
+        addBtn.addEventListener('click', function () {
+            var form = panel.querySelector('.vcms-add-form');
+            if (form) { form.remove(); return; }
+            form = buildAddForm(slot, companyId, slotLabel);
+            footer.insertAdjacentElement('beforebegin', form);
+            form.querySelector('input[name="name"]').focus();
+        });
+
         // Drag reorder
         initDragReorder();
+    }
+
+    // ── Inline add-banner form ──────────────────────────────────────
+
+    function buildAddForm(slot, companyId, slotLabel) {
+        var form = document.createElement('div');
+        form.className = 'vcms-add-form';
+        form.innerHTML =
+            '<div class="vcms-add-form__header">New banner in ' + escapeHtml(slotLabel) + '</div>' +
+            '<label>Name <span class="text-danger">*</span></label>' +
+            '<input type="text" name="name" class="form-control form-control-sm" ' +
+            'placeholder="e.g. Summer Sale Hero" required/>' +
+            '<label>Image</label>' +
+            '<input type="file" name="image" accept="image/*" class="form-control form-control-sm"/>' +
+            '<label>Link URL (optional)</label>' +
+            '<input type="url" name="link_url" class="form-control form-control-sm" ' +
+            'placeholder="https://..."/>' +
+            '<div class="vcms-add-form__actions">' +
+            '  <button type="button" class="btn btn-sm btn-outline-secondary vcms-add-cancel">Cancel</button>' +
+            '  <button type="button" class="btn btn-sm btn-success vcms-add-submit">Create Banner</button>' +
+            '</div>' +
+            '<div class="vcms-add-form__status" role="status"></div>';
+
+        form.querySelector('.vcms-add-cancel').addEventListener('click', function () {
+            form.remove();
+        });
+        form.querySelector('.vcms-add-submit').addEventListener('click', function () {
+            submitAddForm(form, slot, companyId, slotLabel);
+        });
+        // Submit on Enter in name field
+        form.querySelector('input[name="name"]').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); submitAddForm(form, slot, companyId, slotLabel); }
+        });
+
+        return form;
+    }
+
+    function readFileAsDataUrl(file) {
+        return new Promise(function (resolve, reject) {
+            if (!file) return resolve(null);
+            var reader = new FileReader();
+            reader.onload = function () { resolve(reader.result); };
+            reader.onerror = function () { reject(new Error('Image read failed')); };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function submitAddForm(form, slot, companyId, slotLabel) {
+        var name = form.querySelector('input[name="name"]').value.trim();
+        var link = form.querySelector('input[name="link_url"]').value.trim();
+        var file = form.querySelector('input[name="image"]').files[0];
+        var statusEl = form.querySelector('.vcms-add-form__status');
+        var submitBtn = form.querySelector('.vcms-add-submit');
+
+        if (!name) {
+            statusEl.textContent = 'Name is required';
+            statusEl.className = 'vcms-add-form__status vcms-add-form__status--error';
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Uploading...';
+        statusEl.textContent = '';
+        statusEl.className = 'vcms-add-form__status';
+
+        readFileAsDataUrl(file)
+            .then(function (dataUrl) {
+                return jsonRpc('/visual-cms/api/create-banner', {
+                    slot: slot,
+                    company_id: companyId || false,
+                    store_slugs: storeSlug || '',
+                    name: name,
+                    image: dataUrl,
+                    link_url: link,
+                });
+            })
+            .then(function (result) {
+                if (result && result.error) throw new Error(result.error);
+                toast('Banner created', 'success');
+                loadSlotBanners(slot, companyId, slotLabel);
+            })
+            .catch(function (err) {
+                statusEl.textContent = err.message || String(err);
+                statusEl.className = 'vcms-add-form__status vcms-add-form__status--error';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Banner';
+            });
     }
 
     function escapeHtml(str) {
