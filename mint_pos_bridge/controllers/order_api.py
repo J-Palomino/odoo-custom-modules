@@ -143,8 +143,17 @@ class MintPosOrderAPI(http.Controller):
         if not company:
             return _error('Store not found', 404)
 
-        # Resolve customer
-        partner = _find_or_create_partner(data.get('customer'))
+        # Resolve customer. Trust partner_id from an authenticated JWT when
+        # the frontend supplies one — the email on the checkout form is
+        # receipt-only and can drift from the signed-in user, which would
+        # otherwise strand orders under the wrong partner (so /orders
+        # history misses them).
+        partner = None
+        partner_id_override = data.get('partner_id')
+        if partner_id_override:
+            partner = request.env['res.partner'].sudo().browse(int(partner_id_override)).exists()
+        if not partner:
+            partner = _find_or_create_partner(data.get('customer'))
 
         # Map order type
         raw_type = data.get('order_type', 'pickup')
@@ -253,6 +262,14 @@ class MintPosOrderAPI(http.Controller):
         # Filter by dutchie_checkout_id
         if kw.get('dutchie_checkout_id'):
             domain.append(('dutchie_checkout_id', '=', kw['dutchie_checkout_id']))
+
+        # Filter by partner_id (authenticated lookup — cheapest + most
+        # precise, preferred over email/phone for signed-in users).
+        if kw.get('partner_id'):
+            try:
+                domain.append(('partner_id', '=', int(kw['partner_id'])))
+            except (TypeError, ValueError):
+                return _error('Invalid partner_id')
 
         # Filter by phone (customer lookup)
         if kw.get('phone'):
