@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals REST API v2',
-    'version': '19.0.4.5.1',
+    'version': '19.0.4.9.0',
     'category': 'Website',
     'summary': 'REST API endpoints for MintDeals frontend (native Odoo controllers)',
     'description': """
@@ -28,6 +28,7 @@
     ],
     'data': [
         'security/ir.model.access.csv',
+        'security/product_visibility_rules.xml',
         'views/res_company_views.xml',
     ],
     'installable': True,
