@@ -152,8 +152,12 @@ class MintDiscount(models.Model):
     image_url = fields.Char(string="Discount Image URL")
 
     # External integration
-    # Note: `source` and day-of-week bools (monday..sunday) are defined on
-    # the _inherit extension in mint_command_center (mint_discount_ext.py).
+    source = fields.Selection(
+        [('ptl', 'Push-to-Live (Odoo-authored)'),
+         ('dutchie', 'Dutchie POS (mirrored)')],
+        string="Source", default='ptl', index=True,
+        help="Origin system. 'ptl' = authored here and pushed out; 'dutchie' = mirrored in from Dutchie POS.",
+    )
     calculation_method = fields.Char(
         string="Calculation Method",
         help="Raw Dutchie calculation method string (PERCENT_OFF, FIXED_AMOUNT_OFF, "
@@ -166,6 +170,17 @@ class MintDiscount(models.Model):
         help="Dutchie's own `external_id` on the discount record (distinct from our "
              "dutchie_discount_id which is Dutchie's internal numeric id).",
     )
+
+    # Day-of-week validity (mirrors Dutchie fields; default True = runs every day).
+    # When a Dutchie deal is restricted (e.g. Tuesdays only), the non-matching
+    # days come in as False and the discount is skipped on those days.
+    monday    = fields.Boolean(default=True)
+    tuesday   = fields.Boolean(default=True)
+    wednesday = fields.Boolean(default=True)
+    thursday  = fields.Boolean(default=True)
+    friday    = fields.Boolean(default=True)
+    saturday  = fields.Boolean(default=True)
+    sunday    = fields.Boolean(default=True)
 
     # Sync tracking
     synced_at = fields.Datetime(string="Last Synced")
