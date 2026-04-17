@@ -51,6 +51,16 @@ class MintDealsAPI(http.Controller):
 
     # ==================== STORES ====================
 
+    def _seo_with_parent_fallback(self, company, attr):
+        """Read SEO field from branch; fall back to parent company if blank."""
+        val = getattr(company, attr, None) or None
+        if val:
+            return val
+        parent = getattr(company, 'parent_id', None)
+        if parent:
+            return getattr(parent, attr, None) or None
+        return None
+
     def _company_to_dict(self, company):
         """Convert res.company record to dictionary."""
         hours_dict = company.get_hours_dict() if hasattr(company, 'get_hours_dict') else {}
@@ -108,17 +118,17 @@ class MintDealsAPI(http.Controller):
                 for s in getattr(company, 'service_ids', [])
             ],
             'seo': {
-                'title': getattr(company, 'x_seo_title', None) or None,
-                'description': getattr(company, 'x_seo_description', None) or None,
-                'keywords': getattr(company, 'x_seo_keywords', None) or None,
-                'h1': getattr(company, 'x_seo_h1', None) or None,
-                'canonical_url': getattr(company, 'x_seo_canonical_url', None) or None,
-                'robots': getattr(company, 'x_seo_robots', None) or None,
-                'schema_type': getattr(company, 'x_seo_schema_type', None) or None,
-                'price_range': getattr(company, 'x_seo_price_range', None) or None,
-                'payment_accepted': getattr(company, 'x_seo_payment_accepted', None) or None,
-                'same_as': getattr(company, 'x_seo_same_as', None) or None,
-                'og_image_url': getattr(company, 'x_seo_og_image_url', None) or None,
+                'title': self._seo_with_parent_fallback(company, 'x_seo_title'),
+                'description': self._seo_with_parent_fallback(company, 'x_seo_description'),
+                'keywords': self._seo_with_parent_fallback(company, 'x_seo_keywords'),
+                'h1': self._seo_with_parent_fallback(company, 'x_seo_h1'),
+                'canonical_url': self._seo_with_parent_fallback(company, 'x_seo_canonical_url'),
+                'robots': self._seo_with_parent_fallback(company, 'x_seo_robots'),
+                'schema_type': self._seo_with_parent_fallback(company, 'x_seo_schema_type'),
+                'price_range': self._seo_with_parent_fallback(company, 'x_seo_price_range'),
+                'payment_accepted': self._seo_with_parent_fallback(company, 'x_seo_payment_accepted'),
+                'same_as': self._seo_with_parent_fallback(company, 'x_seo_same_as'),
+                'og_image_url': self._seo_with_parent_fallback(company, 'x_seo_og_image_url'),
             },
         }
 
