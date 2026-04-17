@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint Dutchie Sync',
-    'version': '19.0.1.1.1',
+    'version': '19.0.1.2.0',
     'application': True,
     'category': 'Sales',
     'summary': 'Dutchie customer sync, home store assignment, and purchase tracking',
@@ -17,6 +17,7 @@
         'security/ir.model.access.csv',
         'security/dutchie_security.xml',
         'data/loyalty_program.xml',
+        'data/loyalty_rewards.xml',
         'views/dutchie_purchase_views.xml',
         'views/res_partner_views.xml',
         'views/dutchie_menus.xml',

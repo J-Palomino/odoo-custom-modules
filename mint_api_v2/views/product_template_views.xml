@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Add a Loyalty section to the product form -->
+    <record id="view_product_template_form_loyalty" model="ir.ui.view">
+        <field name="name">product.template.form.loyalty</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='sales']" position="after">
+                <page string="Loyalty" name="loyalty">
+                    <group>
+                        <group string="Points Redemption">
+                            <field name="x_is_loyalty_redeemable"/>
+                            <field name="x_loyalty_points_cost"
+                                   invisible="not x_is_loyalty_redeemable"/>
+                        </group>
+                    </group>
+                    <p class="text-muted">
+                        When enabled, this product appears on the customer Rewards page
+                        and can be redeemed for loyalty points. Points are deducted on
+                        redemption; the product is added to the customer's cart at 100%
+                        off and marked used when the order completes.
+                    </p>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Quick-access action: list of redeemable products -->
+    <record id="action_mint_loyalty_products" model="ir.actions.act_window">
+        <field name="name">Points-Redeemable Products</field>
+        <field name="res_model">product.template</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('x_is_loyalty_redeemable','=',True)]</field>
+        <field name="context">{'search_default_x_is_loyalty_redeemable': 1}</field>
+    </record>
+
+    <menuitem id="menu_mint_loyalty_products"
+              name="Redeemable Products"
+              parent="menu_mint_discount_root"
+              action="action_mint_loyalty_products"
+              sequence="30"/>
+</odoo>

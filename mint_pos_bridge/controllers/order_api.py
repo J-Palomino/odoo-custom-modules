@@ -540,6 +540,23 @@ class MintPosOrderAPI(http.Controller):
                             'weight': item.get('weight', ''),
                         })
 
+                    # Auto-consume any pending /rewards redemption for this
+                    # customer. The discount itself was applied in Dutchie POS
+                    # by the budtender (or will be, once the Backoffice coupon
+                    # integration lands); this just closes the Odoo-side loop.
+                    if partner and 'mint.discount' in request.env:
+                        try:
+                            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(partner)
+                            if consumed:
+                                _logger.info(
+                                    'Auto-consumed redemption %s for %s on POS sync (order %s)',
+                                    consumed.redemption_code, partner.name, order.name,
+                                )
+                        except Exception:
+                            _logger.exception(
+                                'Redemption consume failed for order %s', order.name,
+                            )
+
                     created += 1
 
             except Exception:

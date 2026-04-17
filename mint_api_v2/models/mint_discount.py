@@ -1,9 +1,26 @@
 # -*- coding: utf-8 -*-
 """
 Discount model for cannabis deals and promotions.
+
+Odoo mirror of the Postgres `discounts` table. Canonical pipeline
+(see docs/ARCHITECTURE.md in the frontend repo):
+    Dutchie -> Postgres -> (Redis ^ Odoo) -> Frontend
+PTL (marketing-authored) discounts originate here with source='ptl'
+and flow back to PG via webhook. Dutchie POS discounts originate in
+PG with source='dutchie' and are mirrored here. Fields must map 1:1
+with the Dutchie-shape emitted to Redis; see the Shape Conformance
+mapping table in ARCHITECTURE.md before adding or renaming a field.
 """
-from odoo import api, fields, models
-from datetime import date
+import secrets
+
+from odoo import api, fields, models, _
+from odoo.exceptions import UserError
+from datetime import date, datetime, timedelta
+
+
+# Loyalty redemption code: default 30-day expiry, prefixed for visual grouping.
+REDEMPTION_CODE_BYTES = 5   # 10 hex chars → ~1T space
+REDEMPTION_DEFAULT_TTL_DAYS = 30
 
 
 class MintDiscount(models.Model):
@@ -24,6 +41,7 @@ class MintDiscount(models.Model):
         ('price_to_amount', 'Price To Amount'),
         ('bogo', 'Buy One Get One'),
         ('points_multiplier', 'Loyalty Points Multiplier'),
+        ('loyalty_redemption', 'Loyalty Redemption'),
         ('clearance', 'Clearance (Near Expiry)'),
     ], string="Discount Type", required=True, default='percent')
     discount_amount = fields.Float(string="Discount Amount")
@@ -135,6 +153,43 @@ class MintDiscount(models.Model):
     # Sync tracking
     synced_at = fields.Datetime(string="Last Synced")
 
+    # ── Loyalty Redemption (discount_type='loyalty_redemption') ─────────
+    # A redemption is a single-use discount handed to one customer after
+    # they spent points on /rewards. Budtender marks it used in-store.
+    redemption_code = fields.Char(
+        string="Redemption Code", index=True, copy=False,
+        help="Short code shown to the customer and scanned/typed in-store.",
+    )
+    redemption_partner_id = fields.Many2one(
+        'res.partner', string="Redeeming Customer", ondelete='restrict',
+    )
+    redemption_reward_id = fields.Many2one(
+        'loyalty.reward', string="Reward", ondelete='restrict',
+    )
+    redemption_product_id = fields.Many2one(
+        'product.template', string="Reward Product", ondelete='restrict',
+        help="The product the customer is redeeming (set when redemption is product-scoped).",
+    )
+    redemption_points_cost = fields.Integer(string="Points Cost")
+    redemption_status = fields.Selection([
+        ('pending', 'Pending'),
+        ('used', 'Used'),
+        ('expired', 'Expired'),
+        ('voided', 'Voided'),
+    ], string="Redemption Status", default='pending', copy=False)
+    redemption_used_at = fields.Datetime(string="Used At", readonly=True, copy=False)
+    redemption_used_by_id = fields.Many2one(
+        'res.users', string="Used By", readonly=True, copy=False,
+        help="Budtender or staff member who marked this redemption used.",
+    )
+    expires_at = fields.Datetime(string="Expires At", copy=False)
+
+    _sql_constraints = [
+        ('redemption_code_unique',
+         'UNIQUE(redemption_code)',
+         'Redemption code must be unique.'),
+    ]
+
     @api.model
     def get_active_discounts(self, store_id=None):
         """Return active discounts, optionally filtered by store."""
@@ -181,3 +236,136 @@ class MintDiscount(models.Model):
             return False
 
         return True
+
+    # ── Loyalty Redemption API ─────────────────────────────────────────
+
+    @api.model
+    def _generate_redemption_code(self):
+        """Return a short unique hex code (e.g. 'A7F3B92D01')."""
+        for _ in range(8):
+            candidate = secrets.token_hex(REDEMPTION_CODE_BYTES).upper()
+            if not self.sudo().search_count([('redemption_code', '=', candidate)]):
+                return candidate
+        raise UserError(_("Could not generate a unique redemption code."))
+
+    @api.model
+    def create_redemption(self, partner, points_cost, reward=None, product=None):
+        """Create a loyalty_redemption discount for a customer.
+
+        Caller is responsible for deducting points from the loyalty.card
+        inside the same transaction. Supply either `reward` (generic tier)
+        or `product` (specific product.template). Returns the new record.
+        """
+        if not partner:
+            raise UserError(_("Partner is required."))
+        if not reward and not product:
+            raise UserError(_("Either reward or product is required."))
+
+        label = (product.name if product else None) or (reward.display_name if reward else _("Reward"))
+        expires = fields.Datetime.now() + timedelta(days=REDEMPTION_DEFAULT_TTL_DAYS)
+        return self.sudo().create({
+            'name': _("Redemption: %s") % label,
+            'discount_type': 'loyalty_redemption',
+            'is_active': True,
+            'is_available_online': False,
+            'valid_from': fields.Date.today(),
+            'valid_until': expires.date(),
+            'redemption_code': self._generate_redemption_code(),
+            'redemption_partner_id': partner.id,
+            'redemption_reward_id': reward.id if reward else False,
+            'redemption_product_id': product.id if product else False,
+            'redemption_points_cost': points_cost,
+            'redemption_status': 'pending',
+            'expires_at': expires,
+        })
+
+    def action_mark_redemption_used(self):
+        """Budtender action: mark this redemption as used."""
+        for rec in self:
+            if rec.discount_type != 'loyalty_redemption':
+                raise UserError(_("Only loyalty redemptions can be marked used."))
+            if rec.redemption_status != 'pending':
+                raise UserError(_(
+                    "Redemption %s is already %s.",
+                    rec.redemption_code, rec.redemption_status,
+                ))
+            if rec.expires_at and rec.expires_at < fields.Datetime.now():
+                rec.redemption_status = 'expired'
+                raise UserError(_(
+                    "Redemption %s expired on %s.",
+                    rec.redemption_code, rec.expires_at,
+                ))
+            rec.write({
+                'redemption_status': 'used',
+                'redemption_used_at': fields.Datetime.now(),
+                'redemption_used_by_id': self.env.user.id,
+                'is_active': False,
+            })
+        return True
+
+    def action_void_redemption(self):
+        """Void a pending redemption and refund points to the customer."""
+        LoyaltyCard = self.env['loyalty.card'].sudo()
+        for rec in self:
+            if rec.discount_type != 'loyalty_redemption':
+                raise UserError(_("Only loyalty redemptions can be voided."))
+            if rec.redemption_status != 'pending':
+                raise UserError(_(
+                    "Cannot void redemption %s (status: %s).",
+                    rec.redemption_code, rec.redemption_status,
+                ))
+            reward = rec.redemption_reward_id
+            if reward and rec.redemption_partner_id and rec.redemption_points_cost:
+                card = LoyaltyCard.search([
+                    ('partner_id', '=', rec.redemption_partner_id.id),
+                    ('program_id', '=', reward.program_id.id),
+                ], limit=1)
+                if card:
+                    card.points = card.points + rec.redemption_points_cost
+            rec.write({
+                'redemption_status': 'voided',
+                'is_active': False,
+            })
+        return True
+
+    @api.model
+    def consume_pending_redemption(self, partner):
+        """Auto-consume the oldest pending redemption for a partner.
+
+        Called from order-completion paths (online checkout + Dutchie POS
+        sync). Points were already deducted at redeem time, so this only
+        flips status -> 'used' and stamps used_at. Returns the consumed
+        record (browse of 1) or empty recordset.
+        """
+        if not partner:
+            return self.browse()
+        redemption = self.sudo().search([
+            ('discount_type', '=', 'loyalty_redemption'),
+            ('redemption_partner_id', '=', partner.id),
+            ('redemption_status', '=', 'pending'),
+        ], order='create_date asc', limit=1)
+        if not redemption:
+            return self.browse()
+        # Expired? Sweep to expired and skip.
+        if redemption.expires_at and redemption.expires_at < fields.Datetime.now():
+            redemption.write({'redemption_status': 'expired', 'is_active': False})
+            return self.browse()
+        redemption.write({
+            'redemption_status': 'used',
+            'redemption_used_at': fields.Datetime.now(),
+            'is_active': False,
+        })
+        return redemption
+
+    @api.model
+    def expire_pending_redemptions(self):
+        """Cron: mark pending redemptions past expires_at as expired."""
+        now = fields.Datetime.now()
+        stale = self.sudo().search([
+            ('discount_type', '=', 'loyalty_redemption'),
+            ('redemption_status', '=', 'pending'),
+            ('expires_at', '<', now),
+        ])
+        if stale:
+            stale.write({'redemption_status': 'expired', 'is_active': False})
+        return len(stale)

@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Tree / list view -->
+    <record id="view_mint_discount_tree" model="ir.ui.view">
+        <field name="name">mint.discount.tree</field>
+        <field name="model">mint.discount</field>
+        <field name="arch" type="xml">
+            <list string="Discounts" decoration-muted="not is_active"
+                  decoration-success="redemption_status == 'pending'"
+                  decoration-info="redemption_status == 'used'"
+                  decoration-warning="redemption_status == 'expired'">
+                <field name="name"/>
+                <field name="discount_type"/>
+                <field name="redemption_code" optional="show"/>
+                <field name="redemption_partner_id" optional="show"/>
+                <field name="redemption_status" optional="show"/>
+                <field name="redemption_points_cost" optional="hide"/>
+                <field name="valid_from"/>
+                <field name="valid_until"/>
+                <field name="expires_at" optional="hide"/>
+                <field name="is_active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form view -->
+    <record id="view_mint_discount_form" model="ir.ui.view">
+        <field name="name">mint.discount.form</field>
+        <field name="model">mint.discount</field>
+        <field name="arch" type="xml">
+            <form string="Discount">
+                <header>
+                    <button name="action_mark_redemption_used"
+                            string="Mark Used"
+                            type="object"
+                            class="oe_highlight"
+                            invisible="discount_type != 'loyalty_redemption' or redemption_status != 'pending'"/>
+                    <button name="action_void_redemption"
+                            string="Void &amp; Refund Points"
+                            type="object"
+                            confirm="Void this redemption and refund the points to the customer?"
+                            invisible="discount_type != 'loyalty_redemption' or redemption_status != 'pending'"/>
+                    <field name="redemption_status"
+                           widget="statusbar"
+                           statusbar_visible="pending,used,expired,voided"
+                           invisible="discount_type != 'loyalty_redemption'"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Discount name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="discount_type"/>
+                            <field name="discount_percent"
+                                   invisible="discount_type not in ('percent',)"/>
+                            <field name="discount_amount"
+                                   invisible="discount_type not in ('fixed','price_to_amount')"/>
+                            <field name="code" invisible="discount_type == 'loyalty_redemption'"/>
+                            <field name="deal_classification" invisible="discount_type == 'loyalty_redemption'"/>
+                        </group>
+                        <group>
+                            <field name="is_active"/>
+                            <field name="is_featured" invisible="discount_type == 'loyalty_redemption'"/>
+                            <field name="is_available_online"/>
+                            <field name="valid_from"/>
+                            <field name="valid_until"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Redemption"
+                              invisible="discount_type != 'loyalty_redemption'">
+                            <group>
+                                <group>
+                                    <field name="redemption_code" readonly="1"/>
+                                    <field name="redemption_partner_id" readonly="1"/>
+                                    <field name="redemption_reward_id" readonly="1"/>
+                                </group>
+                                <group>
+                                    <field name="redemption_points_cost" readonly="1"/>
+                                    <field name="expires_at" readonly="1"/>
+                                    <field name="redemption_used_at" readonly="1"/>
+                                    <field name="redemption_used_by_id" readonly="1"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Description"
+                              invisible="discount_type == 'loyalty_redemption'">
+                            <field name="description"/>
+                            <field name="terms" placeholder="Terms &amp; Conditions"/>
+                        </page>
+                        <page string="Targeting"
+                              invisible="discount_type == 'loyalty_redemption'">
+                            <group>
+                                <field name="store_ids" widget="many2many_tags"/>
+                                <field name="product_ids" widget="many2many_tags"/>
+                                <field name="exclude_product_ids" widget="many2many_tags"/>
+                                <field name="category_ids" widget="many2many_tags"/>
+                                <field name="exclude_category_ids" widget="many2many_tags"/>
+                                <field name="brand_ids" widget="many2many_tags"/>
+                                <field name="exclude_brand_ids" widget="many2many_tags"/>
+                                <field name="excluded_skus"/>
+                            </group>
+                        </page>
+                        <page string="Rules"
+                              invisible="discount_type == 'loyalty_redemption'">
+                            <group>
+                                <field name="threshold_type"/>
+                                <field name="threshold_min" invisible="threshold_type == 'none'"/>
+                                <field name="threshold_max" invisible="threshold_type == 'none'"/>
+                                <field name="minimum_items_required"/>
+                                <field name="first_time_customer_only"/>
+                                <field name="is_bundled_discount"/>
+                            </group>
+                        </page>
+                        <page string="Integration">
+                            <group>
+                                <field name="dutchie_discount_id"/>
+                                <field name="synced_at"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_mint_discount_search" model="ir.ui.view">
+        <field name="name">mint.discount.search</field>
+        <field name="model">mint.discount</field>
+        <field name="arch" type="xml">
+            <search string="Discounts">
+                <field name="name"/>
+                <field name="redemption_code"/>
+                <field name="redemption_partner_id"/>
+                <field name="code"/>
+                <filter string="Active" name="active" domain="[('is_active','=',True)]"/>
+                <filter string="Featured" name="featured" domain="[('is_featured','=',True)]"/>
+                <separator/>
+                <filter string="Loyalty Redemptions" name="redemptions"
+                        domain="[('discount_type','=','loyalty_redemption')]"/>
+                <filter string="Pending" name="pending"
+                        domain="[('discount_type','=','loyalty_redemption'),('redemption_status','=','pending')]"/>
+                <filter string="Used" name="used"
+                        domain="[('discount_type','=','loyalty_redemption'),('redemption_status','=','used')]"/>
+                <filter string="Expired" name="expired"
+                        domain="[('discount_type','=','loyalty_redemption'),('redemption_status','=','expired')]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Discount Type" name="group_discount_type"
+                            context="{'group_by':'discount_type'}"/>
+                    <filter string="Redemption Status" name="group_redemption_status"
+                            context="{'group_by':'redemption_status'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Actions -->
+    <record id="action_mint_discount" model="ir.actions.act_window">
+        <field name="name">Discounts</field>
+        <field name="res_model">mint.discount</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_mint_discount_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+    <record id="action_mint_redemptions" model="ir.actions.act_window">
+        <field name="name">Loyalty Redemptions</field>
+        <field name="res_model">mint.discount</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_mint_discount_search"/>
+        <field name="domain">[('discount_type','=','loyalty_redemption')]</field>
+        <field name="context">{'search_default_pending': 1}</field>
+    </record>
+
+    <!-- Menus (nested under an existing marketing-ish root if present) -->
+    <menuitem id="menu_mint_discount_root"
+              name="Mint Marketing"
+              sequence="90"/>
+    <menuitem id="menu_mint_discount"
+              name="Discounts"
+              parent="menu_mint_discount_root"
+              action="action_mint_discount"
+              sequence="10"/>
+    <menuitem id="menu_mint_redemptions"
+              name="Redemptions"
+              parent="menu_mint_discount_root"
+              action="action_mint_redemptions"
+              sequence="20"/>
+</odoo>

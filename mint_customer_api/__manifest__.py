@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Customer API',
-    'version': '19.0.2.9.0',
+    'version': '19.0.2.10.0',
     'category': 'Website',
     'summary': 'Customer auth, checkout, and loyalty API for MintDeals frontend',
     'author': 'MintDeals',
@@ -13,6 +13,7 @@
         'auth_signup',
         'sale_management',
         'loyalty',
+        'mint_api_v2',
     ],
     'external_dependencies': {
         'python': ['PyJWT'],

@@ -66,6 +66,19 @@ class ProductTemplate(models.Model):
     tags = fields.Char(string="Tags (comma-separated)")
     staff_pick = fields.Boolean(string="Staff Pick", default=False)
 
+    # Loyalty redemption: admins flag specific products as rewards + set cost.
+    # When flagged, the product shows on /rewards and can be redeemed for points.
+    x_is_loyalty_redeemable = fields.Boolean(
+        string="Redeemable with Points",
+        default=False,
+        help="When enabled, customers can redeem this product using loyalty points on /rewards.",
+    )
+    x_loyalty_points_cost = fields.Integer(
+        string="Points Cost",
+        default=0,
+        help="How many loyalty points this product costs to redeem.",
+    )
+
     # Sync tracking
     synced_at = fields.Datetime(string="Last Synced")
     x_dutchie_modified_at = fields.Datetime(

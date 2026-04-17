@@ -397,6 +397,14 @@ class MintCheckout(http.Controller):
                 partner.name, points_redeemed, points_earned, max(new_balance, 0)
             )
 
+            # Auto-consume any pending /rewards redemption for this partner.
+            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(partner)
+            if consumed:
+                _logger.info(
+                    'Auto-consumed redemption %s for %s on order completion',
+                    consumed.redemption_code, partner.name,
+                )
+
         # Update Dutchie spend/visit tracking
         partner.sudo().write({
             'x_dutchie_total_spend': (
@@ -427,7 +435,15 @@ class MintCheckout(http.Controller):
         return min(round((discount_amount / unit_price) * 100, 2), 100)
 
     def _award_loyalty(self, partner, spend_amount, points_redeemed=0):
-        """Award loyalty points to a partner. Returns points earned."""
+        """Award loyalty points + auto-consume any pending redemption.
+
+        Points from explicit checkout-time redemption (points_redeemed arg)
+        are deducted as before. Separately, any pending loyalty_redemption
+        record for this partner is auto-marked 'used' here — points for
+        those were already deducted on /rewards redeem.
+
+        Returns points earned.
+        """
         loyalty_program = request.env['loyalty.program'].sudo().search(
             [('program_type', '=', 'loyalty')], limit=1
         )
@@ -454,6 +470,15 @@ class MintCheckout(http.Controller):
             'Loyalty update for %s: -%d redeemed, +%d earned = %d balance',
             partner.name, points_redeemed, points_earned, max(new_balance, 0),
         )
+
+        consumed = request.env['mint.discount'].sudo().consume_pending_redemption(partner)
+        if consumed:
+            _logger.info(
+                'Auto-consumed redemption %s (%s) for %s on order completion',
+                consumed.redemption_code, consumed.redemption_reward_id.display_name,
+                partner.name,
+            )
+
         return points_earned
 
     def _find_partner(self, phone, email):
