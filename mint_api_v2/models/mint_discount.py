@@ -142,13 +142,45 @@ class MintDiscount(models.Model):
 
     # Bundling
     is_bundled_discount = fields.Boolean(string="Is Bundled Discount", default=False)
+    stack_on_other_discounts = fields.Boolean(
+        string="Stack With Other Discounts", default=False,
+        help="Mirrors Dutchie `stack_on_other_discounts` — whether this deal combines with others on the same cart line.",
+    )
 
     # Media
     image = fields.Binary(string="Discount Image")
     image_url = fields.Char(string="Discount Image URL")
 
     # External integration
-    dutchie_discount_id = fields.Char(string="Dutchie Discount ID")
+    source = fields.Selection(
+        [('ptl', 'Push-to-Live (Odoo-authored)'),
+         ('dutchie', 'Dutchie POS (mirrored)')],
+        string="Source", default='ptl', index=True,
+        help="Origin system. 'ptl' = authored here and pushed out; 'dutchie' = mirrored in from Dutchie POS.",
+    )
+    calculation_method = fields.Char(
+        string="Calculation Method",
+        help="Raw Dutchie calculation method string (PERCENT_OFF, FIXED_AMOUNT_OFF, "
+             "PRICE_TO_AMOUNT, PRICE_TO_AMOUNT_TOTAL, BOGO). Preserves the exact "
+             "semantics so bundle deals (TOTAL) stay distinct from per-unit price-to-amount.",
+    )
+    dutchie_discount_id = fields.Char(string="Dutchie Discount ID", index=True)
+    dutchie_external_id = fields.Char(
+        string="Dutchie External ID",
+        help="Dutchie's own `external_id` on the discount record (distinct from our "
+             "dutchie_discount_id which is Dutchie's internal numeric id).",
+    )
+
+    # Day-of-week validity (mirrors Dutchie fields; default True = runs every day).
+    # When a Dutchie deal is restricted (e.g. Tuesdays only), the non-matching
+    # days come in as False and the discount is skipped on those days.
+    monday    = fields.Boolean(default=True)
+    tuesday   = fields.Boolean(default=True)
+    wednesday = fields.Boolean(default=True)
+    thursday  = fields.Boolean(default=True)
+    friday    = fields.Boolean(default=True)
+    saturday  = fields.Boolean(default=True)
+    sunday    = fields.Boolean(default=True)
 
     # Sync tracking
     synced_at = fields.Datetime(string="Last Synced")
