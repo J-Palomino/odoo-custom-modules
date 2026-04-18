@@ -144,17 +144,39 @@ class WebOrderConfigAPI(models.AbstractModel):
 
     @api.model
     def get_all_configs(self):
-        """Get all active web order configurations."""
+        """Get all active web order configurations.
+
+        Returns a dict keyed by store slug. Each entry mirrors the shape of
+        get_config_for_store() so the BullMQ lane watcher can build its
+        per-store state_lane_map without a second round-trip.
+        """
         configs = self.env['mint.web.order.config'].sudo().search([('active', '=', True)])
         result = {}
         for config in configs:
             slug = config.company_id.x_slug
-            if slug:
-                result[slug] = {
-                    'dutchie_loc_id': config.dutchie_loc_id,
-                    'dutchie_register_id': config.dutchie_register_id,
-                    'dutchie_room_id': config.dutchie_room_id,
-                    'online_orders_lane': config.get_lane_for_state('placed'),
-                    'auto_sync_to_pos': config.auto_sync_to_pos,
-                }
+            if not slug:
+                continue
+            try:
+                state_lane_map = json.loads(config.state_lane_map or '{}')
+            except json.JSONDecodeError:
+                state_lane_map = {}
+            try:
+                push_templates = json.loads(config.push_templates or '{}')
+            except json.JSONDecodeError:
+                push_templates = {}
+            result[slug] = {
+                'company_id': config.company_id.id,
+                'store_name': config.company_id.name,
+                'dutchie_loc_id': config.dutchie_loc_id,
+                'dutchie_register_id': config.dutchie_register_id,
+                'dutchie_room_id': config.dutchie_room_id,
+                'state_lane_map': state_lane_map,
+                'push_templates': push_templates,
+                'online_orders_lane': config.get_lane_for_state('placed'),
+                'order_source': config.order_source,
+                'default_payment_method': config.default_payment_method,
+                'auto_sync_to_pos': config.auto_sync_to_pos,
+                'auto_push_notifications': config.auto_push_notifications,
+                'require_photo_id': config.require_photo_id,
+            }
         return result

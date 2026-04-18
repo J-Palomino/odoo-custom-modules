@@ -143,17 +143,8 @@ class MintPosOrderAPI(http.Controller):
         if not company:
             return _error('Store not found', 404)
 
-        # Resolve customer. Trust partner_id from an authenticated JWT when
-        # the frontend supplies one — the email on the checkout form is
-        # receipt-only and can drift from the signed-in user, which would
-        # otherwise strand orders under the wrong partner (so /orders
-        # history misses them).
-        partner = None
-        partner_id_override = data.get('partner_id')
-        if partner_id_override:
-            partner = request.env['res.partner'].sudo().browse(int(partner_id_override)).exists()
-        if not partner:
-            partner = _find_or_create_partner(data.get('customer'))
+        # Resolve customer
+        partner = _find_or_create_partner(data.get('customer'))
 
         # Map order type
         raw_type = data.get('order_type', 'pickup')
@@ -272,20 +263,9 @@ class MintPosOrderAPI(http.Controller):
         if kw.get('dutchie_receipt_no'):
             domain.append(('dutchie_receipt_no', '=', kw['dutchie_receipt_no']))
 
-        # Filter by partner_id (authenticated lookup — cheapest + most
-        # precise, preferred over email/phone for signed-in users).
-        # Read from the X-Partner-Id header first so the identifier never
-        # lands in nginx / Railway access logs. Query-param kept as a
-        # debug/curl fallback behind the same API-key gate.
-        partner_id_raw = (
-            request.httprequest.headers.get('X-Partner-Id')
-            or kw.get('partner_id')
-        )
-        if partner_id_raw:
-            try:
-                domain.append(('partner_id', '=', int(partner_id_raw)))
-            except (TypeError, ValueError):
-                return _error('Invalid partner_id')
+        # Filter by dutchie_shipment_id (stable POS-assigned unique key — preferred for lane watcher lookups)
+        if kw.get('dutchie_shipment_id'):
+            domain.append(('dutchie_shipment_id', '=', kw['dutchie_shipment_id']))
 
         # Filter by phone (customer lookup)
         if kw.get('phone'):
@@ -331,6 +311,58 @@ class MintPosOrderAPI(http.Controller):
             'total': total,
             'limit': limit,
             'offset': offset,
+        })
+
+    # ── PUT /api/v1/pos/orders/<id>/dutchie-status — Relay callback ──
+    # Called by the inventory-service dutchiePosRelay after checking in a
+    # guest at Dutchie. Persists the Dutchie-assigned ShipmentId (stable key
+    # the lane watcher uses) and receipt number back onto the mint.pos.order.
+
+    @http.route('/api/v1/pos/orders/<int:order_id>/dutchie-status',
+                type='http', auth='none', methods=['PUT', 'OPTIONS'],
+                csrf=False, cors='*')
+    def update_dutchie_status(self, order_id, **kw):
+        if request.httprequest.method == 'OPTIONS':
+            return _json({})
+        if not _verify_api_key():
+            return _error('Invalid API key', 401)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return _error('Invalid JSON body')
+
+        order = request.env['mint.pos.order'].sudo().browse(order_id)
+        if not order.exists():
+            return _error('Order not found', 404)
+
+        vals = {}
+        if data.get('success'):
+            if data.get('dutchie_receipt_no'):
+                vals['dutchie_receipt_no'] = data['dutchie_receipt_no']
+            if data.get('dutchie_shipment_id'):
+                vals['dutchie_shipment_id'] = str(data['dutchie_shipment_id'])
+            if data.get('dutchie_order_number'):
+                vals['dutchie_order_number'] = data['dutchie_order_number']
+        else:
+            err = data.get('error') or 'Unknown relay error'
+            vals['notes'] = (order.notes or '') + '\nDutchie relay failed: ' + err
+
+        if vals:
+            order.write(vals)
+
+        _logger.info(
+            'Dutchie status for %s: success=%s shipment=%s receipt=%s',
+            order.name, data.get('success'),
+            vals.get('dutchie_shipment_id', '-'),
+            vals.get('dutchie_receipt_no', '-'),
+        )
+
+        return _json({
+            'success': True,
+            'order_id': order.id,
+            'order_ref': order.name,
+            'dutchie_shipment_id': order.dutchie_shipment_id or None,
         })
 
     # ── PUT /api/v1/pos/orders/<id>/state — Update state ─────────────
