@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Drain the push queue every 30 seconds. Each run picks up to
+             50 items whose debounce window (~20s from enqueue) has elapsed. -->
+        <record id="cron_redis_push_queue_process" model="ir.cron">
+            <field name="name">Redis Push: drain queue</field>
+            <field name="model_id" ref="model_mint_redis_push_queue"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_process()</field>
+            <field name="interval_number">30</field>
+            <field name="interval_type">seconds</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <!-- Hourly drift repair: enqueue a full per-store resync for every
+             dispensary. Catches cases where an on-change hook was missed
+             (Odoo restart during write, queue failure). Cheap — just
+             enqueues; the cron above does the HTTP work. -->
+        <record id="cron_redis_push_full_resync_discounts" model="ir.cron">
+            <field name="name">Redis Push: hourly full resync (discounts)</field>
+            <field name="model_id" ref="model_mint_redis_push_queue"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_full_resync_discounts()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+        </record>
+
+    </data>
+</odoo>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Defaults. api_key must be set manually (Settings > Technical >
+             Parameters > System Parameters) before the push will succeed —
+             the queue surfaces this as an attempt-counter failure, not a
+             silent drop, so ops can see the misconfiguration. -->
+
+        <record id="param_redis_push_url" model="ir.config_parameter">
+            <field name="key">mint_redis_push.url</field>
+            <field name="value">https://mintinvsvc-production-6aa5.up.railway.app</field>
+        </record>
+
+        <record id="param_redis_push_enabled" model="ir.config_parameter">
+            <field name="key">mint_redis_push.enabled</field>
+            <field name="value">True</field>
+        </record>
+
+    </data>
+</odoo>
