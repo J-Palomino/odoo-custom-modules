@@ -57,6 +57,43 @@ def _normalize_phone(phone):
     return digits[-10:] if len(digits) >= 10 else digits
 
 
+def _normalize_datetime(value):
+    """Coerce various incoming datetime formats to Odoo's 'YYYY-MM-DD HH:MM:SS'.
+
+    Accepts:
+      - ISO 8601 with 'T' separator and optional 'Z' or ±HH:MM tz
+        (e.g. '2026-04-17T19:45:00Z', '2026-04-17T19:45:00.123-07:00')
+      - Odoo-native naive format (already correct)
+      - datetime object
+
+    Returns a naive UTC string Odoo can store. Returns None on unparseable input
+    so the caller can fall back to the model default.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value).strip()
+        # Odoo's native format — pass through
+        try:
+            dt = datetime.strptime(s, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            # ISO 8601 — fromisoformat handles '2026-04-17T19:45:00+00:00'
+            # and (on 3.11+) '2026-04-17T19:45:00Z'. Strip trailing Z defensively
+            # for older Pythons and trim fractional seconds beyond microseconds.
+            try:
+                iso = s.replace('Z', '+00:00')
+                dt = datetime.fromisoformat(iso)
+            except ValueError:
+                return None
+    # Convert to naive UTC — Odoo stores datetimes as naive UTC.
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+
 def _find_or_create_partner(customer_data):
     """Find or create a res.partner from customer data dict."""
     if not customer_data:
@@ -175,7 +212,9 @@ class MintPosOrderAPI(http.Controller):
         }
 
         if data.get('placed_at'):
-            order_vals['placed_at'] = data['placed_at']
+            normalized = _normalize_datetime(data['placed_at'])
+            if normalized:
+                order_vals['placed_at'] = normalized
         if data.get('is_prepaid'):
             order_vals['is_prepaid'] = True
         if data.get('dutchie_subtotal') is not None:
@@ -553,7 +592,9 @@ class MintPosOrderAPI(http.Controller):
                     if order_data.get('dutchie_shipment_id'):
                         order_vals['dutchie_shipment_id'] = order_data['dutchie_shipment_id']
                     if order_data.get('placed_at'):
-                        order_vals['placed_at'] = order_data['placed_at']
+                        normalized = _normalize_datetime(order_data['placed_at'])
+                        if normalized:
+                            order_vals['placed_at'] = normalized
 
                     order = Order.with_company(
                         request.env['res.company'].browse(company_id)
