@@ -52,6 +52,14 @@ class MintDiscountDutchie(models.Model):
     can_stack_automatically = fields.Boolean(string="Can Stack Automatically")
     require_manager_approval = fields.Boolean(string="Requires Manager Approval")
     dutchie_is_deleted = fields.Boolean(string="Deleted in Dutchie")
+    include_non_cannabis = fields.Boolean(
+        string="Includes Non-Cannabis",
+        default=False,
+        help="When True, this discount applies to non-cannabis products "
+             "(accessories, merch) in addition to cannabis SKUs. Dutchie "
+             "populates this on 100% of records — captured for parity so "
+             "'20% off everything' deals preserve their scope.",
+    )
 
     # ---- Redemption limits ----
     max_redemptions = fields.Integer(string="Max Redemptions")
