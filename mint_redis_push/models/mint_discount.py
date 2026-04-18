@@ -153,10 +153,14 @@ class MintDiscount(models.Model):
         ])
         payload = [d._serialize_for_redis(uuid) for d in discounts]
 
+        # allow_empty=True: Odoo is the authoritative set. A push with zero
+        # discounts is a legitimate "this store has no active deals right now"
+        # statement, not a bug. The mintinvsvc safety rail still blocks empty
+        # pushes from other clients (curl, misbehaving scripts).
         Queue = self.env['mint.redis.push.queue'].sudo()
         status, body = Queue._post(
             f'/api/locations/{uuid}/discounts/full-replace',
-            {'discounts': payload, 'source': 'odoo'},
+            {'discounts': payload, 'source': 'odoo', 'allow_empty': True},
         )
         if status >= 300:
             raise RuntimeError(f'push got {status}: {body[:200]}')
