@@ -491,6 +491,7 @@ class MintPosOrderAPI(http.Controller):
         created = 0
         updated = 0
         errors = 0
+        error_details = []
 
         for order_data in orders_data:
             try:
@@ -596,24 +597,33 @@ class MintPosOrderAPI(http.Controller):
 
                     created += 1
 
-            except Exception:
+            except Exception as e:
                 _logger.exception(
                     'Error syncing order receipt=%s checkout=%s',
                     order_data.get('dutchie_receipt_no'),
                     order_data.get('dutchie_checkout_id'),
                 )
                 errors += 1
+                if len(error_details) < 10:
+                    error_details.append({
+                        'receipt': order_data.get('dutchie_receipt_no'),
+                        'company_id': order_data.get('company_id'),
+                        'error': type(e).__name__ + ': ' + str(e)[:300],
+                    })
 
         _logger.info(
             'Bulk sync complete: %d created, %d updated, %d errors',
             created, updated, errors,
         )
 
-        return _json({
+        payload = {
             'created': created,
             'updated': updated,
             'errors': errors,
-        })
+        }
+        if error_details:
+            payload['error_details'] = error_details
+        return _json(payload)
 
     # ── Helpers ───────────────────────────────────────────────────────
 
