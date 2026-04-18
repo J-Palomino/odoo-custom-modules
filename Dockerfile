@@ -44,6 +44,7 @@ COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
 COPY --chown=odoo:odoo mint_dutchie_discount_mirror /opt/extra-addons/mint_dutchie_discount_mirror
+COPY --chown=odoo:odoo mint_redis_push /opt/extra-addons/mint_redis_push
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
 COPY --chown=odoo:odoo mint_visual_cms /opt/extra-addons/mint_visual_cms
 COPY --chown=odoo:odoo mint_recruitment_portal /opt/extra-addons/mint_recruitment_portal
