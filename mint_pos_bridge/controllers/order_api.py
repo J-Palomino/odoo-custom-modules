@@ -512,7 +512,8 @@ class MintPosOrderAPI(http.Controller):
                     ], limit=1)
 
                 if existing:
-                    # Update existing order
+                    # Update existing order — backfill identifiers that were
+                    # missing, but don't clobber terminal states.
                     update_vals = {}
                     new_state = order_data.get('state')
                     if new_state and new_state != existing.state:
@@ -521,6 +522,8 @@ class MintPosOrderAPI(http.Controller):
                         update_vals['dutchie_receipt_no'] = receipt_no
                     if order_data.get('dutchie_order_number') and not existing.dutchie_order_number:
                         update_vals['dutchie_order_number'] = order_data['dutchie_order_number']
+                    if order_data.get('dutchie_shipment_id') and not existing.dutchie_shipment_id:
+                        update_vals['dutchie_shipment_id'] = str(order_data['dutchie_shipment_id'])
                     if update_vals:
                         existing.write(update_vals)
                         updated += 1
@@ -572,13 +575,15 @@ class MintPosOrderAPI(http.Controller):
                             'weight': item.get('weight', ''),
                         })
 
-                    # Auto-consume any pending /rewards redemption for this
-                    # customer. The discount itself was applied in Dutchie POS
-                    # by the budtender (or will be, once the Backoffice coupon
-                    # integration lands); this just closes the Odoo-side loop.
+                    # Auto-consume any pending /rewards redemption whose
+                    # product appears as a free line in this order. Until
+                    # the Backoffice coupon integration lands this depends
+                    # on the budtender actually zeroing the reward item.
                     if partner and 'mint.discount' in request.env:
                         try:
-                            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(partner)
+                            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(
+                                partner, order_items=order_data.get('items', []),
+                            )
                             if consumed:
                                 _logger.info(
                                     'Auto-consumed redemption %s for %s on POS sync (order %s)',

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint POS Bridge',
-    'version': '19.0.4.2.0',
+    'version': '19.0.4.3.0',
     'category': 'Operations',
     'summary': 'Dutchie POS ↔ Odoo order bridge — unified dispensary operations',
     'description': """
