@@ -147,12 +147,11 @@
                         domain="[('discount_type','=','loyalty_redemption'),('redemption_status','=','used')]"/>
                 <filter string="Expired" name="expired"
                         domain="[('discount_type','=','loyalty_redemption'),('redemption_status','=','expired')]"/>
-                <group expand="0" string="Group By">
-                    <filter string="Discount Type" name="group_discount_type"
-                            context="{'group_by':'discount_type'}"/>
-                    <filter string="Redemption Status" name="group_redemption_status"
-                            context="{'group_by':'redemption_status'}"/>
-                </group>
+                <separator/>
+                <filter string="Discount Type" name="group_discount_type"
+                        context="{'group_by':'discount_type'}"/>
+                <filter string="Redemption Status" name="group_redemption_status"
+                        context="{'group_by':'redemption_status'}"/>
             </search>
         </field>
     </record>
