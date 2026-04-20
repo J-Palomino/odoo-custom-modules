@@ -16,6 +16,12 @@
                             class="btn-primary"
                             invisible="state == 'published'"
                             confirm="This will sync all deals to the live website. Continue?"/>
+                    <button name="action_unpublish"
+                            string="Unpublish"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state != 'published'"
+                            confirm="This will pull this day's deals from the live website. Deals shared with other published days are kept alive for those days. Continue?"/>
                     <button name="action_open_stock_check"
                             string="Check Stock"
                             type="object"

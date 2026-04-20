@@ -154,6 +154,65 @@ class PtlDay(models.Model):
             message_type='comment',
         )
 
+    def action_unpublish(self):
+        """Unpublish: drop this day's deals from the FE.
+
+        For each deal on this day, look for OTHER days that are still
+        'published' and also reference the deal. If any exist, rescope the
+        mint.discount to those days' date range + day-of-week bools so the
+        deal keeps serving for them. If no other published day remains,
+        deactivate the mint.discount outright. Either way, push the updated
+        records to mintinvsvc so Redis reflects the change on the next
+        cacheSync tick.
+        """
+        self.ensure_one()
+        if self.state != 'published':
+            from odoo.exceptions import UserError
+            raise UserError("Only published days can be unpublished.")
+
+        Day = self.env['mint.ptl.day'].sudo()
+        affected_ids = []
+        deactivated = 0
+        rescoped = 0
+
+        for deal in self.deal_ids:
+            discount = deal.discount_id
+            if not discount:
+                continue
+
+            other_days = Day.search([
+                ('id', '!=', self.id),
+                ('state', '=', 'published'),
+                ('deal_ids', 'in', deal.id),
+            ])
+
+            if other_days:
+                dates = other_days.mapped('date')
+                discount.write({
+                    'is_active': True,
+                    'valid_from': min(dates),
+                    'valid_until': max(dates),
+                })
+                self.env['mint.discount']._recompute_day_booleans(discount)
+                rescoped += 1
+            else:
+                discount.write({'is_active': False})
+                deactivated += 1
+
+            affected_ids.append(discount.id)
+
+        if affected_ids:
+            self._push_discounts_to_redis(affected_ids)
+
+        self.write({'state': 'confirmed'})
+        self.message_post(
+            body=(
+                f"Unpublished: {deactivated} deal(s) deactivated, "
+                f"{rescoped} rescoped to remaining published days."
+            ),
+            message_type='comment',
+        )
+
     def action_open_stock_check(self):
         """Open stock check wizard pre-filled with this day's deals."""
         return {

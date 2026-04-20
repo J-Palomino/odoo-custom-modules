@@ -93,6 +93,7 @@ class MintDiscountPTL(models.Model):
 
         days = self.env['mint.ptl.day'].search([
             ('deal_ids', 'in', deal.id),
+            ('state', '=', 'published'),
             ('date', '>=', today),
             ('date', '<=', future_cutoff),
         ])
