@@ -358,20 +358,46 @@ class PtlDay(models.Model):
         """Convert mint.discount → inventory service webhook payload."""
         calc_method = CALC_METHOD_MAP.get(discount.discount_type, 'PERCENT_OFF')
 
-        # Build brand/category targeting JSONB
+        # Build brand/category/product targeting JSONB.
+        # Emit the Dutchie-namespace cross-reference IDs (dutchie_brand_id /
+        # dutchie_category_id / dutchie_product_id) that Odoo records carry.
+        # The downstream mintinvsvc resolver indexes inventory by those same
+        # IDs — Odoo-internal record ids have no meaning downstream. Records
+        # without a cross-reference are dropped from the payload so we never
+        # emit wrong-namespace IDs the resolver would silently miss.
+        def _coerce_ids(records, field):
+            out = []
+            for r in records:
+                val = getattr(r, field, None)
+                if not val:
+                    continue
+                try:
+                    out.append(int(str(val).strip()))
+                except (TypeError, ValueError):
+                    continue
+            return out
+
         brands = None
         if discount.brand_ids:
-            brands = {'ids': discount.brand_ids.ids, 'isExclusion': False}
+            dutchie_ids = _coerce_ids(discount.brand_ids, 'dutchie_brand_id')
+            if dutchie_ids:
+                brands = {'ids': dutchie_ids, 'isExclusion': False}
         elif discount.exclude_brand_ids:
-            brands = {'ids': discount.exclude_brand_ids.ids, 'isExclusion': True}
+            dutchie_ids = _coerce_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
+            if dutchie_ids:
+                brands = {'ids': dutchie_ids, 'isExclusion': True}
 
         categories = None
         if discount.category_ids:
-            categories = {'ids': discount.category_ids.ids, 'isExclusion': False}
+            dutchie_ids = _coerce_ids(discount.category_ids, 'dutchie_category_id')
+            if dutchie_ids:
+                categories = {'ids': dutchie_ids, 'isExclusion': False}
 
         products = None
         if discount.product_ids:
-            products = {'ids': discount.product_ids.ids, 'isExclusion': False}
+            dutchie_ids = _coerce_ids(discount.product_ids, 'dutchie_product_id')
+            if dutchie_ids:
+                products = {'ids': dutchie_ids, 'isExclusion': False}
 
         excluded_skus = sorted(discount._excluded_sku_set()) if discount.excluded_skus else None
 
