@@ -56,6 +56,25 @@ class ProductTemplate(models.Model):
     # Brand
     brand_id = fields.Many2one('mint.brand', string="Brand")
 
+    def write(self, vals):
+        old_brands = self.env['mint.brand']
+        if 'brand_id' in vals or 'x_is_cannabis' in vals:
+            old_brands = self.mapped('brand_id')
+        res = super().write(vals)
+        if 'brand_id' in vals or 'x_is_cannabis' in vals:
+            affected = (old_brands | self.mapped('brand_id'))
+            if affected:
+                affected._compute_product_count()
+        return res
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        affected = records.mapped('brand_id')
+        if affected:
+            affected._compute_product_count()
+        return records
+
     # Dutchie integration
     dutchie_product_id = fields.Char(string="Dutchie Product ID")
     dutchie_inventory_id = fields.Char(string="Dutchie Inventory ID")
@@ -174,6 +193,25 @@ class MintBrand(models.Model):
         index=True,
         help="Upstream Dutchie BrandId, used to resolve discount brand restrictions to Odoo brands at sync time.",
     )
+    # Gate for discount-targeting dropdowns: only brands with actual cannabis
+    # products appear in domain-filtered Many2many pickers. Stored because
+    # domains can only filter on stored fields. Recomputed on module upgrade
+    # and by nightly cron; product.template writes also trigger via inverse.
+    product_count = fields.Integer(
+        string="# Cannabis Products",
+        compute='_compute_product_count',
+        store=True,
+        help="Count of cannabis product.template records linked to this brand.",
+    )
+
+    @api.depends('name')  # trivial dep — real recompute via _sync_brand_product_count below
+    def _compute_product_count(self):
+        Product = self.env['product.template'].sudo()
+        for brand in self:
+            brand.product_count = Product.search_count([
+                ('brand_id', '=', brand.id),
+                ('x_is_cannabis', '=', True),
+            ])
 
 
 class ProductCategory(models.Model):

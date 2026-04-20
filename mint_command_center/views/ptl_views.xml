@@ -225,7 +225,9 @@
                     </div>
                     <group>
                         <group>
-                            <field name="brand_id"/>
+                            <field name="brand_id"
+                                   domain="[('product_count','&gt;',0)]"
+                                   options="{'no_create': True}"/>
                             <field name="product_category"/>
                             <field name="market_id" options="{'no_create': True}"/>
                             <field name="pricing_tier"
@@ -255,11 +257,13 @@
                         <field name="excluded_skus" nolabel="1"
                                placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002&#10;CRT-PINEAPPLE"/>
                         <field name="excluded_brand_ids" widget="many2many_tags"
+                               domain="[('product_count','&gt;',0)]"
                                options="{'no_create_edit': True}"
                                placeholder="Brands to exclude from this deal"/>
                     </group>
                     <group string="Availability">
                         <field name="store_ids" widget="many2many_tags"
+                               domain="[('is_dispensary','=',True),('dutchie_store_id','!=',False)]"
                                options="{'no_create': True}"
                                placeholder="All stores (leave empty for all)"/>
                         <field name="day_ids" widget="many2many_tags" readonly="1"/>
