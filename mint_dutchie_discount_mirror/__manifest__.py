@@ -1,6 +1,6 @@
 {
     'name': 'Mint Dutchie Discount Mirror',
-    'version': '19.0.1.1.0',
+    'version': '19.0.1.2.0',
     'category': 'Operations',
     'summary': 'Mirror Dutchie Backoffice discount structure onto mint.discount',
     'description': """
