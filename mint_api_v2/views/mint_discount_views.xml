@@ -100,9 +100,9 @@
                                 <field name="exclude_product_ids" widget="many2many_tags"
                                        domain="[('x_is_cannabis','=',True),('dutchie_product_id','!=',False)]"/>
                                 <field name="category_ids" widget="many2many_tags"
-                                       domain="[('product_count','>',0),('complete_name','ilike','Cannabis')]"/>
+                                       domain="[('complete_name','ilike','Cannabis')]"/>
                                 <field name="exclude_category_ids" widget="many2many_tags"
-                                       domain="[('product_count','>',0),('complete_name','ilike','Cannabis')]"/>
+                                       domain="[('complete_name','ilike','Cannabis')]"/>
                                 <field name="brand_ids" widget="many2many_tags"
                                        domain="[('product_count','>',0)]"/>
                                 <field name="exclude_brand_ids" widget="many2many_tags"
