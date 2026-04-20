@@ -64,15 +64,22 @@
                         <page string="Targeting" name="targeting">
                             <group>
                                 <group string="Include">
-                                    <field name="store_ids" widget="many2many_tags"/>
-                                    <field name="brand_ids" widget="many2many_tags"/>
-                                    <field name="category_ids" widget="many2many_tags"/>
-                                    <field name="product_ids" widget="many2many_tags"/>
+                                    <field name="store_ids" widget="many2many_tags"
+                                           domain="[('is_dispensary','=',True),('dutchie_store_id','!=',False)]"/>
+                                    <field name="brand_ids" widget="many2many_tags"
+                                           domain="[('product_count','>',0)]"/>
+                                    <field name="category_ids" widget="many2many_tags"
+                                           domain="[('complete_name','ilike','Cannabis')]"/>
+                                    <field name="product_ids" widget="many2many_tags"
+                                           domain="[('x_is_cannabis','=',True),('dutchie_product_id','!=',False)]"/>
                                 </group>
                                 <group string="Exclude">
-                                    <field name="exclude_brand_ids" widget="many2many_tags"/>
-                                    <field name="exclude_category_ids" widget="many2many_tags"/>
-                                    <field name="exclude_product_ids" widget="many2many_tags"/>
+                                    <field name="exclude_brand_ids" widget="many2many_tags"
+                                           domain="[('product_count','>',0)]"/>
+                                    <field name="exclude_category_ids" widget="many2many_tags"
+                                           domain="[('complete_name','ilike','Cannabis')]"/>
+                                    <field name="exclude_product_ids" widget="many2many_tags"
+                                           domain="[('x_is_cannabis','=',True),('dutchie_product_id','!=',False)]"/>
                                     <field name="excluded_skus"/>
                                 </group>
                             </group>
