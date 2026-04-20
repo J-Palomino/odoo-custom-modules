@@ -397,8 +397,11 @@ class MintCheckout(http.Controller):
                 partner.name, points_redeemed, points_earned, max(new_balance, 0)
             )
 
-            # Auto-consume any pending /rewards redemption for this partner.
-            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(partner)
+            # Auto-consume any pending /rewards redemption whose product
+            # appears as a free line in this order (strict match).
+            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(
+                partner, order_items=items,
+            )
             if consumed:
                 _logger.info(
                     'Auto-consumed redemption %s for %s on order completion',

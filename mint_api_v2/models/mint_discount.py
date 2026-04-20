@@ -11,16 +11,51 @@ PG with source='dutchie' and are mirrored here. Fields must map 1:1
 with the Dutchie-shape emitted to Redis; see the Shape Conformance
 mapping table in ARCHITECTURE.md before adding or renaming a field.
 """
+import logging
 import secrets
 
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 from datetime import date, datetime, timedelta
 
+_logger = logging.getLogger(__name__)
+
 
 # Loyalty redemption code: default 30-day expiry, prefixed for visual grouping.
 REDEMPTION_CODE_BYTES = 5   # 10 hex chars → ~1T space
 REDEMPTION_DEFAULT_TTL_DAYS = 30
+
+# Cent tolerance for treating a line as "free" after per-line discount.
+FREE_LINE_TOLERANCE = 0.01
+
+
+def _find_matching_free_line(redemption, order_items):
+    """Return the first order_items dict that matches redemption's product
+    and is effectively free, or None. Matches on dutchie_product_id first,
+    falls back to SKU (default_code). An item is free when
+    ``unit_price * quantity - discount <= FREE_LINE_TOLERANCE``.
+    """
+    product = redemption.redemption_product_id
+    if not product:
+        return None
+    prod_pid = (product.dutchie_product_id or '').strip()
+    prod_sku = (product.default_code or '').strip().upper()
+
+    for item in order_items or []:
+        line_pid = str(item.get('dutchie_product_id') or '').strip()
+        line_sku = str(item.get('sku') or '').strip().upper()
+        id_match = (prod_pid and line_pid == prod_pid) or (prod_sku and line_sku == prod_sku)
+        if not id_match:
+            continue
+        try:
+            qty = float(item.get('quantity') or 1)
+            unit = float(item.get('unit_price') or 0)
+            disc = float(item.get('discount') or 0)
+        except (TypeError, ValueError):
+            continue
+        if (unit * qty) - disc <= FREE_LINE_TOLERANCE:
+            return item
+    return None
 
 
 class MintDiscount(models.Model):
@@ -138,7 +173,25 @@ class MintDiscount(models.Model):
     threshold_min = fields.Float(string="Minimum Threshold")
     threshold_max = fields.Float(string="Maximum Threshold")
     minimum_items_required = fields.Integer(string="Minimum Items Required", default=1)
+    maximum_items_allowed = fields.Integer(string="Maximum Items Allowed")
+    maximum_usage_count = fields.Integer(string="Maximum Usage Count")
     first_time_customer_only = fields.Boolean(string="First Time Customers Only", default=False)
+    include_non_cannabis = fields.Boolean(string="Include Non-Cannabis Items", default=False)
+
+    # Dutchie application behavior
+    application_method = fields.Selection([
+        ('automatic', 'Automatic'),
+        ('code', 'Code'),
+        ('manual', 'Manual'),
+    ], string="Application Method",
+       help="How Dutchie applies this discount. Manual discounts are staff-applied (not customer-facing).")
+    require_manager_approval = fields.Boolean(string="Requires Manager Approval", default=False)
+    stack_on_other_discounts = fields.Boolean(string="Stacks With Other Discounts", default=False)
+    apply_to_only_one_item = fields.Boolean(string="Apply To Only One Item", default=False)
+
+    # Time-of-day targeting (paired with day-of-week booleans)
+    start_time = fields.Float(string="Start Time", help="Hour-of-day (0-24) when discount becomes active.")
+    end_time = fields.Float(string="End Time", help="Hour-of-day (0-24) when discount stops.")
 
     # Bundling
     is_bundled_discount = fields.Boolean(string="Is Bundled Discount", default=False)
@@ -152,6 +205,8 @@ class MintDiscount(models.Model):
     # defined on the _inherit extension in mint_command_center/
     # models/mint_discount_ext.py — don't redefine here or defaults collide.
     dutchie_discount_id = fields.Char(string="Dutchie Discount ID", index=True)
+    online_name = fields.Char(string="Online Name", help="Customer-facing name from Dutchie `onlineName`.")
+    menu_display_name = fields.Char(string="Menu Display Name", help="Dutchie menu card label.")
 
     # Sync tracking
     synced_at = fields.Datetime(string="Last Synced")
@@ -332,33 +387,76 @@ class MintDiscount(models.Model):
         return True
 
     @api.model
-    def consume_pending_redemption(self, partner):
-        """Auto-consume the oldest pending redemption for a partner.
+    def consume_pending_redemption(self, partner, order_items=None):
+        """Consume the pending redemption that this order actually honored.
 
-        Called from order-completion paths (online checkout + Dutchie POS
-        sync). Points were already deducted at redeem time, so this only
-        flips status -> 'used' and stamps used_at. Returns the consumed
-        record (browse of 1) or empty recordset.
+        Strict path (preferred): caller passes ``order_items`` — a list of
+        dicts with at least ``dutchie_product_id`` or ``sku``, plus
+        ``unit_price``, ``discount``, ``quantity``. A redemption is
+        consumed only when the order contains a line matching its
+        redemption_product_id AND that line is effectively free
+        (unit_price*qty - discount <= $0.01). Prevents blindly marking a
+        redemption used when the budtender didn't actually honor it.
+
+        Legacy path: when ``order_items`` is None, falls back to
+        oldest-pending with a warning log.
         """
         if not partner:
             return self.browse()
-        redemption = self.sudo().search([
+
+        pending = self.sudo().search([
             ('discount_type', '=', 'loyalty_redemption'),
             ('redemption_partner_id', '=', partner.id),
             ('redemption_status', '=', 'pending'),
-        ], order='create_date asc', limit=1)
-        if not redemption:
+        ], order='create_date asc')
+        if not pending:
             return self.browse()
-        # Expired? Sweep to expired and skip.
-        if redemption.expires_at and redemption.expires_at < fields.Datetime.now():
-            redemption.write({'redemption_status': 'expired', 'is_active': False})
+
+        now = fields.Datetime.now()
+        expired = pending.filtered(lambda r: r.expires_at and r.expires_at < now)
+        if expired:
+            expired.write({'redemption_status': 'expired', 'is_active': False})
+        fresh = pending - expired
+        if not fresh:
             return self.browse()
-        redemption.write({
-            'redemption_status': 'used',
-            'redemption_used_at': fields.Datetime.now(),
-            'is_active': False,
-        })
-        return redemption
+
+        if order_items is None:
+            _logger.warning(
+                'consume_pending_redemption called without order_items for '
+                'partner id=%s; using oldest-pending heuristic',
+                partner.id,
+            )
+            redemption = fresh[:1]
+            redemption.write({
+                'redemption_status': 'used',
+                'redemption_used_at': now,
+                'is_active': False,
+            })
+            return redemption
+
+        for redemption in fresh:
+            matched_line = _find_matching_free_line(redemption, order_items)
+            if matched_line is not None:
+                redemption.write({
+                    'redemption_status': 'used',
+                    'redemption_used_at': now,
+                    'is_active': False,
+                })
+                _logger.info(
+                    'Consumed redemption %s (product=%s) for partner %s '
+                    'against matching order line',
+                    redemption.redemption_code,
+                    redemption.redemption_product_id.display_name,
+                    partner.id,
+                )
+                return redemption
+
+        _logger.info(
+            'No free order line matched any of %d pending redemption(s) '
+            'for partner %s; leaving all pending',
+            len(fresh), partner.id,
+        )
+        return self.browse()
 
     @api.model
     def expire_pending_redemptions(self):
