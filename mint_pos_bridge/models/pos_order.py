@@ -247,7 +247,9 @@ class MintPosOrder(models.Model):
 
         now = fields.Datetime.now()
 
-        # Set timestamp fields based on state transitions
+        # Set timestamp fields based on state transitions — batch the
+        # records that still need the timestamp into a single write so
+        # bulk state changes don't incur N extra UPDATEs.
         ts_map = {
             'confirmed': 'confirmed_at',
             'ready': 'ready_at',
@@ -259,9 +261,9 @@ class MintPosOrder(models.Model):
         }
         ts_field = ts_map.get(new_state)
         if ts_field:
-            for order in self:
-                if not order[ts_field]:
-                    super(MintPosOrder, order).write({ts_field: now})
+            needs_stamp = self.filtered(lambda o: not o[ts_field])
+            if needs_stamp:
+                super(MintPosOrder, needs_stamp).write({ts_field: now})
 
         # Push notifications for customer-facing state changes
         if new_state in self._get_notification_messages():
@@ -293,10 +295,14 @@ class MintPosOrder(models.Model):
 
     def _fire_lane_change_webhook(self, order, new_state, reason=''):
         """Fire webhook to inventory service to update Dutchie swimlane."""
+        # No default URL — staging/dev Odoo without the config param set
+        # would otherwise silently relay lane changes to prod mintinvsvc.
+        # Set `mint_pos_dutchie.lane_change_webhook_url` per environment.
         webhook_url = self.env['ir.config_parameter'].sudo().get_param(
-            'mint_pos_dutchie.lane_change_webhook_url',
-            'https://mintinvsvc-production-6aa5.up.railway.app/api/webhook/lane-change',
+            'mint_pos_dutchie.lane_change_webhook_url', '',
         )
+        if not webhook_url:
+            return
         api_key = self.env['ir.config_parameter'].sudo().get_param(
             'mint_customer_api.checkout_api_key', '',
         )
@@ -310,6 +316,11 @@ class MintPosOrder(models.Model):
             'store_slug': order.company_id.x_slug if hasattr(order.company_id, 'x_slug') else '',
             'reason': reason or '',
         }
+        # Capture the order's display name as a plain string BEFORE spawning
+        # the daemon thread. The ORM recordset may be invalidated once the
+        # request's cursor is closed, so accessing `order.name` inside
+        # _post() would risk a stale-cursor error in the log call.
+        order_name = str(order.name or '')
 
         def _post():
             import urllib.request
@@ -327,11 +338,11 @@ class MintPosOrder(models.Model):
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     _logger.info(
                         'Lane change webhook fired for %s → %s (status %s)',
-                        order.name, new_state, resp.status,
+                        order_name, new_state, resp.status,
                     )
             except Exception:
                 _logger.exception(
-                    'Failed to fire lane change webhook for %s', order.name,
+                    'Failed to fire lane change webhook for %s', order_name,
                 )
 
         thread = threading.Thread(target=_post, daemon=True)
@@ -409,6 +420,9 @@ class MintPosOrder(models.Model):
             body = msg['body'].format(store=store_name, ref=ref)
             order_url = f'/orders?ref={ref}'
 
+            # sudo(): mint.push.subscription is stored on the root company
+            # and accessed across stores; write() runs as the triggering
+            # user which may not have direct model access.
             self.env['mint.push.subscription'].sudo().send_to_partner(
                 partner_id=order.partner_id.id,
                 title=title,
@@ -432,6 +446,7 @@ class MintPosOrder(models.Model):
         for order in self:
             order.line_count = len(order.line_ids)
 
+    @api.depends('placed_at', 'state')
     def _compute_wait_minutes(self):
         now = fields.Datetime.now()
         for order in self:

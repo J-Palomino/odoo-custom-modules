@@ -12,9 +12,9 @@ Auth: X-Api-Key header (reuses mint_customer_api.checkout_api_key).
 """
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from odoo import http, fields
+from odoo import http
 from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
@@ -212,7 +212,8 @@ def _build_rich_order_vals(order_data):
 
 def _build_rich_line_vals(item):
     """Map the rich Dutchie line fields onto mint.pos.order.line columns."""
-    import json as _json
+    # `json` is imported at module top-level; no local alias needed
+    # (avoids shadowing the module-level `_json` response helper).
     vals = {}
     # Scalar identifiers
     for src, dst in (
@@ -235,9 +236,9 @@ def _build_rich_line_vals(item):
             vals['return_date'] = normalized
     # Preserve full array payloads as JSON text (compliance/margin rebuilds)
     if item.get('discounts'):
-        vals['dutchie_discounts_json'] = _json.dumps(item['discounts'])
+        vals['dutchie_discounts_json'] = json.dumps(item['discounts'])
     if item.get('taxes'):
-        vals['dutchie_taxes_json'] = _json.dumps(item['taxes'])
+        vals['dutchie_taxes_json'] = json.dumps(item['taxes'])
     return vals
 
 
@@ -333,8 +334,9 @@ class MintPosOrderAPI(http.Controller):
         Order = request.env['mint.pos.order'].sudo().with_company(company)
         order = Order.create(order_vals)
 
-        # Create line items
-        Line = request.env['mint.pos.order.line'].sudo()
+        # Create line items — pin the company context so any
+        # _check_company_auto on line fields resolves against the store.
+        Line = request.env['mint.pos.order.line'].sudo().with_company(company)
         for item in items:
             Line.create({
                 'order_id': order.id,
@@ -724,11 +726,15 @@ class MintPosOrderAPI(http.Controller):
                     # order source, terminal, etc).
                     order_vals.update(_build_rich_order_vals(order_data))
 
-                    order = Order.with_company(
-                        request.env['res.company'].browse(company_id)
-                    ).create(order_vals)
+                    company = request.env['res.company'].sudo().browse(company_id)
+                    if not company.exists():
+                        raise ValueError(f'company_id {company_id} not found')
+                    order = Order.with_company(company).create(order_vals)
 
-                    # Create line items
+                    # Create line items — pin the company so any
+                    # _check_company_auto on line fields resolves against
+                    # the store, not the env's default company.
+                    LineForOrder = Line.with_company(company)
                     for item in order_data.get('items', []):
                         line_vals = {
                             'order_id': order.id,
@@ -745,7 +751,7 @@ class MintPosOrderAPI(http.Controller):
                             'weight': item.get('weight', ''),
                         }
                         line_vals.update(_build_rich_line_vals(item))
-                        Line.create(line_vals)
+                        LineForOrder.create(line_vals)
 
                     # Auto-consume any pending /rewards redemption whose
                     # product appears as a free line in this order. Until
@@ -802,7 +808,13 @@ class MintPosOrderAPI(http.Controller):
     # ── Helpers ───────────────────────────────────────────────────────
 
     def _resolve_company(self, data):
-        """Resolve res.company from data (company_id, store_slug, or store_id)."""
+        """Resolve res.company from data (company_id, store_slug, or store_id).
+
+        Returns an empty recordset if no identifier is supplied. Callers
+        must guard with `if not company` and return a 400 — falling back
+        to `request.env.company` under auth='none' silently files the
+        order under the root company, which is never what we want.
+        """
         Company = request.env['res.company'].sudo()
 
         if data.get('company_id'):
@@ -812,7 +824,7 @@ class MintPosOrderAPI(http.Controller):
         if data.get('store_id'):
             return Company.browse(data['store_id']).exists()
 
-        return request.env.company
+        return Company  # empty recordset — falsy; triggers caller's 400 guard
 
     def _serialize_order(self, order):
         """Serialize a mint.pos.order to a JSON-safe dict."""
@@ -894,6 +906,11 @@ class MintPosOrderAPI(http.Controller):
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
     def cancel_order(self):
         """Cancel an order by shipment ID or order ref."""
+        # Browser preflights never include X-Api-Key; allow OPTIONS through
+        # before auth so CORS clients can reach this endpoint (mirrors the
+        # pattern used by update_dutchie_status).
+        if request.httprequest.method == 'OPTIONS':
+            return _json({})
         if not _verify_api_key():
             return _json({'error': 'Forbidden'}, 403)
 
@@ -907,7 +924,7 @@ class MintPosOrderAPI(http.Controller):
         order = None
         if data.get('dutchie_shipment_id'):
             order = Order.search([
-                ('dutchie_checkout_id', '=', str(data['dutchie_shipment_id']))
+                ('dutchie_shipment_id', '=', str(data['dutchie_shipment_id']))
             ], limit=1)
         if not order and data.get('dutchie_receipt_no'):
             order = Order.search([
