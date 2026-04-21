@@ -95,7 +95,12 @@ def _normalize_datetime(value):
 
 
 def _find_or_create_partner(customer_data):
-    """Find or create a res.partner from customer data dict."""
+    """Find or create a res.partner from customer data dict.
+
+    Accepts either split name (first_name + last_name) or a single `name`
+    field (which Dutchie's Guest record returns). Phone/email are the
+    match keys — name is only used on create.
+    """
     if not customer_data:
         return None
 
@@ -111,7 +116,7 @@ def _find_or_create_partner(customer_data):
         partner = Partner.search([('email', '=ilike', email)], limit=1)
 
     if not partner and (phone or email):
-        name = ' '.join(filter(None, [
+        name = customer_data.get('name') or ' '.join(filter(None, [
             customer_data.get('first_name', ''),
             customer_data.get('last_name', ''),
         ])).strip() or email or phone
@@ -138,6 +143,102 @@ ORDER_TYPE_MAP = {
     'delivery': 'delivery',
     'in_store': 'in_store',
 }
+
+
+# Dutchie "orderSource" (txn-level) → order_type. Walk-in cashier sales
+# become in-store; the rest (third-party menus, Dutchie's own online) are
+# pickup-style. Delivery isn't surfaced through orderSource.
+ORDER_SOURCE_TYPE_MAP = {
+    'Walk In': 'in_store',
+    'Dutchie': 'pickup',
+    'Leafly': 'pickup',
+    'Weedmaps': 'pickup',
+    'MintDeals': 'pickup',
+    'Kiosk': 'in_store',
+}
+
+
+def _build_rich_order_vals(order_data):
+    """Map the rich Dutchie transaction fields from order_data onto
+    mint.pos.order columns. Only includes keys present in order_data —
+    safe to splat into both create and update writes.
+    """
+    vals = {}
+    # Payment split
+    for src, dst in (
+        ('cash_paid', 'cash_paid'),
+        ('debit_paid', 'debit_paid'),
+        ('credit_paid', 'credit_paid'),
+        ('electronic_paid', 'electronic_paid'),
+        ('integrated_paid', 'integrated_paid'),
+        ('manual_paid', 'manual_paid'),
+        ('gift_paid', 'gift_paid'),
+        ('mmap_paid', 'mmap_paid'),
+        ('change_due', 'change_due'),
+        ('tip_amount', 'tip_amount'),
+        ('loyalty_earned', 'loyalty_earned'),
+        ('loyalty_spent', 'loyalty_spent'),
+    ):
+        if src in order_data and order_data[src] is not None:
+            vals[dst] = order_data[src]
+    # Strings / flags
+    if order_data.get('payment_method_label'):
+        vals['payment_method_label'] = order_data['payment_method_label']
+    if order_data.get('order_source'):
+        vals['order_source'] = order_data['order_source']
+    if order_data.get('was_preordered') is not None:
+        vals['was_preordered'] = bool(order_data['was_preordered'])
+    if order_data.get('is_medical') is not None:
+        vals['is_medical'] = bool(order_data['is_medical'])
+    # Customer enrichment
+    for k in ('dutchie_customer_id', 'customer_type_id',
+              'customer_patient_type', 'customer_mj_state_id'):
+        if order_data.get(k):
+            vals[k] = order_data[k]
+    if order_data.get('customer_dob'):
+        # Accept ISO "1991-09-12" or "1991-09-12T00:00:00" — keep the date part.
+        dob = str(order_data['customer_dob'])
+        vals['customer_dob'] = dob[:10] if len(dob) >= 10 else dob
+    # Terminal / employee
+    for k in ('terminal_name', 'dutchie_employee_id'):
+        if order_data.get(k):
+            vals[k] = order_data[k]
+    if order_data.get('checkin_at'):
+        normalized = _normalize_datetime(order_data['checkin_at'])
+        if normalized:
+            vals['checkin_at'] = normalized
+    return vals
+
+
+def _build_rich_line_vals(item):
+    """Map the rich Dutchie line fields onto mint.pos.order.line columns."""
+    import json as _json
+    vals = {}
+    # Scalar identifiers
+    for src, dst in (
+        ('dutchie_package_id', 'dutchie_package_id'),
+        ('dutchie_inventory_id', 'dutchie_inventory_id'),
+        ('dutchie_transaction_item_id', 'dutchie_transaction_item_id'),
+        ('unit_cost', 'unit_cost'),
+        ('vendor', 'vendor'),
+        ('unit_weight_value', 'unit_weight_value'),
+        ('unit_weight_unit', 'unit_weight_unit'),
+        ('return_reason', 'return_reason'),
+    ):
+        if src in item and item[src] not in (None, ''):
+            vals[dst] = item[src]
+    if item.get('is_returned') is not None:
+        vals['is_returned'] = bool(item['is_returned'])
+    if item.get('return_date'):
+        normalized = _normalize_datetime(item['return_date'])
+        if normalized:
+            vals['return_date'] = normalized
+    # Preserve full array payloads as JSON text (compliance/margin rebuilds)
+    if item.get('discounts'):
+        vals['dutchie_discounts_json'] = _json.dumps(item['discounts'])
+    if item.get('taxes'):
+        vals['dutchie_taxes_json'] = _json.dumps(item['taxes'])
+    return vals
 
 
 class MintPosOrderAPI(http.Controller):
@@ -521,6 +622,14 @@ class MintPosOrderAPI(http.Controller):
             return _error('Invalid JSON body')
 
         orders_data = data.get('orders', [])
+        # Backfill mode: disables business-logic side effects that assume a
+        # live transaction (loyalty redemption consume, future deal activation
+        # hooks). Historical orders pushed by the parity probe or a manual
+        # catch-up run should NOT mark pending redemptions as used — the
+        # customer never actually redeemed in Dutchie for that transaction.
+        backfill_mode = bool(data.get('backfill'))
+        if backfill_mode:
+            _logger.info('bulk-sync: backfill mode — loyalty/deal side effects disabled')
         if not orders_data:
             return _json({'created': 0, 'updated': 0, 'errors': 0})
 
@@ -552,8 +661,9 @@ class MintPosOrderAPI(http.Controller):
                     ], limit=1)
 
                 if existing:
-                    # Update existing order — backfill identifiers that were
-                    # missing, but don't clobber terminal states.
+                    # Update existing order — backfill identifiers AND rich
+                    # fields that were missing. Don't clobber terminal states
+                    # and don't overwrite rich fields that already have values.
                     update_vals = {}
                     new_state = order_data.get('state')
                     if new_state and new_state != existing.state:
@@ -564,14 +674,29 @@ class MintPosOrderAPI(http.Controller):
                         update_vals['dutchie_order_number'] = order_data['dutchie_order_number']
                     if order_data.get('dutchie_shipment_id') and not existing.dutchie_shipment_id:
                         update_vals['dutchie_shipment_id'] = str(order_data['dutchie_shipment_id'])
+                    # Rich fields: only fill what's currently empty, so
+                    # manual Odoo edits aren't clobbered by a later sync.
+                    rich_vals = _build_rich_order_vals(order_data)
+                    for k, v in rich_vals.items():
+                        if not existing[k]:
+                            update_vals[k] = v
                     if update_vals:
                         existing.write(update_vals)
                         updated += 1
                 else:
-                    # Create new order (walk-in transaction from Dutchie)
+                    # Create new order (walk-in transaction from Dutchie).
+                    # Resolve order_type: explicit order_type wins; else map
+                    # from Dutchie order_source; else default in_store.
                     partner = _find_or_create_partner(order_data.get('customer'))
-                    raw_type = order_data.get('order_type', 'in_store')
-                    order_type = ORDER_TYPE_MAP.get(raw_type, 'in_store')
+                    raw_type = order_data.get('order_type')
+                    if raw_type:
+                        order_type = ORDER_TYPE_MAP.get(raw_type, 'in_store')
+                    elif order_data.get('order_source'):
+                        order_type = ORDER_SOURCE_TYPE_MAP.get(
+                            order_data['order_source'], 'in_store',
+                        )
+                    else:
+                        order_type = 'in_store'
 
                     totals = order_data.get('totals', {})
                     order_vals = {
@@ -595,6 +720,9 @@ class MintPosOrderAPI(http.Controller):
                         normalized = _normalize_datetime(order_data['placed_at'])
                         if normalized:
                             order_vals['placed_at'] = normalized
+                    # Merge rich fields (payment breakdown, customer dob,
+                    # order source, terminal, etc).
+                    order_vals.update(_build_rich_order_vals(order_data))
 
                     order = Order.with_company(
                         request.env['res.company'].browse(company_id)
@@ -602,7 +730,7 @@ class MintPosOrderAPI(http.Controller):
 
                     # Create line items
                     for item in order_data.get('items', []):
-                        Line.create({
+                        line_vals = {
                             'order_id': order.id,
                             'product_name': item.get('product_name', 'Product'),
                             'dutchie_product_id': item.get('dutchie_product_id', ''),
@@ -615,13 +743,18 @@ class MintPosOrderAPI(http.Controller):
                             'brand': item.get('brand', ''),
                             'strain_type': item.get('strain_type', ''),
                             'weight': item.get('weight', ''),
-                        })
+                        }
+                        line_vals.update(_build_rich_line_vals(item))
+                        Line.create(line_vals)
 
                     # Auto-consume any pending /rewards redemption whose
                     # product appears as a free line in this order. Until
                     # the Backoffice coupon integration lands this depends
                     # on the budtender actually zeroing the reward item.
-                    if partner and 'mint.discount' in request.env:
+                    #
+                    # Skipped in backfill mode — historical orders shouldn't
+                    # retroactively mark pending redemptions as used.
+                    if not backfill_mode and partner and 'mint.discount' in request.env:
                         try:
                             consumed = request.env['mint.discount'].sudo().consume_pending_redemption(
                                 partner, order_items=order_data.get('items', []),

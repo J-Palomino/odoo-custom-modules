@@ -173,6 +173,52 @@ class MintPosOrder(models.Model):
         copy=False,
     )
 
+    # ── Rich Dutchie transaction detail (populated by Dutchie sync) ───
+    # Per-tender payment breakdown — a single transaction can mix
+    # tenders; payment_method holds the primary, these hold the split.
+    cash_paid = fields.Float(string='Cash Paid', digits=(12, 2))
+    debit_paid = fields.Float(string='Debit Paid', digits=(12, 2))
+    credit_paid = fields.Float(string='Credit Paid', digits=(12, 2))
+    electronic_paid = fields.Float(string='Electronic Paid', digits=(12, 2))
+    integrated_paid = fields.Float(string='Integrated Paid', digits=(12, 2))
+    manual_paid = fields.Float(string='Manual Paid', digits=(12, 2))
+    gift_paid = fields.Float(string='Gift Paid', digits=(12, 2))
+    mmap_paid = fields.Float(string='MMAP Paid', digits=(12, 2))
+    change_due = fields.Float(string='Change Due', digits=(12, 2))
+    tip_amount = fields.Float(string='Tip', digits=(12, 2))
+    # Dutchie returns the electronic-payment label (e.g. "Dutchie Pay", "Visa")
+    payment_method_label = fields.Char(string='Payment Method Label')
+    # Dutchie `loyaltyEarned` is a monetary value (float), distinct from
+    # the existing Integer `loyalty_points_earned`. Kept separate so both
+    # interpretations survive for accounting.
+    loyalty_earned = fields.Float(string='Loyalty Earned ($)', digits=(12, 2))
+    loyalty_spent = fields.Float(string='Loyalty Spent ($)', digits=(12, 2))
+
+    # Order classification / origin
+    order_source = fields.Char(
+        string='Dutchie Order Source',
+        index=True,
+        help='Dutchie-side origin: "Walk In", "Dutchie", "Leafly", "Weedmaps", etc.',
+    )
+    was_preordered = fields.Boolean(string='Preordered')
+    is_medical = fields.Boolean(string='Medical Transaction')
+
+    # Customer enrichment (from Dutchie Guest record)
+    dutchie_customer_id = fields.Integer(
+        string='Dutchie Customer ID',
+        index=True,
+        help='Dutchie Guest_id — stable key to re-resolve if partner name changes.',
+    )
+    customer_type_id = fields.Integer(string='Customer Type ID')
+    customer_dob = fields.Date(string='Customer DOB')
+    customer_patient_type = fields.Char(string='Patient Type')
+    customer_mj_state_id = fields.Char(string='MJ State ID')
+
+    # Terminal / employee
+    terminal_name = fields.Char(string='Register')
+    dutchie_employee_id = fields.Integer(string='Dutchie Employee ID')
+    checkin_at = fields.Datetime(string='Checked In At')
+
     # Computed: time since placed (for kanban color)
     wait_minutes = fields.Integer(
         string='Wait (min)',
@@ -449,6 +495,32 @@ class MintPosOrderLine(models.Model):
     brand = fields.Char(string='Brand')
     strain_type = fields.Char(string='Strain Type')
     weight = fields.Char(string='Weight')
+
+    # ── Rich Dutchie line detail (populated by Dutchie sync) ─────────
+    # `sku` holds the batch name (existing convention); dutchie_package_id
+    # is the distinct Dutchie package identifier for this line.
+    dutchie_package_id = fields.Char(string='Dutchie Package ID', index=True)
+    dutchie_inventory_id = fields.Integer(string='Dutchie Inventory ID')
+    # Stable Dutchie-assigned unique key for a line (safe to dedupe on).
+    dutchie_transaction_item_id = fields.Integer(
+        string='Dutchie Txn Item ID',
+        index=True,
+    )
+    unit_cost = fields.Float(string='Unit Cost', digits=(12, 2))
+    vendor = fields.Char(string='Vendor')
+    # Numeric weight + unit pair (the existing `weight` Char remains for
+    # human display like "3.5g"; these are for analytics/margin).
+    unit_weight_value = fields.Float(string='Unit Weight Value', digits=(12, 4))
+    unit_weight_unit = fields.Char(string='Unit Weight Unit')
+    is_returned = fields.Boolean(string='Returned')
+    return_date = fields.Datetime(string='Return Date')
+    return_reason = fields.Char(string='Return Reason')
+    # Preserve the per-line discount/tax breakdown Dutchie returns. The
+    # scalar `discount` and `tax` above are rollups; these keep the full
+    # arrays (discount name + id + amount per applied discount; rate +
+    # amount per tax) so margin/compliance reports can rebuild them.
+    dutchie_discounts_json = fields.Text(string='Dutchie Discounts JSON')
+    dutchie_taxes_json = fields.Text(string='Dutchie Taxes JSON')
 
     # Related fields for filtering
     company_id = fields.Many2one(
