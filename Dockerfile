@@ -48,6 +48,7 @@ COPY --chown=odoo:odoo mint_redis_push /opt/extra-addons/mint_redis_push
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
 COPY --chown=odoo:odoo mint_visual_cms /opt/extra-addons/mint_visual_cms
 COPY --chown=odoo:odoo mint_recruitment_portal /opt/extra-addons/mint_recruitment_portal
+COPY --chown=odoo:odoo mint_hr_complaints /opt/extra-addons/mint_hr_complaints
 
 # ── Patch: neuter the "page is out of date" watcher (bus module) ────
 # The module-level patch in mint_command_center only suppresses the notification
