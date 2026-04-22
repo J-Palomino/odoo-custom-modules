@@ -14,7 +14,7 @@ mapping table in ARCHITECTURE.md before adding or renaming a field.
 import logging
 import secrets
 
-from odoo import api, fields, models, _
+from odoo import api, fields, models, tools, _
 from odoo.exceptions import UserError
 from datetime import date, datetime, timedelta
 
@@ -314,21 +314,36 @@ class MintDiscount(models.Model):
     # from the same source, so 1/100th of a gram is enough headroom.
     _WEIGHT_TOLERANCE_G = 0.01
 
+    @tools.ormcache('root_ids_tuple')
+    def _category_descendant_ids_cached(self, root_ids_tuple):
+        """Cached resolver: set of product.category ids in the subtree rooted
+        at any id in `root_ids_tuple`. Keyed on the tuple so applies_to_product
+        across 500 discounts × 1,200 products doesn't re-query Odoo 1.2M times.
+        Cache is invalidated by product.category write/unlink (Odoo invalidates
+        ormcache on the model; for cross-model invalidation see the hook below)."""
+        if not root_ids_tuple:
+            return frozenset()
+        return frozenset(self.env['product.category'].search([
+            ('id', 'child_of', list(root_ids_tuple))
+        ]).ids)
+
     def _category_descendant_ids(self, category_ids_m2m):
         """Return the set of product.category ids in the subtree rooted at the
         given m2m. Mirrors Dutchie's behavior where a deal scoped at a master
         (e.g. 'Flower') matches every sub ('Prepack Flower', 'Prerolls', …)."""
         if not category_ids_m2m:
-            return set()
-        return set(self.env['product.category'].search([
-            ('id', 'child_of', category_ids_m2m.ids)
-        ]).ids)
+            return frozenset()
+        # Sorted tuple so permutations hit the same cache entry.
+        key = tuple(sorted(category_ids_m2m.ids))
+        return self._category_descendant_ids_cached(key)
 
     def _product_weight_g(self, product):
         """Product weight in grams. Prefer x_weight_grams; fall back to
         parsing the legacy x_weight Char ('14.0g', '3.5 g')."""
         val = getattr(product, 'x_weight_grams', None)
-        if val:
+        # 0.0 is a valid weight (e.g. intangible items) — treat only None/False
+        # as "not set", not falsy. Odoo returns False for unset Floats.
+        if val is not None and val is not False:
             try:
                 return float(val)
             except (TypeError, ValueError):

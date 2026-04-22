@@ -1,5 +1,23 @@
 # -*- coding: utf-8 -*-
+from psycopg2 import IntegrityError
+
 from odoo import api, fields, models
+
+
+# Weight values are quantized to this many decimals before storage / comparison
+# so JSON round-trips and 1-ULP float drift on values like 3.5 don't produce
+# duplicate rows or bypass the UNIQUE(value) guard.
+_WEIGHT_QUANTIZE_DECIMALS = 4
+
+
+def _quantize(value):
+    """Return `float(value)` rounded to the canonical decimal places, or None."""
+    if value is None or value == "" or value is False:
+        return None
+    try:
+        return round(float(value), _WEIGHT_QUANTIZE_DECIMALS)
+    except (TypeError, ValueError):
+        return None
 
 
 class MintDiscountWeight(models.Model):
@@ -16,7 +34,7 @@ class MintDiscountWeight(models.Model):
     _rec_name = "name"
 
     value = fields.Float(
-        string="Weight (grams)", required=True, digits=(10, 4),
+        string="Weight (grams)", required=True, digits=(10, _WEIGHT_QUANTIZE_DECIMALS),
         help="Weight value in grams. Matches product.template.x_weight_grams.",
     )
     name = fields.Char(compute="_compute_name", store=True, index=True)
@@ -36,14 +54,40 @@ class MintDiscountWeight(models.Model):
             else:
                 rec.name = ("%g" % rec.value) + "g"
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if "value" in vals:
+                q = _quantize(vals["value"])
+                if q is not None:
+                    vals["value"] = q
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if "value" in vals:
+            q = _quantize(vals["value"])
+            if q is not None:
+                vals["value"] = q
+        return super().write(vals)
+
     @api.model
     def get_or_create(self, value):
-        """Return an existing record for `value`, or create one. Used by sync."""
-        if value is None or value == "" or value is False:
-            return self.browse()
-        try:
-            v = float(value)
-        except (TypeError, ValueError):
+        """Return an existing record for `value`, or create one.
+
+        Race-safe: if a concurrent transaction created the same value between
+        our search-miss and create, the UNIQUE(value) constraint fires an
+        IntegrityError inside a savepoint, we roll back and re-search.
+        """
+        v = _quantize(value)
+        if v is None:
             return self.browse()
         existing = self.search([("value", "=", v)], limit=1)
-        return existing or self.create({"value": v})
+        if existing:
+            return existing
+        try:
+            with self.env.cr.savepoint():
+                return self.create({"value": v})
+        except IntegrityError:
+            # Another transaction committed the same value between search and
+            # create. Re-search — it must exist now.
+            return self.search([("value", "=", v)], limit=1)
