@@ -14,7 +14,7 @@ import json
 import logging
 from datetime import datetime
 
-from odoo import http
+from odoo import http, fields
 from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
@@ -94,41 +94,276 @@ def _normalize_datetime(value):
     return dt.strftime('%Y-%m-%d %H:%M:%S')
 
 
-def _find_or_create_partner(customer_data):
-    """Find or create a res.partner from customer data dict.
+def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=None):
+    """Find, upgrade, or create a res.partner.
 
-    Accepts either split name (first_name + last_name) or a single `name`
-    field (which Dutchie's Guest record returns). Phone/email are the
-    match keys — name is only used on create.
+    Always returns a partner (never None). For anonymous walk-ins with no
+    identifying data, creates a stub named 'Walk-in #<fallback_ref>' with
+    x_is_stub=True and x_partner_origin=origin, so the lane-watcher can
+    still attach orders to a partner for kanban display. The nightly merge
+    cron (Phase 6) reconciles stubs with full records.
+
+    Match order (strongest first):
+      1. x_dutchie_customer_id
+      2. x_dutchie_loyalty_id
+      3. phone last-10
+      4. email (case-insensitive)
+
+    Non-destructive upgrade: when a match is found and the incoming payload
+    has fields the existing partner lacks, those fields are filled in.
     """
-    if not customer_data:
-        return None
+    customer_data = customer_data or {}
+    Partner = request.env['res.partner'].sudo()
 
     phone = _normalize_phone(customer_data.get('phone', ''))
     email = (customer_data.get('email') or '').strip().lower()
+    dutchie_customer_id = str(customer_data.get('dutchie_customer_id') or '').strip()
+    dutchie_loyalty_id = str(customer_data.get('dutchie_loyalty_id') or '').strip()
+    first_name = (customer_data.get('first_name') or '').strip()
+    last_name = (customer_data.get('last_name') or '').strip()
+    full_name = ' '.join(filter(None, [first_name, last_name])).strip()
 
-    Partner = request.env['res.partner'].sudo()
     partner = None
 
-    if phone:
+    if dutchie_customer_id:
+        partner = Partner.search(
+            [('x_dutchie_customer_id', '=', dutchie_customer_id)], limit=1)
+    if not partner and dutchie_loyalty_id:
+        partner = Partner.search(
+            [('x_dutchie_loyalty_id', '=', dutchie_loyalty_id)], limit=1)
+    if not partner and phone:
         partner = Partner.search([('phone', 'ilike', phone[-10:])], limit=1)
     if not partner and email:
         partner = Partner.search([('email', '=ilike', email)], limit=1)
 
-    if not partner and (phone or email):
-        name = customer_data.get('name') or ' '.join(filter(None, [
-            customer_data.get('first_name', ''),
-            customer_data.get('last_name', ''),
-        ])).strip() or email or phone
-        partner = Partner.create({
-            'name': name,
-            'email': email or False,
-            'phone': phone or False,
-            'customer_rank': 1,
-        })
-        _logger.info('Created new customer partner %s: %s', partner.id, name)
+    if partner:
+        # Non-destructive upgrade: fill in fields the existing partner lacks.
+        updates = {}
+        if dutchie_customer_id and not partner.x_dutchie_customer_id:
+            updates['x_dutchie_customer_id'] = dutchie_customer_id
+        if dutchie_loyalty_id and not partner.x_dutchie_loyalty_id:
+            updates['x_dutchie_loyalty_id'] = dutchie_loyalty_id
+        if phone and not partner.phone:
+            updates['phone'] = phone
+        if email and not partner.email:
+            updates['email'] = email
+        if full_name and (not partner.name or partner.name.startswith('Walk-in #')):
+            updates['name'] = full_name
+        if updates:
+            partner.write(updates)
+            partner._recompute_stub_flag()
+            _logger.info('Upgraded partner %s with %s', partner.id, list(updates))
+        return partner
 
+    # No match — create. Anonymous walk-ins (no identifying data) still get
+    # a stub so the kanban card has a partner to hang off.
+    name = full_name or email or phone or (
+        'Walk-in #%s' % fallback_ref if fallback_ref else 'Walk-in'
+    )
+    has_identity = bool(dutchie_customer_id or dutchie_loyalty_id or phone or email)
+    is_stub = not (has_identity and full_name)
+
+    values = {
+        'name': name,
+        'email': email or False,
+        'phone': phone or False,
+        'customer_rank': 1,
+        'x_partner_origin': origin,
+        'x_is_stub': is_stub,
+        'x_first_seen_at': fields.Datetime.now(),
+    }
+    if dutchie_customer_id:
+        values['x_dutchie_customer_id'] = dutchie_customer_id
+    if dutchie_loyalty_id:
+        values['x_dutchie_loyalty_id'] = dutchie_loyalty_id
+
+    partner = Partner.create(values)
+    _logger.info(
+        'Created %s partner %s: %s (origin=%s)',
+        'stub' if is_stub else 'full', partner.id, name, origin,
+    )
     return partner
+
+
+# Backwards-compat alias — remove once nothing else references it.
+_find_or_create_partner = _find_or_upgrade_partner
+
+
+def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
+                  allow_create=True, backfill_mode=False):
+    """Find-or-create a mint.pos.order from a Dutchie payload.
+
+    Used by both bulk_sync (loop) and upsert_from_dutchie (single order).
+
+    Match order: receipt_no → checkout_id → dutchie_shipment_id, all
+    scoped by company_id. On match, state is updated and identifiers are
+    backfilled without clobbering existing non-empty fields.
+
+    Returns dict with:
+      - created: True iff a new order row was created
+      - updated: True iff an existing order row was updated
+      - skipped: True iff no action was taken
+      - order_id, order_name, partner_id: set on created/updated
+      - reason: human-readable note, set on skipped
+    """
+    company_id = order_data.get('company_id')
+    receipt_no = order_data.get('dutchie_receipt_no', '') or ''
+    checkout_id = order_data.get('dutchie_checkout_id', '') or ''
+    shipment_id = str(order_data.get('dutchie_shipment_id') or '')
+
+    if not company_id:
+        return {'created': False, 'updated': False, 'skipped': True,
+                'reason': 'missing company_id'}
+
+    existing = None
+    if receipt_no:
+        existing = Order.search([
+            ('dutchie_receipt_no', '=', receipt_no),
+            ('company_id', '=', company_id),
+        ], limit=1)
+    if not existing and checkout_id:
+        existing = Order.search([
+            ('dutchie_checkout_id', '=', checkout_id),
+            ('company_id', '=', company_id),
+        ], limit=1)
+    if not existing and shipment_id:
+        existing = Order.search([
+            ('dutchie_shipment_id', '=', shipment_id),
+            ('company_id', '=', company_id),
+        ], limit=1)
+
+    if existing:
+        update_vals = {}
+        new_state = order_data.get('state')
+        if new_state and new_state != existing.state:
+            update_vals['state'] = new_state
+        if receipt_no and not existing.dutchie_receipt_no:
+            update_vals['dutchie_receipt_no'] = receipt_no
+        if order_data.get('dutchie_order_number') and not existing.dutchie_order_number:
+            update_vals['dutchie_order_number'] = order_data['dutchie_order_number']
+        if shipment_id and not existing.dutchie_shipment_id:
+            update_vals['dutchie_shipment_id'] = shipment_id
+        # Rich Dutchie fields: only fill what's currently empty so manual
+        # Odoo edits aren't clobbered by a later sync.
+        rich_vals = _build_rich_order_vals(order_data)
+        for k, v in rich_vals.items():
+            if not existing[k]:
+                update_vals[k] = v
+        if update_vals:
+            existing.write(update_vals)
+            return {'created': False, 'updated': True, 'skipped': False,
+                    'order_id': existing.id, 'order_name': existing.name,
+                    'partner_id': existing.partner_id.id if existing.partner_id else False}
+        return {'created': False, 'updated': False, 'skipped': True,
+                'reason': 'no changes',
+                'order_id': existing.id, 'order_name': existing.name,
+                'partner_id': existing.partner_id.id if existing.partner_id else False}
+
+    if not allow_create:
+        return {'created': False, 'updated': False, 'skipped': True,
+                'reason': 'not found (allow_create=False)'}
+
+    # Guard: don't resurrect terminal-state walk-ins that were never in Odoo.
+    # This is specifically for the lane-watcher path — historical back-fills
+    # (bulk_sync with backfill_mode=True) legitimately create completed rows.
+    incoming_state = order_data.get('state') or 'completed'
+    if (incoming_state in ('completed', 'cancelled')
+            and default_origin == 'dutchie_walkin'
+            and not backfill_mode):
+        return {'created': False, 'updated': False, 'skipped': True,
+                'reason': 'terminal state for unseen order — skipped create'}
+
+    # Create. Always returns a partner (stub if anonymous walk-in).
+    partner = _find_or_upgrade_partner(
+        order_data.get('customer'),
+        origin=default_origin,
+        fallback_ref=shipment_id or receipt_no or checkout_id,
+    )
+
+    # Resolve order_type: explicit order_type wins; else map from Dutchie
+    # order_source ("Walk In"→in_store, "Dutchie"/"Leafly"→pickup, …).
+    raw_type = order_data.get('order_type')
+    if raw_type:
+        order_type = ORDER_TYPE_MAP.get(raw_type, 'in_store')
+    elif order_data.get('order_source'):
+        order_type = ORDER_SOURCE_TYPE_MAP.get(order_data['order_source'], 'in_store')
+    else:
+        order_type = 'in_store'
+
+    totals = order_data.get('totals', {})
+    order_vals = {
+        'partner_id': partner.id,
+        'company_id': company_id,
+        'dutchie_checkout_id': checkout_id or False,
+        'dutchie_receipt_no': receipt_no or False,
+        'state': incoming_state,
+        'order_type': order_type,
+        'payment_method': order_data.get('payment_method', 'cash'),
+        'subtotal': totals.get('subtotal', order_data.get('subtotal', 0)),
+        'discount_total': totals.get('discounts', order_data.get('discount_total', 0)),
+        'tax_total': totals.get('taxes', order_data.get('tax_total', 0)),
+        'total': totals.get('total', order_data.get('total', 0)),
+        'notes': order_data.get('notes', ''),
+        'source': order_data.get('source', 'dutchie_sync'),
+    }
+    if shipment_id:
+        order_vals['dutchie_shipment_id'] = shipment_id
+    if order_data.get('placed_at'):
+        normalized = _normalize_datetime(order_data['placed_at'])
+        if normalized:
+            order_vals['placed_at'] = normalized
+    # Merge rich Dutchie fields (payment breakdown, customer dob,
+    # order source, terminal, etc.).
+    order_vals.update(_build_rich_order_vals(order_data))
+
+    company = request.env['res.company'].sudo().browse(company_id)
+    if not company.exists():
+        raise ValueError(f'company_id {company_id} not found')
+    order = Order.with_company(company).create(order_vals)
+
+    # Pin the line env to the same company so any _check_company_auto on
+    # line fields resolves against the store, not env's default company.
+    LineForOrder = Line.with_company(company)
+    for item in order_data.get('items', []):
+        line_vals = {
+            'order_id': order.id,
+            'product_name': item.get('product_name', 'Product'),
+            'dutchie_product_id': item.get('dutchie_product_id', ''),
+            'sku': item.get('sku', ''),
+            'quantity': item.get('quantity', 1),
+            'unit_price': item.get('unit_price', 0),
+            'discount': item.get('discount', 0),
+            'tax': item.get('tax', 0),
+            'category': item.get('category', ''),
+            'brand': item.get('brand', ''),
+            'strain_type': item.get('strain_type', ''),
+            'weight': item.get('weight', ''),
+        }
+        line_vals.update(_build_rich_line_vals(item))
+        LineForOrder.create(line_vals)
+
+    # Auto-consume any pending /rewards redemption whose product appears as
+    # a free line in this order. Depends on budtender zeroing the reward
+    # item. Skipped in backfill mode — historical orders shouldn't
+    # retroactively mark pending loyalty redemptions as used.
+    if not backfill_mode and 'mint.discount' in request.env:
+        try:
+            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(
+                partner, order_items=order_data.get('items', []),
+            )
+            if consumed:
+                _logger.info(
+                    'Auto-consumed redemption %s for %s on POS sync (order %s)',
+                    consumed.redemption_code, partner.name, order.name,
+                )
+        except Exception:
+            _logger.exception(
+                'Redemption consume failed for order %s', order.name,
+            )
+
+    return {'created': True, 'updated': False, 'skipped': False,
+            'order_id': order.id, 'order_name': order.name,
+            'partner_id': partner.id}
 
 
 ORDER_TYPE_MAP = {
@@ -164,7 +399,7 @@ def _build_rich_order_vals(order_data):
     safe to splat into both create and update writes.
     """
     vals = {}
-    # Payment split
+    # Payment split + loyalty dollar values + tip/change
     for src, dst in (
         ('cash_paid', 'cash_paid'),
         ('debit_paid', 'debit_paid'),
@@ -196,7 +431,7 @@ def _build_rich_order_vals(order_data):
         if order_data.get(k):
             vals[k] = order_data[k]
     if order_data.get('customer_dob'):
-        # Accept ISO "1991-09-12" or "1991-09-12T00:00:00" — keep the date part.
+        # Accept ISO "1991-09-12" or "1991-09-12T00:00:00" — keep date part.
         dob = str(order_data['customer_dob'])
         vals['customer_dob'] = dob[:10] if len(dob) >= 10 else dob
     # Terminal / employee
@@ -212,10 +447,7 @@ def _build_rich_order_vals(order_data):
 
 def _build_rich_line_vals(item):
     """Map the rich Dutchie line fields onto mint.pos.order.line columns."""
-    # `json` is imported at module top-level; no local alias needed
-    # (avoids shadowing the module-level `_json` response helper).
     vals = {}
-    # Scalar identifiers
     for src, dst in (
         ('dutchie_package_id', 'dutchie_package_id'),
         ('dutchie_inventory_id', 'dutchie_inventory_id'),
@@ -234,7 +466,8 @@ def _build_rich_line_vals(item):
         normalized = _normalize_datetime(item['return_date'])
         if normalized:
             vals['return_date'] = normalized
-    # Preserve full array payloads as JSON text (compliance/margin rebuilds)
+    # Preserve raw Dutchie arrays as JSON text — compliance/margin rebuilds
+    # rely on per-discount and per-tax-rate amounts, not just scalar rollups.
     if item.get('discounts'):
         vals['dutchie_discounts_json'] = json.dumps(item['discounts'])
     if item.get('taxes'):
@@ -250,6 +483,7 @@ class MintPosOrderAPI(http.Controller):
         '/api/v1/pos/orders',
         '/api/v1/pos/orders/<int:order_id>/state',
         '/api/v1/pos/orders/bulk-sync',
+        '/api/v1/pos/orders/upsert-from-dutchie',
         '/api/v1/pos/orders/stats',
     ], type='http', auth='none', methods=['OPTIONS'], csrf=False)
     def preflight(self, **kw):
@@ -283,7 +517,9 @@ class MintPosOrderAPI(http.Controller):
             return _error('Store not found', 404)
 
         # Resolve customer
-        partner = _find_or_create_partner(data.get('customer'))
+        partner = _find_or_upgrade_partner(
+            data.get('customer'), origin='web_checkout',
+        )
 
         # Map order type
         raw_type = data.get('order_type', 'pickup')
@@ -334,9 +570,8 @@ class MintPosOrderAPI(http.Controller):
         Order = request.env['mint.pos.order'].sudo().with_company(company)
         order = Order.create(order_vals)
 
-        # Create line items — pin the company context so any
-        # _check_company_auto on line fields resolves against the store.
-        Line = request.env['mint.pos.order.line'].sudo().with_company(company)
+        # Create line items
+        Line = request.env['mint.pos.order.line'].sudo()
         for item in items:
             Line.create({
                 'order_id': order.id,
@@ -625,13 +860,14 @@ class MintPosOrderAPI(http.Controller):
 
         orders_data = data.get('orders', [])
         # Backfill mode: disables business-logic side effects that assume a
-        # live transaction (loyalty redemption consume, future deal activation
-        # hooks). Historical orders pushed by the parity probe or a manual
-        # catch-up run should NOT mark pending redemptions as used — the
-        # customer never actually redeemed in Dutchie for that transaction.
+        # live transaction (loyalty redemption consume, terminal-state guard
+        # for walk-ins, and any future deal activation hooks). Historical
+        # orders pushed by the parity probe or a manual catch-up run should
+        # NOT retroactively mark pending redemptions as used, and SHOULD be
+        # allowed to create terminal-state rows that were never seen live.
         backfill_mode = bool(data.get('backfill'))
         if backfill_mode:
-            _logger.info('bulk-sync: backfill mode — loyalty/deal side effects disabled')
+            _logger.info('bulk-sync: backfill mode — loyalty/terminal guards disabled')
         if not orders_data:
             return _json({'created': 0, 'updated': 0, 'errors': 0})
 
@@ -645,138 +881,16 @@ class MintPosOrderAPI(http.Controller):
 
         for order_data in orders_data:
             try:
-                company_id = order_data.get('company_id')
-                receipt_no = order_data.get('dutchie_receipt_no', '')
-                checkout_id = order_data.get('dutchie_checkout_id', '')
-
-                # Try to find existing order
-                existing = None
-                if receipt_no and company_id:
-                    existing = Order.search([
-                        ('dutchie_receipt_no', '=', receipt_no),
-                        ('company_id', '=', company_id),
-                    ], limit=1)
-                if not existing and checkout_id and company_id:
-                    existing = Order.search([
-                        ('dutchie_checkout_id', '=', checkout_id),
-                        ('company_id', '=', company_id),
-                    ], limit=1)
-
-                if existing:
-                    # Update existing order — backfill identifiers AND rich
-                    # fields that were missing. Don't clobber terminal states
-                    # and don't overwrite rich fields that already have values.
-                    update_vals = {}
-                    new_state = order_data.get('state')
-                    if new_state and new_state != existing.state:
-                        update_vals['state'] = new_state
-                    if receipt_no and not existing.dutchie_receipt_no:
-                        update_vals['dutchie_receipt_no'] = receipt_no
-                    if order_data.get('dutchie_order_number') and not existing.dutchie_order_number:
-                        update_vals['dutchie_order_number'] = order_data['dutchie_order_number']
-                    if order_data.get('dutchie_shipment_id') and not existing.dutchie_shipment_id:
-                        update_vals['dutchie_shipment_id'] = str(order_data['dutchie_shipment_id'])
-                    # Rich fields: only fill what's currently empty, so
-                    # manual Odoo edits aren't clobbered by a later sync.
-                    rich_vals = _build_rich_order_vals(order_data)
-                    for k, v in rich_vals.items():
-                        if not existing[k]:
-                            update_vals[k] = v
-                    if update_vals:
-                        existing.write(update_vals)
-                        updated += 1
-                else:
-                    # Create new order (walk-in transaction from Dutchie).
-                    # Resolve order_type: explicit order_type wins; else map
-                    # from Dutchie order_source; else default in_store.
-                    partner = _find_or_create_partner(order_data.get('customer'))
-                    raw_type = order_data.get('order_type')
-                    if raw_type:
-                        order_type = ORDER_TYPE_MAP.get(raw_type, 'in_store')
-                    elif order_data.get('order_source'):
-                        order_type = ORDER_SOURCE_TYPE_MAP.get(
-                            order_data['order_source'], 'in_store',
-                        )
-                    else:
-                        order_type = 'in_store'
-
-                    totals = order_data.get('totals', {})
-                    order_vals = {
-                        'partner_id': partner.id if partner else False,
-                        'company_id': company_id,
-                        'dutchie_checkout_id': checkout_id or False,
-                        'dutchie_receipt_no': receipt_no or False,
-                        'state': order_data.get('state', 'completed'),
-                        'order_type': order_type,
-                        'payment_method': order_data.get('payment_method', 'cash'),
-                        'subtotal': totals.get('subtotal', order_data.get('subtotal', 0)),
-                        'discount_total': totals.get('discounts', order_data.get('discount_total', 0)),
-                        'tax_total': totals.get('taxes', order_data.get('tax_total', 0)),
-                        'total': totals.get('total', order_data.get('total', 0)),
-                        'notes': order_data.get('notes', ''),
-                        'source': order_data.get('source', 'dutchie_sync'),
-                    }
-                    if order_data.get('dutchie_shipment_id'):
-                        order_vals['dutchie_shipment_id'] = order_data['dutchie_shipment_id']
-                    if order_data.get('placed_at'):
-                        normalized = _normalize_datetime(order_data['placed_at'])
-                        if normalized:
-                            order_vals['placed_at'] = normalized
-                    # Merge rich fields (payment breakdown, customer dob,
-                    # order source, terminal, etc).
-                    order_vals.update(_build_rich_order_vals(order_data))
-
-                    company = request.env['res.company'].sudo().browse(company_id)
-                    if not company.exists():
-                        raise ValueError(f'company_id {company_id} not found')
-                    order = Order.with_company(company).create(order_vals)
-
-                    # Create line items — pin the company so any
-                    # _check_company_auto on line fields resolves against
-                    # the store, not the env's default company.
-                    LineForOrder = Line.with_company(company)
-                    for item in order_data.get('items', []):
-                        line_vals = {
-                            'order_id': order.id,
-                            'product_name': item.get('product_name', 'Product'),
-                            'dutchie_product_id': item.get('dutchie_product_id', ''),
-                            'sku': item.get('sku', ''),
-                            'quantity': item.get('quantity', 1),
-                            'unit_price': item.get('unit_price', 0),
-                            'discount': item.get('discount', 0),
-                            'tax': item.get('tax', 0),
-                            'category': item.get('category', ''),
-                            'brand': item.get('brand', ''),
-                            'strain_type': item.get('strain_type', ''),
-                            'weight': item.get('weight', ''),
-                        }
-                        line_vals.update(_build_rich_line_vals(item))
-                        LineForOrder.create(line_vals)
-
-                    # Auto-consume any pending /rewards redemption whose
-                    # product appears as a free line in this order. Until
-                    # the Backoffice coupon integration lands this depends
-                    # on the budtender actually zeroing the reward item.
-                    #
-                    # Skipped in backfill mode — historical orders shouldn't
-                    # retroactively mark pending redemptions as used.
-                    if not backfill_mode and partner and 'mint.discount' in request.env:
-                        try:
-                            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(
-                                partner, order_items=order_data.get('items', []),
-                            )
-                            if consumed:
-                                _logger.info(
-                                    'Auto-consumed redemption %s for %s on POS sync (order %s)',
-                                    consumed.redemption_code, partner.name, order.name,
-                                )
-                        except Exception:
-                            _logger.exception(
-                                'Redemption consume failed for order %s', order.name,
-                            )
-
+                result = _upsert_order(
+                    order_data, Order, Line,
+                    default_origin='dutchie_walkin',
+                    allow_create=True,
+                    backfill_mode=backfill_mode,
+                )
+                if result.get('created'):
                     created += 1
-
+                elif result.get('updated'):
+                    updated += 1
             except Exception as e:
                 _logger.exception(
                     'Error syncing order receipt=%s checkout=%s',
@@ -808,13 +922,7 @@ class MintPosOrderAPI(http.Controller):
     # ── Helpers ───────────────────────────────────────────────────────
 
     def _resolve_company(self, data):
-        """Resolve res.company from data (company_id, store_slug, or store_id).
-
-        Returns an empty recordset if no identifier is supplied. Callers
-        must guard with `if not company` and return a 400 — falling back
-        to `request.env.company` under auth='none' silently files the
-        order under the root company, which is never what we want.
-        """
+        """Resolve res.company from data (company_id, store_slug, or store_id)."""
         Company = request.env['res.company'].sudo()
 
         if data.get('company_id'):
@@ -824,7 +932,7 @@ class MintPosOrderAPI(http.Controller):
         if data.get('store_id'):
             return Company.browse(data['store_id']).exists()
 
-        return Company  # empty recordset — falsy; triggers caller's 400 guard
+        return request.env.company
 
     def _serialize_order(self, order):
         """Serialize a mint.pos.order to a JSON-safe dict."""
@@ -876,6 +984,47 @@ class MintPosOrderAPI(http.Controller):
             } for l in order.line_ids],
         }
 
+    # ── POST /api/v1/pos/orders/upsert-from-dutchie ───────────────────
+    #
+    # Single-order upsert used by the lane watcher when it detects a lane
+    # change for a Dutchie shipment not yet in Odoo. Creates a stub order
+    # (with a stub partner if needed) so the kanban can display the card.
+
+    @http.route('/api/v1/pos/orders/upsert-from-dutchie', type='http',
+                auth='none', methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def upsert_from_dutchie(self, **kw):
+        if not _verify_api_key():
+            return _error('Invalid API key', 401)
+
+        try:
+            order_data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return _error('Invalid JSON body')
+
+        if not isinstance(order_data, dict):
+            return _error('Expected single order object')
+
+        allow_create = bool(order_data.pop('allow_create', True))
+
+        Order = request.env['mint.pos.order'].sudo()
+        Line = request.env['mint.pos.order.line'].sudo()
+
+        try:
+            result = _upsert_order(
+                order_data, Order, Line,
+                default_origin='dutchie_walkin',
+                allow_create=allow_create,
+            )
+        except Exception as e:
+            _logger.exception(
+                'upsert-from-dutchie failed for shipment=%s ref=%s',
+                order_data.get('dutchie_shipment_id'),
+                order_data.get('dutchie_receipt_no') or order_data.get('dutchie_checkout_id'),
+            )
+            return _error(type(e).__name__ + ': ' + str(e)[:300], 500)
+
+        return _json(result)
+
     # ── Web Order Config API ──────────────────────────────────
 
     @http.route('/api/v1/pos/web-order-config', type='http', auth='none',
@@ -906,11 +1055,6 @@ class MintPosOrderAPI(http.Controller):
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
     def cancel_order(self):
         """Cancel an order by shipment ID or order ref."""
-        # Browser preflights never include X-Api-Key; allow OPTIONS through
-        # before auth so CORS clients can reach this endpoint (mirrors the
-        # pattern used by update_dutchie_status).
-        if request.httprequest.method == 'OPTIONS':
-            return _json({})
         if not _verify_api_key():
             return _json({'error': 'Forbidden'}, 403)
 
