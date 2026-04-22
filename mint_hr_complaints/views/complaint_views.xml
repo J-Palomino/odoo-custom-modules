@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <record id="view_mint_hr_complaint_list" model="ir.ui.view">
+        <field name="name">mint.hr.complaint.list</field>
+        <field name="model">mint.hr.complaint</field>
+        <field name="arch" type="xml">
+            <list string="HR Complaints" decoration-danger="urgency == 'critical'"
+                  decoration-warning="urgency == 'high'" decoration-muted="state in ('resolved','closed')">
+                <field name="name"/>
+                <field name="submitted_at"/>
+                <field name="concern_type"/>
+                <field name="urgency"/>
+                <field name="is_safety_concern" widget="boolean_toggle"/>
+                <field name="subject_name"/>
+                <field name="is_anonymous" widget="boolean_toggle"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'new'"
+                       decoration-warning="state == 'reviewing'"
+                       decoration-primary="state == 'investigating'"
+                       decoration-success="state == 'resolved'"
+                       decoration-muted="state == 'closed'"/>
+                <field name="retention_expiry"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_hr_complaint_form" model="ir.ui.view">
+        <field name="name">mint.hr.complaint.form</field>
+        <field name="model">mint.hr.complaint</field>
+        <field name="arch" type="xml">
+            <form string="HR Complaint">
+                <header>
+                    <button name="action_set_reviewing" type="object" string="Mark Reviewing"
+                            class="btn-primary" invisible="state != 'new'"/>
+                    <button name="action_set_investigating" type="object" string="Start Investigation"
+                            class="btn-primary" invisible="state != 'reviewing'"/>
+                    <button name="action_set_resolved" type="object" string="Mark Resolved"
+                            class="btn-primary" invisible="state != 'investigating'"/>
+                    <button name="action_set_closed" type="object" string="Close"
+                            invisible="state not in ('resolved',)"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="new,reviewing,investigating,resolved,closed"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_attachments" type="object" class="oe_stat_button" icon="fa-paperclip">
+                            <field name="attachment_count" widget="statinfo" string="Files"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Complainant">
+                            <field name="is_anonymous"/>
+                            <field name="complainant_name" invisible="is_anonymous"/>
+                            <field name="complainant_position" invisible="is_anonymous"/>
+                            <field name="submitted_at" readonly="1"/>
+                            <field name="retention_expiry" readonly="1"/>
+                        </group>
+                        <group string="Subject">
+                            <field name="subject_name"/>
+                            <field name="subject_position"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Incident">
+                            <field name="concern_type"/>
+                            <field name="incident_date"/>
+                            <field name="incident_location"/>
+                        </group>
+                        <group string="Assessment">
+                            <field name="urgency"/>
+                            <field name="is_safety_concern"/>
+                            <field name="is_ongoing"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description" placeholder="Detailed description..."/>
+                        </page>
+                        <page string="Witnesses" name="witnesses">
+                            <field name="witnesses" placeholder="Who witnessed the incident?"/>
+                        </page>
+                        <page string="Evidence" name="evidence">
+                            <field name="evidence_description" placeholder="Evidence notes. Files attached via chatter."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_mint_hr_complaint_kanban" model="ir.ui.view">
+        <field name="name">mint.hr.complaint.kanban</field>
+        <field name="model">mint.hr.complaint</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" class="o_kanban_small_column">
+                <field name="name"/>
+                <field name="subject_name"/>
+                <field name="concern_type"/>
+                <field name="urgency"/>
+                <field name="is_safety_concern"/>
+                <field name="state"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="oe_kanban_card oe_kanban_global_click">
+                            <div class="o_kanban_record_top">
+                                <strong><field name="name"/></strong>
+                                <span class="float-end" t-if="record.is_safety_concern.raw_value"
+                                      title="Safety Concern">⚠️</span>
+                            </div>
+                            <div class="text-muted">
+                                <field name="concern_type"/> · <field name="urgency"/>
+                            </div>
+                            <div>Subject: <field name="subject_name"/></div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_mint_hr_complaint_search" model="ir.ui.view">
+        <field name="name">mint.hr.complaint.search</field>
+        <field name="model">mint.hr.complaint</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="subject_name"/>
+                <field name="complainant_name"/>
+                <field name="concern_type"/>
+                <filter name="my_complaints_new" string="New" domain="[('state','=','new')]"/>
+                <filter name="filter_safety" string="Safety" domain="[('is_safety_concern','=',True)]"/>
+                <filter name="filter_ongoing" string="Ongoing" domain="[('is_ongoing','=',True)]"/>
+                <filter name="filter_critical" string="Critical Urgency" domain="[('urgency','=','critical')]"/>
+                <filter name="filter_archived" string="Archived" domain="[('active','=',False)]"/>
+                <separator/>
+                <filter name="group_state" string="Status" context="{'group_by':'state'}"/>
+                <filter name="group_concern" string="Concern Type" context="{'group_by':'concern_type'}"/>
+                <filter name="group_urgency" string="Urgency" context="{'group_by':'urgency'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mint_hr_complaint" model="ir.actions.act_window">
+        <field name="name">HR Complaints</field>
+        <field name="res_model">mint.hr.complaint</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="view_mint_hr_complaint_search"/>
+        <field name="context">{'search_default_my_complaints_new': 1}</field>
+    </record>
+
+    <menuitem id="menu_mint_hr_complaints_root"
+              name="HR Complaints"
+              parent="hr.menu_hr_root"
+              sequence="90"
+              groups="hr.group_hr_user"/>
+    <menuitem id="menu_mint_hr_complaints_list"
+              name="Complaints"
+              parent="menu_mint_hr_complaints_root"
+              action="action_mint_hr_complaint"
+              sequence="10"/>
+</odoo>
