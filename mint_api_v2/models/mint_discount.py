@@ -319,8 +319,16 @@ class MintDiscount(models.Model):
         """Cached resolver: set of product.category ids in the subtree rooted
         at any id in `root_ids_tuple`. Keyed on the tuple so applies_to_product
         across 500 discounts × 1,200 products doesn't re-query Odoo 1.2M times.
-        Cache is invalidated by product.category write/unlink (Odoo invalidates
-        ormcache on the model; for cross-model invalidation see the hook below)."""
+
+        Staleness: Odoo's ormcache auto-invalidates on writes to mint.discount
+        (this model), NOT on writes to product.category. Restructuring the
+        product category tree mid-process therefore leaves the cache stale
+        until the worker recycles. This is accepted because the category tree
+        is effectively static post-setup; if that changes, add a write/unlink
+        override on product.category that calls
+        `self.env['mint.discount']._category_descendant_ids_cached.clear_cache(
+            self.env['mint.discount'])`.
+        """
         if not root_ids_tuple:
             return frozenset()
         return frozenset(self.env['product.category'].search([
@@ -338,14 +346,23 @@ class MintDiscount(models.Model):
         return self._category_descendant_ids_cached(key)
 
     def _product_weight_g(self, product):
-        """Product weight in grams. Prefer x_weight_grams; fall back to
-        parsing the legacy x_weight Char ('14.0g', '3.5 g')."""
+        """Product weight in grams. Prefer x_weight_grams (populated by
+        Dutchie sync from NetWeight), fall back to parsing the legacy
+        x_weight Char ('14.0g', '3.5 g').
+
+        x_weight_grams is a Studio Float that defaults to 0.0 on unsynced
+        rows, so we need to distinguish "legitimately zero grams" (never
+        happens in the catalog) from "field default because sync hasn't
+        run yet". Policy: treat >0 as authoritative, treat 0/None/False as
+        "try the legacy Char next." A product with a real zero-gram weight
+        has no weight-scoped match anyway.
+        """
         val = getattr(product, 'x_weight_grams', None)
-        # 0.0 is a valid weight (e.g. intangible items) — treat only None/False
-        # as "not set", not falsy. Odoo returns False for unset Floats.
         if val is not None and val is not False:
             try:
-                return float(val)
+                fv = float(val)
+                if fv > 0:
+                    return fv
             except (TypeError, ValueError):
                 pass
         raw = getattr(product, 'x_weight', None)
@@ -354,7 +371,9 @@ class MintDiscount(models.Model):
             m = re.search(r'([0-9]+(?:\.[0-9]+)?)', str(raw))
             if m:
                 try:
-                    return float(m.group(1))
+                    fv = float(m.group(1))
+                    if fv > 0:
+                        return fv
                 except (TypeError, ValueError):
                     pass
         return None

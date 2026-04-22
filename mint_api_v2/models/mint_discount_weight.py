@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
+import logging
+
 from psycopg2 import IntegrityError
 
 from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 
 # Weight values are quantized to this many decimals before storage / comparison
@@ -59,14 +63,20 @@ class MintDiscountWeight(models.Model):
         for vals in vals_list:
             if "value" in vals:
                 q = _quantize(vals["value"])
-                if q is not None:
+                if q is None:
+                    # Unparseable — drop the key so Odoo surfaces the missing
+                    # required field rather than silently storing a junk value.
+                    del vals["value"]
+                else:
                     vals["value"] = q
         return super().create(vals_list)
 
     def write(self, vals):
         if "value" in vals:
             q = _quantize(vals["value"])
-            if q is not None:
+            if q is None:
+                del vals["value"]
+            else:
                 vals["value"] = q
         return super().write(vals)
 
@@ -90,4 +100,16 @@ class MintDiscountWeight(models.Model):
         except IntegrityError:
             # Another transaction committed the same value between search and
             # create. Re-search — it must exist now.
-            return self.search([("value", "=", v)], limit=1)
+            existing = self.search([("value", "=", v)], limit=1)
+            if existing:
+                return existing
+            # Re-search empty is unexpected (DB constraint fired but row isn't
+            # visible). Log and return empty so the caller's downstream
+            # "unresolved" counter bumps instead of silently over-matching.
+            _logger.warning(
+                "[mint.discount.weight] get_or_create(%s): IntegrityError on "
+                "create but re-search returned empty — weight filter will drop "
+                "for this discount cycle; callers should treat as unresolved.",
+                v,
+            )
+            return self.browse()
