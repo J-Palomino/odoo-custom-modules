@@ -163,6 +163,45 @@ class MintDiscount(models.Model):
         help="Products from these brands are excluded from this discount.",
     )
 
+    # Targeting - Weights (Dutchie Reward.Restrictions.Weight)
+    weight_ids = fields.Many2many(
+        'mint.discount.weight',
+        'mint_discount_weight_rel',
+        'discount_id',
+        'weight_id',
+        string="Weights",
+        help="Apply only to products matching these weight values (grams).",
+    )
+    exclude_weight_ids = fields.Many2many(
+        'mint.discount.weight',
+        'mint_discount_exclude_weight_rel',
+        'discount_id',
+        'weight_id',
+        string="Excluded Weights",
+        help="Products with these weights are excluded from this discount.",
+    )
+
+    # Targeting - Vendors (Dutchie Reward.Restrictions.Vendor)
+    # Vendors are res.partner records linked via product.supplierinfo.
+    vendor_ids = fields.Many2many(
+        'res.partner',
+        'mint_discount_vendor_rel',
+        'discount_id',
+        'partner_id',
+        string="Vendors",
+        domain="[('supplier_rank', '>', 0)]",
+        help="Apply only to products supplied by these vendors.",
+    )
+    exclude_vendor_ids = fields.Many2many(
+        'res.partner',
+        'mint_discount_exclude_vendor_rel',
+        'discount_id',
+        'partner_id',
+        string="Excluded Vendors",
+        domain="[('supplier_rank', '>', 0)]",
+        help="Products from these vendors are excluded from this discount.",
+    )
+
     # Eligibility rules
     threshold_type = fields.Selection([
         ('none', 'No Threshold'),
@@ -270,28 +309,105 @@ class MintDiscount(models.Model):
         raw = self.excluded_skus.replace(',', '\n')
         return {tok.strip().upper() for tok in raw.split('\n') if tok.strip()}
 
+    # Tolerance for weight equality in grams — Dutchie restrictions are
+    # authored as exact values (0.7, 1.0, 3.5), and product weights come
+    # from the same source, so 1/100th of a gram is enough headroom.
+    _WEIGHT_TOLERANCE_G = 0.01
+
+    def _category_descendant_ids(self, category_ids_m2m):
+        """Return the set of product.category ids in the subtree rooted at the
+        given m2m. Mirrors Dutchie's behavior where a deal scoped at a master
+        (e.g. 'Flower') matches every sub ('Prepack Flower', 'Prerolls', …)."""
+        if not category_ids_m2m:
+            return set()
+        return set(self.env['product.category'].search([
+            ('id', 'child_of', category_ids_m2m.ids)
+        ]).ids)
+
+    def _product_weight_g(self, product):
+        """Product weight in grams. Prefer x_weight_grams; fall back to
+        parsing the legacy x_weight Char ('14.0g', '3.5 g')."""
+        val = getattr(product, 'x_weight_grams', None)
+        if val:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                pass
+        raw = getattr(product, 'x_weight', None)
+        if raw:
+            import re
+            m = re.search(r'([0-9]+(?:\.[0-9]+)?)', str(raw))
+            if m:
+                try:
+                    return float(m.group(1))
+                except (TypeError, ValueError):
+                    pass
+        return None
+
+    def _product_vendor_ids(self, product):
+        """Return the set of res.partner ids that supply this product
+        (via product.supplierinfo / seller_ids)."""
+        sellers = getattr(product, 'seller_ids', False)
+        if not sellers:
+            return set()
+        return set(sellers.mapped('partner_id').ids)
+
     def applies_to_product(self, product):
-        """Check if this discount applies to a given product."""
+        """Check if this discount applies to a given product.
+
+        Matching dimensions mirror Dutchie's Reward.Restrictions:
+          product, category (with child_of cascade), brand, weight, vendor.
+        Each has an inclusion (must match if set) and an exclusion (must NOT
+        match if set) pair. SKU blacklist is the one-off flat-text exception.
+        """
         self.ensure_one()
 
-        # Check exclusions first
-        if product.id in self.exclude_product_ids.ids:
+        # ── Exclusions ────────────────────────────────────────────────────
+        if self.exclude_product_ids and product.id in self.exclude_product_ids.ids:
             return False
-        if product.categ_id.id in self.exclude_category_ids.ids:
-            return False
+        if self.exclude_category_ids:
+            excl_tree = self._category_descendant_ids(self.exclude_category_ids)
+            if product.categ_id.id in excl_tree:
+                return False
         excluded_skus = self._excluded_sku_set()
         if excluded_skus and product.default_code and product.default_code.upper() in excluded_skus:
             return False
         if self.exclude_brand_ids and product.brand_id.id in self.exclude_brand_ids.ids:
             return False
+        if self.exclude_vendor_ids:
+            vend_ids = self._product_vendor_ids(product)
+            if vend_ids & set(self.exclude_vendor_ids.ids):
+                return False
+        if self.exclude_weight_ids:
+            pw = self._product_weight_g(product)
+            if pw is not None and any(
+                abs(pw - w.value) <= self._WEIGHT_TOLERANCE_G
+                for w in self.exclude_weight_ids
+            ):
+                return False
 
-        # Check inclusions
+        # ── Inclusions ────────────────────────────────────────────────────
         if self.product_ids and product.id not in self.product_ids.ids:
             return False
-        if self.category_ids and product.categ_id.id not in self.category_ids.ids:
-            return False
+        if self.category_ids:
+            incl_tree = self._category_descendant_ids(self.category_ids)
+            if product.categ_id.id not in incl_tree:
+                return False
         if self.brand_ids and product.brand_id.id not in self.brand_ids.ids:
             return False
+        if self.vendor_ids:
+            vend_ids = self._product_vendor_ids(product)
+            if not (vend_ids & set(self.vendor_ids.ids)):
+                return False
+        if self.weight_ids:
+            pw = self._product_weight_g(product)
+            if pw is None:
+                return False
+            if not any(
+                abs(pw - w.value) <= self._WEIGHT_TOLERANCE_G
+                for w in self.weight_ids
+            ):
+                return False
 
         return True
 
