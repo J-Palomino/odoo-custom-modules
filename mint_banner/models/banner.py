@@ -81,6 +81,24 @@ class MintBanner(models.Model):
     date_end = fields.Date(string='End Date')
     company_id = fields.Many2one('res.company', string='Company', default=lambda self: self.env.company)
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        # When created against a child store company (Visual CMS upload, "Open in
+        # Odoo" form, etc.) and Store Slugs is left blank, derive it from the
+        # company's x_slug. The parent "Mint Cannabis" company has no slug, so
+        # site-wide banners (deals-popup, brand-spotlight) stay global.
+        Company = self.env['res.company'].sudo()
+        for vals in vals_list:
+            if (vals.get('store_slugs') or '').strip():
+                continue
+            company_id = vals.get('company_id')
+            if not company_id:
+                continue
+            slug = (Company.browse(company_id).x_slug or '').strip()
+            if slug:
+                vals['store_slugs'] = slug
+        return super().create(vals_list)
+
     @api.constrains('image_url', 'product_image_url')
     def _check_image_urls(self):
         """Validate that external image URLs use HTTPS and come from allowed domains."""
