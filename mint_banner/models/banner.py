@@ -55,8 +55,11 @@ class MintBanner(models.Model):
        help='Small: compact horizontal strip. Medium: standard banner. Large: prominent callout with product photo.')
     image = fields.Image(string='Background Image', max_width=2048, max_height=1024,
                          attachment=True,
-                         help='Hero: 1600×400px (4:1). Category/Spotlight: 1200×300px. Deals Popup: 800×600px. '
-                              'Max 2048×1024. Accepts JPG, PNG, or WebP.')
+                         help='Aspect ratio is what fits the slot — sharpness comes from pixels. '
+                              'Hero: 3.2:1 (e.g. 1280×400, 1920×600, 2560×800). '
+                              'Category/Spotlight: 4:1 (e.g. 1200×300, 1600×400). '
+                              'Deals Popup: 4:3 (e.g. 800×600). '
+                              'Min 1280px wide for hero sharpness; max 2048×1024. JPG, PNG, or WebP.')
     image_url = fields.Char(string='Image URL',
                             help='External image URL (takes precedence over uploaded image). Must be HTTPS from an allowed domain.')
     product_image = fields.Image(string='Product Image', max_width=512, max_height=512,

@@ -30,7 +30,7 @@ ZONES = [
         'slot': 'hero',
         'editable': True,
         'type': 'banner',
-        'dimensions': '1600 x 400 px (4:1)',
+        'dimensions': 'Aspect 3.2:1 — e.g. 1280×400, 1920×600 (min 1280px wide)',
         'description': 'Full-width rotating banner carousel',
     },
     {
