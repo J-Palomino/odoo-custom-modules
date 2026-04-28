@@ -320,12 +320,19 @@ class MintCustomerAuth(http.Controller):
         # transaction. ON CONFLICT handles the race where two concurrent
         # signups for the same email both try to insert — the loser
         # re-selects the winning row.
+        #
+        # FIXME: This bypasses the website module's @api.constrains check
+        # for duplicate logins where website_id IS NULL, so the loser-
+        # branch's password write can clobber the winner's account on a
+        # genuine race. Tracked for ORM refactor — see follow-up ticket.
+        # Constraint is named (not column-targeted) because the website
+        # module replaces UNIQUE (login) with UNIQUE (login, website_id).
         request.env.cr.execute("""
             INSERT INTO res_users (login, password, company_id, partner_id,
                                    active, share, create_uid, write_uid,
                                    create_date, write_date, notification_type)
             VALUES (%s, '', %s, %s, true, true, 1, 1, NOW(), NOW(), 'email')
-            ON CONFLICT (login) DO NOTHING
+            ON CONFLICT ON CONSTRAINT res_users_login_key DO NOTHING
             RETURNING id
         """, (login, main_company.id, partner.id))
         row = request.env.cr.fetchone()
