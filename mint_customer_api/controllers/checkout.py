@@ -90,7 +90,7 @@ class MintCheckout(http.Controller):
                 'id': partner.id,
                 'name': partner.name,
                 'email': partner.email or '',
-                'phone': partner.phone or partner.mobile or '',
+                'phone': partner.phone or '',
                 'total_spend': getattr(partner, 'x_dutchie_total_spend', 0) or 0,
                 'visit_count': getattr(partner, 'x_dutchie_visit_count', 0) or 0,
             },

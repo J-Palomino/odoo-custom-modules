@@ -57,13 +57,10 @@ class MintCustomerProfile(http.Controller):
                 'name': partner.name,
                 'email': partner.email,
                 'phone': partner.phone or '',
-                'mobile': partner.mobile or '',
                 'street': partner.street or '',
                 'city': partner.city or '',
                 'state': partner.state_id.name if partner.state_id else '',
                 'zip': partner.zip or '',
-                'preferred_store_id': getattr(partner, 'x_preferred_store_id', False) and partner.x_preferred_store_id.id or None,
-                'preferred_store_name': getattr(partner, 'x_preferred_store_id', False) and partner.x_preferred_store_id.name or None,
                 'home_store_id': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.id or None,
                 'home_store_name': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.name or None,
                 'total_spend': getattr(partner, 'x_dutchie_total_spend', 0) or 0,
@@ -307,16 +304,10 @@ class MintCustomerProfile(http.Controller):
             vals['name'] = data['name'].strip()
         if 'phone' in data:
             vals['phone'] = data['phone'].strip()
-        if 'mobile' in data:
-            vals['mobile'] = data['mobile'].strip()
-        if 'preferred_store_id' in data:
-            store_id = data['preferred_store_id']
-            if store_id:
-                store = request.env['res.company'].sudo().browse(int(store_id))
-                if store.exists():
-                    vals['x_preferred_store_id'] = store.id
-            else:
-                vals['x_preferred_store_id'] = False
+        # NOTE: `mobile` was removed from res.partner in Odoo 19; clients
+        # may still send it but we silently drop the field. `preferred_store_id`
+        # is also a no-op until/unless x_preferred_store_id is added back to
+        # res.partner — currently only x_home_store_id exists.
 
         if vals:
             partner.write(vals)
@@ -328,6 +319,5 @@ class MintCustomerProfile(http.Controller):
                 'name': partner.name,
                 'email': partner.email,
                 'phone': partner.phone or '',
-                'mobile': partner.mobile or '',
             },
         })
