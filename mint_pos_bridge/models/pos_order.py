@@ -158,6 +158,7 @@ class MintPosOrder(models.Model):
         [
             ('web', 'Web Checkout'),
             ('dutchie_sync', 'Dutchie Sync'),
+            ('dutchie_walkin', 'Dutchie Walk-in'),
             ('odoo_pos', 'Odoo POS'),
             ('walk_in', 'Walk-In'),
         ],
