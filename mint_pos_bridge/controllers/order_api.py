@@ -243,6 +243,13 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
             update_vals['dutchie_order_number'] = order_data['dutchie_order_number']
         if shipment_id and not existing.dutchie_shipment_id:
             update_vals['dutchie_shipment_id'] = shipment_id
+        # Order-level totals: only set if currently empty/zero so manual
+        # Odoo edits aren't clobbered, but a stub created by the lane-watcher
+        # (with subtotal/total still 0) gets enriched on the next sync.
+        for src in ('subtotal', 'discount_total', 'tax_total', 'total'):
+            incoming = order_data.get(src)
+            if incoming is not None and not existing[src]:
+                update_vals[src] = incoming
         # Rich Dutchie fields: only fill what's currently empty so manual
         # Odoo edits aren't clobbered by a later sync.
         rich_vals = _build_rich_order_vals(order_data)
@@ -251,6 +258,38 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
                 update_vals[k] = v
         if update_vals:
             existing.write(update_vals)
+
+        # Populate line items if the existing row has none. The lane-watcher
+        # creates stubs without items (the v2/guest/checked-in payload doesn't
+        # carry cart contents); orderSync's bulk-sync run is the first place
+        # that has them. Skip if the row already has lines so we don't dupe
+        # or clobber manual edits.
+        items = order_data.get('items') or []
+        line_added = False
+        if items and not existing.line_ids:
+            company = request.env['res.company'].sudo().browse(company_id)
+            if company.exists():
+                LineForOrder = Line.with_company(company)
+                for item in items:
+                    line_vals = {
+                        'order_id': existing.id,
+                        'product_name': item.get('product_name', 'Product'),
+                        'dutchie_product_id': item.get('dutchie_product_id', ''),
+                        'sku': item.get('sku', ''),
+                        'quantity': item.get('quantity', 1),
+                        'unit_price': item.get('unit_price', 0),
+                        'discount': item.get('discount', 0),
+                        'tax': item.get('tax', 0),
+                        'category': item.get('category', ''),
+                        'brand': item.get('brand', ''),
+                        'strain_type': item.get('strain_type', ''),
+                        'weight': item.get('weight', ''),
+                    }
+                    line_vals.update(_build_rich_line_vals(item))
+                    LineForOrder.create(line_vals)
+                line_added = True
+
+        if update_vals or line_added:
             return {'created': False, 'updated': True, 'skipped': False,
                     'order_id': existing.id, 'order_name': existing.name,
                     'partner_id': existing.partner_id.id if existing.partner_id else False}
