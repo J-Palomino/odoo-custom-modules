@@ -17,11 +17,28 @@ class MintPosKanbanController extends KanbanController {
         super.setup();
         this.busService = useService("bus_service");
         this.notification = useService("notification");
-        this.companyService = useService("company");
+
+        // Look up the company service via the registry rather than useService():
+        // useService throws synchronously if the token isn't registered, which
+        // takes the whole kanban down. The bus subscription is purely a
+        // live-update nice-to-have — losing it should degrade to a manual-refresh
+        // kanban, not crash the page. Tolerates upstream rename of the service
+        // token between Odoo versions.
+        this.companyService =
+            this.env.services.company ||
+            this.env.services.companyService ||
+            null;
 
         this._channel = null;
 
         onWillStart(() => {
+            if (!this.companyService) {
+                console.warn(
+                    "[mint_pos_kanban_live] company service unavailable — " +
+                    "skipping bus subscription; kanban will need manual refresh."
+                );
+                return;
+            }
             const companyId = this.companyService.currentCompany.id;
             this._channel = `mint_pos_${companyId}`;
             this.busService.subscribe(this._channel, (payload) => {
