@@ -6,6 +6,38 @@ import { useService } from "@web/core/utils/hooks";
 import { onWillStart, onWillUnmount } from "@odoo/owl";
 
 /**
+ * Resolve the active company id without depending on a single registry token.
+ *
+ * In some Odoo 19 builds the `company` service throws on `useService("company")`
+ * (registered under a different token, removed, or not yet hydrated when the
+ * kanban setup runs). Try the most-likely-to-exist sources in order:
+ *   1. `company` service (preferred — reactive)
+ *   2. `user` service activeCompany (stable across Odoo 16-19)
+ *   3. `odoo.session_info.user_companies.current_company` (set at boot,
+ *      no service required — value is either `id` or `[id, name]`)
+ *
+ * Returns null if all three fail; caller skips the bus subscription so the
+ * kanban renders without live updates instead of crashing.
+ */
+function resolveCompanyId(env) {
+    const services = (env && env.services) || {};
+
+    if (services.company && services.company.currentCompany) {
+        return services.company.currentCompany.id;
+    }
+    if (services.user && services.user.activeCompany) {
+        return services.user.activeCompany.id;
+    }
+    if (typeof odoo !== "undefined" && odoo.session_info && odoo.session_info.user_companies) {
+        const current = odoo.session_info.user_companies.current_company;
+        if (Array.isArray(current)) return current[0];
+        if (typeof current === "number") return current;
+        if (current && typeof current === "object") return current.id;
+    }
+    return null;
+}
+
+/**
  * Live-updating Kanban controller for mint.pos.order.
  *
  * Subscribes to bus.bus channel `mint_pos_{company_id}` and auto-reloads
@@ -18,28 +50,17 @@ class MintPosKanbanController extends KanbanController {
         this.busService = useService("bus_service");
         this.notification = useService("notification");
 
-        // Look up the company service via the registry rather than useService():
-        // useService throws synchronously if the token isn't registered, which
-        // takes the whole kanban down. The bus subscription is purely a
-        // live-update nice-to-have — losing it should degrade to a manual-refresh
-        // kanban, not crash the page. Tolerates upstream rename of the service
-        // token between Odoo versions.
-        this.companyService =
-            this.env.services.company ||
-            this.env.services.companyService ||
-            null;
-
         this._channel = null;
 
         onWillStart(() => {
-            if (!this.companyService) {
+            const companyId = resolveCompanyId(this.env);
+            if (!companyId) {
                 console.warn(
-                    "[mint_pos_kanban_live] company service unavailable — " +
+                    "[mint_pos_kanban_live] could not resolve current company id — " +
                     "skipping bus subscription; kanban will need manual refresh."
                 );
                 return;
             }
-            const companyId = this.companyService.currentCompany.id;
             this._channel = `mint_pos_${companyId}`;
             this.busService.subscribe(this._channel, (payload) => {
                 this._onBusMessage(payload);
