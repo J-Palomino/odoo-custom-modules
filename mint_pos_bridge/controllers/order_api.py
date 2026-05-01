@@ -609,8 +609,9 @@ class MintPosOrderAPI(http.Controller):
         Order = request.env['mint.pos.order'].sudo().with_company(company)
         order = Order.create(order_vals)
 
-        # Create line items
-        Line = request.env['mint.pos.order.line'].sudo()
+        # Create line items — pin to order's company so _check_company_auto resolves
+        # against the store, not env's default company (matches _upsert_order pattern)
+        Line = request.env['mint.pos.order.line'].sudo().with_company(company)
         for item in items:
             Line.create({
                 'order_id': order.id,
@@ -1126,6 +1127,12 @@ class MintPosOrderAPI(http.Controller):
 
         if not order:
             return _json({'error': 'Order not found'}, 404)
+
+        if order.state in ('completed', 'picked_up', 'delivery_completed'):
+            return _json(
+                {'error': 'Cannot cancel an order that is already %s' % order.state},
+                400,
+            )
 
         order.write({
             'state': 'cancelled',
