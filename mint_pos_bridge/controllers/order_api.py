@@ -683,6 +683,16 @@ class MintPosOrderAPI(http.Controller):
         if kw.get('dutchie_shipment_id'):
             domain.append(('dutchie_shipment_id', '=', kw['dutchie_shipment_id']))
 
+        # Filter by partner_id (authenticated frontend lookups — JWT → partner_id).
+        # Frontend sends this as a header so it never lands in nginx/Railway access logs;
+        # also accept a query param for tooling/admin use.
+        partner_id = (
+            request.httprequest.headers.get('X-Partner-Id')
+            or kw.get('partner_id')
+        )
+        if partner_id:
+            domain.append(('partner_id', '=', int(partner_id)))
+
         # Filter by phone (customer lookup)
         if kw.get('phone'):
             phone = _normalize_phone(kw['phone'])
