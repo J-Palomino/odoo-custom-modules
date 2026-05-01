@@ -2,6 +2,7 @@
 import json
 import logging
 import threading
+from datetime import timedelta
 
 from odoo import api, fields, models
 
@@ -476,6 +477,49 @@ class MintPosOrder(models.Model):
 
     def action_cancel(self):
         self.filtered(lambda o: o.state not in ('completed', 'cancelled')).write({'state': 'cancelled'})
+
+    # ── Cron: cancel abandoned active-lane orders ─────────────────────
+    #
+    # Customers sometimes hit lobby / sales_floor / pickup in Dutchie's
+    # swimlane and never finalize (no-show, walk-out, register error,
+    # budtender forgets to manually transition the lane). Those rows
+    # then sit on the kanban as $0/0-item ghost cards forever, hiding
+    # real-time activity behind clutter.
+    #
+    # Scheduled to run daily at 10:00 UTC (≈ 3am MST / 4am MDT) when
+    # all stores are closed — see data/cron.xml. Targets every order
+    # with create_date older than 24h whose state is still in the
+    # active lanes, and bulk-writes state='cancelled'. Completed and
+    # already-cancelled rows are not touched.
+    #
+    # Reversible: a misclassified row can be flipped back via the form
+    # view's status bar.
+    ACTIVE_LANE_STATES = (
+        'lobby', 'online_orders', 'sales_floor', 'processing',
+        'pickup', 'deli_counter', 'credit_checkout',
+        'placed', 'confirmed', 'preparing', 'ready',
+    )
+
+    @api.model
+    def _cron_cancel_stale_orders(self, hours_old=24):
+        cutoff = fields.Datetime.now() - timedelta(hours=hours_old)
+        stale = self.search([
+            ('create_date', '<', cutoff),
+            ('state', 'in', list(self.ACTIVE_LANE_STATES)),
+        ])
+        if not stale:
+            _logger.info(
+                'mint.pos.order: no stale active-lane orders older than %sh',
+                hours_old,
+            )
+            return 0
+        count = len(stale)
+        stale.write({'state': 'cancelled'})
+        _logger.info(
+            'mint.pos.order: cancelled %d stale active-lane orders older than %sh',
+            count, hours_old,
+        )
+        return count
 
 
 class MintPosOrderLine(models.Model):
