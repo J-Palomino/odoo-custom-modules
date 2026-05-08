@@ -250,6 +250,21 @@ class MintDiscount(models.Model):
     # Sync tracking
     synced_at = fields.Datetime(string="Last Synced")
 
+    # Raw Dutchie payload archive. Mirrors PG.discounts.raw_payload — the
+    # full normalized item Dutchie returned at last sync. Anything outside
+    # the explicit field mapping (new Dutchie fields, restriction types we
+    # don't extract, constraint metadata) is recoverable from this blob
+    # without re-fetching from Dutchie. Stored as Text (JSON-encoded);
+    # Odoo 19 has no native JSON field type for non-translation use.
+    raw_payload = fields.Text(
+        string="Raw Dutchie Payload",
+        help=(
+            "JSON-encoded copy of the Dutchie wire item this discount was "
+            "synced from. Recovery aid only — do not parse for live use; "
+            "use the typed columns above. Updated on every sync."
+        ),
+    )
+
     # ── Loyalty Redemption (discount_type='loyalty_redemption') ─────────
     # A redemption is a single-use discount handed to one customer after
     # they spent points on /rewards. Budtender marks it used in-store.
