@@ -47,6 +47,8 @@
                             <field name="vendor_contact"/>
                             <field name="vendor_phone" widget="phone"/>
                             <field name="brand_id"/>
+                            <field name="crm_lead_id" options="{'no_create': True}"/>
+                            <field name="campaign_id" options="{'no_create': True}"/>
                         </group>
                         <group string="Deal Details">
                             <field name="product_category"/>
@@ -54,6 +56,16 @@
                             <field name="discount_value"/>
                             <field name="original_price"/>
                             <field name="sales_details"/>
+                        </group>
+                    </group>
+                    <group string="Vendor Funding">
+                        <group>
+                            <field name="vendor_funding_amount" widget="monetary"/>
+                            <field name="currency_id" column_invisible="True"/>
+                            <field name="vendor_funding_percent"/>
+                        </group>
+                        <group>
+                            <field name="vendor_funding_terms" placeholder="Payment terms, MOQ, etc."/>
                         </group>
                     </group>
                     <group>

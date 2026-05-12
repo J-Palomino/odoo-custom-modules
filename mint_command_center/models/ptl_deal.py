@@ -135,6 +135,26 @@ class PtlDeal(models.Model):
     stock_locations_total = fields.Integer(string='Total Locations', default=0)
     stock_checked_at = fields.Datetime(string='Last Stock Check')
 
+    # --- Vendor funding (carried forward from submission/campaign) ---
+    vendor_funding_amount = fields.Monetary(
+        string='Vendor Funding Amount',
+        currency_field='currency_id',
+        tracking=True,
+    )
+    vendor_funding_percent = fields.Float(string='Vendor Funding %', tracking=True)
+    currency_id = fields.Many2one(
+        'res.currency',
+        string='Currency',
+        default=lambda self: self.env.company.currency_id,
+    )
+    campaign_id = fields.Many2one(
+        'mint.national.promo',
+        string='Campaign',
+        ondelete='set null',
+        index=True,
+        tracking=True,
+    )
+
     # --- Relations ---
     discount_id = fields.Many2one(
         'mint.discount',
