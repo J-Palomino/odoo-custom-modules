@@ -11,14 +11,23 @@
             <form>
                 <header>
                     <button name="action_confirm" string="Confirm"
-                            type="object" class="btn-primary"
+                            type="object"
                             invisible="state != 'tentative'"/>
-                    <button name="action_add_to_ptl" string="Add to PTL"
+                    <button name="action_approve" string="Approve"
+                            type="object" class="btn-primary"
+                            invisible="state not in ('tentative','confirmed')"/>
+                    <button name="action_publish" string="Publish"
                             type="object" class="btn-success"
+                            invisible="state not in ('confirmed','approved')"/>
+                    <button name="action_unpublish" string="Unpublish"
+                            type="object"
+                            invisible="state != 'published'"/>
+                    <button name="action_add_to_ptl" string="Add to PTL"
+                            type="object"
                             invisible="state == 'published' or not deal_id"
                             confirm="This will create/link a PTL Day and add the deal. Continue?"/>
                     <field name="state" widget="statusbar"
-                           statusbar_visible="tentative,confirmed,published"/>
+                           statusbar_visible="tentative,confirmed,approved,published"/>
                 </header>
                 <sheet>
                     <group>
@@ -26,12 +35,34 @@
                             <field name="brand_id"/>
                             <field name="date"/>
                             <field name="market_id" options="{'no_create': True}"/>
+                            <field name="campaign_id" options="{'no_create': True}"/>
                             <field name="slot_type"/>
+                            <field name="is_published" widget="boolean_toggle"/>
                         </group>
                         <group>
+                            <field name="sku_or_category"/>
+                            <field name="product_template_id"
+                                   options="{'no_create': True}"/>
+                            <field name="product_category_id"
+                                   options="{'no_create': True}"/>
                             <field name="deal_id"/>
                             <field name="submission_id" readonly="1"/>
                             <field name="ptl_day_id" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Promo">
+                        <group>
+                            <field name="promo_text"/>
+                            <field name="discount_type"/>
+                            <field name="discount_value"/>
+                            <field name="original_price"/>
+                        </group>
+                        <group>
+                            <field name="start_time" widget="float_time"/>
+                            <field name="end_time" widget="float_time"/>
+                            <field name="vendor_funding_amount" widget="monetary"/>
+                            <field name="vendor_funding_percent"/>
+                            <field name="currency_id" column_invisible="True"/>
                         </group>
                     </group>
                     <group string="Notes">
@@ -53,13 +84,20 @@
                   decoration-success="state == 'published'">
                 <field name="date"/>
                 <field name="brand_id"/>
+                <field name="sku_or_category"/>
+                <field name="promo_text"/>
                 <field name="market_id"/>
-                <field name="deal_id"/>
-                <field name="slot_type"/>
-                <field name="ptl_day_id"/>
+                <field name="campaign_id" optional="show"/>
+                <field name="discount_type" optional="hide"/>
+                <field name="discount_value" optional="hide"/>
+                <field name="deal_id" optional="hide"/>
+                <field name="slot_type" optional="hide"/>
+                <field name="ptl_day_id" optional="hide"/>
+                <field name="is_published" widget="boolean_toggle"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'tentative'"
                        decoration-warning="state == 'confirmed'"
+                       decoration-primary="state == 'approved'"
                        decoration-success="state == 'published'"/>
             </list>
         </field>
@@ -115,14 +153,30 @@
             <search string="Search Brand Calendar">
                 <field name="brand_id"/>
                 <field name="market_id"/>
+                <field name="campaign_id"/>
+                <field name="sku_or_category"/>
                 <field name="deal_id"/>
                 <filter name="tentative" string="Tentative" domain="[('state', '=', 'tentative')]"/>
                 <filter name="confirmed" string="Confirmed" domain="[('state', '=', 'confirmed')]"/>
+                <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
                 <filter name="published" string="Published" domain="[('state', '=', 'published')]"/>
                 <separator/>
+                <filter name="ready_to_publish" string="Ready to Publish (next 7 days)"
+                        domain="[('state','=','approved'),
+                                 ('is_published','=', False),
+                                 ('date','&gt;=', context_today().strftime('%Y-%m-%d')),
+                                 ('date','&lt;=', (context_today()+relativedelta(days=7)).strftime('%Y-%m-%d'))]"/>
+                <filter name="upcoming_7d" string="Upcoming (next 7 days)"
+                        domain="[('date','&gt;=', context_today().strftime('%Y-%m-%d')),
+                                 ('date','&lt;=', (context_today()+relativedelta(days=7)).strftime('%Y-%m-%d'))]"/>
+                <separator/>
                 <filter name="featured" string="Featured" domain="[('slot_type', '=', 'featured')]"/>
+                <filter name="is_published" string="Published flag"
+                        domain="[('is_published','=', True)]"/>
                 <separator/>
                 <filter name="group_brand" string="Brand" context="{'group_by': 'brand_id'}"/>
+                <filter name="group_campaign" string="Campaign" context="{'group_by': 'campaign_id'}"/>
+                <filter name="group_sku" string="SKU/Category" context="{'group_by': 'sku_or_category'}"/>
                 <filter name="group_market" string="Market" context="{'group_by': 'market_id'}"/>
                 <filter name="group_date" string="Date" context="{'group_by': 'date:week'}"/>
                 <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
