@@ -5,7 +5,12 @@ from odoo import fields, models
 class ProductCategory(models.Model):
     _inherit = 'product.category'
 
-    dutchie_category_id = fields.Integer(
+    # NOTE: mint_api_v2 already declares dutchie_category_id as fields.Char on
+    # product.category. We re-declare (idempotently) with the same type so this
+    # module can ship even when mint_api_v2 isn't loaded, AND so the upgrade
+    # path doesn't flip the column type. Do NOT change to Integer — existing
+    # data is string-typed and 50K+ products reference these categories.
+    dutchie_category_id = fields.Char(
         string='Dutchie ProductCategoryId',
         index=True,
         help='ProductCategoryId from Dutchie Backoffice (LSP 575). '
