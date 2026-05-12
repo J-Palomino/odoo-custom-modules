@@ -17,6 +17,16 @@
         <field name="sequence">30</field>
     </record>
 
+    <!-- mint_api_v2 also declares its own top-level "Mint Marketing" tile
+         (parent of Discounts + Redemptions). Reparent it under the Command
+         Center so we end up with a single Mint Marketing app tile. -->
+    <record id="mint_api_v2.menu_mint_discount_root" model="ir.ui.menu">
+        <field name="name">Discount Catalog</field>
+        <field name="parent_id" ref="menu_command_center_root"/>
+        <field name="web_icon">false</field>
+        <field name="sequence">15</field>
+    </record>
+
     <!-- ── Deals Section ──
          Single home for everything deal-related: PTL, Hot Box, Brand
          Calendar/Rankings, vendor submissions. The xmlid `menu_ptl` is reused
