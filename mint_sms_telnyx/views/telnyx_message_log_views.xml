@@ -73,11 +73,10 @@
                 <filter string="Delivered" name="delivered" domain="[('state','=','delivered')]"/>
                 <filter string="Failed" name="failed"
                         domain="[('state','in',['delivery_failed','sending_failed','error'])]"/>
-                <group expand="0" string="Group By">
-                    <filter string="Direction" name="grp_direction" context="{'group_by': 'direction'}"/>
-                    <filter string="State" name="grp_state" context="{'group_by': 'state'}"/>
-                    <filter string="Partner" name="grp_partner" context="{'group_by': 'partner_id'}"/>
-                </group>
+                <separator/>
+                <filter string="Direction" name="grp_direction" context="{'group_by': 'direction'}"/>
+                <filter string="State" name="grp_state" context="{'group_by': 'state'}"/>
+                <filter string="Partner" name="grp_partner" context="{'group_by': 'partner_id'}"/>
             </search>
         </field>
     </record>
