@@ -18,7 +18,7 @@ RUN apt-get update \
     && mkdir -p /run/nginx /etc/cloudflared
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
@@ -68,6 +68,7 @@ COPY --chown=odoo:odoo mint_mail_whitelist /opt/extra-addons/mint_mail_whitelist
 COPY --chown=odoo:odoo mint_posthog /opt/extra-addons/mint_posthog
 COPY --chown=odoo:odoo mint_sw_buster /opt/extra-addons/mint_sw_buster
 COPY --chown=odoo:odoo mint_loki_logger /opt/extra-addons/mint_loki_logger
+COPY --chown=odoo:odoo mint_sms_telnyx /opt/extra-addons/mint_sms_telnyx
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
@@ -135,6 +136,8 @@ RUN test -f /opt/extra-addons/mint_dutchie_sync/__manifest__.py && echo "MINT_DU
 RUN test -f /opt/extra-addons/mint_pos_bridge/__manifest__.py && echo "MINT_POS_BRIDGE VERIFIED" || (echo "MINT_POS_BRIDGE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_redis_session/__manifest__.py && echo "MINT_REDIS_SESSION VERIFIED" || (echo "MINT_REDIS_SESSION MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_inventory_ops/__manifest__.py && echo "MINT_INVENTORY_OPS VERIFIED" || (echo "MINT_INVENTORY_OPS MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_sms_telnyx/__manifest__.py && echo "MINT_SMS_TELNYX VERIFIED" || (echo "MINT_SMS_TELNYX MISSING" && exit 1)
+RUN python3 -c "compile(open('/opt/extra-addons/mint_sms_telnyx/models/sms_sms.py').read(), 'sms_sms.py', 'exec')" && echo "SMS_SMS SYNTAX OK" || (echo "SMS_SMS SYNTAX ERROR" && head -60 /opt/extra-addons/mint_sms_telnyx/models/sms_sms.py && exit 1)
 RUN python3 -c "compile(open('/opt/extra-addons/mint_pos_bridge/models/pos_order.py').read(), 'pos_order.py', 'exec')" && echo "POS_ORDER SYNTAX OK" || (echo "POS_ORDER SYNTAX ERROR" && head -60 /opt/extra-addons/mint_pos_bridge/models/pos_order.py && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)

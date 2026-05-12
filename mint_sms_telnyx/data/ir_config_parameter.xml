@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="param_telnyx_enabled" model="ir.config_parameter">
+            <field name="key">mint_sms_telnyx.enabled</field>
+            <field name="value">False</field>
+        </record>
+        <record id="param_telnyx_api_base" model="ir.config_parameter">
+            <field name="key">mint_sms_telnyx.api_base</field>
+            <field name="value">https://api.telnyx.com/v2</field>
+        </record>
+    </data>
+</odoo>
