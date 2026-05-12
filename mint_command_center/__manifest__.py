@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.3.3.0',
+    'version': '19.0.4.0.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -35,6 +35,7 @@
         'mail',
         'bus',
         'website',
+        'crm',
         'mint_push',
         'mint_banner',
         'mint_api_v2',
@@ -55,6 +56,8 @@
         'views/ptl_views.xml',
         'views/deal_submission_views.xml',
         'views/brand_calendar_views.xml',
+        'views/national_promo_views.xml',
+        'views/crm_lead_ext_views.xml',
         'views/hotbox_views.xml',
         'views/brand_ranking_views.xml',
         'views/compliance_views.xml',

@@ -56,6 +56,12 @@
               action="action_deal_submission"
               sequence="30"/>
 
+    <menuitem id="menu_national_promo"
+              name="National Promo Log"
+              parent="menu_ptl"
+              action="action_national_promo"
+              sequence="28"/>
+
     <menuitem id="menu_hotbox"
               name="Hot Box"
               parent="menu_ptl"
