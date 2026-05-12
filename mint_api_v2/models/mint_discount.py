@@ -83,7 +83,18 @@ class MintDiscount(models.Model):
     discount_percent = fields.Float(string="Discount Percentage")
 
     # Status
+    # `is_active` becomes a stored compute in mint_command_center (driven by
+    # is_published + valid window + day-of-week + start/end_time). Definition
+    # kept here so consumers in this module can still reference it.
     is_active = fields.Boolean(string="Active", default=True)
+    is_published = fields.Boolean(
+        string="Published",
+        default=False,
+        index=True,
+        copy=False,
+        help="Marketing-controlled flag. The computed is_active gate flows from this "
+             "plus the valid window, day-of-week, and start/end time fields.",
+    )
     is_featured = fields.Boolean(string="Featured", default=False)
     is_available_online = fields.Boolean(string="Available Online", default=True)
 
@@ -304,9 +315,14 @@ class MintDiscount(models.Model):
 
     @api.model
     def get_active_discounts(self, store_id=None):
-        """Return active discounts, optionally filtered by store."""
+        """Return active discounts, optionally filtered by store.
+
+        is_active is the computed Now-flag (published + window + dow + time-of-day).
+        is_available_online enforced as a secondary gate.
+        """
         domain = [
             ('is_active', '=', True),
+            ('is_available_online', '=', True),
             '|',
             ('valid_until', '=', False),
             ('valid_until', '>=', date.today()),
@@ -489,7 +505,9 @@ class MintDiscount(models.Model):
         return self.sudo().create({
             'name': _("Redemption: %s") % label,
             'discount_type': 'loyalty_redemption',
-            'is_active': True,
+            'is_published': True,
+            'monday': True, 'tuesday': True, 'wednesday': True, 'thursday': True,
+            'friday': True, 'saturday': True, 'sunday': True,
             'is_available_online': False,
             'valid_from': fields.Date.today(),
             'valid_until': expires.date(),
@@ -522,7 +540,7 @@ class MintDiscount(models.Model):
                 'redemption_status': 'used',
                 'redemption_used_at': fields.Datetime.now(),
                 'redemption_used_by_id': self.env.user.id,
-                'is_active': False,
+                'is_published': False,
             })
         return True
 
@@ -547,7 +565,7 @@ class MintDiscount(models.Model):
                     card.points = card.points + rec.redemption_points_cost
             rec.write({
                 'redemption_status': 'voided',
-                'is_active': False,
+                'is_published': False,
             })
         return True
 
@@ -580,7 +598,7 @@ class MintDiscount(models.Model):
         now = fields.Datetime.now()
         expired = pending.filtered(lambda r: r.expires_at and r.expires_at < now)
         if expired:
-            expired.write({'redemption_status': 'expired', 'is_active': False})
+            expired.write({'redemption_status': 'expired', 'is_published': False})
         fresh = pending - expired
         if not fresh:
             return self.browse()
@@ -595,7 +613,7 @@ class MintDiscount(models.Model):
             redemption.write({
                 'redemption_status': 'used',
                 'redemption_used_at': now,
-                'is_active': False,
+                'is_published': False,
             })
             return redemption
 
@@ -605,7 +623,7 @@ class MintDiscount(models.Model):
                 redemption.write({
                     'redemption_status': 'used',
                     'redemption_used_at': now,
-                    'is_active': False,
+                    'is_published': False,
                 })
                 _logger.info(
                     'Consumed redemption %s (product=%s) for partner %s '
@@ -633,5 +651,5 @@ class MintDiscount(models.Model):
             ('expires_at', '<', now),
         ])
         if stale:
-            stale.write({'redemption_status': 'expired', 'is_active': False})
+            stale.write({'redemption_status': 'expired', 'is_published': False})
         return len(stale)

@@ -26,7 +26,7 @@ REDIS_RELEVANT_FIELDS = frozenset({
     # Identity
     'name', 'code',
     # Status
-    'is_active', 'is_available_online',
+    'is_active', 'is_published', 'is_available_online',
     # Validity
     'valid_from', 'valid_until', 'start_time', 'end_time',
     'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
@@ -256,6 +256,7 @@ class MintDiscount(models.Model):
             'discount_value': getattr(self, 'discount_value', 0.0) or 0.0,
             # Status
             'is_active': self.is_active,
+            'is_published': self.is_published,
             'is_available_online': self.is_available_online,
             'first_time_customer_only': self.first_time_customer_only,
             'can_stack_automatically': bool(getattr(self, 'can_stack_automatically', False)),

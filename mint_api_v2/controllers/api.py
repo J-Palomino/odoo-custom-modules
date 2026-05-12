@@ -7,7 +7,7 @@ All endpoints return JSON responses and are accessible at /api/v1/
 import base64
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from odoo import http
 from odoo.http import request, Response
@@ -450,7 +450,18 @@ class MintDealsAPI(http.Controller):
             'valid_from': discount.valid_from.isoformat() if discount.valid_from else None,
             'valid_until': discount.valid_until.isoformat() if discount.valid_until else None,
             'is_active': discount.is_active,
+            'is_published': discount.is_published,
+            'is_available_online': discount.is_available_online,
             'is_featured': getattr(discount, 'is_featured', False),
+            'start_time': discount.start_time or 0.0,
+            'end_time': discount.end_time or 0.0,
+            'monday': discount.monday,
+            'tuesday': discount.tuesday,
+            'wednesday': discount.wednesday,
+            'thursday': discount.thursday,
+            'friday': discount.friday,
+            'saturday': discount.saturday,
+            'sunday': discount.sunday,
             'deal_classification': getattr(discount, 'deal_classification', 'sale'),
             'store_ids': discount.store_ids.ids if discount.store_ids else [],
             'product_ids': discount.product_ids.ids if discount.product_ids else [],
@@ -461,11 +472,12 @@ class MintDealsAPI(http.Controller):
 
     @http.route('/api/v1/discounts', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
     def get_discounts(self, **kwargs):
-        """Get active discounts."""
+        """Get active discounts. is_active is the computed Now-flag (published + window + dow + time-of-day)."""
         try:
             today = datetime.now().date()
             domain = [
                 ('is_active', '=', True),
+                ('is_available_online', '=', True),
                 '|',
                 ('valid_from', '=', False),
                 ('valid_from', '<=', today),
@@ -499,11 +511,12 @@ class MintDealsAPI(http.Controller):
 
     @http.route('/api/v1/stores/<int:store_id>/discounts', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
     def get_store_discounts(self, store_id, **kwargs):
-        """Get discounts for a specific store."""
+        """Get discounts for a specific store. is_active = published+window+dow+time-of-day."""
         try:
             today = datetime.now().date()
             domain = [
                 ('is_active', '=', True),
+                ('is_available_online', '=', True),
                 ('store_ids', 'in', [store_id]),
                 '|',
                 ('valid_from', '=', False),
@@ -526,6 +539,46 @@ class MintDealsAPI(http.Controller):
             })
         except Exception as e:
             _logger.error("Error getting store discounts: %s", e)
+            return error_response(str(e), 500)
+
+    @http.route('/api/v1/discounts/daily-deals', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def get_daily_deals(self, **kwargs):
+        """Daily-deals carousel: published deals starting within next 7 days.
+
+        Uses `is_published` (not `is_active`) so the carousel can advertise
+        upcoming deals that aren't yet live today. POS/storefront price-calc
+        endpoints continue to use `is_active` for in-the-moment eligibility.
+        """
+        try:
+            today = datetime.now().date()
+            horizon = today + timedelta(days=7)
+            domain = [
+                ('is_published', '=', True),
+                ('is_available_online', '=', True),
+                ('deal_classification', '=', 'daily'),
+                ('valid_from', '<=', horizon),
+                '|',
+                ('valid_until', '=', False),
+                ('valid_until', '>=', today),
+            ]
+
+            store_id = kwargs.get('store_id')
+            if store_id:
+                domain.append(('store_ids', 'in', [int(store_id)]))
+
+            limit = int(kwargs.get('limit', 100))
+            offset = int(kwargs.get('offset', 0))
+
+            Discount = request.env["mint.discount"].sudo()
+            total_count = Discount.search_count(domain)
+            discounts = Discount.search(domain, limit=limit, offset=offset, order="valid_from asc")
+
+            return json_response({
+                'count': total_count,
+                'items': [self._discount_to_dict(d) for d in discounts],
+            })
+        except Exception as e:
+            _logger.error("Error getting daily deals: %s", e)
             return error_response(str(e), 500)
 
     # ==================== BLOG ====================
