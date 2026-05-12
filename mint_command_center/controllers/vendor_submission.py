@@ -72,6 +72,7 @@ class VendorSubmissionController(http.Controller):
             'discount_type': post.get('discount_type', ''),
             'details_exclusions': post.get('details_exclusions', '').strip(),
             'sales_details': post.get('sales_details', '').strip(),
+            'vendor_funding_terms': post.get('vendor_funding_terms', '').strip(),
         }
 
         # Numeric fields
@@ -84,6 +85,26 @@ class VendorSubmissionController(http.Controller):
             vals['original_price'] = float(post.get('original_price') or 0)
         except (ValueError, TypeError):
             vals['original_price'] = 0.0
+
+        try:
+            vals['vendor_funding_amount'] = float(post.get('vendor_funding_amount') or 0)
+        except (ValueError, TypeError):
+            vals['vendor_funding_amount'] = 0.0
+
+        try:
+            vals['vendor_funding_percent'] = float(post.get('vendor_funding_percent') or 0)
+        except (ValueError, TypeError):
+            vals['vendor_funding_percent'] = 0.0
+
+        # Brand (mint.brand lookup, with text fallback)
+        brand_id_raw = post.get('brand_id', '').strip()
+        if brand_id_raw:
+            try:
+                brand_id_int = int(brand_id_raw)
+                if request.env['mint.brand'].sudo().browse(brand_id_int).exists():
+                    vals['brand_id'] = brand_id_int
+            except (ValueError, TypeError):
+                pass
 
         # Market
         market_id = post.get('market_id')
@@ -117,8 +138,15 @@ class VendorSubmissionController(http.Controller):
 
     def _form_context(self, **extra):
         markets = request.env['mint.region'].sudo().search([], order='name')
+        # Brand catalog for autocomplete — read-only, public-safe
+        brands = request.env['mint.brand'].sudo().search_read(
+            [], ['id', 'name'], order='name',
+        )
+        currency = request.env.company.currency_id
         ctx = {
             'markets': markets,
+            'brands': brands,
+            'currency_symbol': currency.symbol if currency else '$',
             'categories': PRODUCT_CATEGORIES,
             'discount_types': DISCOUNT_TYPES,
             'error': None,

@@ -34,10 +34,28 @@
                             <legend class="h5 mb-3">Vendor Information</legend>
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="form-label" for="vendor_name">Brand / Company Name *</label>
+                                    <label class="form-label" for="vendor_name">Company / Vendor Name *</label>
                                     <input type="text" class="form-control" id="vendor_name"
                                            name="vendor_name" required=""
                                            t-att-value="form_values.get('vendor_name', '')"/>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="brand_lookup">Brand</label>
+                                    <input type="text" class="form-control" id="brand_lookup"
+                                           list="brand_options"
+                                           autocomplete="off"
+                                           placeholder="Start typing your brand..."
+                                           t-att-value="form_values.get('brand_lookup', '')"/>
+                                    <input type="hidden" id="brand_id" name="brand_id"
+                                           t-att-value="form_values.get('brand_id', '')"/>
+                                    <datalist id="brand_options">
+                                        <t t-foreach="brands" t-as="b">
+                                            <option t-att-value="b['name']" t-att-data-id="b['id']"/>
+                                        </t>
+                                    </datalist>
+                                    <small class="form-text text-muted">
+                                        If your brand isn't listed, leave blank — we'll add it during review.
+                                    </small>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="vendor_email">Email *</label>
@@ -135,6 +153,49 @@
                             </div>
                         </fieldset>
 
+                        <!-- Vendor Funding -->
+                        <fieldset class="mb-4">
+                            <legend class="h5 mb-3">Vendor Funding</legend>
+                            <p class="text-muted small mb-3">
+                                Procurement uses this to size the campaign. Funding is the amount
+                                the vendor commits to underwrite the promotion. Leave blank if not
+                                offering vendor-funded support.
+                            </p>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label" for="vendor_funding_amount">
+                                        Funding Amount (<t t-esc="currency_symbol"/>)
+                                    </label>
+                                    <input type="number" class="form-control" id="vendor_funding_amount"
+                                           name="vendor_funding_amount" step="0.01" min="0"
+                                           placeholder="e.g. 5000"
+                                           t-att-value="form_values.get('vendor_funding_amount', '')"/>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="vendor_funding_percent">
+                                        Funding % of Discount
+                                    </label>
+                                    <input type="number" class="form-control" id="vendor_funding_percent"
+                                           name="vendor_funding_percent" step="0.01" min="0" max="100"
+                                           placeholder="e.g. 50 for 50%"
+                                           t-att-value="form_values.get('vendor_funding_percent', '')"/>
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <small class="text-muted">
+                                        Either amount or %, or both. Procurement will finalize during review.
+                                    </small>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="vendor_funding_terms">
+                                        Funding Terms / Notes
+                                    </label>
+                                    <textarea class="form-control" id="vendor_funding_terms"
+                                              name="vendor_funding_terms" rows="2"
+                                              placeholder="Payment terms, MOQ, contingencies, etc."><t t-esc="form_values.get('vendor_funding_terms', '')"/></textarea>
+                                </div>
+                            </div>
+                        </fieldset>
+
                         <!-- Date Preferences -->
                         <fieldset class="mb-4">
                             <legend class="h5 mb-3">Date Preferences</legend>
@@ -165,6 +226,30 @@
                             Submit Deal for Review
                         </button>
                     </form>
+
+                    <!-- Resolve brand_lookup text → brand_id hidden value on submit -->
+                    <script>
+                        (function() {
+                            var input = document.getElementById('brand_lookup');
+                            var hidden = document.getElementById('brand_id');
+                            if (!input || !hidden) return;
+                            var options = document.getElementById('brand_options').options;
+                            function resolve() {
+                                var v = (input.value || '').trim().toLowerCase();
+                                hidden.value = '';
+                                if (!v) return;
+                                for (var i = 0; i &lt; options.length; i++) {
+                                    if ((options[i].value || '').trim().toLowerCase() === v) {
+                                        hidden.value = options[i].getAttribute('data-id') || '';
+                                        return;
+                                    }
+                                }
+                            }
+                            input.addEventListener('change', resolve);
+                            input.addEventListener('blur', resolve);
+                            input.form &amp;&amp; input.form.addEventListener('submit', resolve);
+                        })();
+                    </script>
                 </t>
 
             </div>
