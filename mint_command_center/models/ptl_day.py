@@ -189,14 +189,14 @@ class PtlDay(models.Model):
             if other_days:
                 dates = other_days.mapped('date')
                 discount.write({
-                    'is_active': True,
+                    'is_published': True,
                     'valid_from': min(dates),
                     'valid_until': max(dates),
                 })
                 self.env['mint.discount']._recompute_day_booleans(discount)
                 rescoped += 1
             else:
-                discount.write({'is_active': False})
+                discount.write({'is_published': False})
                 deactivated += 1
 
             affected_ids.append(discount.id)
@@ -258,7 +258,7 @@ class PtlDay(models.Model):
             'terms': deal.details_exclusions or '',
             'discount_type': disc_type,
             'discount_amount': amount,
-            'is_active': True,
+            'is_published': True,
             'is_featured': deal.is_featured,
             'is_available_online': True,
             'ptl_deal_id': deal.id,
@@ -409,6 +409,10 @@ class PtlDay(models.Model):
             'discount_amount': discount.discount_amount,
             'calculation_method': calc_method,
             'is_active': discount.is_active,
+            'is_published': discount.is_published,
+            'is_available_online': discount.is_available_online,
+            'start_time': discount.start_time or 0.0,
+            'end_time': discount.end_time or 0.0,
             'valid_from': discount.valid_from.isoformat() if discount.valid_from else None,
             'valid_until': discount.valid_until.isoformat() if discount.valid_until else None,
             'monday': discount.monday,
