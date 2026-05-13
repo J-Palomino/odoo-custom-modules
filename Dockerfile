@@ -77,7 +77,7 @@ COPY --chown=odoo:odoo daisydo_theme /opt/extra-addons/daisydo_theme
 COPY --chown=odoo:odoo daisydo_livechat /opt/extra-addons/daisydo_livechat
 COPY --chown=odoo:odoo daisydo_agents /opt/extra-addons/daisydo_agents
 COPY --chown=odoo:odoo daisydo_multicompany /opt/extra-addons/daisydo_multicompany
-COPY --chown=odoo:odoo daisydo_webhook /opt/extra-addons/daisydo_webhook
+COPY --chown=odoo:odoo vendor/daisydo/odoo/addons/daisydo_webhook /opt/extra-addons/daisydo_webhook
 
 # ── Cybrosys accounting modules ─────────────────────────────────────
 COPY --chown=odoo:odoo base_accounting_kit /opt/extra-addons/base_accounting_kit
