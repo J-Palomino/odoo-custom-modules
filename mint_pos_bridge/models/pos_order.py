@@ -305,8 +305,16 @@ class MintPosOrder(models.Model):
         )
         if not webhook_url:
             return
-        api_key = self.env['ir.config_parameter'].sudo().get_param(
-            'mint_customer_api.checkout_api_key', '',
+        # The webhook is guarded by mintinvsvc's requireApiKey middleware,
+        # which validates against its own API_KEY env var — a different secret
+        # from the Odoo-side checkout_api_key (mintinvsvc uses one to
+        # authenticate INTO Odoo, mintinvsvc accepts a different one IN). Use
+        # a dedicated config param for this call; fall back to the legacy key
+        # so existing environments don't break before the param is set.
+        ICP = self.env['ir.config_parameter'].sudo()
+        api_key = (
+            ICP.get_param('mint_pos_dutchie.lane_change_webhook_api_key', '')
+            or ICP.get_param('mint_customer_api.checkout_api_key', '')
         )
 
         payload = {
