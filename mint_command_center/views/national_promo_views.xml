@@ -192,18 +192,16 @@
                         domain="[('plotted','=',True)]"/>
                 <filter name="not_plotted" string="Not Plotted"
                         domain="[('plotted','=',False)]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_brand" string="Brand"
-                            context="{'group_by': 'brand_id'}"/>
-                    <filter name="group_market" string="Market"
-                            context="{'group_by': 'market_id'}"/>
-                    <filter name="group_year" string="Year"
-                            context="{'group_by': 'year'}"/>
-                    <filter name="group_state" string="Status"
-                            context="{'group_by': 'state'}"/>
-                    <filter name="group_contact" string="Outreach Status"
-                            context="{'group_by': 'contact_status'}"/>
-                </group>
+                <filter name="group_brand" string="Brand"
+                        context="{'group_by': 'brand_id'}"/>
+                <filter name="group_market" string="Market"
+                        context="{'group_by': 'market_id'}"/>
+                <filter name="group_year" string="Year"
+                        context="{'group_by': 'year'}"/>
+                <filter name="group_state" string="Status"
+                        context="{'group_by': 'state'}"/>
+                <filter name="group_contact" string="Outreach Status"
+                        context="{'group_by': 'contact_status'}"/>
             </search>
         </field>
     </record>
