@@ -569,7 +569,10 @@ class MintPosOrderAPI(http.Controller):
         pm_map = {'in-store': 'cash', 'pay-at-store': 'cash'}
         payment_method = pm_map.get(raw_pm, raw_pm) if raw_pm else 'online'
 
-        # Build order values
+        # Build order values. Totals fall back to top-level keys so payloads
+        # from BullMQ webOrder (which sends subtotal/total at the root) match
+        # payloads from orderSync (which nests them under "totals"). Without
+        # this fallback, Pay-at-Store orders persist with $0 totals.
         totals = data.get('totals', {})
         order_vals = {
             'partner_id': partner.id if partner else False,
@@ -579,14 +582,28 @@ class MintPosOrderAPI(http.Controller):
             'state': data.get('state', 'placed'),
             'order_type': order_type,
             'payment_method': payment_method,
-            'subtotal': totals.get('subtotal', 0),
-            'discount_total': totals.get('discounts', 0),
-            'tax_total': totals.get('taxes', 0),
-            'total': totals.get('total', 0),
+            'subtotal': totals.get('subtotal', data.get('subtotal', 0)),
+            'discount_total': totals.get('discounts', data.get('discount_total', 0)),
+            'tax_total': totals.get('taxes', data.get('tax_total', 0)),
+            'total': totals.get('total', data.get('total', 0)),
             'notes': data.get('notes', ''),
             'loyalty_points_earned': data.get('loyalty_points_earned', 0),
             'loyalty_points_redeemed': data.get('loyalty_points_redeemed', 0),
         }
+
+        # Without dutchie_shipment_id the Odoo→Dutchie cancel webhook
+        # (server.js /api/webhook/lane-change) can't flag the swimlane entry,
+        # leaving cancelled orders live in the POS UI.
+        shipment_id = str(data.get('dutchie_shipment_id') or '')
+        if shipment_id:
+            order_vals['dutchie_shipment_id'] = shipment_id
+        if data.get('dutchie_customer_id'):
+            try:
+                order_vals['dutchie_customer_id'] = int(data['dutchie_customer_id'])
+            except (TypeError, ValueError):
+                pass
+        if data.get('dutchie_order_number'):
+            order_vals['dutchie_order_number'] = data['dutchie_order_number']
 
         if data.get('placed_at'):
             normalized = _normalize_datetime(data['placed_at'])
