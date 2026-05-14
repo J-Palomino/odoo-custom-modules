@@ -208,7 +208,7 @@
 
     <!-- Action -->
     <record id="action_national_promo" model="ir.actions.act_window">
-        <field name="name">National Promo Log</field>
+        <field name="name">Promo Campaigns</field>
         <field name="res_model">mint.national.promo</field>
         <field name="view_mode">kanban,list,pivot,form</field>
         <field name="search_view_id" ref="view_national_promo_search"/>

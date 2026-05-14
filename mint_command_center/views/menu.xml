@@ -39,7 +39,7 @@
               sequence="15"/>
 
     <menuitem id="menu_ptl_deals"
-              name="Deal Catalog"
+              name="National Promo Log"
               parent="menu_ptl"
               action="action_ptl_deal"
               sequence="20"/>
@@ -57,7 +57,7 @@
               sequence="30"/>
 
     <menuitem id="menu_national_promo"
-              name="National Promo Log"
+              name="Promo Campaigns"
               parent="menu_ptl"
               action="action_national_promo"
               sequence="28"/>
