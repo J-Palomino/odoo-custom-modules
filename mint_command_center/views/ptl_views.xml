@@ -261,6 +261,16 @@
                                options="{'no_create_edit': True}"
                                placeholder="Brands to exclude from this deal"/>
                     </group>
+                    <group string="Validity">
+                        <group>
+                            <field name="date_start"/>
+                            <field name="date_end"/>
+                        </group>
+                        <group>
+                            <field name="date_range_label" readonly="1"/>
+                            <field name="is_active_today" widget="boolean_toggle" readonly="1"/>
+                        </group>
+                    </group>
                     <group string="Availability">
                         <field name="store_ids" widget="many2many_tags"
                                domain="[('is_dispensary','=',True),('dutchie_store_id','!=',False)]"
@@ -315,6 +325,9 @@
                 <field name="discount_type"/>
                 <field name="discount_value"/>
                 <field name="display_text" optional="show"/>
+                <field name="date_start" optional="show"/>
+                <field name="date_end" optional="show"/>
+                <field name="is_active_today" widget="boolean_toggle" optional="hide" readonly="1"/>
                 <field name="stock_status" widget="badge" optional="hide"
                        decoration-success="stock_status == 'in_stock'"
                        decoration-warning="stock_status == 'low_stock'"
@@ -359,6 +372,13 @@
                 <separator/>
                 <filter name="in_stock" string="In Stock" domain="[('stock_status', '=', 'in_stock')]"/>
                 <filter name="out_of_stock" string="Out of Stock" domain="[('stock_status', '=', 'out_of_stock')]"/>
+                <separator/>
+                <filter name="active_today" string="Active Today" domain="[('is_active_today', '=', True)]"/>
+                <filter name="missing_dates" string="Missing Date Range"
+                        domain="['|', ('date_start', '=', False), ('date_end', '=', False)]"/>
+                <filter name="ending_this_week" string="Ending This Week"
+                        domain="[('date_end', '&gt;=', context_today().strftime('%Y-%m-%d')),
+                                 ('date_end', '&lt;=', (context_today()+relativedelta(days=7)).strftime('%Y-%m-%d'))]"/>
                 <separator/>
                 <filter name="group_brand" string="Brand" context="{'group_by': 'brand_id'}"/>
                 <filter name="group_category" string="Category" context="{'group_by': 'product_category'}"/>

@@ -1,4 +1,5 @@
 from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 
 
 class PtlDeal(models.Model):
@@ -174,12 +175,93 @@ class PtlDeal(models.Model):
         compute='_compute_day_count',
     )
 
+    # --- Validity range ---
+    date_start = fields.Date(
+        string='Start Date',
+        tracking=True,
+        help='First day this deal is valid. Used for forecasting and the '
+             '"Live"/"Expired" auto-state transitions.',
+    )
+    date_end = fields.Date(
+        string='End Date',
+        tracking=True,
+        help='Last day this deal is valid (inclusive).',
+    )
+    date_range_label = fields.Char(
+        string='Range',
+        compute='_compute_date_range_label',
+        store=False,
+    )
+    is_active_today = fields.Boolean(
+        string='Active Today',
+        compute='_compute_is_active_today',
+        search='_search_is_active_today',
+        help='True when today falls within date_start..date_end and state != expired/rejected.',
+    )
+
     # --- Computed fields ---
 
     @api.depends('day_ids')
     def _compute_day_count(self):
         for rec in self:
             rec.day_count = len(rec.day_ids)
+
+    @api.depends('date_start', 'date_end')
+    def _compute_date_range_label(self):
+        for rec in self:
+            if rec.date_start and rec.date_end:
+                rec.date_range_label = f"{rec.date_start} → {rec.date_end}"
+            elif rec.date_start:
+                rec.date_range_label = f"from {rec.date_start}"
+            elif rec.date_end:
+                rec.date_range_label = f"until {rec.date_end}"
+            else:
+                rec.date_range_label = ''
+
+    @api.depends('date_start', 'date_end', 'state')
+    def _compute_is_active_today(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            if rec.state in ('rejected', 'expired'):
+                rec.is_active_today = False
+                continue
+            start_ok = (not rec.date_start) or rec.date_start <= today
+            end_ok = (not rec.date_end) or today <= rec.date_end
+            rec.is_active_today = bool(start_ok and end_ok)
+
+    def _search_is_active_today(self, operator, value):
+        today = fields.Date.context_today(self)
+        active_domain = [
+            '|', ('date_start', '=', False), ('date_start', '<=', today),
+            '|', ('date_end', '=', False), ('date_end', '>=', today),
+            ('state', 'not in', ('rejected', 'expired')),
+        ]
+        if (operator == '=' and value) or (operator == '!=' and not value):
+            return active_domain
+        return ['!'] + active_domain
+
+    @api.constrains('date_start', 'date_end')
+    def _check_date_range(self):
+        for rec in self:
+            if rec.date_start and rec.date_end and rec.date_start > rec.date_end:
+                raise ValidationError(
+                    f"Start date ({rec.date_start}) must be on or before "
+                    f"end date ({rec.date_end})."
+                )
+
+    def cron_expire_past_deals(self):
+        """Flip live → expired for deals whose date_end has passed.
+        Wire from a daily cron in data/ptl_cron_data.xml if/when desired.
+        """
+        today = fields.Date.context_today(self)
+        expired = self.search([
+            ('state', '=', 'live'),
+            ('date_end', '!=', False),
+            ('date_end', '<', today),
+        ])
+        if expired:
+            expired.write({'state': 'expired'})
+        return len(expired)
 
     @api.depends('discount_type', 'discount_value', 'original_price', 'sales_details')
     def _compute_display_text(self):
