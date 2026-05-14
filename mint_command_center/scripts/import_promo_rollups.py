@@ -109,7 +109,9 @@ class Odoo:
         }
         req = urllib.request.Request(self.url,
             data=json.dumps(payload).encode('utf-8'),
-            headers={'Content-Type': 'application/json'})
+            headers={'Content-Type': 'application/json',
+                     'User-Agent': 'mint-rollups/1.0',
+                     'Accept': 'application/json'})
         with urllib.request.urlopen(req, timeout=120) as resp:
             data = json.loads(resp.read())
         if 'error' in data:

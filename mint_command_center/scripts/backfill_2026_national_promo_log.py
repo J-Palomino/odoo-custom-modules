@@ -49,13 +49,15 @@ STATE_TO_MARKET_CODE = {
     'NV': 'NV',
 }
 
-# Sheet name patterns: "Jan promos", "Feb 2026", "May 2026" etc.
+# Sheet name patterns. Original AZ/MO/IL files: "Jan promos", "Feb 2026", "May 2026".
+# NV files use per-store sheets: "Paradise May", "Rainbow Jan", "Promos Jan - Rainbow",
+# "April Both Stores", "Feb 2026 Both Locations", etc. Match any sheet that contains a
+# month name as a standalone word; the data layout (Date column at index 3) is the same.
 MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
                'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 SHEET_RE = re.compile(
-    r'^(jan(?:uary)?|feb(?:ruary)?|march|mar|apr(?:il)?|may|june|jun|'
-    r'july|jul|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
-    r'(?:\s+(?:promos|2026))?$',
+    r'\b(jan(?:uary)?|feb(?:ruary)?|march|mar|apr(?:il)?|may|june|jun|'
+    r'july|jul|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b',
     re.IGNORECASE,
 )
 
@@ -250,7 +252,7 @@ def process_workbook(odoo, path, brand_lookup, market_id, state_code, dry_run):
     skipped = 0
 
     for sheet_name in wb.sheetnames:
-        if not SHEET_RE.match(sheet_name.strip()):
+        if not SHEET_RE.search(sheet_name.strip()):
             continue
         ws = wb[sheet_name]
         rows = list(ws.iter_rows(values_only=True))
