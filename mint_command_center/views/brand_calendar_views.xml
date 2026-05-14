@@ -74,12 +74,14 @@
         </field>
     </record>
 
-    <!-- List View -->
+    <!-- List View — inline-editable so marketing can rip through cells like a spreadsheet -->
     <record id="view_brand_calendar_list" model="ir.ui.view">
         <field name="name">mint.brand.calendar.entry.list</field>
         <field name="model">mint.brand.calendar.entry</field>
         <field name="arch" type="xml">
             <list string="Brand Calendar"
+                  editable="bottom"
+                  multi_edit="1"
                   decoration-info="state == 'tentative'"
                   decoration-success="state == 'published'">
                 <field name="date"/>
@@ -92,7 +94,7 @@
                 <field name="discount_value" optional="hide"/>
                 <field name="deal_id" optional="hide"/>
                 <field name="slot_type" optional="hide"/>
-                <field name="ptl_day_id" optional="hide"/>
+                <field name="ptl_day_id" optional="hide" readonly="1"/>
                 <field name="is_published" widget="boolean_toggle"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'tentative'"
@@ -100,6 +102,31 @@
                        decoration-primary="state == 'approved'"
                        decoration-success="state == 'published'"/>
             </list>
+        </field>
+    </record>
+
+    <!-- Pivot View — "May at a glance for brand X" / "all brands across months" -->
+    <record id="view_brand_calendar_pivot" model="ir.ui.view">
+        <field name="name">mint.brand.calendar.entry.pivot</field>
+        <field name="model">mint.brand.calendar.entry</field>
+        <field name="arch" type="xml">
+            <pivot string="Brand Calendar Pivot" sample="0">
+                <field name="brand_id" type="row"/>
+                <field name="market_id" type="row"/>
+                <field name="date" interval="month" type="col"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Graph View — bar chart of entries by brand -->
+    <record id="view_brand_calendar_graph" model="ir.ui.view">
+        <field name="name">mint.brand.calendar.entry.graph</field>
+        <field name="model">mint.brand.calendar.entry</field>
+        <field name="arch" type="xml">
+            <graph string="Brand Calendar Graph" type="bar" stacked="1">
+                <field name="brand_id"/>
+                <field name="state" type="col"/>
+            </graph>
         </field>
     </record>
 
@@ -188,7 +215,7 @@
     <record id="action_brand_calendar_entry" model="ir.actions.act_window">
         <field name="name">Brand Calendar</field>
         <field name="res_model">mint.brand.calendar.entry</field>
-        <field name="view_mode">calendar,list,kanban,form</field>
+        <field name="view_mode">list,calendar,kanban,pivot,graph,form</field>
         <field name="search_view_id" ref="view_brand_calendar_search"/>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
@@ -198,6 +225,51 @@
                 Schedule brand promotion slots on specific dates.
                 Confirmed entries can be added to PTL Days.
             </p>
+        </field>
+    </record>
+
+    <!-- Server Actions: bulk lifecycle transitions for selected entries.
+         Appear in the Action menu of the list view. PTL Manager / Vendor
+         Manager have write access; Viewer is read-only and won't see them. -->
+    <record id="action_bulk_publish" model="ir.actions.server">
+        <field name="name">Publish Selected</field>
+        <field name="model_id" ref="model_mint_brand_calendar_entry"/>
+        <field name="binding_model_id" ref="model_mint_brand_calendar_entry"/>
+        <field name="binding_view_types">list,kanban</field>
+        <field name="state">code</field>
+        <field name="code">
+for rec in records:
+    if rec.state in ('confirmed', 'approved'):
+        rec.action_publish()
+    elif rec.state == 'tentative':
+        rec.action_approve()
+        rec.action_publish()
+        </field>
+    </record>
+
+    <record id="action_bulk_approve" model="ir.actions.server">
+        <field name="name">Approve Selected</field>
+        <field name="model_id" ref="model_mint_brand_calendar_entry"/>
+        <field name="binding_model_id" ref="model_mint_brand_calendar_entry"/>
+        <field name="binding_view_types">list,kanban</field>
+        <field name="state">code</field>
+        <field name="code">
+for rec in records:
+    if rec.state in ('tentative', 'confirmed'):
+        rec.action_approve()
+        </field>
+    </record>
+
+    <record id="action_bulk_unpublish" model="ir.actions.server">
+        <field name="name">Unpublish Selected</field>
+        <field name="model_id" ref="model_mint_brand_calendar_entry"/>
+        <field name="binding_model_id" ref="model_mint_brand_calendar_entry"/>
+        <field name="binding_view_types">list,kanban</field>
+        <field name="state">code</field>
+        <field name="code">
+for rec in records:
+    if rec.state == 'published':
+        rec.action_unpublish()
         </field>
     </record>
 
