@@ -77,16 +77,7 @@ COPY --chown=odoo:odoo daisydo_theme /opt/extra-addons/daisydo_theme
 COPY --chown=odoo:odoo daisydo_livechat /opt/extra-addons/daisydo_livechat
 COPY --chown=odoo:odoo daisydo_agents /opt/extra-addons/daisydo_agents
 COPY --chown=odoo:odoo daisydo_multicompany /opt/extra-addons/daisydo_multicompany
-# daisydo_webhook is fetched from upstream J-Palomino/daisydo@main at build time.
-# (Submodule at vendor/daisydo exists for local dev but Railway's Dockerfile builder
-# doesn't recurse submodules, so we clone directly here.) Bust this layer by editing
-# DAISYDO_CACHEBUST to pull the current main tip.
-ARG DAISYDO_CACHEBUST=1
-RUN echo "daisydo cachebust: $DAISYDO_CACHEBUST" \
-    && git clone --depth 1 -b main https://github.com/J-Palomino/daisydo.git /tmp/daisydo \
-    && cp -r /tmp/daisydo/odoo/addons/daisydo_webhook /opt/extra-addons/daisydo_webhook \
-    && chown -R odoo:odoo /opt/extra-addons/daisydo_webhook \
-    && rm -rf /tmp/daisydo
+COPY --chown=odoo:odoo daisydo_webhook /opt/extra-addons/daisydo_webhook
 
 # ── Cybrosys accounting modules ─────────────────────────────────────
 COPY --chown=odoo:odoo base_accounting_kit /opt/extra-addons/base_accounting_kit

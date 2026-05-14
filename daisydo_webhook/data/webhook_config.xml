@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Webhook system enabled/disabled (0 or 1) -->
+        <record id="webhook_enabled" model="ir.config_parameter">
+            <field name="key">daisydo_webhook.enabled</field>
+            <field name="value">0</field>
+        </record>
+
+        <!-- FastAPI base URL (internal Docker network) -->
+        <record id="webhook_fastapi_url" model="ir.config_parameter">
+            <field name="key">daisydo_webhook.fastapi_url</field>
+            <field name="value">http://fastapi:8000</field>
+        </record>
+
+        <!-- Shared secret for Odoo→FastAPI event authentication -->
+        <record id="webhook_event_secret" model="ir.config_parameter">
+            <field name="key">daisydo_webhook.event_secret</field>
+            <field name="value"></field>
+        </record>
+
+        <!-- Model whitelist: "*" for all, or JSON list e.g. ["sale.order","res.partner"] -->
+        <record id="webhook_models" model="ir.config_parameter">
+            <field name="key">daisydo_webhook.models</field>
+            <field name="value">*</field>
+        </record>
+    </data>
+</odoo>
