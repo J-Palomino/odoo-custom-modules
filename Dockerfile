@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=124
+ARG CACHEBUST=125
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -18,7 +18,7 @@ RUN apt-get update \
     && mkdir -p /run/nginx /etc/cloudflared
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl cssselect
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
@@ -119,6 +119,10 @@ COPY --chown=odoo:odoo account_invoice_pricelist /opt/extra-addons/account_invoi
 COPY --chown=odoo:odoo account_invoice_pricelist_sale /opt/extra-addons/account_invoice_pricelist_sale
 COPY --chown=odoo:odoo account_statement_base /opt/extra-addons/account_statement_base
 
+# ── OCA appointments stack (resource_booking + slot-duration helper) ──
+COPY --chown=odoo:odoo web_calendar_slot_duration /opt/extra-addons/web_calendar_slot_duration
+COPY --chown=odoo:odoo resource_booking /opt/extra-addons/resource_booking
+
 # ── Verify critical modules ─────────────────────────────────────────
 RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
@@ -168,6 +172,11 @@ RUN for mod in spreadsheet_oca spreadsheet_dashboard_oca \
 
 # Verify OCA storage modules
 RUN for mod in fs_storage fs_attachment fs_attachment_s3; do \
+      test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
+    done
+
+# Verify OCA appointments modules
+RUN for mod in web_calendar_slot_duration resource_booking; do \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
 
