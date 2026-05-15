@@ -148,6 +148,11 @@ class PtlDay(models.Model):
         # Push to inventory service
         self._push_discounts_to_redis(discount_ids)
 
+        # Push to Dutchie POS (gated by mint.dutchie_discount_push.mode +
+        # per-market + per-store flags; no-ops with mode='off', which is
+        # the default until ops flips it).
+        self._push_discounts_to_dutchie(discount_ids)
+
         self.write({'state': 'published'})
         self.message_post(
             body=f"Published {len(discount_ids)} deal(s) to frontend.",

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Audit log for the Odoo → Dutchie discount push.
+         Visible to PTL Manager (write/create); Viewer can read.
+         Lives under "Mint Marketing → Compliance" since it tracks an
+         outbound write to a regulated POS. -->
+
+    <record id="view_dutchie_push_log_list" model="ir.ui.view">
+        <field name="name">mint.dutchie.discount.push.log.list</field>
+        <field name="model">mint.dutchie.discount.push.log</field>
+        <field name="arch" type="xml">
+            <list string="Dutchie Discount Push Log"
+                  decoration-success="success == True"
+                  decoration-danger="success == False"
+                  decoration-muted="mode == 'dry-run'">
+                <field name="create_date" widget="datetime"/>
+                <field name="discount_id"/>
+                <field name="company_id"/>
+                <field name="dutchie_loc_id"/>
+                <field name="mode" widget="badge"
+                       decoration-info="mode == 'dry-run'"
+                       decoration-success="mode == 'live'"/>
+                <field name="success" widget="boolean_toggle" readonly="1"/>
+                <field name="elapsed_ms"/>
+                <field name="error_message" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_dutchie_push_log_form" model="ir.ui.view">
+        <field name="name">mint.dutchie.discount.push.log.form</field>
+        <field name="model">mint.dutchie.discount.push.log</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="discount_id" readonly="1"/>
+                            <field name="company_id" readonly="1"/>
+                            <field name="dutchie_loc_id" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="mode" readonly="1"/>
+                            <field name="success" readonly="1"/>
+                            <field name="elapsed_ms" readonly="1"/>
+                            <field name="create_date" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Error" invisible="not error_message">
+                        <field name="error_message" nolabel="1" readonly="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Request">
+                            <field name="request_payload" widget="text" readonly="1"/>
+                        </page>
+                        <page string="Response">
+                            <field name="response_body" widget="text" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_dutchie_push_log_search" model="ir.ui.view">
+        <field name="name">mint.dutchie.discount.push.log.search</field>
+        <field name="model">mint.dutchie.discount.push.log</field>
+        <field name="arch" type="xml">
+            <search string="Dutchie Push Log">
+                <field name="discount_id"/>
+                <field name="company_id"/>
+                <field name="dutchie_loc_id"/>
+                <filter name="failures" string="Failures Only"
+                        domain="[('success', '=', False)]"/>
+                <filter name="live" string="Live Mode" domain="[('mode', '=', 'live')]"/>
+                <filter name="dry_run" string="Dry Run" domain="[('mode', '=', 'dry-run')]"/>
+                <filter name="group_store" string="Store"
+                        context="{'group_by': 'company_id'}"/>
+                <filter name="group_mode" string="Mode"
+                        context="{'group_by': 'mode'}"/>
+                <filter name="group_day" string="Day"
+                        context="{'group_by': 'create_date:day'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_dutchie_push_log" model="ir.actions.act_window">
+        <field name="name">Dutchie Push Log</field>
+        <field name="res_model">mint.dutchie.discount.push.log</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_dutchie_push_log_search"/>
+    </record>
+
+    <menuitem id="menu_dutchie_push_log"
+              name="Dutchie Push Log"
+              parent="menu_compliance"
+              action="action_dutchie_push_log"
+              sequence="50"/>
+
+</odoo>

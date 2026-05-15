@@ -12,3 +12,4 @@ from . import push_subscription
 from . import push_notification
 from . import push_campaign
 from . import push_banner
+from . import dutchie_discount_push
