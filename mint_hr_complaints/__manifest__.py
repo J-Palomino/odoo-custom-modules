@@ -1,0 +1,21 @@
+{
+    "name": "Mint HR Complaints",
+    "version": "19.0.1.0.0",
+    "category": "Human Resources",
+    "summary": "Public Workplace Concern Reporting Form routed to HR as a confidential complaint record",
+    "author": "Mint Cannabis",
+    "license": "LGPL-3",
+    "depends": ["base", "mail", "hr", "website"],
+    "data": [
+        "security/security.xml",
+        "security/ir.model.access.csv",
+        "data/ir_sequence_data.xml",
+        "data/discuss_channel_data.xml",
+        "data/ir_cron_data.xml",
+        "views/complaint_views.xml",
+        "views/complaint_templates.xml",
+    ],
+    "installable": True,
+    "auto_install": False,
+    "application": False,
+}

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Add vendor brand + funding fields to crm.lead form -->
+    <record id="crm_lead_form_inherit_mint_vendor" model="ir.ui.view">
+        <field name="name">crm.lead.form.inherit.mint.vendor</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_create_submission"
+                        string="Create Deal Submission"
+                        type="object"
+                        class="btn-secondary"
+                        invisible="not vendor_brand_id"/>
+            </xpath>
+            <xpath expr="//field[@name='partner_name']" position="after">
+                <field name="vendor_brand_id"
+                       options="{'no_create': True, 'no_open': True}"/>
+            </xpath>
+            <xpath expr="//page[1]" position="after">
+                <page string="Vendor Funding" name="vendor_funding"
+                      invisible="not vendor_brand_id">
+                    <group>
+                        <group>
+                            <field name="vendor_funding_amount" widget="monetary"/>
+                            <field name="vendor_funding_currency_id"/>
+                            <field name="vendor_funding_percent"/>
+                        </group>
+                        <group>
+                            <field name="campaign_ids" readonly="1"/>
+                            <field name="submission_ids" readonly="1"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

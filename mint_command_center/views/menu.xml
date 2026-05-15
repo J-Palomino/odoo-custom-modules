@@ -5,11 +5,24 @@
 
     <menuitem id="menu_command_center_root"
               name="Mint Marketing"
+              web_icon="mint_command_center,static/description/icon.png"
               sequence="5"/>
 
-    <!-- ── PTL Section ── -->
+    <!-- Reparent the legacy mint_banner top-level "Mint Marketing" menu under
+         the Command Center so there is a single Mint Marketing app tile. -->
+    <record id="mint_banner.menu_mint_banner_root" model="ir.ui.menu">
+        <field name="name">Storefront CMS</field>
+        <field name="parent_id" ref="menu_command_center_root"/>
+        <field name="web_icon">false</field>
+        <field name="sequence">30</field>
+    </record>
+
+    <!-- ── Deals Section ──
+         Single home for everything deal-related: PTL, Hot Box, Brand
+         Calendar/Rankings, vendor submissions. The xmlid `menu_ptl` is reused
+         (renamed) so existing references and bookmarks keep resolving. -->
     <menuitem id="menu_ptl"
-              name="PTL"
+              name="Deals"
               parent="menu_command_center_root"
               sequence="10"/>
 
@@ -26,7 +39,7 @@
               sequence="15"/>
 
     <menuitem id="menu_ptl_deals"
-              name="All PTL Deals"
+              name="National Promo Log"
               parent="menu_ptl"
               action="action_ptl_deal"
               sequence="20"/>
@@ -35,33 +48,37 @@
               name="Brand Calendar"
               parent="menu_ptl"
               action="action_brand_calendar_entry"
-              sequence="18"/>
+              sequence="25"/>
 
     <menuitem id="menu_deal_submissions"
               name="Deal Submissions"
               parent="menu_ptl"
               action="action_deal_submission"
-              sequence="25"/>
-
-    <!-- ── Hot Box Section ── -->
-    <menuitem id="menu_hotbox"
-              name="Hot Box"
-              parent="menu_command_center_root"
-              action="action_hotbox_deal"
-              sequence="20"/>
-
-    <!-- ── Brand Rankings ── -->
-    <menuitem id="menu_brand_rankings"
-              name="Brand Rankings"
-              parent="menu_command_center_root"
-              action="action_brand_ranking"
               sequence="30"/>
 
-    <!-- ── Marketing Section ── -->
-    <menuitem id="menu_marketing"
-              name="Marketing"
-              parent="menu_command_center_root"
+    <menuitem id="menu_national_promo"
+              name="Promo Campaigns"
+              parent="menu_ptl"
+              action="action_national_promo"
+              sequence="28"/>
+
+    <menuitem id="menu_hotbox"
+              name="Hot Box"
+              parent="menu_ptl"
+              action="action_hotbox_deal"
               sequence="35"/>
+
+    <menuitem id="menu_brand_rankings"
+              name="Brand Rankings"
+              parent="menu_ptl"
+              action="action_brand_ranking"
+              sequence="40"/>
+
+    <!-- ── Push Section ── (was "Marketing") -->
+    <menuitem id="menu_marketing"
+              name="Push"
+              parent="menu_command_center_root"
+              sequence="20"/>
 
     <menuitem id="menu_push_notifications"
               name="Push Notifications"

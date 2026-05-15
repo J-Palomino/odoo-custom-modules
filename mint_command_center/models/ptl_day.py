@@ -9,7 +9,7 @@ from odoo import api, fields, models
 _logger = logging.getLogger(__name__)
 
 WEBHOOK_URL_PARAM = 'mint.ptl_sync.webhook_url'
-DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production.up.railway.app/api/webhook/ptl-discount-sync'
+DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production-6aa5.up.railway.app/api/webhook/ptl-discount-sync'
 API_KEY_PARAM = 'mint.inventory_service.api_key'
 
 DAY_NAME_MAP = {
@@ -23,6 +23,8 @@ DISCOUNT_TYPE_MAP = {
     'bogo': 'bogo',
     'bundle': 'bogo',
     'price': 'price_to_amount',
+    'points_multiplier': 'points_multiplier',
+    'clearance': 'clearance',
 }
 
 CALC_METHOD_MAP = {
@@ -30,6 +32,8 @@ CALC_METHOD_MAP = {
     'fixed': 'DOLLAR_OFF',
     'bogo': 'BOGO',
     'price_to_amount': 'PRICE_TO_AMOUNT_TOTAL',
+    'points_multiplier': 'POINTS_MULTIPLIER',
+    'clearance': 'CLEARANCE_PERCENT_OFF',
 }
 
 
@@ -144,9 +148,73 @@ class PtlDay(models.Model):
         # Push to inventory service
         self._push_discounts_to_redis(discount_ids)
 
+        # Push to Dutchie POS (gated by mint.dutchie_discount_push.mode +
+        # per-market + per-store flags; no-ops with mode='off', which is
+        # the default until ops flips it).
+        self._push_discounts_to_dutchie(discount_ids)
+
         self.write({'state': 'published'})
         self.message_post(
             body=f"Published {len(discount_ids)} deal(s) to frontend.",
+            message_type='comment',
+        )
+
+    def action_unpublish(self):
+        """Unpublish: drop this day's deals from the FE.
+
+        For each deal on this day, look for OTHER days that are still
+        'published' and also reference the deal. If any exist, rescope the
+        mint.discount to those days' date range + day-of-week bools so the
+        deal keeps serving for them. If no other published day remains,
+        deactivate the mint.discount outright. Either way, push the updated
+        records to mintinvsvc so Redis reflects the change on the next
+        cacheSync tick.
+        """
+        self.ensure_one()
+        if self.state != 'published':
+            from odoo.exceptions import UserError
+            raise UserError("Only published days can be unpublished.")
+
+        Day = self.env['mint.ptl.day'].sudo()
+        affected_ids = []
+        deactivated = 0
+        rescoped = 0
+
+        for deal in self.deal_ids:
+            discount = deal.discount_id
+            if not discount:
+                continue
+
+            other_days = Day.search([
+                ('id', '!=', self.id),
+                ('state', '=', 'published'),
+                ('deal_ids', 'in', deal.id),
+            ])
+
+            if other_days:
+                dates = other_days.mapped('date')
+                discount.write({
+                    'is_published': True,
+                    'valid_from': min(dates),
+                    'valid_until': max(dates),
+                })
+                self.env['mint.discount']._recompute_day_booleans(discount)
+                rescoped += 1
+            else:
+                discount.write({'is_published': False})
+                deactivated += 1
+
+            affected_ids.append(discount.id)
+
+        if affected_ids:
+            self._push_discounts_to_redis(affected_ids)
+
+        self.write({'state': 'confirmed'})
+        self.message_post(
+            body=(
+                f"Unpublished: {deactivated} deal(s) deactivated, "
+                f"{rescoped} rescoped to remaining published days."
+            ),
             message_type='comment',
         )
 
@@ -195,11 +263,12 @@ class PtlDay(models.Model):
             'terms': deal.details_exclusions or '',
             'discount_type': disc_type,
             'discount_amount': amount,
-            'is_active': True,
+            'is_published': True,
             'is_featured': deal.is_featured,
             'is_available_online': True,
             'ptl_deal_id': deal.id,
             'dutchie_discount_id': f'ptl_{deal.id}',
+            'excluded_skus': deal.excluded_skus or False,
         }
 
         # Date range from linked PTL days
@@ -212,13 +281,12 @@ class PtlDay(models.Model):
         if deal.store_ids:
             vals['store_ids'] = [(6, 0, deal.store_ids.ids)]
 
-        # Brand targeting (ptl.deal uses res.partner, mint.discount uses mint.brand)
+        # Brand targeting — direct mint.brand reference
         if deal.brand_id:
-            brand = self.env['mint.brand'].search([
-                ('name', '=ilike', deal.brand_id.name),
-            ], limit=1)
-            if brand:
-                vals['brand_ids'] = [(6, 0, [brand.id])]
+            vals['brand_ids'] = [(6, 0, [deal.brand_id.id])]
+
+        if deal.excluded_brand_ids:
+            vals['exclude_brand_ids'] = [(6, 0, deal.excluded_brand_ids.ids)]
 
         # Category targeting (ptl.deal uses char, mint.discount uses product.category)
         if deal.product_category:
@@ -295,18 +363,48 @@ class PtlDay(models.Model):
         """Convert mint.discount → inventory service webhook payload."""
         calc_method = CALC_METHOD_MAP.get(discount.discount_type, 'PERCENT_OFF')
 
-        # Build brand/category targeting JSONB
+        # Build brand/category/product targeting JSONB.
+        # Emit the Dutchie-namespace cross-reference IDs (dutchie_brand_id /
+        # dutchie_category_id / dutchie_product_id) that Odoo records carry.
+        # The downstream mintinvsvc resolver indexes inventory by those same
+        # IDs — Odoo-internal record ids have no meaning downstream. Records
+        # without a cross-reference are dropped from the payload so we never
+        # emit wrong-namespace IDs the resolver would silently miss.
+        def _coerce_ids(records, field):
+            out = []
+            for r in records:
+                val = getattr(r, field, None)
+                if not val:
+                    continue
+                try:
+                    out.append(int(str(val).strip()))
+                except (TypeError, ValueError):
+                    continue
+            return out
+
         brands = None
         if discount.brand_ids:
-            brands = {'ids': discount.brand_ids.ids, 'isExclusion': False}
+            dutchie_ids = _coerce_ids(discount.brand_ids, 'dutchie_brand_id')
+            if dutchie_ids:
+                brands = {'ids': dutchie_ids, 'isExclusion': False}
+        elif discount.exclude_brand_ids:
+            dutchie_ids = _coerce_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
+            if dutchie_ids:
+                brands = {'ids': dutchie_ids, 'isExclusion': True}
 
         categories = None
         if discount.category_ids:
-            categories = {'ids': discount.category_ids.ids, 'isExclusion': False}
+            dutchie_ids = _coerce_ids(discount.category_ids, 'dutchie_category_id')
+            if dutchie_ids:
+                categories = {'ids': dutchie_ids, 'isExclusion': False}
 
         products = None
         if discount.product_ids:
-            products = {'ids': discount.product_ids.ids, 'isExclusion': False}
+            dutchie_ids = _coerce_ids(discount.product_ids, 'dutchie_product_id')
+            if dutchie_ids:
+                products = {'ids': dutchie_ids, 'isExclusion': False}
+
+        excluded_skus = sorted(discount._excluded_sku_set()) if discount.excluded_skus else None
 
         return {
             'source_external_id': str(discount.id),
@@ -316,6 +414,10 @@ class PtlDay(models.Model):
             'discount_amount': discount.discount_amount,
             'calculation_method': calc_method,
             'is_active': discount.is_active,
+            'is_published': discount.is_published,
+            'is_available_online': discount.is_available_online,
+            'start_time': discount.start_time or 0.0,
+            'end_time': discount.end_time or 0.0,
             'valid_from': discount.valid_from.isoformat() if discount.valid_from else None,
             'valid_until': discount.valid_until.isoformat() if discount.valid_until else None,
             'monday': discount.monday,
@@ -328,6 +430,71 @@ class PtlDay(models.Model):
             'brands': brands,
             'product_categories': categories,
             'products': products,
+            'excluded_skus': excluded_skus,
             'sales_details': discount.description or None,
             'deal_classification': discount.deal_classification or 'sale',
+        }
+
+    def action_export_ptl_calendar_csv(self):
+        """Return an act_url action that streams the selected PTL days as CSV.
+
+        Wired from the `PTL Calendar (CSV)` server action defined in
+        `reports/ptl_calendar_reports.xml`.
+        """
+        ids_param = ','.join(str(r.id) for r in self)
+        return {
+            'type': 'ir.actions.act_url',
+            'url': f'/mint/ptl-calendar/export.csv?ids={ids_param}',
+            'target': 'self',
+        }
+
+    @api.model
+    def schedule_deal(self, deal_id, date, market_id):
+        """Schedule an approved deal on a given (date, market) PTL day.
+
+        - Finds the existing mint.ptl.day for that (date, market_id), or
+          creates a new draft day if none exists (the date_market_uniq
+          constraint guarantees at most one).
+        - Adds the deal to deal_ids (idempotent — m2m link, no dup).
+        - Posts a chatter note on the day so the action is auditable.
+
+        Called from the PTL Calendar dragboard side pane when the user drops
+        an approved-deal card onto a calendar cell.
+        """
+        if not deal_id or not date or not market_id:
+            from odoo.exceptions import UserError
+            raise UserError("schedule_deal requires deal_id, date, and market_id.")
+
+        Deal = self.env['mint.ptl.deal']
+        deal = Deal.browse(int(deal_id)).exists()
+        if not deal:
+            from odoo.exceptions import UserError
+            raise UserError(f"Deal {deal_id} not found.")
+        if deal.state != 'approved':
+            from odoo.exceptions import UserError
+            raise UserError(
+                f"Only approved deals can be scheduled from the dragboard "
+                f"(deal {deal.id} is '{deal.state}')."
+            )
+
+        day = self.search([
+            ('date', '=', date),
+            ('market_id', '=', int(market_id)),
+        ], limit=1)
+        created = False
+        if not day:
+            day = self.create({'date': date, 'market_id': int(market_id)})
+            created = True
+
+        if deal.id not in day.deal_ids.ids:
+            day.write({'deal_ids': [(4, deal.id)]})
+            day.message_post(
+                body=f"Scheduled deal <b>{deal.name}</b> via PTL Calendar dragboard.",
+                message_type='comment',
+            )
+
+        return {
+            'day_id': day.id,
+            'deal_id': deal.id,
+            'created': created,
         }

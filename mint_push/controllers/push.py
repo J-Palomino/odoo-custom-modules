@@ -80,11 +80,16 @@ class MintPushAPI(http.Controller):
 
         endpoint = data.get('endpoint')
         keys = data.get('keys', {})
-        p256dh = keys.get('p256dh')
-        auth = keys.get('auth')
+        p256dh = keys.get('p256dh') or ''
+        auth = keys.get('auth') or ''
 
-        if not endpoint or not p256dh or not auth:
-            return error_response('Missing required fields: endpoint, keys.p256dh, keys.auth')
+        if not endpoint:
+            return error_response('Missing required field: endpoint')
+
+        # Web Push requires p256dh + auth; native apps send device tokens instead
+        is_native = data.get('platform') in ('ios', 'android')
+        if not is_native and (not p256dh or not auth):
+            return error_response('Missing required fields: keys.p256dh, keys.auth')
 
         Sub = request.env['mint.push.subscription'].sudo()
 
@@ -107,6 +112,12 @@ class MintPushAPI(http.Controller):
                 store_id = store.id
 
         region = data.get('region') or ''
+
+        # Platform detection (web, ios, android)
+        platform = data.get('platform', 'web')
+        if platform not in ('web', 'ios', 'android'):
+            platform = 'web'
+        device_token = data.get('device_token') or ''
 
         # GPS coordinates (optional, from cached location)
         latitude = data.get('latitude')
@@ -133,7 +144,10 @@ class MintPushAPI(http.Controller):
                 'key_p256dh': p256dh,
                 'key_auth': auth,
                 'fail_count': 0,
+                'platform': platform,
             }
+            if device_token:
+                vals['device_token'] = device_token
             if site_id:
                 vals['site_id'] = site_id
             if store_id:
@@ -147,7 +161,8 @@ class MintPushAPI(http.Controller):
                 vals['longitude'] = float(longitude)
                 vals['geo_updated_at'] = fields.Datetime.now()
             existing.write(vals)
-            _logger.info("Updated push subscription: %s... partner=%s", endpoint[:60], partner_id or 'anon')
+            _logger.info("Updated push subscription: %s... platform=%s partner=%s",
+                         endpoint[:60], platform, partner_id or 'anon')
             return json_response({'status': 'updated', 'id': existing.id})
 
         create_vals = {
@@ -157,7 +172,10 @@ class MintPushAPI(http.Controller):
             'site_id': site_id,
             'store_id': store_id,
             'region': region,
+            'platform': platform,
         }
+        if device_token:
+            create_vals['device_token'] = device_token
         if partner_id:
             create_vals['partner_id'] = partner_id
         if latitude is not None and longitude is not None:
@@ -165,7 +183,8 @@ class MintPushAPI(http.Controller):
             create_vals['longitude'] = float(longitude)
             create_vals['geo_updated_at'] = fields.Datetime.now()
         sub = Sub.create(create_vals)
-        _logger.info("New push subscription: %s... partner=%s", endpoint[:60], partner_id or 'anon')
+        _logger.info("New push subscription: %s... platform=%s partner=%s",
+                     endpoint[:60], platform, partner_id or 'anon')
         return json_response({'status': 'subscribed', 'id': sub.id})
 
     # ==================== UNSUBSCRIBE ====================
@@ -192,74 +211,37 @@ class MintPushAPI(http.Controller):
 
         return json_response({'status': 'not_found'}, 404)
 
-    # ==================== SUBSCRIBER LOCATIONS (for Grafana map) ====================
+    # ==================== LOCATION UPDATE ====================
 
-    @http.route('/api/v1/push/locations', type='http', auth='none',
-                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
-    def subscriber_locations(self):
-        """Return anonymized subscriber locations for Grafana Geomap.
+    @http.route('/api/v1/push/location', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def update_location(self):
+        """Lightweight GPS location update for an existing subscriber."""
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
 
-        Groups subscribers by rounded lat/lng (~1km grid) to preserve privacy.
-        Returns counts per grid cell, region, and store.
-        """
+        endpoint = data.get('endpoint')
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+
+        if not endpoint:
+            return error_response('Missing required field: endpoint')
+        if latitude is None or longitude is None:
+            return error_response('Missing required fields: latitude, longitude')
+
         Sub = request.env['mint.push.subscription'].sudo()
+        existing = Sub.search([('endpoint', '=', endpoint)], limit=1)
+        if existing:
+            existing.write({
+                'latitude': float(latitude),
+                'longitude': float(longitude),
+                'geo_updated_at': fields.Datetime.now(),
+            })
+            return json_response({'ok': True})
 
-        # Only include subscribers with valid GPS data
-        domain = [
-            ('latitude', '!=', 0),
-            ('longitude', '!=', 0),
-            ('latitude', '!=', False),
-            ('longitude', '!=', False),
-        ]
-
-        # Query: round to 2 decimal places (~1.1km grid) for privacy
-        request.env.cr.execute("""
-            SELECT
-                ROUND(latitude::numeric, 2) AS lat,
-                ROUND(longitude::numeric, 2) AS lng,
-                COALESCE(region, '') AS region,
-                COALESCE(
-                    (SELECT x_slug FROM res_company WHERE id = g.store_id),
-                    ''
-                ) AS store_slug,
-                subscriber_count
-            FROM (
-                SELECT
-                    ROUND(latitude::numeric, 2) AS lat,
-                    ROUND(longitude::numeric, 2) AS lng,
-                    region,
-                    store_id,
-                    COUNT(*) AS subscriber_count
-                FROM mint_push_subscription
-                WHERE latitude IS NOT NULL
-                  AND longitude IS NOT NULL
-                  AND latitude != 0
-                  AND longitude != 0
-                GROUP BY
-                    ROUND(latitude::numeric, 2),
-                    ROUND(longitude::numeric, 2),
-                    region,
-                    store_id
-            ) g
-            ORDER BY subscriber_count DESC
-        """)
-        rows = request.env.cr.dictfetchall()
-
-        # Also return summary stats
-        total_with_geo = sum(r['subscriber_count'] for r in rows)
-        total_subs = Sub.search_count([])
-
-        return json_response({
-            'total_subscribers': total_subs,
-            'total_with_location': total_with_geo,
-            'locations': [{
-                'lat': float(r['lat']),
-                'lng': float(r['lng']),
-                'region': r['region'],
-                'store': r['store_slug'],
-                'count': r['subscriber_count'],
-            } for r in rows],
-        })
+        return json_response({'ok': True, 'status': 'not_found'})
 
     # ==================== SEND (admin) ====================
 

@@ -18,6 +18,7 @@ class DaisyAgentJob(models.Model):
     conversation_history = fields.Text(help="JSON-serialized conversation history")
     conversation_id = fields.Char(help="Daisy+ chatId for multi-turn continuity")
     context_prefix = fields.Text(help="Document context for mail.thread responses")
+    session_id = fields.Char(help="Daisy+ sessionId — stable per-user memory key (partner-N or guest-N)")
 
     state = fields.Selection(
         [
@@ -75,7 +76,9 @@ class DaisyAgentJob(models.Model):
                 # Build history and call Daisy+ API
                 history = json.loads(job.conversation_history) if job.conversation_history else []
                 full_text = (job.context_prefix or "") + job.message_text
-                ai_result = agent.get_ai_response(full_text, history, job.conversation_id)
+                ai_result = agent.get_ai_response(
+                    full_text, history, job.conversation_id, session_id=job.session_id or None,
+                )
 
                 # Stop typing
                 if member:

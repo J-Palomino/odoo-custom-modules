@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="action_visual_cms" model="ir.actions.act_url">
+        <field name="name">Visual CMS</field>
+        <field name="url">/visual-cms</field>
+        <field name="target">self</field>
+    </record>
+
+    <menuitem id="menu_visual_cms"
+              name="Visual CMS"
+              parent="mint_banner.menu_mint_banner_root"
+              action="action_visual_cms"
+              sequence="10"/>
+
+</odoo>

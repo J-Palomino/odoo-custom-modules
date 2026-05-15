@@ -37,11 +37,8 @@ class MintBannerAPI(http.Controller):
 
     @http.route('/api/v1/banners', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
-    def get_banners(self):
+    def get_banners(self, slot=None, category=None, company_id=None):
         """Return active banners filtered by slot, category, and company."""
-        slot = request.params.get('slot')
-        category = request.params.get('category')
-        company_id = request.params.get('company_id')
 
         domain = [('active', '=', True)]
 
@@ -101,8 +98,8 @@ class MintBannerAPI(http.Controller):
                 'brand': b.brand or '',
                 'search_term': b.search_term or '',
                 'sequence': b.sequence,
-                'regions': getattr(b, 'x_regions', '') or '',
-                'store_slugs': getattr(b, 'x_store_slugs', '') or '',
+                'regions': b.regions or '',
+                'store_slugs': b.store_slugs or '',
             })
 
         return json_response(result)

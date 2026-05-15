@@ -32,6 +32,18 @@ class DaisyAgent(models.Model):
     partner_id = fields.Many2one("res.partner", related="user_id.partner_id", string="Partner", store=True)
     user_group_ids = fields.Many2many(related="user_id.group_ids", string="User Groups", readonly=True)
     email = fields.Char(compute="_compute_email", store=True)
+    manager_id = fields.Many2one(
+        "res.users",
+        string="Reports To",
+        help="Employee this agent assists. Set by the create-agent-for-user wizard.",
+    )
+    active = fields.Boolean(default=True)
+
+    # --- MCP credentials (set by create-agent-for-user wizard) ---
+    mcp_odoo_url = fields.Char(string="MCP Odoo URL")
+    mcp_odoo_username = fields.Char(string="MCP Odoo Username")
+    mcp_odoo_api_key = fields.Char(string="MCP Odoo API Key")
+    mcp_server_url = fields.Char(string="MCP Server URL")
 
     # --- Daisy+ AI config ---
     daisy_api_key = fields.Char(string="Daisy+ API Key")
@@ -309,7 +321,7 @@ class DaisyAgent(models.Model):
             "target": "current",
         }
 
-    def _enqueue_response(self, channel_model, channel_id, user_text, history, conversation_id, context_prefix=""):
+    def _enqueue_response(self, channel_model, channel_id, user_text, history, conversation_id, context_prefix="", session_id=None):
         """Create a job record and trigger immediate cron processing."""
         self.ensure_one()
         self.env["daisy.agent.job"].sudo().create({
@@ -320,11 +332,14 @@ class DaisyAgent(models.Model):
             "conversation_history": json.dumps(history) if history else False,
             "conversation_id": conversation_id or False,
             "context_prefix": context_prefix or False,
+            "session_id": session_id or False,
         })
         self.env.ref("daisydo_agents.ir_cron_process_agent_jobs")._trigger()
 
-    def get_ai_response(self, message, conversation_history=None, conversation_id=None, override_config=None):
+    def get_ai_response(self, message, conversation_history=None, conversation_id=None, override_config=None, session_id=None):
         """Call Daisy+ API using this agent's own credentials."""
         self.ensure_one()
         ai_svc = self.env["daisy.ai.service"]
-        return ai_svc._call_daisy_api_for_agent(self, message, conversation_history, conversation_id, override_config)
+        return ai_svc._call_daisy_api_for_agent(
+            self, message, conversation_history, conversation_id, override_config, session_id=session_id,
+        )

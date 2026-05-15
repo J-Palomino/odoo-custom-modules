@@ -13,12 +13,14 @@
         'auth_signup',
         'sale_management',
         'loyalty',
+        'mint_api_v2',
     ],
     'external_dependencies': {
         'python': ['PyJWT'],
     },
     'data': [
         'security/ir.model.access.csv',
+        'security/web_customer_security.xml',
     ],
     'installable': True,
     'application': False,

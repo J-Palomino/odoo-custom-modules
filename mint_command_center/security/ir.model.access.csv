@@ -29,3 +29,9 @@ access_brand_calendar_ptl_mgr,mint.brand.calendar.entry.ptl_mgr,model_mint_brand
 access_deal_reject_wizard,mint.deal.reject.wizard,model_mint_deal_reject_wizard,group_ptl_manager,1,1,1,1
 access_deal_reject_wizard_vendor,mint.deal.reject.wizard.vendor,model_mint_deal_reject_wizard,group_vendor_manager,1,1,1,1
 access_stock_check_wizard,mint.stock.check.wizard,model_mint_stock_check_wizard,group_ptl_manager,1,1,1,1
+access_national_promo_viewer,mint.national.promo.viewer,model_mint_national_promo,group_viewer,1,0,0,0
+access_national_promo_vendor_mgr,mint.national.promo.vendor_mgr,model_mint_national_promo,group_vendor_manager,1,1,1,1
+access_national_promo_ptl_mgr,mint.national.promo.ptl_mgr,model_mint_national_promo,group_ptl_manager,1,1,1,0
+access_national_promo_marketing,mint.national.promo.marketing,model_mint_national_promo,group_marketing,1,1,0,0
+access_dutchie_push_log_viewer,mint.dutchie.discount.push.log.viewer,model_mint_dutchie_discount_push_log,group_viewer,1,0,0,0
+access_dutchie_push_log_ptl_mgr,mint.dutchie.discount.push.log.ptl_mgr,model_mint_dutchie_discount_push_log,group_ptl_manager,1,1,1,0

@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.3.0.0',
+    'version': '19.0.4.4.2',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -19,7 +19,7 @@
         Features:
           - Multi-market PTL calendars (AZ, NV, FL, MI, MO, IL)
           - Deal approval workflow (pending → approved/rejected → live → expired)
-          - Vendor deal submission form (/vendor-deals)
+          - Vendor deal submission form (/promos, /vendor-deals)
           - Brand calendar with add-to-PTL workflow
           - Stock check wizard with majority-rule logic
           - Multi-company isolation (deals per store)
@@ -35,6 +35,9 @@
         'mail',
         'bus',
         'website',
+        'crm',
+        'report_xlsx',
+        'spreadsheet_dashboard',
         'mint_push',
         'mint_banner',
         'mint_api_v2',
@@ -42,6 +45,9 @@
     'assets': {
         'web.assets_backend': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',
+            'mint_command_center/static/src/ptl_calendar/ptl_calendar.esm.js',
+            'mint_command_center/static/src/ptl_calendar/ptl_calendar.xml',
+            'mint_command_center/static/src/ptl_calendar/ptl_calendar.scss',
         ],
         'web.assets_frontend_lazy': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',
@@ -55,6 +61,8 @@
         'views/ptl_views.xml',
         'views/deal_submission_views.xml',
         'views/brand_calendar_views.xml',
+        'views/national_promo_views.xml',
+        'views/crm_lead_ext_views.xml',
         'views/hotbox_views.xml',
         'views/brand_ranking_views.xml',
         'views/compliance_views.xml',
@@ -67,6 +75,10 @@
         'views/stock_check_wizard_views.xml',
         'views/vendor_submission_templates.xml',
         'views/menu.xml',
+        'reports/ptl_calendar_reports.xml',
+        'reports/ptl_calendar_pdf_template.xml',
+        'data/spreadsheet_dashboards.xml',
+        'views/dutchie_push_log_views.xml',
     ],
     'post_init_hook': 'post_init_hook',
     'installable': True,

@@ -2,8 +2,13 @@
 """
 Dutchie purchase log — one record per transaction imported.
 Prevents duplicate imports and provides a browsable purchase history.
+Awards loyalty points atomically on create so points can never be skipped.
 """
-from odoo import fields, models
+import logging
+
+from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 
 class DutchiePurchase(models.Model):
@@ -49,3 +54,37 @@ class DutchiePurchase(models.Model):
         'UNIQUE(receipt_no, company_id)',
         'Receipt number must be unique per store.',
     )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Award loyalty points atomically when purchases are created."""
+        records = super().create(vals_list)
+        program = self.env['loyalty.program'].sudo().search(
+            [('program_type', '=', 'loyalty')], limit=1
+        )
+        if not program:
+            _logger.warning('Loyalty: No active loyalty program found — points NOT awarded for %d purchases', len(records))
+            return records
+
+        LoyaltyCard = self.env['loyalty.card'].sudo()
+        for rec in records:
+            if not rec.partner_id or not rec.loyalty_points:
+                continue
+            card = LoyaltyCard.search([
+                ('partner_id', '=', rec.partner_id.id),
+                ('program_id', '=', program.id),
+            ], limit=1)
+            if card:
+                card.write({'points': card.points + rec.loyalty_points})
+            else:
+                LoyaltyCard.create({
+                    'partner_id': rec.partner_id.id,
+                    'program_id': program.id,
+                    'points': rec.loyalty_points,
+                    'company_id': rec.company_id.id,
+                })
+            _logger.info(
+                'Loyalty: +%d points for %s (receipt %s)',
+                int(rec.loyalty_points), rec.partner_id.name, rec.receipt_no,
+            )
+        return records

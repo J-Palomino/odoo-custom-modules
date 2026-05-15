@@ -70,6 +70,23 @@ header#top nav.navbar {
     a:hover, .nav-link:hover, .dropdown-toggle:hover {
         color: #ffffff !important;
     }
+
+    // Mobile offcanvas lives inside header#top nav.navbar but has a white
+    // bg, so the white nav text above would render invisible. Re-scope to
+    // dark text; hover returns to the brand primary.
+    .o_navbar_mobile {
+        &, a, span, .nav-link, .navbar-brand, .dropdown-toggle,
+        .o_navlink_background, .fa, .dropdown-item,
+        .js_language_selector span, .nav-item > .nav-link > *,
+        .nav-item > .nav-link::after, .nav-item > .accordion-item * {
+            color: #212529 !important;
+        }
+
+        .nav-link:hover, .nav-link:focus,
+        .dropdown-item:hover, a:not(.btn):hover {
+            color: var(--daisy-primary) !important;
+        }
+    }
 }
 
 // Primary buttons

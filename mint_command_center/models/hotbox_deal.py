@@ -22,7 +22,7 @@ class HotboxDeal(models.Model):
         tracking=True,
     )
     brand_id = fields.Many2one(
-        'res.partner',
+        'mint.brand',
         string='Brand',
     )
     product_name = fields.Char(string='Product Name')
@@ -36,6 +36,8 @@ class HotboxDeal(models.Model):
             ('bogo', 'BOGO'),
             ('bundle', 'Bundle Deal'),
             ('price', 'Set Price'),
+            ('points_multiplier', 'Loyalty Points Multiplier'),
+            ('clearance', 'Clearance (Near Expiry)'),
         ],
         string='Discount Type',
     )

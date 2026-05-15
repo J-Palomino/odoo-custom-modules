@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <template id="report_concern_form" name="Workplace Concern Reporting Form">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5" style="max-width: 820px;">
+                    <div class="row">
+                        <div class="col-12">
+                            <h1 class="mb-2">Workplace Concern Reporting Form</h1>
+                            <p class="text-muted mb-4">
+                                This form is for reporting workplace concerns only.
+                                Please do not conduct your own investigation. Submit all known details and HR will follow up.
+                            </p>
+                            <t t-if="error">
+                                <div class="alert alert-danger" role="alert">
+                                    <t t-esc="error"/>
+                                </div>
+                            </t>
+                            <t t-if="success">
+                                <div class="alert alert-success" role="alert">
+                                    <strong>Thank you.</strong>
+                                    Your concern has been submitted. Reference: <t t-esc="success"/>.
+                                    HR will follow up as appropriate.
+                                </div>
+                            </t>
+                            <t t-if="not success">
+                                <form action="/report-concern" method="post" enctype="multipart/form-data">
+                                    <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-6">
+                                            <label for="complainant_name" class="form-label">Complainant Name</label>
+                                            <input type="text" id="complainant_name" name="complainant_name"
+                                                   class="form-control"
+                                                   t-att-value="form_values.get('complainant_name', '')"/>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="complainant_position" class="form-label">Complainant Position/Dept</label>
+                                            <input type="text" id="complainant_position" name="complainant_position"
+                                                   class="form-control"
+                                                   t-att-value="form_values.get('complainant_position', '')"/>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-6">
+                                            <label for="subject_name" class="form-label fw-bold">
+                                                Subject Name <span class="text-danger">*</span>
+                                            </label>
+                                            <input type="text" id="subject_name" name="subject_name"
+                                                   class="form-control" required="required"
+                                                   t-att-value="form_values.get('subject_name', '')"/>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="subject_position" class="form-label">Subject Position/Dept</label>
+                                            <input type="text" id="subject_position" name="subject_position"
+                                                   class="form-control"
+                                                   t-att-value="form_values.get('subject_position', '')"/>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-check mb-3">
+                                        <input type="checkbox" id="is_anonymous" name="is_anonymous" value="1"
+                                               class="form-check-input"
+                                               t-att-checked="'checked' if form_values.get('is_anonymous') else None"/>
+                                        <label for="is_anonymous" class="form-check-label">Anonymous Complaint</label>
+                                        <div class="form-text">
+                                            Check if you wish to remain anonymous. Your name and position will not be stored.
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-6">
+                                            <label for="concern_type" class="form-label fw-bold">
+                                                Concern Type <span class="text-danger">*</span>
+                                            </label>
+                                            <select id="concern_type" name="concern_type" class="form-select" required="required">
+                                                <option value="">-- Select --</option>
+                                                <t t-foreach="concern_types" t-as="ct">
+                                                    <option t-att-value="ct[0]"
+                                                            t-att-selected="'selected' if form_values.get('concern_type') == ct[0] else None"
+                                                            t-esc="ct[1]"/>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label for="incident_date" class="form-label fw-bold">
+                                                Incident Date <span class="text-danger">*</span>
+                                            </label>
+                                            <input type="date" id="incident_date" name="incident_date"
+                                                   class="form-control" required="required"
+                                                   t-att-value="form_values.get('incident_date', '')"/>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label for="urgency" class="form-label">Urgency Level</label>
+                                            <select id="urgency" name="urgency" class="form-select">
+                                                <t t-foreach="urgency_options" t-as="u">
+                                                    <option t-att-value="u[0]"
+                                                            t-att-selected="'selected' if form_values.get('urgency', 'medium') == u[0] else None"
+                                                            t-esc="u[1]"/>
+                                                </t>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="incident_location" class="form-label">Incident Location</label>
+                                        <input type="text" id="incident_location" name="incident_location"
+                                               class="form-control"
+                                               t-att-value="form_values.get('incident_location', '')"/>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="description" class="form-label fw-bold">
+                                            Detailed Description <span class="text-danger">*</span>
+                                        </label>
+                                        <textarea id="description" name="description" rows="6"
+                                                  class="form-control" required="required"
+                                                  t-esc="form_values.get('description', '')"/>
+                                        <div class="form-text">
+                                            Provide facts only. Include what happened, who was present, and what was said or done.
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="witnesses" class="form-label">Witnesses</label>
+                                        <textarea id="witnesses" name="witnesses" rows="2"
+                                                  class="form-control"
+                                                  t-esc="form_values.get('witnesses', '')"/>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="evidence_description" class="form-label">Evidence Provided</label>
+                                        <textarea id="evidence_description" name="evidence_description" rows="2"
+                                                  class="form-control"
+                                                  t-esc="form_values.get('evidence_description', '')"/>
+                                    </div>
+
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-6">
+                                            <div class="form-check">
+                                                <input type="checkbox" id="is_safety_concern" name="is_safety_concern"
+                                                       value="1" class="form-check-input"
+                                                       t-att-checked="'checked' if form_values.get('is_safety_concern') else None"/>
+                                                <label for="is_safety_concern" class="form-check-label">Safety Concern?</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check">
+                                                <input type="checkbox" id="is_ongoing" name="is_ongoing"
+                                                       value="1" class="form-check-input"
+                                                       t-att-checked="'checked' if form_values.get('is_ongoing') else None"/>
+                                                <label for="is_ongoing" class="form-check-label">Ongoing Issue?</label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-4">
+                                        <label for="attachments" class="form-label">Attachments</label>
+                                        <input type="file" id="attachments" name="attachments"
+                                               class="form-control" multiple="multiple"
+                                               accept="image/*,application/pdf,.doc,.docx,.txt"/>
+                                        <div class="form-text">
+                                            Optional. Up to 5 files, 10 MB each. Images, PDFs, Word, or text.
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-primary btn-lg">Submit</button>
+                                </form>
+                            </t>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+</odoo>

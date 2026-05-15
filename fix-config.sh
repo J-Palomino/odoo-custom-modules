@@ -436,6 +436,46 @@ try:
             """)
             print("=== mail_mail_res_partner_rel FK recreated with CASCADE ===")
 
+    # Fix mail_message_res_partner_rel FK constraint — same issue for mail_message
+    # Prevents: "constraint: mail_message_res_partner_rel_mail_message_id_fkey"
+    cur.execute("""
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'mail_message_res_partner_rel' AND table_schema = 'public'
+    """)
+    if cur.fetchone():
+        cur.execute("""
+            DELETE FROM mail_message_res_partner_rel
+            WHERE mail_message_id NOT IN (SELECT id FROM mail_message)
+        """)
+        if cur.rowcount > 0:
+            print(f"=== Cleaned {cur.rowcount} orphaned mail_message_res_partner_rel rows ===")
+
+        cur.execute("""
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'mail_message_res_partner_rel_mail_message_id_fkey'
+        """)
+        if cur.fetchone():
+            cur.execute("""
+                ALTER TABLE mail_message_res_partner_rel
+                DROP CONSTRAINT mail_message_res_partner_rel_mail_message_id_fkey
+            """)
+            cur.execute("""
+                ALTER TABLE mail_message_res_partner_rel
+                ADD CONSTRAINT mail_message_res_partner_rel_mail_message_id_fkey
+                FOREIGN KEY (mail_message_id) REFERENCES mail_message(id) ON DELETE CASCADE
+            """)
+            print("=== mail_message_res_partner_rel FK recreated with CASCADE ===")
+
+    # Pre-create missing res_config_settings columns for daisydo_agents
+    for col in ('daisy_global_api_key', 'daisy_template_chatflow_id', 'go2rtc_api_url', 'go2rtc_public_url'):
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'res_config_settings' AND column_name = %s
+        """, (col,))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE res_config_settings ADD COLUMN {col} VARCHAR")
+            print(f"=== Pre-created column res_config_settings.{col} ===")
+
     cur.close()
     conn.close()
 except Exception as e:
@@ -560,6 +600,19 @@ if [ -f "$CONFIG_FILE" ]; then
     echo "workers = $WORKERS set in config"
 fi
 
+# Ensure server_wide_modules includes mint_redis_session (Redis sessions)
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "server_wide_modules" "$CONFIG_FILE"; then
+        if ! grep -q "mint_redis_session" "$CONFIG_FILE"; then
+            sed -i "s/server_wide_modules\s*=\s*.*/& ,mint_redis_session/" "$CONFIG_FILE"
+            echo "Added mint_redis_session to server_wide_modules"
+        fi
+    else
+        echo "server_wide_modules = base,web,mint_redis_session" >> "$CONFIG_FILE"
+        echo "Set server_wide_modules = base,web,mint_redis_session"
+    fi
+fi
+
 # Build extra args from environment variables
 EXTRA_ARGS=""
 if [ -n "$ODOO_UPDATE_MODULES" ] && [ "$ODOO_UPDATE_MODULES" != "none" ]; then
@@ -580,6 +633,48 @@ if [ -n "$CLOUDFLARE_TUNNEL_CREDENTIALS" ]; then
     echo "cloudflared started (pid $!)"
 else
     echo "=== Cloudflare Tunnel disabled (CLOUDFLARE_TUNNEL_CREDENTIALS not set) ==="
+fi
+
+# ── Patch Odoo to use Redis sessions ────────────────────────────────��
+# The mint_redis_session module can't load early enough via server_wide_modules
+# because odoo.addons.__path__ isn't populated yet. Instead, we directly patch
+# the Application class in odoo/http.py before Odoo starts.
+if [ -n "$REDIS_SESSION_URL" ]; then
+    echo "=== Patching odoo/http.py for Redis sessions ==="
+    ODOO_HTTP="/usr/lib/python3/dist-packages/odoo/http.py"
+    if ! grep -q "REDIS_SESSION_PATCH" "$ODOO_HTTP"; then
+        cat >> "$ODOO_HTTP" << 'PYREDIS'
+
+# ── REDIS_SESSION_PATCH (injected by fix-config.sh) ──────────────────
+def _apply_redis_session_patch():
+    import os, logging
+    _log = logging.getLogger("mint_redis_session")
+    url = os.environ.get("REDIS_SESSION_URL", "")
+    if not url:
+        return
+    try:
+        import redis
+        _client = redis.Redis.from_url(
+            url, decode_responses=True,
+            socket_connect_timeout=5, socket_timeout=5, retry_on_timeout=True,
+        )
+        _client.ping()
+    except Exception:
+        _log.warning("Redis session: cannot connect, using filesystem", exc_info=True)
+        return
+    import sys
+    sys.path.insert(0, "/opt/extra-addons/mint_redis_session")
+    from session import RedisSessionStore
+    _store = RedisSessionStore(redis_client=_client)
+    Application.session_store = property(lambda self: _store)
+    _log.info("Redis session store active: %s", url.split("@")[-1])
+
+_apply_redis_session_patch()
+PYREDIS
+        echo "Redis session patch injected into odoo/http.py"
+    else
+        echo "Redis session patch already present"
+    fi
 fi
 
 # Execute the original entrypoint
