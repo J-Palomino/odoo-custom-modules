@@ -12,7 +12,7 @@ itself (`POST /api/admin/discounts`) is in mintinvsvc and already shipped.
 Rollout sequence:
   1. Ship this with mode='off' — zero behavior change.
   2. Flip mode='dry-run' globally; payloads logged to mint.dutchie.discount.push.log.
-  3. Pick one canary (market + store) — set both x_dutchie_discount_push_enabled
+  3. Pick one canary (market + store) — set both dutchie_discount_push_enabled
      flags to True, mode='live'. Watch the log.
   4. Expand market by market. AZ last (LSP-575 leakage risk per
      dutchie-sandbox-locids-not-isolated.md).
@@ -36,11 +36,11 @@ PUSH_API_KEY_PARAM = 'mint.dutchie_discount_push.api_key'  # mirrors mint.ptl_sy
 class MintRegionDutchiePush(models.Model):
     _inherit = 'mint.region'
 
-    x_dutchie_discount_push_enabled = fields.Boolean(
+    dutchie_discount_push_enabled = fields.Boolean(
         string='Push Discounts to Dutchie',
         default=False,
         help='Master gate for this market. Even with mode=live, no push '
-             'happens unless this flag AND res.company.x_dutchie_discount_push_enabled '
+             'happens unless this flag AND res.company.dutchie_discount_push_enabled '
              'are both True. Per dutchie-sandbox-locids-not-isolated.md, '
              'AZ should be the LAST market enabled.',
     )
@@ -49,7 +49,7 @@ class MintRegionDutchiePush(models.Model):
 class ResCompanyDutchiePush(models.Model):
     _inherit = 'res.company'
 
-    x_dutchie_discount_push_enabled = fields.Boolean(
+    dutchie_discount_push_enabled = fields.Boolean(
         string='Push Discounts to Dutchie',
         default=False,
         help='Per-store opt-in. Both this AND mint.region flag must be True '
@@ -171,7 +171,7 @@ class PtlDayDutchiePush(models.Model):
         discounts = Discount.browse(discount_ids)
 
         # Per-market gate (this PTL day's market)
-        market_enabled = bool(self.market_id and self.market_id.x_dutchie_discount_push_enabled)
+        market_enabled = bool(self.market_id and self.market_id.dutchie_discount_push_enabled)
         if not market_enabled:
             _logger.info('Dutchie push: market %s not enabled, skipping %d discount(s)',
                          self.market_id.code if self.market_id else '?', len(discounts))
@@ -182,7 +182,7 @@ class PtlDayDutchiePush(models.Model):
             ('is_dispensary', '=', True),
             ('dutchie_store_id', '!=', False),
             ('region_id', '=', self.market_id.id),
-            ('x_dutchie_discount_push_enabled', '=', True),
+            ('dutchie_discount_push_enabled', '=', True),
         ]
         enabled_stores = self.env['res.company'].sudo().search(store_domain)
         if not enabled_stores:
