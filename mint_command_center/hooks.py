@@ -70,6 +70,11 @@ def post_init_hook(env):
     elif discount_model:
         _logger.info('Dutchie publish drain cron already exists')
 
+    # Note: Dutchie publish config-params (mint.inventory_service.base_url
+    # and .api_key) are set/checked in migrations/19.0.5.0.0/post-migrate.py
+    # so the logic fires on upgrades (when an existing module bumps to this
+    # version), not just first installs.
+
     # Backfill market_id for existing PTL days (migration from unique(date)
     # to unique(date, market_id))
     az_region = env['mint.region'].search([('code', '=', 'AZ')], limit=1)

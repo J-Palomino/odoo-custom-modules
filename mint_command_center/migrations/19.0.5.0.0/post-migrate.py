@@ -56,8 +56,56 @@ LOC_ID_BY_UUID = {
 }
 
 
+BASE_URL_KEY = 'mint.inventory_service.base_url'
+BASE_URL_DEFAULT = 'https://mintinvsvc-production-6aa5.up.railway.app'
+API_KEY_KEY = 'mint.inventory_service.api_key'
+
+
+def _seed_config_params(cr):
+    """Create mint.inventory_service.base_url if missing; warn if api_key is missing.
+
+    We intentionally don't write the api_key here — it's a secret, shared with
+    the existing PTL pipeline, and expected to already be set in prod. Better
+    to surface a missing key as a clear warning than to silently overwrite or
+    populate from a hardcoded value committed to source.
+    """
+    cr.execute("SELECT value FROM ir_config_parameter WHERE key = %s", (BASE_URL_KEY,))
+    row = cr.fetchone()
+    if not row or not row[0]:
+        if row is None:
+            cr.execute(
+                "INSERT INTO ir_config_parameter (key, value, create_date, write_date) "
+                "VALUES (%s, %s, NOW(), NOW())",
+                (BASE_URL_KEY, BASE_URL_DEFAULT),
+            )
+        else:
+            cr.execute(
+                "UPDATE ir_config_parameter SET value = %s, write_date = NOW() WHERE key = %s",
+                (BASE_URL_DEFAULT, BASE_URL_KEY),
+            )
+        _logger.info('Seeded config-param %s = %s', BASE_URL_KEY, BASE_URL_DEFAULT)
+    else:
+        _logger.info('config-param %s already set: %s', BASE_URL_KEY, row[0])
+
+    cr.execute("SELECT value FROM ir_config_parameter WHERE key = %s", (API_KEY_KEY,))
+    row = cr.fetchone()
+    if not row or not row[0]:
+        _logger.warning(
+            'config-param %s is empty — discount publishing will fail until '
+            'it is set via Settings → Technical → Parameters. The PTL pipeline '
+            'uses the same key, so it should already exist in prod.',
+            API_KEY_KEY,
+        )
+    else:
+        _logger.info('config-param %s is set (%d chars)', API_KEY_KEY, len(row[0]))
+
+
 def migrate(cr, version):
-    """Backfill LocId/LspId on res.company. Idempotent — only writes empty fields."""
+    """Backfill LocId/LspId on res.company + seed config-params.
+
+    Idempotent — only writes empty fields and only seeds missing config-params.
+    """
+    _seed_config_params(cr)
     # Stores are joined by their dutchie_store_id char field.
     cr.execute("SELECT id, name, dutchie_store_id, state_id FROM res_company")
     rows = cr.fetchall()
