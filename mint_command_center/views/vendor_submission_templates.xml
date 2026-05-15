@@ -26,7 +26,7 @@
 
                 <!-- Form (hidden after success) -->
                 <t t-if="not success">
-                    <form method="POST" action="/vendor-deals" class="needs-validation" novalidate="">
+                    <form method="POST" action="/promos" class="needs-validation" novalidate="">
                         <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
                         <!-- Vendor Info -->

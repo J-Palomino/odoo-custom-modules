@@ -32,7 +32,7 @@ DISCOUNT_TYPES = [
 class VendorSubmissionController(http.Controller):
 
     @http.route(
-        '/vendor-deals',
+        ['/promos', '/vendor-deals'],
         type='http',
         auth='public',
         website=True,
@@ -123,7 +123,44 @@ class VendorSubmissionController(http.Controller):
             vals['preferred_days'] = post['preferred_days'].strip()
 
         try:
-            submission = request.env['mint.deal.submission'].sudo().create(vals)
+            env = request.env
+            submission = env['mint.deal.submission'].sudo().create(vals)
+
+            # Mirror the submission as a CRM opportunity on the Vendor Promos
+            # pipeline so the marketing lead can work it from CRM (replies from
+            # the vendor get threaded onto the lead via the catchall alias).
+            try:
+                lead_vals = {
+                    'name': f"Promo - {vals['vendor_name']}: {vals['name']}",
+                    'type': 'opportunity',
+                    'contact_name': vals.get('vendor_contact') or vals['vendor_name'],
+                    'partner_name': vals['vendor_name'],
+                    'email_from': vals.get('vendor_email') or False,
+                    'phone': vals.get('vendor_phone') or False,
+                    'vendor_brand_id': vals.get('brand_id') or False,
+                    'vendor_funding_amount': vals.get('vendor_funding_amount') or 0.0,
+                    'vendor_funding_percent': vals.get('vendor_funding_percent') or 0.0,
+                    'description': vals.get('sales_details') or vals.get('details_exclusions') or '',
+                }
+                team = env.ref(
+                    'sales_team.salesteam_vendor_promos', raise_if_not_found=False,
+                ) or env['crm.team'].sudo().search(
+                    [('name', '=', 'Vendor Promos')], limit=1,
+                )
+                if team:
+                    lead_vals['team_id'] = team.id
+                    if team.user_id:
+                        lead_vals['user_id'] = team.user_id.id
+                lead = env['crm.lead'].sudo().create(lead_vals)
+                submission.sudo().write({'crm_lead_id': lead.id})
+            except Exception as lead_err:
+                # Submission already saved; don't fail the vendor's request
+                # just because the CRM mirror had a hiccup.
+                _logger.warning(
+                    'Submission %s saved but CRM lead creation failed: %s',
+                    submission.id, lead_err,
+                )
+
             ctx['success'] = (
                 f"Thank you! Your deal submission has been received "
                 f"(Reference: SUB-{submission.id:05d}). "

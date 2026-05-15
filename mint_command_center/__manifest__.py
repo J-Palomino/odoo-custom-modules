@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.4.0.5',
+    'version': '19.0.4.0.6',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -19,7 +19,7 @@
         Features:
           - Multi-market PTL calendars (AZ, NV, FL, MI, MO, IL)
           - Deal approval workflow (pending → approved/rejected → live → expired)
-          - Vendor deal submission form (/vendor-deals)
+          - Vendor deal submission form (/promos, /vendor-deals)
           - Brand calendar with add-to-PTL workflow
           - Stock check wizard with majority-rule logic
           - Multi-company isolation (deals per store)
