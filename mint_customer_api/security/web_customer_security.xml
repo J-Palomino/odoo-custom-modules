@@ -12,7 +12,6 @@
         -->
         <record id="group_web_customer_access" model="res.groups">
             <field name="name">Mint Web Customer Access</field>
-            <field name="category_id" ref="base.module_category_administration"/>
             <field name="comment">
                 Grants visibility of partners and users created through the
                 MintDeals consumer websites. Assign only to staff who need
