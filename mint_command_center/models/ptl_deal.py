@@ -365,3 +365,48 @@ class PtlDeal(models.Model):
             'view_mode': 'list,form',
             'domain': [('id', 'in', self.day_ids.ids)],
         }
+
+    @api.model
+    def search_approved_for_dragboard(self, date_from=None, date_to=None, market_id=None):
+        """Return approved deals available to schedule on the PTL Calendar.
+
+        Filters:
+          - state == 'approved'
+          - If market_id is given, deal.market_id matches or is unset.
+          - If date_from/date_to given, the deal's validity window must
+            overlap the calendar range. Deals without a window are always
+            considered valid.
+
+        Returns a list of dicts the dragboard renders directly.
+        """
+        domain = [('state', '=', 'approved')]
+        if market_id:
+            domain += ['|', ('market_id', '=', int(market_id)), ('market_id', '=', False)]
+        if date_from:
+            domain.append('|')
+            domain.append(('date_end', '=', False))
+            domain.append(('date_end', '>=', date_from))
+        if date_to:
+            domain.append('|')
+            domain.append(('date_start', '=', False))
+            domain.append(('date_start', '<=', date_to))
+
+        deals = self.search(domain, order='sequence, id', limit=200)
+        result = []
+        for deal in deals:
+            result.append({
+                'id': deal.id,
+                'name': deal.name or '',
+                'brand': deal.brand_id.name or '',
+                'category': deal.product_category or '',
+                'sale_type': dict(deal._fields['sale_type'].selection).get(deal.sale_type, '') if deal.sale_type else '',
+                'discount_type': dict(deal._fields['discount_type'].selection).get(deal.discount_type, '') if deal.discount_type else '',
+                'discount_value': deal.discount_value or 0.0,
+                'display_text': deal.display_text or '',
+                'market_id': deal.market_id.id if deal.market_id else False,
+                'market': deal.market_id.name or '',
+                'is_featured': bool(deal.is_featured),
+                'date_start': deal.date_start.isoformat() if deal.date_start else False,
+                'date_end': deal.date_end.isoformat() if deal.date_end else False,
+            })
+        return result

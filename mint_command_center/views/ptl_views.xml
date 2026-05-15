@@ -103,7 +103,8 @@
             <calendar string="PTL Calendar"
                       date_start="date"
                       color="state"
-                      quick_create="0">
+                      quick_create="0"
+                      js_class="ptl_calendar">
                 <field name="deal_count"/>
                 <field name="market_id"/>
                 <field name="state"/>
