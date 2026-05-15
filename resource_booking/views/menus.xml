@@ -3,11 +3,13 @@
      License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
 <data>
     <!-- User menus -->
+    <!-- Patched by mint: nest under Calendar app instead of top-level -->
     <menuitem
         id="resource_booking_main_menu"
         name="Resource Bookings"
+        parent="calendar.mail_menu_calendar"
         groups="group_user"
-        web_icon="resource_booking,static/description/icon.png"
+        sequence="50"
     />
     <menuitem
         id="resource_booking_menu"
