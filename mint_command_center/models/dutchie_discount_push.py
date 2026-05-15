@@ -57,19 +57,6 @@ class ResCompanyDutchiePush(models.Model):
     )
 
 
-class MintDiscountDutchiePush(models.Model):
-    _inherit = 'mint.discount'
-
-    dutchie_discount_id = fields.Integer(
-        string='Dutchie Discount ID',
-        index=True,
-        default=0,
-        help='ID returned by Dutchie\'s update-discount-item — 0 means not '
-             'pushed yet. Stored so re-publishes use update-mode (Id != 0) '
-             'instead of create-mode and don\'t spawn duplicates.',
-    )
-
-
 class DutchieDiscountPushLog(models.Model):
     _name = 'mint.dutchie.discount.push.log'
     _description = 'Audit log for Odoo → Dutchie discount push attempts'
@@ -139,8 +126,14 @@ class PtlDayDutchiePush(models.Model):
             'points_multiplier': 'PERCENT_OFF',  # closest fallback
             'clearance': 'PERCENT_OFF',
         }
+        # dutchie_discount_id is a Char (defined in mint_api_v2). For Dutchie's
+        # update-discount-item we need an integer Id (0 = create new). PTL-derived
+        # rows carry a synthetic 'ptl_<n>' value here that's NOT a Dutchie id; treat
+        # those as 0 (create) and let the live response give us the real one.
+        existing = (discount.dutchie_discount_id or '').strip()
+        existing_int = int(existing) if existing.isdigit() else 0
         return {
-            'Id': int(discount.dutchie_discount_id or 0),
+            'Id': existing_int,
             'Name': (discount.name or '')[:120],
             'LocId': int(store.dutchie_store_id) if store.dutchie_store_id and str(store.dutchie_store_id).isdigit() else 0,
             'IsActive': bool(discount.is_active) if hasattr(discount, 'is_active') else True,
@@ -248,8 +241,12 @@ class PtlDayDutchiePush(models.Model):
                 try:
                     parsed = json.loads(body)
                     new_id = (parsed.get('dutchie_raw') or {}).get('Data')
-                    if isinstance(new_id, int) and new_id > 0 and not discount.dutchie_discount_id:
-                        discount.sudo().write({'dutchie_discount_id': new_id})
+                    # Field is Char (from mint_api_v2) — store as string. Only
+                    # overwrite if currently empty or a synthetic 'ptl_*' marker.
+                    cur = (discount.dutchie_discount_id or '').strip()
+                    is_synthetic = cur.startswith('ptl_') or not cur
+                    if isinstance(new_id, int) and new_id > 0 and is_synthetic:
+                        discount.sudo().write({'dutchie_discount_id': str(new_id)})
                 except Exception:
                     pass
         except urllib.error.HTTPError as e:
