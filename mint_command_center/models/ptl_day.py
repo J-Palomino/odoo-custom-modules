@@ -429,3 +429,16 @@ class PtlDay(models.Model):
             'sales_details': discount.description or None,
             'deal_classification': discount.deal_classification or 'sale',
         }
+
+    def action_export_ptl_calendar_csv(self):
+        """Return an act_url action that streams the selected PTL days as CSV.
+
+        Wired from the `PTL Calendar (CSV)` server action defined in
+        `reports/ptl_calendar_reports.xml`.
+        """
+        ids_param = ','.join(str(r.id) for r in self)
+        return {
+            'type': 'ir.actions.act_url',
+            'url': f'/mint/ptl-calendar/export.csv?ids={ids_param}',
+            'target': 'self',
+        }
