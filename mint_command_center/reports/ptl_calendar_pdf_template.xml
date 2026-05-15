@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <template id="report_ptl_calendar_pdf">
+        <t t-call="web.html_container">
+            <t t-call="web.external_layout">
+                <div class="page">
+                    <h2 class="mb-3">PTL Calendar</h2>
+                    <p class="text-muted">
+                        Generated <span t-esc="context_timestamp(datetime.datetime.now()).strftime('%Y-%m-%d %H:%M')"/>
+                        — <span t-esc="len(docs)"/> day(s)
+                    </p>
+
+                    <t t-foreach="docs.sorted(lambda d: (d.date or fields.Date.today(), d.market_id.name or ''))" t-as="day">
+                        <div class="mt-4" style="page-break-inside: avoid;">
+                            <h4 class="mb-2">
+                                <span t-field="day.date"/>
+                                <span t-if="day.market_id"> — <span t-field="day.market_id.name"/></span>
+                                <span class="badge ms-2"
+                                      t-attf-class="badge #{ 'bg-success' if day.state == 'published' else ('bg-warning' if day.state == 'confirmed' else 'bg-secondary') }">
+                                    <span t-field="day.state"/>
+                                </span>
+                            </h4>
+
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Brand</th>
+                                        <th>Deal</th>
+                                        <th>Category</th>
+                                        <th>Sale Type</th>
+                                        <th>Discount</th>
+                                        <th>Display</th>
+                                        <th>State</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-if="not day.deal_ids">
+                                        <td colspan="7" class="text-muted text-center">
+                                            No deals on this day.
+                                        </td>
+                                    </tr>
+                                    <tr t-foreach="day.deal_ids.sorted(lambda d: (d.sequence, d.id))" t-as="deal">
+                                        <td><span t-field="deal.brand_id.name"/></td>
+                                        <td><span t-field="deal.name"/></td>
+                                        <td><span t-field="deal.product_category"/></td>
+                                        <td><span t-field="deal.sale_type"/></td>
+                                        <td>
+                                            <t t-if="deal.discount_type == 'percent'">
+                                                <span t-field="deal.discount_value"/>%
+                                            </t>
+                                            <t t-elif="deal.discount_type == 'fixed'">
+                                                $<span t-field="deal.discount_value"/>
+                                            </t>
+                                            <t t-else="">
+                                                <span t-field="deal.discount_type"/>
+                                            </t>
+                                        </td>
+                                        <td><span t-field="deal.sales_details"/></td>
+                                        <td><span t-field="deal.state"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </t>
+                </div>
+            </t>
+        </t>
+    </template>
+
+</odoo>
