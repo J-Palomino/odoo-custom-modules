@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.4.1.0',
+    'version': '19.0.4.2.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -44,6 +44,9 @@
     'assets': {
         'web.assets_backend': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',
+            'mint_command_center/static/src/ptl_calendar/ptl_calendar.esm.js',
+            'mint_command_center/static/src/ptl_calendar/ptl_calendar.xml',
+            'mint_command_center/static/src/ptl_calendar/ptl_calendar.scss',
         ],
         'web.assets_frontend_lazy': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',

@@ -442,3 +442,54 @@ class PtlDay(models.Model):
             'url': f'/mint/ptl-calendar/export.csv?ids={ids_param}',
             'target': 'self',
         }
+
+    @api.model
+    def schedule_deal(self, deal_id, date, market_id):
+        """Schedule an approved deal on a given (date, market) PTL day.
+
+        - Finds the existing mint.ptl.day for that (date, market_id), or
+          creates a new draft day if none exists (the date_market_uniq
+          constraint guarantees at most one).
+        - Adds the deal to deal_ids (idempotent — m2m link, no dup).
+        - Posts a chatter note on the day so the action is auditable.
+
+        Called from the PTL Calendar dragboard side pane when the user drops
+        an approved-deal card onto a calendar cell.
+        """
+        if not deal_id or not date or not market_id:
+            from odoo.exceptions import UserError
+            raise UserError("schedule_deal requires deal_id, date, and market_id.")
+
+        Deal = self.env['mint.ptl.deal']
+        deal = Deal.browse(int(deal_id)).exists()
+        if not deal:
+            from odoo.exceptions import UserError
+            raise UserError(f"Deal {deal_id} not found.")
+        if deal.state != 'approved':
+            from odoo.exceptions import UserError
+            raise UserError(
+                f"Only approved deals can be scheduled from the dragboard "
+                f"(deal {deal.id} is '{deal.state}')."
+            )
+
+        day = self.search([
+            ('date', '=', date),
+            ('market_id', '=', int(market_id)),
+        ], limit=1)
+        created = False
+        if not day:
+            day = self.create({'date': date, 'market_id': int(market_id)})
+            created = True
+
+        if deal.id not in day.deal_ids.ids:
+            day.write({'deal_ids': [(4, deal.id)]})
+            day.message_post(
+                body=f"Scheduled deal <b>{deal.name}</b> via PTL Calendar dragboard.",
+                message_type='comment',
+            )
+
+        return {
+            'day_id': day.id,
+            'deal_id': deal.id,
+            'created': created,
+        }
