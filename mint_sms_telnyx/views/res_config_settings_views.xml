@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_telnyx" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.mint_sms_telnyx</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//block[1]" position="before">
+                <block title="Telnyx SMS Gateway" id="mint_sms_telnyx_block">
+                    <setting id="mint_sms_telnyx_enabled"
+                             help="Route all sms.sms sends through Telnyx instead of Odoo IAP.">
+                        <field name="telnyx_enabled"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_credentials"
+                             string="Credentials"
+                             help="Bearer token from Telnyx Portal &gt; API Keys."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_api_key" password="True"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_profile"
+                             string="Messaging Profile"
+                             help="Telnyx Messaging Profile that owns sending numbers."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_messaging_profile_id"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_from"
+                             string="From Number / Sender ID"
+                             help="E.164 number or alphanumeric sender ID."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_from_number"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_webhook_key"
+                             string="Webhook Public Key"
+                             help="Ed25519 public key from Telnyx Portal (base64). Required for /telnyx/sms/webhook."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_webhook_public_key"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_inbound_channel"
+                             string="Inbound Fallback Channel"
+                             help="Where to post inbound SMS when no partner matches by phone."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_inbound_channel_id"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_api_base"
+                             string="API Base URL"
+                             help="Override only for testing against a sandbox/proxy."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_api_base"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_scan_mode"
+                             string="Content Scan Mode"
+                             help="Transactional-only gateway. Block is the safe default."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_scan_mode"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_blocklist"
+                             string="Content Blocklist"
+                             help="Comma-separated terms (case-insensitive substring match). Leave blank for built-in cannabis-term defaults."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_content_blocklist"/>
+                    </setting>
+                    <setting id="mint_sms_telnyx_block_mailing"
+                             string="Refuse Mailing Campaigns"
+                             help="When enabled, mass_mailing_sms records are refused. Keep ON."
+                             invisible="not telnyx_enabled">
+                        <field name="telnyx_block_mailing_sms"/>
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Extend POS Config form — add Dutchie connection settings
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_config_form_dutchie" model="ir.ui.view">
+        <field name="name">pos.config.form.dutchie</field>
+        <field name="model">pos.config</field>
+        <field name="inherit_id" ref="point_of_sale.pos_config_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside">
+                <group string="Dutchie POS Connection">
+                    <group>
+                        <field name="dutchie_enabled" widget="boolean_toggle"/>
+                        <field name="dutchie_loc_id"
+                               invisible="not dutchie_enabled"/>
+                    </group>
+                    <group invisible="not dutchie_enabled">
+                        <field name="dutchie_register_id"/>
+                        <field name="dutchie_room_id"/>
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

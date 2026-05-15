@@ -80,9 +80,15 @@ class MailThread(models.AbstractModel):
 
         # Enqueue AI response job (processed by cron worker)
         user_text = html2plaintext(message.body) if message.body else ""
+        if message.author_id:
+            session_id = f"partner-{message.author_id.id}"
+        else:
+            # Email-only author with no partner — scope memory to the document thread
+            session_id = f"thread-{self._name}-{self.id}"
         agent._enqueue_response(
             self._name, self.id, user_text, history, conversation_id,
             context_prefix=context_prefix,
+            session_id=session_id,
         )
 
         return result

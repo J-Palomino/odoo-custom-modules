@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Extend pos.order form — add Dutchie sync fields + retry button
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_order_form_dutchie" model="ir.ui.view">
+        <field name="name">pos.order.form.dutchie</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_pos_form"/>
+        <field name="arch" type="xml">
+            <!-- Retry button in header -->
+            <xpath expr="//header" position="inside">
+                <button name="action_retry_dutchie_sync"
+                        string="Retry Dutchie Sync"
+                        type="object"
+                        class="btn-warning"
+                        invisible="dutchie_synced or source != 'odoo_pos'"
+                        confirm="Retry sending this order to Dutchie POS?"/>
+            </xpath>
+
+            <!-- Dutchie sync info after existing fields -->
+            <xpath expr="//sheet" position="inside">
+                <group string="Dutchie POS Integration">
+                    <group>
+                        <field name="source" readonly="1"/>
+                        <field name="dutchie_synced" widget="boolean_toggle" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="dutchie_receipt_no" readonly="1"/>
+                        <field name="dutchie_shipment_id" readonly="1"/>
+                    </group>
+                    <group colspan="2" invisible="not dutchie_sync_error">
+                        <field name="dutchie_sync_error" readonly="1"
+                               widget="text" class="text-danger"/>
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Extend pos.order tree — add Dutchie columns
+         ══════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pos_order_tree_dutchie" model="ir.ui.view">
+        <field name="name">pos.order.tree.dutchie</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_order_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//list" position="inside">
+                <field name="dutchie_synced" widget="boolean"
+                       string="Dutchie" optional="show"/>
+                <field name="dutchie_receipt_no" optional="hide"/>
+                <field name="source" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,133 @@
+/*
+ * Mint POS Swimlane Kanban — Dutchie-matching lane colors
+ *
+ * Column headers are color-coded to match Dutchie POS lanes.
+ * Cards show urgency via pulsing borders.
+ * Touch-friendly sizing for tablet use.
+ */
+
+/* ── Lane header colors (matching Dutchie) ──────────────────────── */
+.o_mint_pos_kanban .o_kanban_group[data-group-value="lobby"] .o_kanban_header {
+    background-color: #a3a3fa !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="online_orders"] .o_kanban_header {
+    background-color: #05ffff !important;
+    color: #333;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="sales_floor"] .o_kanban_header {
+    background-color: #3eff3e !important;
+    color: #333;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="processing"] .o_kanban_header {
+    background-color: #fc6da5 !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="pickup"] .o_kanban_header {
+    background-color: #ffff00 !important;
+    color: #333;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="deli_counter"] .o_kanban_header {
+    background-color: #ffa818 !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="credit_checkout"] .o_kanban_header {
+    background-color: #2f92ff !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="delivery"] .o_kanban_header {
+    background-color: #ffad9c !important;
+    color: #333;
+}
+
+/* Legacy states */
+.o_mint_pos_kanban .o_kanban_group[data-group-value="placed"] .o_kanban_header {
+    background-color: #6c9ce8 !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="confirmed"] .o_kanban_header {
+    background-color: #e6a817 !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="preparing"] .o_kanban_header {
+    background-color: #fc6da5 !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="ready"] .o_kanban_header {
+    background-color: #28a745 !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="completed"] .o_kanban_header {
+    background-color: #6c757d !important;
+    color: #fff;
+}
+
+.o_mint_pos_kanban .o_kanban_group[data-group-value="cancelled"] .o_kanban_header {
+    background-color: #dc3545 !important;
+    color: #fff;
+}
+
+/* ── Card styling ────────────────────────────────────────────────── */
+.o_mint_pos_card {
+    padding: 8px 10px;
+    border-radius: 6px;
+    transition: box-shadow 0.2s ease;
+}
+
+.o_mint_pos_card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Warning: >10 min wait */
+.o_mint_pos_card_warning {
+    border-left: 4px solid #ffc107 !important;
+}
+
+/* Urgent: >15 min wait — pulsing red border */
+.o_mint_pos_card_urgent {
+    border-left: 4px solid #dc3545 !important;
+    animation: mint-pulse 2s ease-in-out infinite;
+}
+
+@keyframes mint-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+    50% { box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.25); }
+}
+
+/* ── Touch-friendly for tablets ──────────────────────────────────── */
+@media (max-width: 1024px) {
+    .o_mint_pos_kanban .o_kanban_record {
+        min-height: 80px;
+        padding: 10px;
+    }
+
+    .o_mint_pos_kanban .o_kanban_group {
+        min-width: 200px;
+    }
+
+    .o_mint_pos_card {
+        padding: 12px;
+        font-size: 0.95rem;
+    }
+}
+
+/* ── Smooth drag transitions ─────────────────────────────────────── */
+.o_mint_pos_kanban .o_kanban_record.o_dragged {
+    opacity: 0.7;
+    transform: rotate(2deg);
+}
+
+.o_mint_pos_kanban .o_kanban_group.o_kanban_hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}

@@ -20,11 +20,11 @@ ALLOWED_MIMETYPES = {
 }
 
 IT_TEAM_ID = 2
-ENGINEERING_TEAM_ID = 4
-ENGINEERING_TEAM_IDS = [IT_TEAM_ID, ENGINEERING_TEAM_ID]
+MINT_TECH_TEAM_ID = 4
+MINT_TECH_TEAM_IDS = [IT_TEAM_ID, MINT_TECH_TEAM_ID]
 INTERNAL_MAINTENANCE_TEAM_ID = 1
-GRAPHICS_TEAM_ID = 3
-DUTCHIE_TEAM_ID = 13
+GRAPHICS_TEAM_ID = 12
+DUTCHIE_TEAM_ID = 16
 WEBSITES_TEAM_ID = 14
 NEW_REQUEST_STAGE = 1
 
@@ -373,17 +373,30 @@ class MaintenanceFormController(http.Controller):
             "email_cc": submitter_email,
         }
 
+        if company_id:
+            vals["company_id"] = int(company_id)
+
         if equipment_id:
-            vals["equipment_id"] = equipment_id
             equip = request.env["maintenance.equipment"].sudo().browse(equipment_id)
-            if equip.technician_user_id:
-                vals["user_id"] = equip.technician_user_id.id
+            # Ensure equipment company matches the request company to avoid
+            # multi-company constraint violations.  Shared equipment (company_id
+            # = False) is safe; a mismatch must be resolved before linking.
+            if equip.company_id and company_id and equip.company_id.id != int(company_id):
+                # Equipment belongs to a different company — clear it so
+                # the request is created without the equipment link.
+                _logger.info(
+                    "Skipping equipment_id %s (%s) — belongs to company %s, "
+                    "request is for company %s",
+                    equipment_id, equip.name,
+                    equip.company_id.id, company_id,
+                )
+            else:
+                vals["equipment_id"] = equipment_id
+                if equip.technician_user_id:
+                    vals["user_id"] = equip.technician_user_id.id
             # Route to a different team based on equipment category
             if equip.category_id and equip.category_id.name in CATEGORY_TEAM_OVERRIDES:
                 vals["maintenance_team_id"] = CATEGORY_TEAM_OVERRIDES[equip.category_id.name]
-
-        if company_id:
-            vals["company_id"] = int(company_id)
 
         if request.env.uid and request.env.uid != request.env.ref("base.public_user").id:
             vals["owner_user_id"] = request.env.uid
@@ -471,8 +484,8 @@ class MaintenanceFormController(http.Controller):
 
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
-            "form_title": "Engineering Request",
-            "form_subtitle": "Submit an engineering request for websites, e-commerce, apps, AI/LLMs, chat, or new software.",
+            "form_title": "Mint Technology Request",
+            "form_subtitle": "Submit a Mint Technology request for websites, e-commerce, apps, AI/LLMs, chat, or new software.",
             "form_action": "/engineering-requests",
         }
 
@@ -481,7 +494,7 @@ class MaintenanceFormController(http.Controller):
             return request.render(
                 template,
                 self._form_context(
-                    ENGINEERING_TEAM_ID,
+                    MINT_TECH_TEAM_ID,
                     form_values=prefill,
                     is_logged_in=logged_in,
                     **form_ctx,
@@ -489,10 +502,10 @@ class MaintenanceFormController(http.Controller):
             )
 
         return self._handle_form_post(
-            team_id=ENGINEERING_TEAM_ID,
+            team_id=MINT_TECH_TEAM_ID,
             template=template,
-            success_msg="Your engineering request has been submitted successfully!",
-            default_title="Engineering Request",
+            success_msg="Your Mint Technology request has been submitted successfully!",
+            default_title="Mint Technology Request",
             extra_ctx=form_ctx,
             **post,
         )

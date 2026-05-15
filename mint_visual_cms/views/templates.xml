@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================ -->
+    <!--  Landing page: /visual-cms                                    -->
+    <!-- ============================================================ -->
+    <template id="landing_page" name="Visual CMS — Store Grid">
+        <t t-call="website.layout">
+            <div class="container py-4">
+                <div class="d-flex align-items-center justify-content-between mb-4">
+                    <div>
+                        <h1 class="mb-1">Visual CMS</h1>
+                        <p class="text-muted mb-0">
+                            Click a store to open the visual wireframe and manage banners by zone.
+                        </p>
+                    </div>
+                    <span class="badge bg-info fs-6" t-if="global_count">
+                        <t t-esc="global_count"/> global banners
+                    </span>
+                </div>
+
+                <t t-foreach="stores_grouped" t-as="group">
+                    <h5 class="mt-4 mb-2 text-muted text-uppercase" style="font-size: 0.85rem; letter-spacing: 0.05em;">
+                        <t t-esc="group['state']"/>
+                    </h5>
+                    <div class="row g-3 mb-2">
+                        <t t-foreach="group['stores']" t-as="s">
+                            <t t-set="store_count" t-value="banner_summary.get(s['id'], 0)"/>
+                            <div class="col-lg-3 col-md-4 col-sm-6">
+                                <a t-attf-href="/visual-cms/#{s['slug']}"
+                                   class="card h-100 shadow-sm text-decoration-none vcms-store-card">
+                                    <div class="card-body d-flex flex-column">
+                                        <h6 class="card-title mb-1 text-dark">
+                                            <t t-esc="s['name']"/>
+                                        </h6>
+                                        <div class="mt-auto d-flex align-items-center gap-2">
+                                            <span t-if="store_count > 0"
+                                                  class="badge bg-success">
+                                                <t t-esc="store_count"/> banners
+                                            </span>
+                                            <span t-if="store_count == 0"
+                                                  class="badge bg-secondary">
+                                                No banners
+                                            </span>
+                                            <span class="ms-auto text-muted" style="font-size: 0.8rem;">
+                                                &#8594;
+                                            </span>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+                        </t>
+                    </div>
+                </t>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!--  Wireframe page: /visual-cms/<slug>                           -->
+    <!-- ============================================================ -->
+    <template id="wireframe_page" name="Visual CMS — Wireframe">
+        <t t-call="website.layout">
+            <div class="vcms-wireframe-container">
+                <!-- Header bar -->
+                <div class="vcms-header">
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <a href="/visual-cms" class="btn btn-outline-secondary btn-sm">
+                            &#8592; All Stores
+                        </a>
+                        <h1 class="h4 mb-0">
+                            <t t-esc="store['name']"/>
+                        </h1>
+
+                        <!-- Store selector -->
+                        <select id="vcmsStoreSelector" class="form-select form-select-sm"
+                                style="max-width: 250px;">
+                            <t t-set="cur_state" t-value="''"/>
+                            <t t-foreach="stores" t-as="s">
+                                <t t-if="s['state'] != cur_state">
+                                    <optgroup t-att-label="s['state'] or 'Unknown'"/>
+                                    <t t-set="cur_state" t-value="s['state']"/>
+                                </t>
+                                <option t-att-value="s['slug']"
+                                        t-att-selected="s['slug'] == store['slug']">
+                                    <t t-esc="s['name']"/>
+                                </option>
+                            </t>
+                        </select>
+
+                        <div class="ms-auto d-flex gap-2">
+                            <a t-att-href="preview_url + '?preview=1'" target="_blank"
+                               class="btn btn-outline-primary btn-sm">
+                                Preview on Site &#8599;
+                            </a>
+                            <button id="vcmsPublishBtn" class="btn btn-success btn-sm"
+                                    title="Clear frontend cache so changes go live">
+                                Publish Now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="vcms-body">
+                    <!-- Wireframe column -->
+                    <div class="vcms-wireframe" id="vcmsWireframe">
+
+                        <div class="vcms-wireframe-label">
+                            Page Layout — <t t-esc="store['name']"/>
+                        </div>
+
+                        <t t-foreach="zones" t-as="zone">
+                            <t t-set="slot" t-value="zone.get('slot')"/>
+                            <t t-set="counts" t-value="zone_counts.get(slot, {}) if slot else {}"/>
+                            <t t-set="total" t-value="counts.get('total', 0) if counts else 0"/>
+                            <t t-set="scheduled" t-value="counts.get('scheduled', 0) if counts else 0"/>
+                            <t t-set="is_editable" t-value="zone.get('editable')"/>
+
+                            <div t-attf-class="vcms-zone vcms-zone--#{zone['type']} #{'vcms-zone--editable' if is_editable else 'vcms-zone--readonly'} #{'vcms-zone--has-banners' if total > 0 else ''} #{'vcms-zone--scheduled' if scheduled > 0 and total == scheduled else ''}"
+                                 t-att-data-zone-id="zone['id']"
+                                 t-att-data-slot="slot or ''"
+                                 t-att-data-company-id="company_id or ''"
+                                 t-att-data-editable="'1' if is_editable else '0'">
+
+                                <div class="vcms-zone__header">
+                                    <span class="vcms-zone__label">
+                                        <t t-esc="zone['label']"/>
+                                    </span>
+                                    <span class="vcms-zone__dims" t-if="zone.get('dimensions')">
+                                        <t t-esc="zone['dimensions']"/>
+                                    </span>
+                                    <a t-att-href="zone_preview_urls.get(zone['id'])"
+                                       target="_blank"
+                                       rel="noopener"
+                                       class="vcms-zone__preview-link"
+                                       title="Open the live store page and jump to this zone">
+                                        View on site &#8599;
+                                    </a>
+                                </div>
+
+                                <div class="vcms-zone__body">
+                                    <span class="vcms-zone__desc">
+                                        <t t-esc="zone['description']"/>
+                                    </span>
+
+                                    <t t-if="is_editable and slot">
+                                        <div class="vcms-zone__meta">
+                                            <span t-if="total > 0" class="badge bg-success">
+                                                <t t-esc="total"/> banner<t t-if="total != 1">s</t>
+                                            </span>
+                                            <span t-if="total == 0" class="badge bg-danger">
+                                                Empty
+                                            </span>
+                                            <span t-if="scheduled > 0" class="badge bg-warning text-dark">
+                                                <t t-esc="scheduled"/> scheduled
+                                            </span>
+                                            <button class="btn btn-sm btn-primary vcms-manage-btn">
+                                                Click to Manage
+                                            </button>
+                                        </div>
+                                    </t>
+
+                                    <t t-if="not is_editable and zone['type'] == 'placeholder'">
+                                        <div class="vcms-zone__auto-badge">
+                                            Auto-populated
+                                        </div>
+                                    </t>
+
+                                    <t t-if="not is_editable and zone['type'] == 'info'">
+                                        <t t-if="company_id">
+                                            <a t-attf-href="/odoo/res.company/#{company_id}"
+                                               target="_blank"
+                                               rel="noopener"
+                                               class="vcms-zone__auto-badge vcms-zone__auto-badge--link"
+                                               title="Opens the company form where this photo is uploaded">
+                                                Edit in Settings &#8599;
+                                            </a>
+                                        </t>
+                                        <t t-else="">
+                                            <div class="vcms-zone__auto-badge">
+                                                Edit in Settings
+                                            </div>
+                                        </t>
+                                    </t>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
+
+                    <!-- Side panel (populated by JS) -->
+                    <div class="vcms-panel" id="vcmsPanel">
+                        <div class="vcms-panel__header">
+                            <h5 class="vcms-panel__title" id="vcmsPanelTitle">Select a zone</h5>
+                            <button class="btn-close" id="vcmsPanelClose" aria-label="Close"/>
+                        </div>
+                        <div class="vcms-panel__body" id="vcmsPanelBody">
+                            <p class="text-muted">Click an editable zone on the wireframe to manage its banners.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pass data to JS (JSON-serialized in controller to prevent XSS) -->
+            <script>
+                window.__vcms = <t t-out="vcms_json"/>;
+            </script>
+        </t>
+    </template>
+
+</odoo>

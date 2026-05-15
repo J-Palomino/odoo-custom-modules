@@ -33,42 +33,73 @@
         <record id="categ_eng_websites" model="maintenance.equipment.category">
             <field name="name">Websites</field>
         </record>
+        <record id="categ_eng_wazuh" model="maintenance.equipment.category">
+            <field name="name">Security / SIEM</field>
+        </record>
 
         <!-- Engineering Equipment Records (team_id=4 = Engineering) -->
         <record id="equip_eng_website" model="maintenance.equipment">
             <field name="name">Website</field>
             <field name="category_id" ref="categ_eng_website"/>
-            <field name="maintenance_team_id" ref="team_engineering"/>
+            <field name="maintenance_team_id" eval="4"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_eng_ecommerce" model="maintenance.equipment">
             <field name="name">E-Commerce / Online Menu</field>
             <field name="category_id" ref="categ_eng_ecommerce"/>
-            <field name="maintenance_team_id" ref="team_engineering"/>
+            <field name="maintenance_team_id" eval="4"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_eng_mobile" model="maintenance.equipment">
             <field name="name">Mobile App</field>
             <field name="category_id" ref="categ_eng_mobile"/>
-            <field name="maintenance_team_id" ref="team_engineering"/>
+            <field name="maintenance_team_id" eval="4"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_eng_ai_chat" model="maintenance.equipment">
             <field name="name">AI / Chat</field>
             <field name="category_id" ref="categ_eng_ai_chat"/>
-            <field name="maintenance_team_id" ref="team_engineering"/>
+            <field name="maintenance_team_id" eval="4"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_eng_erp" model="maintenance.equipment">
             <field name="name">Internal Software / ERP</field>
             <field name="category_id" ref="categ_eng_erp"/>
-            <field name="maintenance_team_id" ref="team_engineering"/>
+            <field name="maintenance_team_id" eval="4"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_eng_data" model="maintenance.equipment">
             <field name="name">Data / Reporting</field>
             <field name="category_id" ref="categ_eng_data"/>
-            <field name="maintenance_team_id" ref="team_engineering"/>
+            <field name="maintenance_team_id" eval="4"/>
+            <field name="company_id" eval="False"/>
         </record>
         <record id="equip_eng_websites" model="maintenance.equipment">
             <field name="name">Websites</field>
             <field name="category_id" ref="categ_eng_websites"/>
-            <field name="maintenance_team_id" ref="team_engineering"/>
+            <field name="maintenance_team_id" eval="4"/>
+            <field name="company_id" eval="False"/>
+        </record>
+        <record id="equip_eng_wazuh_manager" model="maintenance.equipment">
+            <field name="name">Wazuh Manager (SIEM)</field>
+            <field name="category_id" ref="categ_eng_wazuh"/>
+            <field name="maintenance_team_id" eval="4"/>
+            <field name="company_id" eval="False"/>
+            <field name="note"><![CDATA[
+<p><b>Wazuh Security Manager</b></p>
+<p><b>Hostname:</b> wazuh-manager.wazuh.svc.cluster.local</p>
+<p><b>Type:</b> ClusterIP (internal only, no external exposure)</p>
+<p><b>Namespace:</b> wazuh</p>
+<p><b>Image:</b> wazuh/wazuh-manager:4.14.4</p>
+<p><b>Ports:</b></p>
+<ul>
+    <li>1514/TCP — Agent communication</li>
+    <li>1515/TCP — Agent enrollment</li>
+    <li>55000/TCP — Wazuh API</li>
+</ul>
+<p><b>K8s Manifests:</b> k8s/wazuh/ (StatefulSet, Service, ConfigMap, DaemonSet agent)</p>
+<p><b>Dashboard:</b> Grafana wazuh-dashboard (k8s/monitoring/wazuh-dashboard.yaml)</p>
+]]></field>
         </record>
     </data>
 </odoo>

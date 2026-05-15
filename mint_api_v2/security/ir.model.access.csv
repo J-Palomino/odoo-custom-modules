@@ -9,6 +9,8 @@ access_mint_brand_all,mint.brand.all,model_mint_brand,,1,0,0,0
 access_mint_brand_user,mint.brand.user,model_mint_brand,base.group_user,1,1,1,1
 access_mint_discount_all,mint.discount.all,model_mint_discount,,1,0,0,0
 access_mint_discount_user,mint.discount.user,model_mint_discount,base.group_user,1,1,1,1
+access_mint_discount_weight_all,mint.discount.weight.all,model_mint_discount_weight,,1,0,0,0
+access_mint_discount_weight_user,mint.discount.weight.user,model_mint_discount_weight,base.group_user,1,1,1,1
 access_mint_blog_all,mint.blog.all,model_mint_blog,,1,0,0,0
 access_mint_blog_user,mint.blog.user,model_mint_blog,base.group_user,1,1,1,1
 access_mint_blog_category_all,mint.blog.category.all,model_mint_blog_category,,1,0,0,0

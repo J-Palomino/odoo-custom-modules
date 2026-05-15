@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- PDF report (QWeb) -->
+    <record id="action_report_ptl_calendar_pdf" model="ir.actions.report">
+        <field name="name">PTL Calendar (PDF)</field>
+        <field name="model">mint.ptl.day</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">mint_command_center.report_ptl_calendar_pdf</field>
+        <field name="report_file">mint_command_center.report_ptl_calendar_pdf</field>
+        <field name="binding_model_id" ref="model_mint_ptl_day"/>
+        <field name="binding_type">report</field>
+        <field name="print_report_name">'PTL Calendar - %s' % (context_timestamp(datetime.datetime.now()).strftime('%Y-%m-%d'))</field>
+    </record>
+
+    <!-- Excel report (OCA report_xlsx) -->
+    <record id="action_report_ptl_calendar_xlsx" model="ir.actions.report">
+        <field name="name">PTL Calendar (Excel)</field>
+        <field name="model">mint.ptl.day</field>
+        <field name="report_type">xlsx</field>
+        <field name="report_name">mint_command_center.report_ptl_calendar_xlsx</field>
+        <field name="report_file">mint_command_center.report_ptl_calendar_xlsx</field>
+        <field name="binding_model_id" ref="model_mint_ptl_day"/>
+        <field name="binding_type">report</field>
+        <field name="print_report_name">'PTL Calendar - %s' % (context_timestamp(datetime.datetime.now()).strftime('%Y-%m-%d'))</field>
+    </record>
+
+    <!-- CSV "report" is a server action returning a URL action; this is just a
+         convenience binding so users see all three formats in the same place.
+         Defined in Python (ir.actions.act_window/url) via the controller. -->
+    <record id="action_report_ptl_calendar_csv" model="ir.actions.server">
+        <field name="name">PTL Calendar (CSV)</field>
+        <field name="model_id" ref="model_mint_ptl_day"/>
+        <field name="binding_model_id" ref="model_mint_ptl_day"/>
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_export_ptl_calendar_csv()</field>
+    </record>
+
+</odoo>

@@ -8,6 +8,12 @@ class PurchaseOrder(models.Model):
     # MT-82: Secondary PO title (shorthand summary)
     x_po_title = fields.Char(string="PO Title", help="Short summary of PO contents")
 
+    # Task 321: Vendor/external order number (e.g. Alibaba order #)
+    x_external_order_ref = fields.Char(
+        string="Vendor Order #",
+        help="External order reference from the vendor (e.g. Alibaba order number)",
+    )
+
     # Priority (replaces star widget with High/Medium/Low)
     x_priority_level = fields.Selection([
         ('low', 'Low'),
@@ -66,7 +72,6 @@ class PurchaseOrder(models.Model):
     x_invoice_no = fields.Char(string="Invoice No")
     x_shipping_cost_total = fields.Float(string="Total Shipping Cost")
     x_additional_costs_total = fields.Float(string="Total Additional Costs")
-    x_total_shipping_cost = fields.Float(string="Total Shipping Cost (alt)")
     x_grand_total = fields.Float(
         string="Grand Total incl. Shipping",
         compute="_compute_grand_total",
@@ -101,8 +106,18 @@ class PurchaseOrder(models.Model):
             order.bol_count = len(order.bol_ids)
 
     def action_create_bol(self):
-        """Create a Bill of Lading from this PO and populate lines."""
+        """Create a Bill of Lading from this PO and populate lines.
+        If an open (non-verified) BOL already exists, open it instead."""
         self.ensure_one()
+        existing = self.bol_ids.filtered(lambda b: b.state != 'verified')
+        if existing:
+            return {
+                "type": "ir.actions.act_window",
+                "res_model": "purchase.bill.of.lading",
+                "res_id": existing[0].id,
+                "view_mode": "form",
+                "target": "current",
+            }
         bol = self.env["purchase.bill.of.lading"].create({
             "purchase_order_id": self.id,
         })
@@ -130,7 +145,7 @@ class PurchaseOrder(models.Model):
 
     # Vendor & Notes
     x_vendor_contact = fields.Char(string="Vendor Contact")
-    x_comment_date = fields.Char(string="Comment Date")
+    x_comment_date = fields.Date(string="Comment Date")
     x_comments = fields.Text(string="Comments")
 
     # MT-69: Prevent setting status to "received" without a validated receipt
@@ -160,3 +175,29 @@ class PurchaseOrder(models.Model):
                 + (order.x_shipping_cost_total or 0)
                 + (order.x_additional_costs_total or 0)
             )
+
+    # MT-89: Distribute shipping + additional costs proportionally across lines
+    def action_distribute_costs(self):
+        """Distribute header-level shipping & additional costs to line items
+        proportionally by quantity.  Rounding remainders go to the last line
+        so the sum always matches the header totals exactly."""
+        self.ensure_one()
+        lines = self.order_line.filtered(lambda l: l.product_qty > 0)
+        if not lines:
+            return
+        total_qty = sum(lines.mapped('product_qty'))
+        shipping = self.x_shipping_cost_total or 0
+        additional = self.x_additional_costs_total or 0
+        ship_running = add_running = 0.0
+        for line in lines[:-1]:
+            ratio = line.product_qty / total_qty
+            s = round(shipping * ratio, 2)
+            a = round(additional * ratio, 2)
+            line.x_shipping_cost = s
+            line.x_additional_costs = a
+            ship_running += s
+            add_running += a
+        # Last line gets the remainder to avoid penny drift
+        last = lines[-1]
+        last.x_shipping_cost = round(shipping - ship_running, 2)
+        last.x_additional_costs = round(additional - add_running, 2)

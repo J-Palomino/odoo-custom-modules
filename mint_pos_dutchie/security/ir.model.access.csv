@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_pos_order_dutchie_budtender,pos.order.dutchie.budtender,point_of_sale.model_pos_order,mint_pos_bridge.group_pos_budtender,1,1,0,0
+access_pos_order_dutchie_manager,pos.order.dutchie.manager,point_of_sale.model_pos_order,mint_pos_bridge.group_pos_manager,1,1,1,1
+access_pos_config_dutchie_manager,pos.config.dutchie.manager,point_of_sale.model_pos_config,mint_pos_bridge.group_pos_manager,1,1,1,0
+access_product_location_budtender,mint.product.location.budtender,model_mint_product_location,mint_pos_bridge.group_pos_budtender,1,0,0,0
+access_product_location_manager,mint.product.location.manager,model_mint_product_location,mint_pos_bridge.group_pos_manager,1,1,1,1

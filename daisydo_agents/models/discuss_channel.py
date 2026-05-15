@@ -71,8 +71,21 @@ class DiscussChannel(models.Model):
 
         # Enqueue AI response job (processed by cron worker)
         user_text = html2plaintext(message.body) if message.body else ""
+        session_id = self._daisy_session_id_for_message(message)
         agent._enqueue_response(
             "discuss.channel", self.id, user_text, history, conversation_id,
+            session_id=session_id,
         )
 
         return result
+
+    def _daisy_session_id_for_message(self, message):
+        """Stable per-user key for Daisy+ sessionId: partner → guest → channel uuid."""
+        self.ensure_one()
+        if message.author_id:
+            return f"partner-{message.author_id.id}"
+        guest = getattr(message, "author_guest_id", False)
+        if guest:
+            return f"guest-{guest.id}"
+        uuid = getattr(self, "uuid", False)
+        return f"channel-{uuid or self.id}"

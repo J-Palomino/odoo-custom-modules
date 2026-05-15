@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <data noupdate="1">
+        <record id="cron_archive_expired_complaints" model="ir.cron">
+            <field name="name">HR Complaints: Archive records older than 365 days</field>
+            <field name="model_id" ref="model_mint_hr_complaint"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_archive_expired()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+        <record id="cron_delete_archived_complaints" model="ir.cron">
+            <field name="name">HR Complaints: Hard-delete records archived over 30 days</field>
+            <field name="model_id" ref="model_mint_hr_complaint"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_hard_delete_archived()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

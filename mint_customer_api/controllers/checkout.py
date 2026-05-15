@@ -90,7 +90,7 @@ class MintCheckout(http.Controller):
                 'id': partner.id,
                 'name': partner.name,
                 'email': partner.email or '',
-                'phone': partner.phone or partner.mobile or '',
+                'phone': partner.phone or '',
                 'total_spend': getattr(partner, 'x_dutchie_total_spend', 0) or 0,
                 'visit_count': getattr(partner, 'x_dutchie_visit_count', 0) or 0,
             },
@@ -397,6 +397,17 @@ class MintCheckout(http.Controller):
                 partner.name, points_redeemed, points_earned, max(new_balance, 0)
             )
 
+            # Auto-consume any pending /rewards redemption whose product
+            # appears as a free line in this order (strict match).
+            consumed = request.env['mint.discount'].sudo().consume_pending_redemption(
+                partner, order_items=items,
+            )
+            if consumed:
+                _logger.info(
+                    'Auto-consumed redemption %s for %s on order completion',
+                    consumed.redemption_code, partner.name,
+                )
+
         # Update Dutchie spend/visit tracking
         partner.sudo().write({
             'x_dutchie_total_spend': (
@@ -427,7 +438,15 @@ class MintCheckout(http.Controller):
         return min(round((discount_amount / unit_price) * 100, 2), 100)
 
     def _award_loyalty(self, partner, spend_amount, points_redeemed=0):
-        """Award loyalty points to a partner. Returns points earned."""
+        """Award loyalty points + auto-consume any pending redemption.
+
+        Points from explicit checkout-time redemption (points_redeemed arg)
+        are deducted as before. Separately, any pending loyalty_redemption
+        record for this partner is auto-marked 'used' here — points for
+        those were already deducted on /rewards redeem.
+
+        Returns points earned.
+        """
         loyalty_program = request.env['loyalty.program'].sudo().search(
             [('program_type', '=', 'loyalty')], limit=1
         )
@@ -454,6 +473,15 @@ class MintCheckout(http.Controller):
             'Loyalty update for %s: -%d redeemed, +%d earned = %d balance',
             partner.name, points_redeemed, points_earned, max(new_balance, 0),
         )
+
+        consumed = request.env['mint.discount'].sudo().consume_pending_redemption(partner)
+        if consumed:
+            _logger.info(
+                'Auto-consumed redemption %s (%s) for %s on order completion',
+                consumed.redemption_code, consumed.redemption_reward_id.display_name,
+                partner.name,
+            )
+
         return points_earned
 
     def _find_partner(self, phone, email):
@@ -461,7 +489,7 @@ class MintCheckout(http.Controller):
         Partner = request.env['res.partner'].sudo()
         partner = None
 
-        if phone:
+        if phone and len(phone) >= 10:
             partner = Partner.search([
                 ('phone', 'ilike', phone[-10:]),
             ], limit=1)

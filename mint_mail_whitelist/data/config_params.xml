@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo noupdate="1">
+    <record id="param_allow_internal_users" model="ir.config_parameter">
+        <field name="key">mint_mail_whitelist.allow_internal_users</field>
+        <field name="value">1</field>
+    </record>
+    <record id="param_allowed_domains" model="ir.config_parameter">
+        <field name="key">mint_mail_whitelist.allowed_domains</field>
+        <field name="value">letsgomint.com,letsgomint.us,themintdispensary.com,themintmi.com,themintmo.com,themintnv.com,brightroot.com</field>
+    </record>
     <record id="param_allowed_emails" model="ir.config_parameter">
         <field name="key">mint_mail_whitelist.allowed_emails</field>
-        <field name="value">jpalomino@brightroot.com</field>
+        <field name="value"></field>
     </record>
 </odoo>

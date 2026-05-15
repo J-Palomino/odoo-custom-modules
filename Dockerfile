@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=109
+ARG CACHEBUST=125
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -18,7 +18,7 @@ RUN apt-get update \
     && mkdir -p /run/nginx /etc/cloudflared
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl cssselect
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
@@ -43,7 +43,20 @@ COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financia
 COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price_precision
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
+COPY --chown=odoo:odoo mint_dutchie_discount_mirror /opt/extra-addons/mint_dutchie_discount_mirror
+COPY --chown=odoo:odoo mint_redis_push /opt/extra-addons/mint_redis_push
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
+COPY --chown=odoo:odoo mint_visual_cms /opt/extra-addons/mint_visual_cms
+COPY --chown=odoo:odoo mint_recruitment_portal /opt/extra-addons/mint_recruitment_portal
+COPY --chown=odoo:odoo mint_hr_complaints /opt/extra-addons/mint_hr_complaints
+
+# ── Patch: neuter the "page is out of date" watcher (bus module) ────
+# The module-level patch in mint_command_center only suppresses the notification
+# display, but the original service races ahead during initialization. This
+# replaces the entire service file so the watcher never starts.
+COPY --chown=odoo:odoo patches/outdated_page_watcher_service.js \
+     /usr/lib/python3/dist-packages/odoo/addons/bus/static/src/outdated_page_watcher_service.js
+
 COPY --chown=odoo:odoo mint_embed /opt/extra-addons/mint_embed
 COPY --chown=odoo:odoo mint_oauth_only /opt/extra-addons/mint_oauth_only
 COPY --chown=odoo:odoo mint_customer_api /opt/extra-addons/mint_customer_api
@@ -53,6 +66,9 @@ COPY --chown=odoo:odoo mint_redis_session /opt/extra-addons/mint_redis_session
 COPY --chown=odoo:odoo mint_inventory_ops /opt/extra-addons/mint_inventory_ops
 COPY --chown=odoo:odoo mint_mail_whitelist /opt/extra-addons/mint_mail_whitelist
 COPY --chown=odoo:odoo mint_posthog /opt/extra-addons/mint_posthog
+COPY --chown=odoo:odoo mint_sw_buster /opt/extra-addons/mint_sw_buster
+COPY --chown=odoo:odoo mint_loki_logger /opt/extra-addons/mint_loki_logger
+COPY --chown=odoo:odoo mint_sms_telnyx /opt/extra-addons/mint_sms_telnyx
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
@@ -122,6 +138,10 @@ COPY --chown=odoo:odoo account_invoice_pricelist /opt/extra-addons/account_invoi
 COPY --chown=odoo:odoo account_invoice_pricelist_sale /opt/extra-addons/account_invoice_pricelist_sale
 COPY --chown=odoo:odoo account_statement_base /opt/extra-addons/account_statement_base
 
+# ── OCA appointments stack (resource_booking + slot-duration helper) ──
+COPY --chown=odoo:odoo web_calendar_slot_duration /opt/extra-addons/web_calendar_slot_duration
+COPY --chown=odoo:odoo resource_booking /opt/extra-addons/resource_booking
+
 # ── Verify critical modules ─────────────────────────────────────────
 RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
@@ -132,12 +152,15 @@ RUN grep "version" /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUS
 RUN grep "version" /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
 RUN grep "push_subscription_views" /opt/extra-addons/mint_push/__manifest__.py | head -1 && echo "LOAD ORDER CHECK OK"
 RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_visual_cms/__manifest__.py && echo "MINT_VISUAL_CMS MODULE VERIFIED" || (echo "MINT_VISUAL_CMS MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_dutchie_sync/__manifest__.py && echo "MINT_DUTCHIE_SYNC VERIFIED" || (echo "MINT_DUTCHIE_SYNC MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_pos_bridge/__manifest__.py && echo "MINT_POS_BRIDGE VERIFIED" || (echo "MINT_POS_BRIDGE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_redis_session/__manifest__.py && echo "MINT_REDIS_SESSION VERIFIED" || (echo "MINT_REDIS_SESSION MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_inventory_ops/__manifest__.py && echo "MINT_INVENTORY_OPS VERIFIED" || (echo "MINT_INVENTORY_OPS MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_sms_telnyx/__manifest__.py && echo "MINT_SMS_TELNYX VERIFIED" || (echo "MINT_SMS_TELNYX MISSING" && exit 1)
+RUN python3 -c "compile(open('/opt/extra-addons/mint_sms_telnyx/models/sms_sms.py').read(), 'sms_sms.py', 'exec')" && echo "SMS_SMS SYNTAX OK" || (echo "SMS_SMS SYNTAX ERROR" && head -60 /opt/extra-addons/mint_sms_telnyx/models/sms_sms.py && exit 1)
 RUN python3 -c "compile(open('/opt/extra-addons/mint_pos_bridge/models/pos_order.py').read(), 'pos_order.py', 'exec')" && echo "POS_ORDER SYNTAX OK" || (echo "POS_ORDER SYNTAX ERROR" && head -60 /opt/extra-addons/mint_pos_bridge/models/pos_order.py && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)
@@ -182,6 +205,11 @@ RUN for mod in base_tier_validation base_tier_validation_formula \
 
 # Verify OCA storage modules
 RUN for mod in fs_storage fs_attachment fs_attachment_s3; do \
+      test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
+    done
+
+# Verify OCA appointments modules
+RUN for mod in web_calendar_slot_duration resource_booking; do \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
 

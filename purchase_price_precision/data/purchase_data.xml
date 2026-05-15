@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Fix RFQ action domain: was [] (showing all POs including confirmed).
+         Standard Odoo should filter to draft/sent states only. -->
+    <record id="purchase.purchase_rfq" model="ir.actions.act_window">
+        <field name="domain">[('state','in',['draft','sent','to approve'])]</field>
+    </record>
+
+</odoo>

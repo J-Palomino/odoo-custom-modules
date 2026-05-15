@@ -1,3 +1,5 @@
+from datetime import date as _date
+
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
@@ -8,15 +10,46 @@ class DealSubmission(models.Model):
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'create_date desc'
 
+    # --- CRM linkage ---
+    crm_lead_id = fields.Many2one(
+        'crm.lead',
+        string='CRM Lead',
+        ondelete='set null',
+        tracking=True,
+        help='Source lead (vendor rep conversation) this submission originated from.',
+    )
+    campaign_id = fields.Many2one(
+        'mint.national.promo',
+        string='Promo Campaign',
+        ondelete='set null',
+        tracking=True,
+        index=True,
+        help='National promo campaign this submission rolls up into.',
+    )
+
     # --- Vendor info ---
     vendor_name = fields.Char(string='Vendor / Brand Name', required=True, tracking=True)
     vendor_email = fields.Char(string='Vendor Email')
     vendor_contact = fields.Char(string='Contact Person')
     vendor_phone = fields.Char(string='Phone')
     brand_id = fields.Many2one(
-        'res.partner',
-        string='Brand (Partner)',
-        help='Link to the brand partner record if one exists',
+        'mint.brand',
+        string='Brand',
+        help='Link to the brand record',
+    )
+
+    # --- Vendor funding terms ---
+    vendor_funding_amount = fields.Monetary(
+        string='Vendor Funding Amount',
+        currency_field='currency_id',
+        tracking=True,
+    )
+    vendor_funding_percent = fields.Float(string='Vendor Funding %', tracking=True)
+    vendor_funding_terms = fields.Text(string='Funding Terms')
+    currency_id = fields.Many2one(
+        'res.currency',
+        string='Currency',
+        default=lambda self: self.env.company.currency_id,
     )
 
     # --- Deal details ---
@@ -29,6 +62,8 @@ class DealSubmission(models.Model):
             ('bogo', 'BOGO'),
             ('bundle', 'Bundle Deal'),
             ('price', 'Set Price'),
+            ('points_multiplier', 'Loyalty Points Multiplier'),
+            ('clearance', 'Clearance (Near Expiry)'),
         ],
         string='Discount Type',
     )
@@ -100,12 +135,28 @@ class DealSubmission(models.Model):
         })
 
     def action_approve(self):
-        self.filtered(lambda s: s.state in ('new', 'under_review')).write({
+        records = self.filtered(lambda s: s.state in ('new', 'under_review'))
+        records.write({
             'state': 'approved',
             'reviewed_by': self.env.uid,
             'reviewed_at': fields.Datetime.now(),
             'rejection_reason': False,
         })
+        # Find or create the parent campaign for each approved submission
+        Campaign = self.env['mint.national.promo']
+        year = _date.today().year
+        for sub in records:
+            if sub.campaign_id or not sub.brand_id or not sub.market_id:
+                continue
+            target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
+            campaign = Campaign.get_or_create(
+                brand_id=sub.brand_id.id,
+                market_id=sub.market_id.id,
+                year=target_year,
+                crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
+            )
+            if campaign:
+                sub.campaign_id = campaign.id
 
     def action_reject(self):
         return {
@@ -142,6 +193,9 @@ class DealSubmission(models.Model):
             'state': 'approved',
             'submitted_by': self.create_uid.id,
             'submitted_at': self.create_date,
+            'vendor_funding_amount': self.vendor_funding_amount,
+            'vendor_funding_percent': self.vendor_funding_percent,
+            'campaign_id': self.campaign_id.id if self.campaign_id else False,
         })
         self.write({
             'state': 'converted',

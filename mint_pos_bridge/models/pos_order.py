@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
+import json
 import logging
+import threading
+from datetime import timedelta
+
 from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
@@ -146,24 +150,87 @@ class MintPosOrder(models.Model):
     dutchie_tax = fields.Float(string='Dutchie Tax', digits=(12, 2))
     dutchie_total = fields.Float(string='Dutchie Total', digits=(12, 2))
 
+    # Web order item sync tracking (set by BullMQ webOrder processor)
+    items_total = fields.Integer(string='Items Submitted', default=0)
+    items_failed = fields.Integer(string='Items Failed', default=0)
+
+    # Source tracking for deduplication (odoo_pos orders skip order-sync)
+    source = fields.Selection(
+        [
+            ('web', 'Web Checkout'),
+            ('dutchie_sync', 'Dutchie Sync'),
+            ('dutchie_walkin', 'Dutchie Walk-in'),
+            ('odoo_pos', 'Odoo POS'),
+            ('walk_in', 'Walk-In'),
+        ],
+        string='Source',
+        default='web',
+        index=True,
+    )
+
+    # Dutchie shipment ID for lane-change relay
+    dutchie_shipment_id = fields.Char(
+        string='Dutchie Shipment ID',
+        index=True,
+        copy=False,
+    )
+
+    # ── Rich Dutchie transaction detail (populated by Dutchie sync) ───
+    # Per-tender payment breakdown — a single transaction can mix
+    # tenders; payment_method holds the primary, these hold the split.
+    cash_paid = fields.Float(string='Cash Paid', digits=(12, 2))
+    debit_paid = fields.Float(string='Debit Paid', digits=(12, 2))
+    credit_paid = fields.Float(string='Credit Paid', digits=(12, 2))
+    electronic_paid = fields.Float(string='Electronic Paid', digits=(12, 2))
+    integrated_paid = fields.Float(string='Integrated Paid', digits=(12, 2))
+    manual_paid = fields.Float(string='Manual Paid', digits=(12, 2))
+    gift_paid = fields.Float(string='Gift Paid', digits=(12, 2))
+    mmap_paid = fields.Float(string='MMAP Paid', digits=(12, 2))
+    change_due = fields.Float(string='Change Due', digits=(12, 2))
+    tip_amount = fields.Float(string='Tip', digits=(12, 2))
+    # Dutchie returns the electronic-payment label (e.g. "Dutchie Pay", "Visa")
+    payment_method_label = fields.Char(string='Payment Method Label')
+    # Dutchie `loyaltyEarned` is a monetary value (float), distinct from
+    # the existing Integer `loyalty_points_earned`. Kept separate so both
+    # interpretations survive for accounting.
+    loyalty_earned = fields.Float(string='Loyalty Earned ($)', digits=(12, 2))
+    loyalty_spent = fields.Float(string='Loyalty Spent ($)', digits=(12, 2))
+
+    # Order classification / origin
+    order_source = fields.Char(
+        string='Dutchie Order Source',
+        index=True,
+        help='Dutchie-side origin: "Walk In", "Dutchie", "Leafly", "Weedmaps", etc.',
+    )
+    was_preordered = fields.Boolean(string='Preordered')
+    is_medical = fields.Boolean(string='Medical Transaction')
+
+    # Customer enrichment (from Dutchie Guest record)
+    dutchie_customer_id = fields.Integer(
+        string='Dutchie Customer ID',
+        index=True,
+        help='Dutchie Guest_id — stable key to re-resolve if partner name changes.',
+    )
+    customer_type_id = fields.Integer(string='Customer Type ID')
+    customer_dob = fields.Date(string='Customer DOB')
+    customer_patient_type = fields.Char(string='Patient Type')
+    customer_mj_state_id = fields.Char(string='MJ State ID')
+
+    # Terminal / employee
+    terminal_name = fields.Char(string='Register')
+    dutchie_employee_id = fields.Integer(string='Dutchie Employee ID')
+    checkin_at = fields.Datetime(string='Checked In At')
+
     # Computed: time since placed (for kanban color)
     wait_minutes = fields.Integer(
         string='Wait (min)',
         compute='_compute_wait_minutes',
     )
 
-    def init(self):
-        """Create partial unique index that ignores NULL/empty checkout IDs.
-
-        Walk-in POS orders have no dutchie_checkout_id, so we must exclude
-        NULL and '' to avoid violating uniqueness on blank values.
-        """
-        self.env.cr.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS mint_pos_order_dutchie_checkout_uniq
-            ON mint_pos_order (company_id, dutchie_checkout_id)
-            WHERE dutchie_checkout_id IS NOT NULL
-              AND dutchie_checkout_id != ''
-        """)
+    _dutchie_checkout_uniq = models.Constraint(
+        'UNIQUE(company_id, dutchie_checkout_id)',
+        'Dutchie checkout ID must be unique per store.',
+    )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -182,7 +249,9 @@ class MintPosOrder(models.Model):
 
         now = fields.Datetime.now()
 
-        # Set timestamp fields based on state transitions
+        # Set timestamp fields based on state transitions — batch the
+        # records that still need the timestamp into a single write so
+        # bulk state changes don't incur N extra UPDATEs.
         ts_map = {
             'confirmed': 'confirmed_at',
             'ready': 'ready_at',
@@ -194,9 +263,9 @@ class MintPosOrder(models.Model):
         }
         ts_field = ts_map.get(new_state)
         if ts_field:
-            for order in self:
-                if not order[ts_field]:
-                    super(MintPosOrder, order).write({ts_field: now})
+            needs_stamp = self.filtered(lambda o: not o[ts_field])
+            if needs_stamp:
+                super(MintPosOrder, needs_stamp).write({ts_field: now})
 
         # Push notifications for customer-facing state changes
         if new_state in self._get_notification_messages():
@@ -216,7 +285,78 @@ class MintPosOrder(models.Model):
                 },
             )
 
+        # Relay lane change to Dutchie when dragged in Odoo kanban
+        # Skip if this write came from Dutchie sync (avoid loop)
+        if not self.env.context.get('from_dutchie_sync'):
+            cancel_reason = self.env.context.get('cancel_reason') or ''
+            for order in self:
+                if order.dutchie_shipment_id:
+                    self._fire_lane_change_webhook(order, new_state, cancel_reason)
+
         return res
+
+    def _fire_lane_change_webhook(self, order, new_state, reason=''):
+        """Fire webhook to inventory service to update Dutchie swimlane."""
+        # No default URL — staging/dev Odoo without the config param set
+        # would otherwise silently relay lane changes to prod mintinvsvc.
+        # Set `mint_pos_dutchie.lane_change_webhook_url` per environment.
+        webhook_url = self.env['ir.config_parameter'].sudo().get_param(
+            'mint_pos_dutchie.lane_change_webhook_url', '',
+        )
+        if not webhook_url:
+            return
+        # The webhook is guarded by mintinvsvc's requireApiKey middleware,
+        # which validates against its own API_KEY env var — a different secret
+        # from the Odoo-side checkout_api_key (mintinvsvc uses one to
+        # authenticate INTO Odoo, mintinvsvc accepts a different one IN). Use
+        # a dedicated config param for this call; fall back to the legacy key
+        # so existing environments don't break before the param is set.
+        ICP = self.env['ir.config_parameter'].sudo()
+        api_key = (
+            ICP.get_param('mint_pos_dutchie.lane_change_webhook_api_key', '')
+            or ICP.get_param('mint_customer_api.checkout_api_key', '')
+        )
+
+        payload = {
+            'order_id': order.id,
+            'order_ref': order.name,
+            'new_state': new_state,
+            'dutchie_shipment_id': order.dutchie_shipment_id,
+            'company_id': order.company_id.id,
+            'store_slug': order.company_id.x_slug if hasattr(order.company_id, 'x_slug') else '',
+            'reason': reason or '',
+        }
+        # Capture the order's display name as a plain string BEFORE spawning
+        # the daemon thread. The ORM recordset may be invalidated once the
+        # request's cursor is closed, so accessing `order.name` inside
+        # _post() would risk a stale-cursor error in the log call.
+        order_name = str(order.name or '')
+
+        def _post():
+            import urllib.request
+            try:
+                data = json.dumps(payload).encode('utf-8')
+                req = urllib.request.Request(
+                    webhook_url,
+                    data=data,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-Api-Key': api_key,
+                    },
+                    method='POST',
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    _logger.info(
+                        'Lane change webhook fired for %s → %s (status %s)',
+                        order_name, new_state, resp.status,
+                    )
+            except Exception:
+                _logger.exception(
+                    'Failed to fire lane change webhook for %s', order_name,
+                )
+
+        thread = threading.Thread(target=_post, daemon=True)
+        thread.start()
 
     @api.model
     def _get_notification_messages(self):
@@ -290,6 +430,9 @@ class MintPosOrder(models.Model):
             body = msg['body'].format(store=store_name, ref=ref)
             order_url = f'/orders?ref={ref}'
 
+            # sudo(): mint.push.subscription is stored on the root company
+            # and accessed across stores; write() runs as the triggering
+            # user which may not have direct model access.
             self.env['mint.push.subscription'].sudo().send_to_partner(
                 partner_id=order.partner_id.id,
                 title=title,
@@ -313,6 +456,7 @@ class MintPosOrder(models.Model):
         for order in self:
             order.line_count = len(order.line_ids)
 
+    @api.depends('placed_at', 'state')
     def _compute_wait_minutes(self):
         now = fields.Datetime.now()
         for order in self:
@@ -341,6 +485,49 @@ class MintPosOrder(models.Model):
 
     def action_cancel(self):
         self.filtered(lambda o: o.state not in ('completed', 'cancelled')).write({'state': 'cancelled'})
+
+    # ── Cron: cancel abandoned active-lane orders ─────────────────────
+    #
+    # Customers sometimes hit lobby / sales_floor / pickup in Dutchie's
+    # swimlane and never finalize (no-show, walk-out, register error,
+    # budtender forgets to manually transition the lane). Those rows
+    # then sit on the kanban as $0/0-item ghost cards forever, hiding
+    # real-time activity behind clutter.
+    #
+    # Scheduled to run daily at 10:00 UTC (≈ 3am MST / 4am MDT) when
+    # all stores are closed — see data/cron.xml. Targets every order
+    # with create_date older than 24h whose state is still in the
+    # active lanes, and bulk-writes state='cancelled'. Completed and
+    # already-cancelled rows are not touched.
+    #
+    # Reversible: a misclassified row can be flipped back via the form
+    # view's status bar.
+    ACTIVE_LANE_STATES = (
+        'lobby', 'online_orders', 'sales_floor', 'processing',
+        'pickup', 'deli_counter', 'credit_checkout',
+        'placed', 'confirmed', 'preparing', 'ready',
+    )
+
+    @api.model
+    def _cron_cancel_stale_orders(self, hours_old=24):
+        cutoff = fields.Datetime.now() - timedelta(hours=hours_old)
+        stale = self.search([
+            ('create_date', '<', cutoff),
+            ('state', 'in', list(self.ACTIVE_LANE_STATES)),
+        ])
+        if not stale:
+            _logger.info(
+                'mint.pos.order: no stale active-lane orders older than %sh',
+                hours_old,
+            )
+            return 0
+        count = len(stale)
+        stale.write({'state': 'cancelled'})
+        _logger.info(
+            'mint.pos.order: cancelled %d stale active-lane orders older than %sh',
+            count, hours_old,
+        )
+        return count
 
 
 class MintPosOrderLine(models.Model):
@@ -376,6 +563,32 @@ class MintPosOrderLine(models.Model):
     brand = fields.Char(string='Brand')
     strain_type = fields.Char(string='Strain Type')
     weight = fields.Char(string='Weight')
+
+    # ── Rich Dutchie line detail (populated by Dutchie sync) ─────────
+    # `sku` holds the batch name (existing convention); dutchie_package_id
+    # is the distinct Dutchie package identifier for this line.
+    dutchie_package_id = fields.Char(string='Dutchie Package ID', index=True)
+    dutchie_inventory_id = fields.Integer(string='Dutchie Inventory ID')
+    # Stable Dutchie-assigned unique key for a line (safe to dedupe on).
+    dutchie_transaction_item_id = fields.Integer(
+        string='Dutchie Txn Item ID',
+        index=True,
+    )
+    unit_cost = fields.Float(string='Unit Cost', digits=(12, 2))
+    vendor = fields.Char(string='Vendor')
+    # Numeric weight + unit pair (the existing `weight` Char remains for
+    # human display like "3.5g"; these are for analytics/margin).
+    unit_weight_value = fields.Float(string='Unit Weight Value', digits=(12, 4))
+    unit_weight_unit = fields.Char(string='Unit Weight Unit')
+    is_returned = fields.Boolean(string='Returned')
+    return_date = fields.Datetime(string='Return Date')
+    return_reason = fields.Char(string='Return Reason')
+    # Preserve the per-line discount/tax breakdown Dutchie returns. The
+    # scalar `discount` and `tax` above are rollups; these keep the full
+    # arrays (discount name + id + amount per applied discount; rate +
+    # amount per tax) so margin/compliance reports can rebuild them.
+    dutchie_discounts_json = fields.Text(string='Dutchie Discounts JSON')
+    dutchie_taxes_json = fields.Text(string='Dutchie Taxes JSON')
 
     # Related fields for filtering
     company_id = fields.Many2one(

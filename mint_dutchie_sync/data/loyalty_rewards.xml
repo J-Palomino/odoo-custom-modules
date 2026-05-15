@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Mint Rewards redemption tiers.
+        Generic product categories — admin can refine reward_product_id /
+        discount_line_product_id later. No noupdate so admins can tune the
+        point costs and reward_ids refresh on upgrade.
+
+        NOTE on applicability: reward_type='discount' with
+        discount_applicability='order' gives a flat $ off any order. The
+        customer-facing label on /rewards is driven by `description` so we
+        can say "Free Pre-Roll" even if the backing discount is generic.
+    -->
+    <record id="reward_pre_roll" model="loyalty.reward">
+        <field name="program_id" ref="mint_dutchie_sync.loyalty_program_mint_rewards"/>
+        <field name="description">Free Pre-Roll</field>
+        <field name="required_points">20</field>
+        <field name="reward_type">discount</field>
+        <field name="discount_mode">per_order</field>
+        <field name="discount">8</field>
+        <field name="discount_applicability">order</field>
+    </record>
+
+    <record id="reward_eighth" model="loyalty.reward">
+        <field name="program_id" ref="mint_dutchie_sync.loyalty_program_mint_rewards"/>
+        <field name="description">Free 1/8 oz Flower</field>
+        <field name="required_points">50</field>
+        <field name="reward_type">discount</field>
+        <field name="discount_mode">per_order</field>
+        <field name="discount">30</field>
+        <field name="discount_applicability">order</field>
+    </record>
+
+    <record id="reward_quarter" model="loyalty.reward">
+        <field name="program_id" ref="mint_dutchie_sync.loyalty_program_mint_rewards"/>
+        <field name="description">Free 1/4 oz Flower</field>
+        <field name="required_points">100</field>
+        <field name="reward_type">discount</field>
+        <field name="discount_mode">per_order</field>
+        <field name="discount">60</field>
+        <field name="discount_applicability">order</field>
+    </record>
+</odoo>

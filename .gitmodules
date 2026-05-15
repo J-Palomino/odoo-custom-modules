@@ -1,0 +1,5 @@
+[submodule "vendor/daisydo"]
+	path = vendor/daisydo
+	url = https://github.com/J-Palomino/daisydo.git
+	branch = main
+	shallow = true

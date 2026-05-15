@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <data noupdate="1">
+        <record id="channel_hr_complaints" model="discuss.channel">
+            <field name="name">HR Complaints</field>
+            <field name="description">Confidential HR complaint notifications. Restricted to HR group.</field>
+            <field name="channel_type">channel</field>
+            <field name="group_public_id" ref="hr.group_hr_user"/>
+            <field name="group_ids" eval="[(4, ref('hr.group_hr_user'))]"/>
+        </record>
+    </data>
+</odoo>

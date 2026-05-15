@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MinTask Theme',
-    'version': '19.0.1.0.7',
+    'version': '19.0.1.0.8',
     'category': 'Themes',
     'summary': 'Customizable Odoo theme with brand color configuration',
     'description': """

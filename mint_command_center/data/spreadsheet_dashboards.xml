@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo noupdate="0">
+
+    <!-- Dashboard group: surfaces in the left rail of /odoo/spreadsheet-dashboard
+         alongside the stock Sales / Finance / Marketing groups. -->
+    <record id="spreadsheet_dashboard_group_mint_marketing" model="spreadsheet.dashboard.group">
+        <field name="name">Mint Marketing</field>
+        <field name="sequence">550</field>
+    </record>
+
+    <!-- Promo Coverage — pivots over mint.brand.calendar.entry to show
+         "what's plotted by brand × market × month" at a glance.
+
+         Ships as a blank spreadsheet skeleton; Mariena fills in the pivots
+         interactively from the Brand Calendar pivot/list views via the
+         "Insert in Spreadsheet" toolbar (Odoo 19 Spreadsheet UX). The
+         minimum-viable o-spreadsheet payload below is what `web_spreadsheet`
+         expects on first load — version 13, one empty sheet, no pivots
+         yet. -->
+    <record id="dashboard_promo_coverage" model="spreadsheet.dashboard">
+        <field name="name">Promo Coverage</field>
+        <field name="dashboard_group_id" ref="spreadsheet_dashboard_group_mint_marketing"/>
+        <field name="sequence">10</field>
+        <field name="spreadsheet_data">{
+            "version": 13,
+            "sheets": [{
+                "id": "promo_coverage",
+                "name": "Coverage",
+                "colNumber": 26,
+                "rowNumber": 100,
+                "rows": {},
+                "cols": {},
+                "merges": [],
+                "cells": {
+                    "A1": {"content": "Promo Coverage — drag pivots from Mint Marketing › Deals › Brand Calendar (pivot tab) and Insert › Pivot", "style": 1}
+                },
+                "conditionalFormats": [],
+                "figures": [],
+                "areGridLinesVisible": true,
+                "isVisible": true,
+                "headerGroups": {"ROW": [], "COL": []},
+                "dataValidationRules": []
+            }],
+            "styles": {
+                "1": {"bold": true, "fontSize": 12}
+            },
+            "formats": {},
+            "borders": {},
+            "revisionId": "promo-coverage-init",
+            "uniqueFigureIds": true,
+            "settings": {"locale": {"name": "English (US)", "code": "en_US",
+                "thousandsSeparator": ",", "decimalSeparator": ".",
+                "weekStart": 7, "dateFormat": "m/d/yyyy",
+                "timeFormat": "hh:mm:ss a", "formulaArgSeparator": ","}},
+            "pivots": {},
+            "lists": {},
+            "globalFilters": [],
+            "pivotNextId": 1,
+            "listNextId": 1,
+            "chartOdooMenusReferences": {},
+            "customTableStyles": {}
+        }</field>
+    </record>
+
+    <!-- Outreach Funnel — campaign-level rollup of mint.national.promo:
+         contact_status × market × ready_to_plot × plotted. Same skeleton
+         pattern; pivots are added live from the Promo Campaigns pivot view. -->
+    <record id="dashboard_outreach_funnel" model="spreadsheet.dashboard">
+        <field name="name">Outreach Funnel</field>
+        <field name="dashboard_group_id" ref="spreadsheet_dashboard_group_mint_marketing"/>
+        <field name="sequence">20</field>
+        <field name="spreadsheet_data">{
+            "version": 13,
+            "sheets": [{
+                "id": "outreach",
+                "name": "Outreach",
+                "colNumber": 26,
+                "rowNumber": 100,
+                "rows": {},
+                "cols": {},
+                "merges": [],
+                "cells": {
+                    "A1": {"content": "Outreach Funnel — drag pivots from Mint Marketing › Deals › Promo Campaigns (pivot tab)", "style": 1}
+                },
+                "conditionalFormats": [],
+                "figures": [],
+                "areGridLinesVisible": true,
+                "isVisible": true,
+                "headerGroups": {"ROW": [], "COL": []},
+                "dataValidationRules": []
+            }],
+            "styles": {
+                "1": {"bold": true, "fontSize": 12}
+            },
+            "formats": {},
+            "borders": {},
+            "revisionId": "outreach-init",
+            "uniqueFigureIds": true,
+            "settings": {"locale": {"name": "English (US)", "code": "en_US",
+                "thousandsSeparator": ",", "decimalSeparator": ".",
+                "weekStart": 7, "dateFormat": "m/d/yyyy",
+                "timeFormat": "hh:mm:ss a", "formulaArgSeparator": ","}},
+            "pivots": {},
+            "lists": {},
+            "globalFilters": [],
+            "pivotNextId": 1,
+            "listNextId": 1,
+            "chartOdooMenusReferences": {},
+            "customTableStyles": {}
+        }</field>
+    </record>
+
+</odoo>

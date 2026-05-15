@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Cannabis POS categories matching master_category values -->
+
+        <record id="pos_categ_flower" model="pos.category">
+            <field name="name">Flower</field>
+            <field name="sequence">1</field>
+        </record>
+
+        <record id="pos_categ_prerolls" model="pos.category">
+            <field name="name">Pre-Rolls</field>
+            <field name="sequence">2</field>
+        </record>
+
+        <record id="pos_categ_vaporizers" model="pos.category">
+            <field name="name">Vapes &amp; Cartridges</field>
+            <field name="sequence">3</field>
+        </record>
+
+        <record id="pos_categ_concentrates" model="pos.category">
+            <field name="name">Concentrates</field>
+            <field name="sequence">4</field>
+        </record>
+
+        <record id="pos_categ_edibles" model="pos.category">
+            <field name="name">Edibles</field>
+            <field name="sequence">5</field>
+        </record>
+
+        <record id="pos_categ_tinctures" model="pos.category">
+            <field name="name">Tinctures</field>
+            <field name="sequence">6</field>
+        </record>
+
+        <record id="pos_categ_topicals" model="pos.category">
+            <field name="name">Topicals</field>
+            <field name="sequence">7</field>
+        </record>
+
+        <record id="pos_categ_beverages" model="pos.category">
+            <field name="name">Beverages</field>
+            <field name="sequence">8</field>
+        </record>
+
+        <record id="pos_categ_accessories" model="pos.category">
+            <field name="name">Accessories</field>
+            <field name="sequence">9</field>
+        </record>
+
+    </data>
+</odoo>

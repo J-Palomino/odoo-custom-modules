@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+        <!--
+            Web Customer Access group.
+
+            Members can see res.partner / res.users records belonging to
+            customers who signed up via mintdeals.com or shop.letsgomint.us.
+            Without this group, regular internal users (sales, accounting,
+            marketing, POS) see ONLY non-web-customer partners.
+        -->
+        <record id="group_web_customer_access" model="res.groups">
+            <field name="name">Mint Web Customer Access</field>
+            <field name="category_id" ref="base.module_category_administration"/>
+            <field name="comment">
+                Grants visibility of partners and users created through the
+                MintDeals consumer websites. Assign only to staff who need
+                direct access to customer PII (admins, customer support).
+            </field>
+        </record>
+
+        <!-- Admins automatically get web customer access. -->
+        <record id="base.group_erp_manager" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('mint_customer_api.group_web_customer_access'))]"/>
+        </record>
+
+        <!--
+            Record rules on res.partner.
+
+            We want:
+              - Regular internal users (base.group_user): see only non-web
+                customers.
+              - Web Customer Access group: see all partners.
+              - Portal users: see their own partner (existing base rule).
+
+            Odoo combines rules using OR across groups a user belongs to,
+            so a user in both base.group_user and group_web_customer_access
+            gets the union (all partners).
+        -->
+        <record id="partner_rule_hide_web_customers" model="ir.rule">
+            <field name="name">Partner: hide web customers from regular internal users</field>
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="domain_force">[('is_web_customer', '=', False)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="partner_rule_show_all_web_customer_access" model="ir.rule">
+            <field name="name">Partner: web customer access sees all partners</field>
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('mint_customer_api.group_web_customer_access'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <!--
+            Record rules on res.users.
+
+            Matching rules prevent leaking a web customer's email through
+            the user record's `login` field (which contains "web:email").
+            Regular internal users see only non-share (internal) users;
+            web customer access group sees all.
+        -->
+        <record id="users_rule_hide_web_customers" model="ir.rule">
+            <field name="name">User: hide web customers from regular internal users</field>
+            <field name="model_id" ref="base.model_res_users"/>
+            <field name="domain_force">['|', ('share', '=', False), ('id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="users_rule_show_all_web_customer_access" model="ir.rule">
+            <field name="name">User: web customer access sees all users</field>
+            <field name="model_id" ref="base.model_res_users"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('mint_customer_api.group_web_customer_access'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+    </data>
+</odoo>

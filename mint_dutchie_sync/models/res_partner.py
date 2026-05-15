@@ -28,44 +28,6 @@ class ResPartner(models.Model):
         string='Home Store',
         help='Primary dispensary location for this customer.',
     )
-    x_home_store_source = fields.Selection(
-        [
-            ('portal', 'Portal signup'),
-            ('dutchie', 'Dutchie sync'),
-            ('manual', 'User chose later'),
-        ],
-        string='Home Store Source',
-        copy=False,
-        help='How the home store assignment was recorded. Only portal/manual '
-             'values should hydrate the selected store on letsgomint.us login; '
-             'dutchie-sourced values were inferred from a transaction and may '
-             'not reflect a deliberate user choice.',
-    )
-
-    # State ID scan data (from signup-v2 flow)
-    x_dl_number = fields.Char(
-        string='Driver License Number',
-        copy=False,
-        groups='base.group_system',
-        help='Parsed from PDF417 barcode on the back of a US state ID. '
-             'Restricted to system group — PII.',
-    )
-    x_dl_state = fields.Char(
-        string='Driver License State',
-        size=2,
-        copy=False,
-        help='USPS 2-letter code of the state that issued the ID.',
-    )
-    x_dl_expiration = fields.Date(
-        string='Driver License Expiration',
-        copy=False,
-    )
-    x_dl_scanned_at = fields.Datetime(
-        string='ID Scanned At',
-        copy=False,
-        help='When the ID was most recently scanned during signup or '
-             'verification.',
-    )
 
     # Sync metadata
     x_dutchie_last_sync = fields.Datetime(
