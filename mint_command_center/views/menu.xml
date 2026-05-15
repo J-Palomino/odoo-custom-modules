@@ -104,6 +104,32 @@
               action="action_push_banner"
               sequence="30"/>
 
+    <!-- ── Loyalty Section ──
+         Reparents the three menuitems that mint_api_v2 originally hung off a
+         duplicate top-level "Mint Marketing" menu (menu_mint_discount_root).
+         Same override pattern as mint_banner.menu_mint_banner_root above. -->
+    <menuitem id="menu_command_center_loyalty"
+              name="Loyalty"
+              parent="menu_command_center_root"
+              sequence="35"/>
+
+    <record id="mint_api_v2.menu_mint_discount" model="ir.ui.menu">
+        <field name="parent_id" ref="menu_command_center_loyalty"/>
+        <field name="sequence">10</field>
+    </record>
+
+    <record id="mint_api_v2.menu_mint_redemptions" model="ir.ui.menu">
+        <field name="parent_id" ref="menu_command_center_loyalty"/>
+        <field name="sequence">20</field>
+    </record>
+
+    <record id="mint_api_v2.menu_mint_loyalty_products" model="ir.ui.menu">
+        <field name="parent_id" ref="menu_command_center_loyalty"/>
+        <field name="sequence">30</field>
+    </record>
+
+    <delete id="mint_api_v2.menu_mint_discount_root" model="ir.ui.menu"/>
+
     <!-- ── Compliance Section ── -->
     <menuitem id="menu_compliance"
               name="Compliance"

@@ -181,10 +181,17 @@
         <field name="context">{'search_default_pending': 1}</field>
     </record>
 
-    <!-- Menus (nested under an existing marketing-ish root if present) -->
+    <!-- Menus.
+         Originally these three hung off a duplicate top-level "Mint Marketing"
+         menu (menu_mint_discount_root). That root is gone; mint_command_center
+         reparents these under its Loyalty section. We keep parent= here as a
+         safe placeholder for cold installs of mint_api_v2 without
+         mint_command_center; the override in mint_command_center/views/menu.xml
+         rewrites parent_id to the Loyalty menu when both modules are present. -->
     <menuitem id="menu_mint_discount_root"
-              name="Mint Marketing"
-              sequence="90"/>
+              name="Mint Marketing (legacy)"
+              sequence="90"
+              groups="base.group_no_one"/>
     <menuitem id="menu_mint_discount"
               name="Discounts"
               parent="menu_mint_discount_root"
