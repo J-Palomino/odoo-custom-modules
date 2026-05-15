@@ -50,6 +50,26 @@ def post_init_hook(env):
     elif discount_model:
         _logger.info('PTL hourly active recompute cron already exists')
 
+    # Dutchie publish drain cron — picks up pending/failed
+    # mint.discount.dutchie.link rows and POSTs them to mintinvsvc.
+    if discount_model and not Cron.search(
+        [('name', '=', 'Mint: drain pending Dutchie discount publishes')], limit=1
+    ):
+        Cron.create({
+            'name': 'Mint: drain pending Dutchie discount publishes',
+            'model_id': discount_model.id,
+            'state': 'code',
+            'code': 'model._cron_retry_dutchie_publish()',
+            'interval_number': 1,
+            'interval_type': 'minutes',
+            'numbercall': -1,
+            'active': True,
+            'priority': 70,
+        })
+        _logger.info('Dutchie publish drain cron created')
+    elif discount_model:
+        _logger.info('Dutchie publish drain cron already exists')
+
     # Backfill market_id for existing PTL days (migration from unique(date)
     # to unique(date, market_id))
     az_region = env['mint.region'].search([('code', '=', 'AZ')], limit=1)

@@ -5,6 +5,9 @@ from . import brand_calendar
 from . import national_promo
 from . import crm_lead_ext
 from . import mint_discount_ext
+from . import mint_discount_dutchie_link
+from . import mint_discount_publish
+from . import res_company_dutchie
 from . import hotbox_deal
 from . import brand_ranking
 from . import compliance_variance

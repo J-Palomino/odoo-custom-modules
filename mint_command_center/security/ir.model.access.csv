@@ -33,3 +33,6 @@ access_national_promo_viewer,mint.national.promo.viewer,model_mint_national_prom
 access_national_promo_vendor_mgr,mint.national.promo.vendor_mgr,model_mint_national_promo,group_vendor_manager,1,1,1,1
 access_national_promo_ptl_mgr,mint.national.promo.ptl_mgr,model_mint_national_promo,group_ptl_manager,1,1,1,0
 access_national_promo_marketing,mint.national.promo.marketing,model_mint_national_promo,group_marketing,1,1,0,0
+access_discount_dutchie_link_viewer,mint.discount.dutchie.link.viewer,model_mint_discount_dutchie_link,group_viewer,1,0,0,0
+access_discount_dutchie_link_ptl_mgr,mint.discount.dutchie.link.ptl_mgr,model_mint_discount_dutchie_link,group_ptl_manager,1,1,1,1
+access_discount_dutchie_link_marketing,mint.discount.dutchie.link.marketing,model_mint_discount_dutchie_link,group_marketing,1,1,1,0
