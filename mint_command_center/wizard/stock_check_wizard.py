@@ -119,17 +119,32 @@ class StockCheckWizard(models.TransientModel):
             return False
 
         for item in inventory_items:
-            qty = item.get('quantityAvailable', item.get('quantity_on_hand', 0))
+            raw_qty = (
+                item.get('quantity_available')
+                or item.get('quantityAvailable')
+                or item.get('quantity_on_hand')
+                or 0
+            )
+            try:
+                qty = float(raw_qty)
+            except (TypeError, ValueError):
+                qty = 0
             if qty < STOCK_THRESHOLD:
                 continue
 
+            item_cat = (
+                item.get('category')
+                or item.get('master_category')
+                or item.get('masterCategory')
+                or ''
+            ).lower()
+
             # Match by brand name (case-insensitive)
             if deal.brand_id:
-                item_brand = (item.get('brandName') or item.get('brand_name') or '').lower()
+                item_brand = (item.get('brand_name') or item.get('brandName') or '').lower()
                 if deal.brand_id.name.lower() in item_brand or item_brand in deal.brand_id.name.lower():
                     # Also check category if specified
                     if deal.product_category:
-                        item_cat = (item.get('category') or item.get('masterCategory') or '').lower()
                         if deal.product_category.lower() in item_cat or item_cat in deal.product_category.lower():
                             return True
                     else:
@@ -137,7 +152,6 @@ class StockCheckWizard(models.TransientModel):
 
             # Match by category only
             if deal.product_category and not deal.brand_id:
-                item_cat = (item.get('category') or item.get('masterCategory') or '').lower()
                 if deal.product_category.lower() in item_cat or item_cat in deal.product_category.lower():
                     return True
 
