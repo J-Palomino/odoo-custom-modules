@@ -52,7 +52,7 @@ class ResConfigSettings(models.TransientModel):
         default="block",
         help="Transactional-only gateway. 'Block' is the safe default.",
     )
-    telnyx_content_blocklist = fields.Text(
+    telnyx_content_blocklist = fields.Char(
         string="Content Blocklist (comma-separated)",
         config_parameter="mint_sms_telnyx.content_blocklist",
         help="Substring matches, case-insensitive. Leave blank to use the "
