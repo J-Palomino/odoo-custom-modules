@@ -50,6 +50,11 @@ def post_init_hook(env):
     elif discount_model:
         _logger.info('PTL hourly active recompute cron already exists')
 
+    # Note: the Dutchie publish drain cron + config-param verification live
+    # in migrations/19.0.5.0.0/post-migrate.py so they fire on UPGRADE of
+    # an existing install, not just first install. post_init_hook only runs
+    # the very first time a module is installed in a database.
+
     # Backfill market_id for existing PTL days (migration from unique(date)
     # to unique(date, market_id))
     az_region = env['mint.region'].search([('code', '=', 'AZ')], limit=1)

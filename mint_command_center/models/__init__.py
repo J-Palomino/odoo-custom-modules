@@ -13,3 +13,6 @@ from . import push_notification
 from . import push_campaign
 from . import push_banner
 from . import dutchie_discount_push
+from . import res_company_dutchie_loc
+from . import mint_discount_dutchie_link
+from . import mint_discount_publish
