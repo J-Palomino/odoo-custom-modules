@@ -120,12 +120,11 @@
                     domain="[('has_discrepancy', '=', True)]"/>
                 <filter name="pending" string="Pending Verification"
                     domain="[('state', '=', 'received')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_state" string="Status"
-                        context="{'group_by': 'state'}"/>
-                    <filter name="group_vendor" string="Vendor"
-                        context="{'group_by': 'partner_id'}"/>
-                </group>
+                <separator/>
+                <filter name="group_state" string="Status"
+                    context="{'group_by': 'state'}"/>
+                <filter name="group_vendor" string="Vendor"
+                    context="{'group_by': 'partner_id'}"/>
             </search>
         </field>
     </record>
