@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <record id="spreadsheet_cell_watch_list_view" model="ir.ui.view">
+        <field name="name">spreadsheet.cell.watch.list</field>
+        <field name="model">spreadsheet.cell.watch</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="spreadsheet_id" />
+                <field name="name" />
+                <field name="cell_ref" />
+                <field name="value_type" />
+                <field name="value_number" optional="show" />
+                <field name="value_text" optional="hide" />
+                <field name="value_bool" optional="hide" />
+                <field name="last_updated" />
+                <field name="active" widget="boolean_toggle" />
+            </list>
+        </field>
+    </record>
+
+    <record id="spreadsheet_cell_watch_form_view" model="ir.ui.view">
+        <field name="name">spreadsheet.cell.watch.form</field>
+        <field name="model">spreadsheet.cell.watch</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="spreadsheet_id" />
+                            <field name="name" />
+                            <field name="cell_ref" placeholder="Sheet1!B5" />
+                            <field name="value_type" />
+                            <field name="active" />
+                        </group>
+                        <group string="Last Value">
+                            <field name="value_number" invisible="value_type != 'number'" />
+                            <field name="value_text" invisible="value_type != 'text'" />
+                            <field name="value_bool" invisible="value_type != 'bool'" />
+                            <field name="last_updated" readonly="1" />
+                            <field name="last_pushed_by" readonly="1" />
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="spreadsheet_cell_watch_search_view" model="ir.ui.view">
+        <field name="name">spreadsheet.cell.watch.search</field>
+        <field name="model">spreadsheet.cell.watch</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name" />
+                <field name="spreadsheet_id" />
+                <field name="cell_ref" />
+                <filter name="active" string="Active" domain="[('active', '=', True)]" />
+                <filter name="inactive" string="Archived" domain="[('active', '=', False)]" />
+            </search>
+        </field>
+    </record>
+
+    <record id="spreadsheet_cell_watch_action" model="ir.actions.act_window">
+        <field name="name">Cell Watches</field>
+        <field name="res_model">spreadsheet.cell.watch</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="spreadsheet_cell_watch_search_view" />
+    </record>
+
+    <record model="ir.ui.menu" id="spreadsheet_cell_watch_menu">
+        <field name="name">Cell Watches</field>
+        <field name="parent_id" ref="spreadsheet_spreadsheet_configuration_menu" />
+        <field name="action" ref="spreadsheet_cell_watch_action" />
+        <field name="group_ids" eval="[(4, ref('spreadsheet_oca.group_user'))]" />
+        <field name="sequence" eval="20" />
+    </record>
+</odoo>
