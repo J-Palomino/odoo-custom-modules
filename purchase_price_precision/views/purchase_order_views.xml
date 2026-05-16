@@ -243,7 +243,7 @@
     <record id="purchase_order_tree_enhancements" model="ir.ui.view">
         <field name="name">po_enhance: List View Enhancements</field>
         <field name="model">purchase.order</field>
-        <field name="inherit_id" ref="purchase.purchase_order_view_list"/>
+        <field name="inherit_id" ref="purchase.purchase_order_view_tree"/>
         <field name="arch" type="xml">
             <!-- 1. Replace star priority with High/Medium/Low selection -->
             <xpath expr="//field[@name='priority']" position="replace">
