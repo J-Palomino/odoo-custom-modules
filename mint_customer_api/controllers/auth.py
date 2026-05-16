@@ -96,6 +96,16 @@ def _verify_and_get_user():
     return user
 
 
+# Web-signup user logins are prefixed with "web:" to isolate them from
+# internal employee accounts (login = plain email). An employee can shop
+# on the consumer site without colliding with their staff identity.
+WEB_LOGIN_PREFIX = 'web:'
+
+
+def _web_login(email):
+    """Return the prefixed res.users.login for a web customer email."""
+    return WEB_LOGIN_PREFIX + (email or '').strip().lower()
+
 class MintCustomerAuth(http.Controller):
     """Customer authentication controller."""
 
@@ -411,6 +421,142 @@ class MintCustomerAuth(http.Controller):
             'email_to': user.login,
             'auto_delete': True,
         }).send()
+
+    @http.route('/api/v1/auth/google', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def google_auth(self, **kw):
+        """Sign-in with Google. Called server-to-server by the Astro callback
+        after it exchanges the OAuth code with Google. Trust on Odoo side
+        relies on X-Api-Key (only the frontend server holds it) plus the
+        fact that the frontend already validated the id_token via Google's
+        token endpoint using the client secret."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        api_key = request.httprequest.headers.get('X-Api-Key', '')
+        if not api_key or not self._verify_fe_api_key(api_key):
+            return error_response('Unauthorized', 401)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        email = data.get('email', '').strip().lower()
+        name = (data.get('name') or '').strip() or (email.split('@')[0] if email else '')
+        google_sub = (data.get('google_sub') or '').strip()
+
+        if not email or not google_sub:
+            return error_response('email and google_sub are required')
+
+        # Find existing web customer (prefixed or legacy). share=True ensures
+        # we never return an internal employee account for a matching email.
+        user = request.env['res.users'].sudo().search(
+            [
+                ('login', 'in', [email, _web_login(email)]),
+                ('share', '=', True),
+                ('active', '=', True),
+            ],
+            limit=1,
+        )
+
+        if not user:
+            try:
+                user = self._create_web_user(email=email, name=name)
+            except Exception as e:
+                _logger.exception('Google OAuth account creation failed: %s', e)
+                return error_response('Could not create account', 500)
+
+        token = user._generate_jwt()
+        return json_response({
+            'token': token,
+            'user': {
+                'id': user.id,
+                'name': user.partner_id.name,
+                'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
+                'phone': user.partner_id.phone or '',
+                'partner_id': user.partner_id.id,
+            },
+        })
+
+    def _verify_fe_api_key(self, key):
+        """Verify X-Api-Key against Odoo's res.users.apikeys store."""
+        try:
+            uid = request.env['res.users.apikeys'].sudo()._check_credentials(
+                scope='rpc', key=key,
+            )
+            return bool(uid)
+        except Exception:
+            return False
+
+    def _create_web_user(self, email, name, phone=''):
+        """Create a fresh partner + portal user for a web-site signup.
+
+        Always creates a NEW res.partner (doesn't reuse an existing one that
+        happens to have the same email) so employees shopping the consumer
+        site get a separate customer identity from their staff partner.
+
+        Uses login = 'web:<email>' so web users never collide with internal
+        user accounts (login = plain email) and sets is_web_customer=True
+        so record rules restrict PII to privileged groups.
+        """
+        main_company = request.env['res.company'].sudo().browse(1)
+        login = _web_login(email)
+
+        partner = request.env['res.partner'].sudo().with_context(
+            mail_create_nosubscribe=True,
+            mail_create_nolog=True,
+            tracking_disable=True,
+            mail_notrack=True,
+        ).create({
+            'name': name,
+            'email': email,
+            'phone': phone or False,
+            'customer_rank': 1,
+            'company_id': main_company.id,
+            'is_web_customer': True,
+        })
+        request.env.cr.flush()
+
+        # Raw INSERT to bypass signup/mail hooks that conflict with the
+        # transaction. ON CONFLICT handles the race where two concurrent
+        # signups for the same email both try to insert — the loser
+        # re-selects the winning row.
+        #
+        # FIXME: This bypasses the website module's @api.constrains check
+        # for duplicate logins where website_id IS NULL, so the loser-
+        # branch's password write can clobber the winner's account on a
+        # genuine race. Tracked for ORM refactor — see follow-up ticket.
+        # Constraint is named (not column-targeted) because the website
+        # module replaces UNIQUE (login) with UNIQUE (login, website_id).
+        request.env.cr.execute("""
+            INSERT INTO res_users (login, password, company_id, partner_id,
+                                   active, share, create_uid, write_uid,
+                                   create_date, write_date, notification_type)
+            VALUES (%s, '', %s, %s, true, true, 1, 1, NOW(), NOW(), 'email')
+            ON CONFLICT ON CONSTRAINT res_users_login_key DO NOTHING
+            RETURNING id
+        """, (login, main_company.id, partner.id))
+        row = request.env.cr.fetchone()
+        if row:
+            user_id = row[0]
+        else:
+            # Race: another request just created this login. Use theirs and
+            # drop the extra partner we made to avoid orphans.
+            request.env.cr.execute(
+                "SELECT id FROM res_users WHERE login = %s", (login,)
+            )
+            user_id = request.env.cr.fetchone()[0]
+            partner.sudo().unlink()
+
+        request.env.cr.execute("""
+            INSERT INTO res_company_users_rel (cid, user_id)
+            VALUES (%s, %s)
+            ON CONFLICT DO NOTHING
+        """, (main_company.id, user_id))
+
+        request.env['res.users'].sudo().invalidate_model()
+        return request.env['res.users'].sudo().browse(user_id)
 
     @http.route('/api/v1/auth/verify', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
