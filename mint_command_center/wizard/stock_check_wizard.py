@@ -60,7 +60,7 @@ class StockCheckWizard(models.TransientModel):
         for store in stores:
             uuid = store.dutchie_store_id
             try:
-                url = f"{base_url}/api/locations/{uuid}/inventory"
+                url = f"{base_url}/api/locations/{uuid}/inventory?limit=5000"
                 req = urllib.request.Request(url, headers={
                     'X-API-Key': api_key,
                     'Accept': 'application/json',
