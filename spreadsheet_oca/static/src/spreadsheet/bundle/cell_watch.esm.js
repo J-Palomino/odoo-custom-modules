@@ -23,8 +23,11 @@ function readWatchValue(model, watch) {
     if (!sheetId) return null;
     const [col, row] = toCartesian(parsed.xc);
     const cell = model.getters.getEvaluatedCell({sheetId, col, row});
-    if (cell.type === "empty") return null;
-    if (watch.value_type === "number") return Number(cell.value) || 0;
+    if (cell.type === "empty" || cell.type === "error") return null;
+    if (watch.value_type === "number") {
+        const n = Number(cell.value);
+        return Number.isFinite(n) ? n : null;
+    }
     if (watch.value_type === "bool") return Boolean(cell.value);
     return cell.formattedValue ?? String(cell.value ?? "");
 }
