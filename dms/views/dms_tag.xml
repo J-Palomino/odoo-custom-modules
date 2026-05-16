@@ -18,20 +18,18 @@
                     name="all"
                     domain="['|', ('active', '=', False), ('active', '=', True)]"
                 />
-                <group expand="0" name="group_by" string="Group By">
-                    <filter
-                        name="group_by_category"
-                        string="Category"
-                        domain="[]"
-                        context="{'group_by': 'category_id'}"
-                    />
-                    <filter
-                        name="group_by_color"
-                        string="Color"
-                        domain="[]"
-                        context="{'group_by': 'color'}"
-                    />
-                </group>
+                <filter
+                    name="group_by_category"
+                    string="Category"
+                    domain="[]"
+                    context="{'group_by': 'category_id'}"
+                />
+                <filter
+                    name="group_by_color"
+                    string="Color"
+                    domain="[]"
+                    context="{'group_by': 'color'}"
+                />
             </search>
         </field>
     </record>
