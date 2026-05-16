@@ -2,6 +2,7 @@ import * as spreadsheet from "@odoo/o-spreadsheet";
 
 import {Component} from "@odoo/owl";
 import {ImageFileStore} from "./image_file_store.esm";
+import {attachCellWatcher} from "./cell_watch.esm";
 import {OdooDataProvider} from "@spreadsheet/data_sources/odoo_data_provider";
 import {SpreadsheetComponent} from "@spreadsheet/actions/spreadsheet_component";
 import {_t} from "@web/core/l10n/translation";
@@ -173,6 +174,14 @@ export class SpreadsheetRenderer extends Component {
             await this.env.importData(this.spreadsheet_model);
             this.spreadsheet_model.joinSession();
             this.stores.inject(ModelStore, this.spreadsheet_model);
+            if (this.props.model === "spreadsheet.spreadsheet") {
+                this.cellWatcher = attachCellWatcher({
+                    model: this.spreadsheet_model,
+                    orm: this.orm,
+                    http: this.http,
+                    spreadsheetId: this.props.res_id,
+                });
+            }
         });
         useSetupAction({
             beforeLeave: this.onSpreadsheetSaved.bind(this),
