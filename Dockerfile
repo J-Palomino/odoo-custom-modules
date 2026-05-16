@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=125
+ARG CACHEBUST=128
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -106,6 +106,9 @@ COPY --chown=odoo:odoo document_page_quality_manual /opt/extra-addons/document_p
 COPY --chown=odoo:odoo mgmtsystem_audit /opt/extra-addons/mgmtsystem_audit
 COPY --chown=odoo:odoo mgmtsystem_review /opt/extra-addons/mgmtsystem_review
 COPY --chown=odoo:odoo mgmtsystem_quality /opt/extra-addons/mgmtsystem_quality
+
+# ── ONLYOFFICE connector (edit attachments via Document Server) ──────
+COPY --chown=odoo:odoo onlyoffice_odoo /opt/extra-addons/onlyoffice_odoo
 
 # ── OCA modules (flattened from submodules) ──────────────────────────
 COPY --chown=odoo:odoo vault /opt/extra-addons/vault
