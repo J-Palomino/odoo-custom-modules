@@ -140,27 +140,25 @@
                     name="filter_write"
                     date="write_date"
                 />
-                <group expand="0" string="Group By">
-                    <filter
-                        name="group_color"
-                        string="Color"
-                        domain="[]"
-                        context="{'group_by':'color'}"
-                    />
-                    <filter
-                        name="group_category"
-                        string="Category"
-                        domain="[]"
-                        context="{'group_by':'category_id'}"
-                    />
-                    <separator />
-                    <filter
-                        name="group_storage"
-                        string="Storage"
-                        domain="[]"
-                        context="{'group_by':'storage_id'}"
-                    />
-                </group>
+                <filter
+                    name="group_color"
+                    string="Color"
+                    domain="[]"
+                    context="{'group_by':'color'}"
+                />
+                <filter
+                    name="group_category"
+                    string="Category"
+                    domain="[]"
+                    context="{'group_by':'category_id'}"
+                />
+                <separator />
+                <filter
+                    name="group_storage"
+                    string="Storage"
+                    domain="[]"
+                    context="{'group_by':'storage_id'}"
+                />
                 <searchpanel>
                     <field
                         name="parent_id"
