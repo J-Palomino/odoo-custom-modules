@@ -110,6 +110,9 @@ COPY --chown=odoo:odoo mgmtsystem_quality /opt/extra-addons/mgmtsystem_quality
 # ── ONLYOFFICE connector (edit attachments via Document Server) ──────
 COPY --chown=odoo:odoo onlyoffice_odoo /opt/extra-addons/onlyoffice_odoo
 
+# ── Mail FK hardening (idempotent FK repairs for module installs) ────
+COPY --chown=odoo:odoo mint_mail_fk_hardening /opt/extra-addons/mint_mail_fk_hardening
+
 # ── OCA modules (flattened from submodules) ──────────────────────────
 COPY --chown=odoo:odoo vault /opt/extra-addons/vault
 # sign_oca removed — not Odoo 19 compatible, leaving orphaned DB refs
