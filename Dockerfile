@@ -91,6 +91,9 @@ COPY --chown=odoo:odoo hr_dms_field /opt/extra-addons/hr_dms_field
 # ── ONLYOFFICE connector (edit attachments via Document Server) ──────
 COPY --chown=odoo:odoo onlyoffice_odoo /opt/extra-addons/onlyoffice_odoo
 
+# ── Mail FK hardening (idempotent FK repairs for module installs) ────
+COPY --chown=odoo:odoo mint_mail_fk_hardening /opt/extra-addons/mint_mail_fk_hardening
+
 
 # ── OCA modules (flattened from submodules) ──────────────────────────
 COPY --chown=odoo:odoo vault /opt/extra-addons/vault
