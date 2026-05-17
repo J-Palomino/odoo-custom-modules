@@ -33,7 +33,7 @@
             </button>
         </xpath>
 
-        <xpath expr="//div" position="inside">
+        <xpath expr="//div[hasclass('o_list_buttons')]" position="inside">
             <input
                 type="file"
                 name="ufile"
