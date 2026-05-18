@@ -8,12 +8,11 @@
         </xpath>
     </t>
 
-    <t
-        t-name="dms.ListButtons"
-        t-inherit="web.ListView.Buttons"
-        t-inherit-mode="primary"
-    >
-        <xpath expr="//div[hasclass('o_list_buttons')]" position="inside">
+    <!-- Standalone: Odoo 19 dropped web.ListView.Buttons as a separate template
+         (buttons live in slots on web.ListView). This template is referenced as
+         `buttonTemplate` from FileListView and rendered via <t t-call>. -->
+    <t t-name="dms.ListButtons">
+        <div class="o_list_buttons d-flex">
             <button
                 type="button"
                 class="d-none d-md-inline o_button_upload_expense btn btn-primary mx-1"
@@ -21,9 +20,6 @@
             >
                 Upload
             </button>
-        </xpath>
-
-        <xpath expr="//div[hasclass('o_list_buttons')]" position="inside">
             <button
                 type="button"
                 class="d-inline d-md-none o_button_upload_expense btn btn-primary mx-1"
@@ -31,9 +27,6 @@
             >
                 Scan
             </button>
-        </xpath>
-
-        <xpath expr="//div[hasclass('o_list_buttons')]" position="inside">
             <input
                 type="file"
                 name="ufile"
@@ -43,6 +36,6 @@
                 accept="*"
                 t-on-change="onChangeFileInput"
             />
-        </xpath>
+        </div>
     </t>
 </templates>

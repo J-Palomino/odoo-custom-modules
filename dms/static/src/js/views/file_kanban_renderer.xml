@@ -16,13 +16,19 @@
         </xpath>
     </t>
 
-    <t
-        t-name="dms.KanbanButtons"
-        t-inherit="web.KanbanView.Buttons"
-        t-inherit-mode="primary"
-    >
-        <xpath expr="//div[1]" position="inside">
+    <!-- Standalone: Odoo 19 dropped web.KanbanView.Buttons as a separate template
+         (buttons live in slots on web.KanbanView). This template is referenced as
+         `buttonTemplate` from FileKanbanView and rendered via <t t-call>. -->
+    <t t-name="dms.KanbanButtons">
+        <div class="o_kanban_buttons d-flex">
             <t t-if="props.archInfo.activeActions.create">
+                <button
+                    type="button"
+                    class="d-none d-md-inline btn btn-primary mx-1"
+                    t-on-click.prevent="uploadDocument"
+                >
+                    Upload
+                </button>
                 <button
                     type="button"
                     class="d-inline d-md-none btn btn-primary mx-1"
@@ -39,14 +45,7 @@
                     accept="*"
                     t-on-change="onChangeFileInput"
                 />
-                <button
-                    type="button"
-                    class="d-none d-md-inline btn btn-primary mx-1"
-                    t-on-click.prevent="uploadDocument"
-                >
-                    Upload
-                </button>
             </t>
-        </xpath>
+        </div>
     </t>
 </templates>
