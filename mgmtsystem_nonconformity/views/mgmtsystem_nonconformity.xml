@@ -31,7 +31,6 @@
         <field name="model">mgmtsystem.nonconformity</field>
         <field name="arch" type="xml">
             <search>
-                <group name="filters">
                     <filter
                         name="draft"
                         icon="terp-document-new"
@@ -70,48 +69,44 @@
                     />
                     <field name="system_id" />
                     <field name="company_id" groups="base.group_multi_company" />
-                </group>
-                <newline />
-                <group expand="0" string="Group By...">
-                    <filter
-                        name="groupby_author"
-                        string="Author"
-                        icon="gtk-edit"
-                        context="{'group_by':'user_id'}"
-                    />
-                    <filter
-                        name="groupby_responsible"
-                        string="Responsible"
-                        icon="terp-personal"
-                        context="{'group_by':'responsible_user_id'}"
-                    />
-                    <filter
-                        name="groupby_manager"
-                        string="Manager"
-                        icon="terp-personal+"
-                        context="{'group_by':'manager_user_id'}"
-                    />
-                    <separator orientation="vertical" />
-                    <filter
-                        name="groupby_system"
-                        string="System"
-                        icon="gtk-execute"
-                        context="{'group_by':'system_id'}"
-                    />
-                    <filter
-                        name="groupby_partner"
-                        string="Partner"
-                        icon="terp-personal+"
-                        domain="[]"
-                        context="{'group_by':'partner_id'}"
-                    />
-                    <filter
-                        name="groupby_procedure"
-                        string="Procedure"
-                        icon="terp-stock_symbol-selection"
-                        context="{'group_by':'procedure_ids'}"
-                    />
-                </group>
+                <filter
+                    name="groupby_author"
+                    string="Author"
+                    icon="gtk-edit"
+                    context="{'group_by':'user_id'}"
+                />
+                <filter
+                    name="groupby_responsible"
+                    string="Responsible"
+                    icon="terp-personal"
+                    context="{'group_by':'responsible_user_id'}"
+                />
+                <filter
+                    name="groupby_manager"
+                    string="Manager"
+                    icon="terp-personal+"
+                    context="{'group_by':'manager_user_id'}"
+                />
+                <separator orientation="vertical" />
+                <filter
+                    name="groupby_system"
+                    string="System"
+                    icon="gtk-execute"
+                    context="{'group_by':'system_id'}"
+                />
+                <filter
+                    name="groupby_partner"
+                    string="Partner"
+                    icon="terp-personal+"
+                    domain="[]"
+                    context="{'group_by':'partner_id'}"
+                />
+                <filter
+                    name="groupby_procedure"
+                    string="Procedure"
+                    icon="terp-stock_symbol-selection"
+                    context="{'group_by':'procedure_ids'}"
+                />
             </search>
         </field>
     </record>

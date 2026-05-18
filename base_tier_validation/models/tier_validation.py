@@ -284,7 +284,7 @@ class TierValidation(models.AbstractModel):
                     ("model_name", "=", self._name),
                     ("company_id", "in", [False] + self._get_company().ids),
                     "|",
-                    ("group_ids", "in", self.env.user.groups_id.ids),
+                    ("group_ids", "in", self.env.user.group_ids.ids),
                     ("group_ids", "=", False),
                     *(extra_domain or []),
                 ]
