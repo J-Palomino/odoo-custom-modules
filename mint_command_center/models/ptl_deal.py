@@ -194,6 +194,21 @@ class PtlDeal(models.Model):
         compute='_compute_day_count',
     )
 
+    # --- Matching products (resolved from brand + master category) ---
+    matching_product_ids = fields.Many2many(
+        'product.template',
+        compute='_compute_matching_products',
+        string='Matching Products',
+        help='Live product.template records this deal will apply to, '
+             'resolved from brand_id + product_category at form open. '
+             'Mirrors the matching used by mint.discount._ensure (brand_ids + '
+             'category_ids resolved via product.category name match).',
+    )
+    matching_product_count = fields.Integer(
+        string='# Matching SKUs',
+        compute='_compute_matching_products',
+    )
+
     # --- Validity range ---
     date_start = fields.Date(
         string='Start Date',
@@ -219,6 +234,34 @@ class PtlDeal(models.Model):
     )
 
     # --- Computed fields ---
+
+    @api.depends('brand_id', 'product_category', 'excluded_skus')
+    def _compute_matching_products(self):
+        Template = self.env['product.template'].sudo()
+        Category = self.env['product.category'].sudo()
+        for rec in self:
+            if not rec.brand_id:
+                rec.matching_product_ids = False
+                rec.matching_product_count = 0
+                continue
+            domain = [('brand_id', '=', rec.brand_id.id)]
+            if rec.product_category:
+                cats = Category.search([('name', '=ilike', rec.product_category)])
+                if cats:
+                    domain.append(('categ_id', 'in', cats.ids))
+            tmpls = Template.search(domain)
+            if rec.excluded_skus and tmpls:
+                tokens = {
+                    t.strip().lower()
+                    for t in rec.excluded_skus.replace(',', '\n').split('\n')
+                    if t.strip()
+                }
+                if tokens:
+                    tmpls = tmpls.filtered(
+                        lambda t: (t.default_code or '').lower() not in tokens
+                    )
+            rec.matching_product_ids = tmpls
+            rec.matching_product_count = len(tmpls)
 
     @api.depends('day_ids')
     def _compute_day_count(self):

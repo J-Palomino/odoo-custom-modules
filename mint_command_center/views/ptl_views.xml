@@ -227,6 +227,7 @@
                     <group>
                         <group>
                             <field name="brand_id"
+                                   widget="radio"
                                    domain="[('product_count','&gt;',0)]"
                                    options="{'no_create': True}"/>
                             <field name="product_category"/>
@@ -278,6 +279,17 @@
                                options="{'no_create': True}"
                                placeholder="All stores (leave empty for all)"/>
                         <field name="day_ids" widget="many2many_tags" readonly="1"/>
+                    </group>
+                    <group string="Matching SKUs (resolved from brand + category)" col="1">
+                        <field name="matching_product_count" readonly="1"/>
+                        <field name="matching_product_ids" nolabel="1" readonly="1">
+                            <list>
+                                <field name="default_code" string="SKU"/>
+                                <field name="name"/>
+                                <field name="categ_id"/>
+                                <field name="list_price"/>
+                            </list>
+                        </field>
                     </group>
                     <group string="Stock Status" invisible="stock_status == 'unchecked'">
                         <group>
