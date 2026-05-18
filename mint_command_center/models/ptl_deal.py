@@ -1,5 +1,23 @@
+import re
+from markupsafe import escape, Markup
+
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
+
+
+_PRICE_RANGE_RE = re.compile(r'\$(\d+(?:\.\d+)?)\s*[-–—]\s*\$(\d+(?:\.\d+)?)')
+
+
+def _strike_price_range_html(text):
+    """HTML-escape ``text`` then wrap ``$X - $Y`` retail ranges in <s>.
+
+    Used so the pre-discount range renders strikethrough in the Odoo form/list
+    and OWL calendar views, matching the public daily-deals page.
+    """
+    if not text:
+        return ''
+    safe = escape(str(text))
+    return Markup(_PRICE_RANGE_RE.sub(r'<s>$\1 - $\2</s>', str(safe)))
 
 
 class PtlDeal(models.Model):
@@ -114,11 +132,12 @@ class PtlDeal(models.Model):
     rejection_reason = fields.Text(string='Rejection Reason')
 
     # --- Display ---
-    display_text = fields.Char(
+    display_text = fields.Html(
         string='Display Text',
         compute='_compute_display_text',
         store=True,
-        help='Auto-formatted pricing display: ~~$MSRP~~ $SALE | X% Off',
+        sanitize=False,
+        help='Auto-formatted pricing display: <s>$MSRP</s> $SALE | X% Off',
     )
 
     # --- Stock check ---
@@ -266,9 +285,11 @@ class PtlDeal(models.Model):
     @api.depends('discount_type', 'discount_value', 'original_price', 'sales_details')
     def _compute_display_text(self):
         for rec in self:
-            # If sales_details is manually set, prefer it
+            # If sales_details is manually set, prefer it — but render `$X - $Y`
+            # retail ranges with <s> strikethrough so the form/list/calendar
+            # views match the public daily-deals page.
             if rec.sales_details:
-                rec.display_text = rec.sales_details
+                rec.display_text = _strike_price_range_html(rec.sales_details)
                 continue
 
             msrp = rec.original_price
@@ -279,18 +300,18 @@ class PtlDeal(models.Model):
                 pct = val if val > 1 else val * 100
                 if msrp:
                     sale = msrp * (1 - pct / 100)
-                    rec.display_text = f"~~${msrp:.0f}~~ ${sale:.2f} | {pct:.0f}% Off"
+                    rec.display_text = Markup(f"<s>${msrp:.0f}</s> ${sale:.2f} | {pct:.0f}% Off")
                 else:
                     rec.display_text = f"{pct:.0f}% Off"
             elif dtype == 'fixed' and val:
                 if msrp:
                     sale = msrp - val
-                    rec.display_text = f"~~${msrp:.0f}~~ ${sale:.2f} | ${val:.0f} Off"
+                    rec.display_text = Markup(f"<s>${msrp:.0f}</s> ${sale:.2f} | ${val:.0f} Off")
                 else:
                     rec.display_text = f"${val:.0f} Off"
             elif dtype == 'price' and val:
                 if msrp:
-                    rec.display_text = f"~~${msrp:.0f}~~ ${val:.2f}"
+                    rec.display_text = Markup(f"<s>${msrp:.0f}</s> ${val:.2f}")
                 else:
                     rec.display_text = f"${val:.2f}"
             elif dtype == 'bogo':
@@ -313,7 +334,7 @@ class PtlDeal(models.Model):
                 pct = (val if val > 1 else val * 100) if val else 0
                 if msrp and pct:
                     sale = msrp * (1 - pct / 100)
-                    rec.display_text = f"Clearance: ~~${msrp:.0f}~~ ${sale:.2f} | {pct:.0f}% Off"
+                    rec.display_text = Markup(f"Clearance: <s>${msrp:.0f}</s> ${sale:.2f} | {pct:.0f}% Off")
                 elif pct:
                     rec.display_text = f"Clearance: {pct:.0f}% Off"
                 else:

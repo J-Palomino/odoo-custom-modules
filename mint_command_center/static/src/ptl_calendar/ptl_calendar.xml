@@ -52,7 +52,7 @@
                                     <span t-if="deal.category" t-esc="deal.category"/>
                                 </div>
                                 <div class="small mt-1">
-                                    <span t-if="deal.display_text" t-esc="deal.display_text"/>
+                                    <span t-if="deal.display_text" t-out="deal.display_text"/>
                                     <span t-elif="deal.discount_type">
                                         <span t-esc="deal.discount_type"/>
                                         <span> · </span>
