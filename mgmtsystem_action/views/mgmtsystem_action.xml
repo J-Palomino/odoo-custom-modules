@@ -82,29 +82,27 @@
                     string="Future Activities"
                     domain="[('activity_ids.date_deadline', '&gt;', context_today().strftime('%Y-%m-%d'))]"
                 />
-                <group expand="0" string="Group By">
-                    <filter
-                        name="group_by_user"
-                        string="User"
-                        context="{'group_by':'user_id'}"
-                    />
-                    <filter
-                        name="group_by_type"
-                        string="Type"
-                        context="{'group_by':'type_action'}"
-                    />
-                    <filter
-                        name="group_by_state"
-                        string="Stage"
-                        context="{'group_by':'stage_id'}"
-                    />
-                    <filter
-                        name="group_by_company"
-                        string="Company"
-                        context="{'group_by':'company_id'}"
-                        groups="base.group_multi_company"
-                    />
-                </group>
+                <filter
+                    name="group_by_user"
+                    string="User"
+                    context="{'group_by':'user_id'}"
+                />
+                <filter
+                    name="group_by_type"
+                    string="Type"
+                    context="{'group_by':'type_action'}"
+                />
+                <filter
+                    name="group_by_state"
+                    string="Stage"
+                    context="{'group_by':'stage_id'}"
+                />
+                <filter
+                    name="group_by_company"
+                    string="Company"
+                    context="{'group_by':'company_id'}"
+                    groups="base.group_multi_company"
+                />
             </search>
         </field>
     </record>
