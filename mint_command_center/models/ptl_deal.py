@@ -65,7 +65,17 @@ class PtlDeal(models.Model):
         string='Brand',
         tracking=True,
     )
-    product_category = fields.Char(string='Product Category')
+    product_category = fields.Selection(
+        selection=[(k, k) for k in MASTER_CATEGORY_PATTERNS.keys()],
+        string='Product Category',
+        help='Master category bucket for product matching. Selection labels are '
+             'the dict keys of MASTER_CATEGORY_PATTERNS — keep them in sync.',
+    )
+    product_category_legacy = fields.Char(
+        string='Product Category (legacy free-text)',
+        help='Original free-text value captured before the 19.0.4.5.6 conversion '
+             'to a Selection. Preserved for audit; not shown in standard views.',
+    )
     discount_type = fields.Selection(
         selection=[
             ('percent', 'Percentage Off'),
