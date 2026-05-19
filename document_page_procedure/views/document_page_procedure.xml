@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
+    <!--
+        Odoo 19 removed `ir.actions.act_window.view`. The action's view_id +
+        view_mode='list,form' resolve to document_page's registered views
+        for both modes; no per-mode override is needed.
+    -->
     <record model="ir.actions.act_window" id="action_procedures">
         <field name="name">Procedures</field>
         <field name="res_model">document.page</field>
         <field name="view_mode">list,form</field>
+        <field name="view_id" ref="document_page.view_wiki_tree" />
+        <field name="search_view_id" ref="document_page.view_wiki_filter" />
         <field name="help">Procedures of your management system.</field>
         <field
             name="domain"
@@ -13,18 +20,6 @@
             name="context"
             eval="{'default_parent_id': ref('document_page_group_procedure')}"
         />
-    </record>
-    <record id="action_procedures_tree" model="ir.actions.act_window.view">
-        <field name="sequence" eval="0" />
-        <field name="view_mode">list</field>
-        <field name="view_id" ref="document_page.view_wiki_tree" />
-        <field name="act_window_id" ref="action_procedures" />
-    </record>
-    <record id="action_procedures_form" model="ir.actions.act_window.view">
-        <field name="sequence" eval="5" />
-        <field name="view_mode">form</field>
-        <field name="view_id" ref="document_page.view_wiki_form" />
-        <field name="act_window_id" ref="action_procedures" />
     </record>
 
     <menuitem
