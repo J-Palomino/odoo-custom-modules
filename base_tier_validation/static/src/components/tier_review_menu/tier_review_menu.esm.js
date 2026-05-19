@@ -4,13 +4,13 @@ import {registry} from "@web/core/registry";
 import {useDropdownState} from "@web/core/dropdown/dropdown_hooks";
 import {useService} from "@web/core/utils/hooks";
 
-let _useDiscussSystray;
-try {
-    const mailHooks = await import("@mail/utils/common/hooks");
-    _useDiscussSystray = mailHooks.useDiscussSystray;
-} catch {
-    // Odoo 19 may relocate this hook — safe fallback below
-}
+// Why: Odoo 19's asset bundler does not reliably handle top-level await
+// in `web.assets_backend` modules — a previous `await import(...)` at
+// module scope caused the entire backend SPA to white-page during init
+// (the systray failed to load before any /web/dataset/call_kw could fire).
+// We use a static fallback shape; the discuss-systray styling is purely
+// cosmetic and the menu functions identically without it.
+const _discussSystrayFallback = {menuClass: "", contentClass: ""};
 
 export class TierReviewMenu extends Component {
     static components = {Dropdown};
@@ -19,9 +19,7 @@ export class TierReviewMenu extends Component {
 
     setup() {
         super.setup();
-        this.discussSystray = _useDiscussSystray
-            ? _useDiscussSystray()
-            : {menuClass: "", contentClass: ""};
+        this.discussSystray = _discussSystrayFallback;
         this.orm = useService("orm");
         this.store = useState(useService("mail.store"));
         this.action = useService("action");
