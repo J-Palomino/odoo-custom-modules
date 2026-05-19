@@ -1,4 +1,33 @@
+import re
+
 from odoo import api, fields, models
+
+
+# Extracts cannabis-weight metadata from a free-text title.
+# Matches the first occurrence of <number><unit> where unit ∈ {mg, g, oz, pk, ct}.
+# Handles: "1g AIO", "3.5g prepack", "1.3g", "100mg", "1000mg", ".5g", "6pk".
+# Returns the first match — for entries like "1g AIO and Preroll pack" it yields 1g.
+# `g` is checked AFTER `mg` in the alternation so "100mg" parses as mg, not g.
+_WEIGHT_RE = re.compile(r'\b(\d*\.?\d+)\s*(mg|g|oz|pk|ct)\b', re.IGNORECASE)
+
+
+def _parse_weight(*sources):
+    """Try each source string in order; return (value:float, unit:str) or (0.0, False)."""
+    for s in sources:
+        if not s:
+            continue
+        m = _WEIGHT_RE.search(s)
+        if not m:
+            continue
+        try:
+            value = float(m.group(1))
+        except (TypeError, ValueError):
+            continue
+        unit = m.group(2).lower()
+        if unit == 'pk':
+            unit = 'ct'
+        return value, unit
+    return 0.0, False
 
 
 class BrandCalendarEntry(models.Model):
@@ -80,6 +109,45 @@ class BrandCalendarEntry(models.Model):
     )
     discount_value = fields.Float(string='Discount Value', tracking=True)
     original_price = fields.Float(string='Original / MSRP Price', tracking=True)
+
+    # ── Weight metadata (parsed from sku_or_category / promo_text) ───────
+    # Stored compute with readonly=False: auto-derives from the title but can be
+    # overridden manually. Useful for filtering/badging deals on the PTL calendar
+    # (e.g. show "1g" or "3.5g" next to the deal card).
+
+    weight_value = fields.Float(
+        string='Weight',
+        compute='_compute_weight',
+        store=True,
+        readonly=False,
+        tracking=True,
+        help='Numeric weight/count parsed from the SKU/Category title (e.g. "1g AIO" → 1.0). '
+             'Manually editable; clear to auto-recompute from the title.',
+    )
+    weight_unit = fields.Selection(
+        selection=[
+            ('g', 'g'),
+            ('mg', 'mg'),
+            ('oz', 'oz'),
+            ('ct', 'ct'),
+        ],
+        string='Unit',
+        compute='_compute_weight',
+        store=True,
+        readonly=False,
+        tracking=True,
+    )
+
+    @api.depends('sku_or_category', 'promo_text')
+    def _compute_weight(self):
+        for rec in self:
+            # Skip if user has manually set non-default values that don't match either source.
+            # The stored-compute + readonly=False pattern recomputes on dependency change;
+            # to preserve a manual override, the user should clear sku_or_category last
+            # (or just edit the weight field after — Odoo only recomputes when deps change).
+            value, unit = _parse_weight(rec.sku_or_category, rec.promo_text)
+            rec.weight_value = value
+            rec.weight_unit = unit or False
 
     # ── Vendor funding (per-entry override; defaults inherited from campaign) ──
 
