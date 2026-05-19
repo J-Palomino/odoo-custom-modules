@@ -4,19 +4,20 @@ from odoo import api, fields, models
 
 
 # Extracts cannabis-weight metadata from a free-text title.
-# Matches the first occurrence of <number><unit> where unit ∈ {mg, g, oz, pk, ct}.
-# Handles: "1g AIO", "3.5g prepack", "1.3g", "100mg", "1000mg", ".5g", "6pk".
-# Returns the first match — for entries like "1g AIO and Preroll pack" it yields 1g.
-# `g` is checked AFTER `mg` in the alternation so "100mg" parses as mg, not g.
-_WEIGHT_RE = re.compile(r'\b(\d*\.?\d+)\s*(mg|g|oz|pk|ct)\b', re.IGNORECASE)
+# Two-pass: prefer mass units (mg/g/oz) over count units (pk/ct) so titles like
+# "Shorties Prerolls 10pk - (5.0g)" return 5.0g (the gram weight), not 10ct.
+# `mg` is listed before `g` so "100mg" parses as mg, not g. `pk` → `ct`.
+_WEIGHT_RE_MASS = re.compile(r'\b(\d*\.?\d+)\s*(mg|g|oz)\b', re.IGNORECASE)
+_WEIGHT_RE_COUNT = re.compile(r'\b(\d*\.?\d+)\s*(pk|ct)\b', re.IGNORECASE)
 
 
 def _parse_weight(*sources):
-    """Try each source string in order; return (value:float, unit:str) or (0.0, False)."""
+    """Try each source string in order; return (value:float, unit:str) or (0.0, False).
+    Mass units win over count units within the same string."""
     for s in sources:
         if not s:
             continue
-        m = _WEIGHT_RE.search(s)
+        m = _WEIGHT_RE_MASS.search(s) or _WEIGHT_RE_COUNT.search(s)
         if not m:
             continue
         try:
