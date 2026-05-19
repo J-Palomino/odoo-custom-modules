@@ -44,7 +44,14 @@
                             <div class="card-body p-2">
                                 <div class="d-flex justify-content-between align-items-start">
                                     <strong class="text-truncate" t-esc="deal.name"/>
-                                    <span t-if="deal.is_featured" class="badge bg-warning text-dark ms-1" title="Featured">★</span>
+                                    <span class="ms-1">
+                                        <span t-if="deal.weight_value and deal.weight_unit"
+                                              class="badge bg-info text-dark me-1"
+                                              t-attf-title="Weight: #{deal.weight_value} #{deal.weight_unit}">
+                                            <t t-esc="deal.weight_value"/><t t-esc="deal.weight_unit"/>
+                                        </span>
+                                        <span t-if="deal.is_featured" class="badge bg-warning text-dark" title="Featured">★</span>
+                                    </span>
                                 </div>
                                 <div class="text-muted small">
                                     <span t-if="deal.brand" t-esc="deal.brand"/>
