@@ -1,6 +1,8 @@
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+from .brand_calendar import _parse_weight
+
 
 # Master master-category buckets used in the PTL Calendar sheet,
 # mapped to the product.category name fragments that fall under each.
@@ -65,6 +67,28 @@ class PtlDeal(models.Model):
     original_price = fields.Float(
         string='Original / MSRP Price',
         help='Manufacturer suggested retail price — used to compute display text',
+    )
+    weight_value = fields.Float(
+        string='Weight',
+        compute='_compute_weight',
+        store=True,
+        readonly=False,
+        tracking=True,
+        help='Numeric weight/count parsed from the deal name (e.g. "Aeriz 1g AIO" → 1.0). '
+             'Manually editable; clear the name/sales_details to auto-recompute.',
+    )
+    weight_unit = fields.Selection(
+        selection=[
+            ('g', 'g'),
+            ('mg', 'mg'),
+            ('oz', 'oz'),
+            ('ct', 'ct'),
+        ],
+        string='Unit',
+        compute='_compute_weight',
+        store=True,
+        readonly=False,
+        tracking=True,
     )
     sales_details = fields.Text(
         string='Sales Details',
@@ -363,6 +387,13 @@ class PtlDeal(models.Model):
             expired.write({'state': 'expired'})
         return len(expired)
 
+    @api.depends('name', 'sales_details')
+    def _compute_weight(self):
+        for rec in self:
+            value, unit = _parse_weight(rec.name, rec.sales_details)
+            rec.weight_value = value
+            rec.weight_unit = unit or False
+
     @api.depends('discount_type', 'discount_value', 'original_price', 'sales_details')
     def _compute_display_text(self):
         for rec in self:
@@ -503,6 +534,8 @@ class PtlDeal(models.Model):
                 'discount_type': dict(deal._fields['discount_type'].selection).get(deal.discount_type, '') if deal.discount_type else '',
                 'discount_value': deal.discount_value or 0.0,
                 'display_text': deal.display_text or '',
+                'weight_value': deal.weight_value or 0.0,
+                'weight_unit': deal.weight_unit or '',
                 'market_id': deal.market_id.id if deal.market_id else False,
                 'market': deal.market_id.name or '',
                 'is_featured': bool(deal.is_featured),

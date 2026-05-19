@@ -241,6 +241,11 @@
                             <field name="discount_value"/>
                             <field name="original_price"/>
                             <field name="display_text" readonly="1"/>
+                            <label for="weight_value" string="Weight"/>
+                            <div class="o_row">
+                                <field name="weight_value" nolabel="1"/>
+                                <field name="weight_unit" nolabel="1"/>
+                            </div>
                             <field name="is_featured"/>
                             <field name="sequence"/>
                         </group>
