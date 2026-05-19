@@ -132,12 +132,15 @@ class PtlDayDutchiePush(models.Model):
         weekly recurrence, and SKU-level scoping land in v2 once the
         canary store has been clean for a week.
         """
+        # mint.discount.discount_type values are the post-DISCOUNT_TYPE_MAP set
+        # from ptl_day.py: percent / fixed / bogo / price_to_amount /
+        # points_multiplier / clearance. (Note 'bundle' on ptl.deal is mapped
+        # to 'bogo' upstream, so it never reaches here as 'bundle'.)
         calc_method_map = {
             'percent': 'PERCENT_OFF',
             'fixed': 'AMOUNT_OFF',
-            'price': 'SET_PRICE',
+            'price_to_amount': 'SET_PRICE',
             'bogo': 'BOGO',
-            'bundle': 'BUNDLE',
             'points_multiplier': 'PERCENT_OFF',  # closest fallback
             'clearance': 'PERCENT_OFF',
         }
@@ -159,7 +162,13 @@ class PtlDayDutchiePush(models.Model):
             'IsActive': bool(discount.is_active) if hasattr(discount, 'is_active') else True,
             'IsAvailableOnline': True,
             'CalculationMethod': calc_method_map.get(discount.discount_type, 'PERCENT_OFF'),
-            'Amount': float(discount.discount_value or 0.0),
+            # mint.discount stores discount_amount as 0–1 for percent (e.g. 0.5
+            # for "50% off") and as the raw value for fixed/price. Dutchie's
+            # Reward.DiscountValue (which this Amount maps to in v1) wants an
+            # integer percentage like 50, so multiply by 100 for percent types.
+            # For BOGO/bundle/clearance/points_multiplier the Amount is
+            # informational only — Dutchie reads other fields.
+            'Amount': self._resolve_dutchie_amount(discount),
             # Day-of-week recurrence — Mint marketing flips these via the
             # PTL day binding; the Dutchie shape uses a WeeklyRecurrenceInfo
             # block that v2 will fill. v1 leaves it empty (= every day).
@@ -215,6 +224,24 @@ class PtlDayDutchiePush(models.Model):
                             else enabled_stores
             for store in target_stores:
                 self._push_one_discount(discount, store, mode, url, api_key, Log)
+
+    def _resolve_dutchie_amount(self, discount):
+        """Compute the integer/float Amount Dutchie expects for this discount.
+
+        mint.discount.discount_amount is 0–1 normalized for percent types
+        (set by _deal_to_discount_vals: amount = deal.discount_value / 100
+        when discount_value > 1). Dutchie wants an integer percent (50 for
+        50% off), not 0.5, so multiply back when the value is in the 0–1 range.
+
+        For non-percent types (fixed, price_to_amount), the raw value is
+        passed through unchanged. For BOGO/bundle/clearance/points_multiplier
+        the Amount field is informational — Dutchie reads other fields.
+        """
+        amt = float(discount.discount_amount or 0.0)
+        if discount.discount_type == 'percent':
+            # 0.5 → 50 ; 50 → 50 (defensive, in case someone stored raw pct)
+            return amt * 100.0 if amt <= 1.0 else amt
+        return amt
 
     def _resolve_pos_loc_id(self, store):
         """Integer POS LocId for this store.
