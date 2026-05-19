@@ -289,10 +289,12 @@ class PtlDay(models.Model):
             vals['exclude_brand_ids'] = [(6, 0, deal.excluded_brand_ids.ids)]
 
         # Category targeting (ptl.deal uses char, mint.discount uses product.category)
+        # Uses the master-category resolver on the deal so master buckets like
+        # "Flower" expand to Prepack Flower / Bulk Flower / etc. — otherwise a
+        # freshly bucketed deal would only match the bare-named "Flower" cats
+        # and miss most SKUs (regression observed 2026-05-18).
         if deal.product_category:
-            cats = self.env['product.category'].search([
-                ('name', '=ilike', deal.product_category),
-            ])
+            cats = deal._resolve_master_categories()
             if cats:
                 vals['category_ids'] = [(6, 0, cats.ids)]
 
