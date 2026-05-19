@@ -56,6 +56,11 @@
                             <field name="discount_type"/>
                             <field name="discount_value"/>
                             <field name="original_price"/>
+                            <label for="weight_value" string="Weight"/>
+                            <div class="o_row">
+                                <field name="weight_value" nolabel="1"/>
+                                <field name="weight_unit" nolabel="1"/>
+                            </div>
                         </group>
                         <group>
                             <field name="start_time" widget="float_time"/>
@@ -92,6 +97,8 @@
                 <field name="campaign_id" optional="show"/>
                 <field name="discount_type" optional="hide"/>
                 <field name="discount_value" optional="hide"/>
+                <field name="weight_value" optional="show"/>
+                <field name="weight_unit" optional="show"/>
                 <field name="deal_id" optional="hide"/>
                 <field name="slot_type" optional="hide"/>
                 <field name="ptl_day_id" optional="hide" readonly="1"/>
