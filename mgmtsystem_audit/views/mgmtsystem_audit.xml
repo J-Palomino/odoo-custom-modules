@@ -23,7 +23,7 @@
         <field name="type">search</field>
         <field name="arch" type="xml">
             <search string="Verification Lines">
-                <group>
+                
                     <field name="seq" />
                     <field name="name" />
                     <field
@@ -33,7 +33,7 @@
                     <field name="is_conformed" />
                     <field name="comments" />
                     <field name="company_id" groups="base.group_multi_company" />
-                </group>
+                
             </search>
         </field>
     </record>
@@ -91,7 +91,7 @@
         <field name="type">search</field>
         <field name="arch" type="xml">
             <search string="Audits">
-                <group>
+                
                     <filter
                         name="current"
                         icon="terp-document-new"
@@ -112,7 +112,7 @@
                     <field name="reference" />
                     <field name="system_id" />
                     <field name="company_id" groups="base.group_multi_company" />
-                </group>
+                
             </search>
         </field>
     </record>
