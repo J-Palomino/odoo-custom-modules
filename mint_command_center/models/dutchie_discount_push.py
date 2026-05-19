@@ -159,7 +159,13 @@ class PtlDayDutchiePush(models.Model):
             # legacy data — but the latter will resolve to 0 and the push
             # path skips zero-LocId records to avoid garbage hitting Dutchie.
             'LocId': self._resolve_pos_loc_id(store),
-            'IsActive': bool(discount.is_active) if hasattr(discount, 'is_active') else True,
+            # mint.discount.is_active ("Active Now") is computed from valid_from/until
+            # against today, so it returns False for any discount scheduled for a
+            # future PTL day — but we want Dutchie's IsActive=True so the discount
+            # sits in Dutchie's catalog and fires on its scheduled day. Use
+            # is_published (the catalog-membership flag) instead. Both checks
+            # (and_) guard against pushing a soft-archived row.
+            'IsActive': bool(discount.is_published and discount.is_available_online),
             'IsAvailableOnline': True,
             'CalculationMethod': calc_method_map.get(discount.discount_type, 'PERCENT_OFF'),
             # mint.discount stores discount_amount as 0–1 for percent (e.g. 0.5
