@@ -55,6 +55,21 @@ class ResCompanyDutchiePush(models.Model):
         help='Per-store opt-in. Both this AND mint.region flag must be True '
              'for the discount push to fire (and global mode must be "live").',
     )
+    dutchie_pos_location_id = fields.Integer(
+        string='Dutchie POS LocId',
+        help='Integer POS LocId Dutchie uses for this store (e.g. Tempe ≈ 1568, '
+             'Spring Hill = 2898). Required for the Dutchie discount push — '
+             'the existing dutchie_store_id is a UUID and is NOT accepted by '
+             'Dutchie /api/v2/discount/update-discount-item, which needs the '
+             'integer location id. Mirrors mintinvsvc stores.pos_location_id.',
+    )
+    dutchie_lsp_id = fields.Integer(
+        string='Dutchie LspId',
+        help='Integer LSP (Licensed Service Provider) id Dutchie uses to scope '
+             'discount/inventory writes. AZ = 575, IL = 805, FL = 821, MI = 822 '
+             '(values from packages/inventory-service/db/migrations). Required '
+             'for the Dutchie discount push.',
+    )
 
 
 class DutchieDiscountPushLog(models.Model):
@@ -135,7 +150,12 @@ class PtlDayDutchiePush(models.Model):
         return {
             'Id': existing_int,
             'Name': (discount.name or '')[:120],
-            'LocId': int(store.dutchie_store_id) if store.dutchie_store_id and str(store.dutchie_store_id).isdigit() else 0,
+            # Dutchie wants the integer POS LocId, NOT the UUID stored in
+            # dutchie_store_id. Read from dutchie_pos_location_id (new field
+            # backfilled per-store) and fall back to the UUID-int parse for
+            # legacy data — but the latter will resolve to 0 and the push
+            # path skips zero-LocId records to avoid garbage hitting Dutchie.
+            'LocId': self._resolve_pos_loc_id(store),
             'IsActive': bool(discount.is_active) if hasattr(discount, 'is_active') else True,
             'IsAvailableOnline': True,
             'CalculationMethod': calc_method_map.get(discount.discount_type, 'PERCENT_OFF'),
@@ -196,13 +216,51 @@ class PtlDayDutchiePush(models.Model):
             for store in target_stores:
                 self._push_one_discount(discount, store, mode, url, api_key, Log)
 
+    def _resolve_pos_loc_id(self, store):
+        """Integer POS LocId for this store.
+
+        Prefer the new dutchie_pos_location_id field. Fall back to the
+        legacy dutchie_store_id only if it parses as an integer (it's a
+        UUID in production, so this fallback returns 0 — which the push
+        path treats as a skip signal).
+        """
+        if getattr(store, 'dutchie_pos_location_id', 0):
+            return int(store.dutchie_pos_location_id)
+        legacy = store.dutchie_store_id or ''
+        return int(legacy) if str(legacy).isdigit() else 0
+
+    def _resolve_lsp_id(self, store):
+        """Integer LSP id for this store. v1 reads the per-store override;
+        v2 may infer from market_id when the override is unset."""
+        return int(getattr(store, 'dutchie_lsp_id', 0) or 0)
+
     def _push_one_discount(self, discount, store, mode, url, api_key, Log):
         """Build payload, log, and (in 'live' mode only) POST to mintinvsvc."""
+        loc_id = self._resolve_pos_loc_id(store)
+        lsp_id = self._resolve_lsp_id(store)
         payload = {
-            'locId': int(store.dutchie_store_id) if store.dutchie_store_id and str(store.dutchie_store_id).isdigit() else 0,
-            'lspId': 0,  # v1: not yet captured per-store; mintinvsvc resolves from locId
+            'locId': loc_id,
+            'lspId': lsp_id,
             'discount': self._deal_to_dutchie_payload(discount, store),
         }
+        # Skip entirely if either id is missing — mintinvsvc rejects locId=0 or
+        # lspId=0 with 400, so logging a doomed payload just adds noise. Still
+        # write a log row so ops can see which stores need backfill.
+        if not loc_id or not lsp_id:
+            Log.create({
+                'discount_id': discount.id,
+                'company_id': store.id,
+                'dutchie_loc_id': str(store.dutchie_store_id or ''),
+                'mode': mode,
+                'request_payload': json.dumps(payload, default=str)[:8000],
+                'success': False,
+                'error_message': (
+                    f'Skipped: store missing dutchie_pos_location_id ({loc_id}) '
+                    f'or dutchie_lsp_id ({lsp_id}). Backfill required before '
+                    f'this store can push to Dutchie.'
+                ),
+            })
+            return
         log_vals = {
             'discount_id': discount.id,
             'company_id': store.id,
