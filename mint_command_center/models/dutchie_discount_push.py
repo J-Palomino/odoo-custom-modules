@@ -119,67 +119,163 @@ class PtlDayDutchiePush(models.Model):
 
     # ─── Payload translator (Odoo discount → Dutchie discount JSON) ───────
 
+    # Observed (mint.discount.discount_type → Dutchie CalculationMethodId)
+    # from prod Dutchie-sourced rows on this instance (2026-05-19 audit):
+    #   percent          → 1   (10 prod rows)
+    #   fixed            → 2   (313 rows) — "X% off" stored as 'fixed' in our schema
+    #   price_to_amount  → 3   (149 rows) — single set price
+    #   price_per_unit   → 6   ("N for $X" bundle pricing)
+    #   dollar_off_total → 5   (1 row)
+    #   bundle           → 15  (1 row — loyalty-style?)
+    # The Dutchie/v1 doc map in inv-svc (services/discountSync.js) says
+    # {2: Percent, 3: PriceToAmount, 6: PriceToAmount, 15: Loyalty}.
+    # For PTL deals (no calculation_method_id stored yet) we use this fallback:
+    CALC_METHOD_ID_FALLBACK = {
+        'percent': 1,
+        'fixed': 2,
+        'price_to_amount': 3,
+        'bogo': 1,          # treat as 100% off the second item — DiscountValue=100, ThresholdMin=2
+        'points_multiplier': 15,
+        'clearance': 1,
+    }
+
+    # ItemGroupTypeId fallback. Per fixture 6 = "Any product matching restrictions
+    # within an item-count threshold" (bundle deal). 5 = generic single-item
+    # discount. Stored value used if present.
+    ITEM_GROUP_TYPE_ID_FALLBACK = 5
+
+    def _resolve_calc_method_id(self, discount):
+        if discount.calculation_method_id:
+            return int(discount.calculation_method_id)
+        return self.CALC_METHOD_ID_FALLBACK.get(discount.discount_type, 1)
+
+    def _resolve_item_group_type_id(self, discount):
+        if getattr(discount, 'item_group_type_id', 0):
+            return int(discount.item_group_type_id)
+        return self.ITEM_GROUP_TYPE_ID_FALLBACK
+
+    def _format_dutchie_date(self, dt):
+        """Format a date as Dutchie expects ('M/D/YYYY, h:mm:ss A')."""
+        if not dt:
+            return ''
+        # Dutchie API accepts both ISO and the M/D/YYYY format used in the
+        # fixture; we use a lossless ISO for stability.
+        return f"{dt.month}/{dt.day}/{dt.year}, 12:00:00 AM"
+
     def _deal_to_dutchie_payload(self, discount, store):
         """Translate (mint.discount, res.company) → Dutchie update-discount-item Discount object.
 
-        Mirrors the shape mintinvsvc's POST /api/admin/discounts expects in
-        its `discount` body field (see __tests__/fixtures/discount-381839.json
-        for the canonical example). Re-pushes set `Id` to the cached Dutchie
-        id so we get update-mode rather than create-mode.
+        Matches the canonical fixture shape at
+        __tests__/fixtures/discount-381839.json. Required fields, sensible
+        defaults, full Reward block — earlier minimal v1 caused Dutchie 500s
+        with "Object reference not set to an instance of an object" because
+        the Reward sub-tree was missing.
 
-        v1 ships only the fields needed for the most common Mint promo
-        shapes (percent off, set price, BOGO, bundle). Restrictions,
-        weekly recurrence, and SKU-level scoping land in v2 once the
-        canary store has been clean for a week.
+        v2 leaves all restriction lists empty ([] / RestrictionIds=[]) — SKU /
+        brand / category scoping is enforced upstream by the mintinvsvc
+        validator and by `excluded_skus` on the PTL deal, not by Dutchie
+        itself. Day-of-week recurrence reads the bool flags on mint.discount
+        (Monday..Sunday). If all 7 flags are False (the default), Dutchie
+        treats the discount as active every day.
         """
-        # mint.discount.discount_type values are the post-DISCOUNT_TYPE_MAP set
-        # from ptl_day.py: percent / fixed / bogo / price_to_amount /
-        # points_multiplier / clearance. (Note 'bundle' on ptl.deal is mapped
-        # to 'bogo' upstream, so it never reaches here as 'bundle'.)
-        calc_method_map = {
-            'percent': 'PERCENT_OFF',
-            'fixed': 'AMOUNT_OFF',
-            'price_to_amount': 'SET_PRICE',
-            'bogo': 'BOGO',
-            'points_multiplier': 'PERCENT_OFF',  # closest fallback
-            'clearance': 'PERCENT_OFF',
-        }
         # dutchie_discount_id is a Char (defined in mint_api_v2). For Dutchie's
         # update-discount-item we need an integer Id (0 = create new). PTL-derived
-        # rows carry a synthetic 'ptl_<n>' value here that's NOT a Dutchie id; treat
-        # those as 0 (create) and let the live response give us the real one.
+        # rows carry a synthetic 'ptl_<n>' value here that's NOT a Dutchie id;
+        # treat those as 0 (create) and let the live response give us the real id.
         existing = (discount.dutchie_discount_id or '').strip()
         existing_int = int(existing) if existing.isdigit() else 0
+
+        name = (discount.name or '')[:120]
+        calc_method_id = self._resolve_calc_method_id(discount)
+        item_group_type_id = self._resolve_item_group_type_id(discount)
+        amount = self._resolve_dutchie_amount(discount)
+
+        # Threshold (BOGO / bundle / "N for $X") — derive from mint.discount
+        # threshold_* fields when stored; otherwise infer from discount type.
+        threshold_min = float(discount.threshold_min or 0)
+        threshold_max = float(discount.threshold_max or 0) if discount.threshold_max else None
+        if not threshold_min and discount.discount_type in ('bogo', 'price_to_amount'):
+            threshold_min = 2.0
+        threshold_type_id = {'none': 0, 'items': 1, 'order_total': 2, 'subtotal': 3}.get(
+            discount.threshold_type, 0
+        ) or (1 if threshold_min else 0)
+        has_threshold = bool(threshold_min)
+
+        # Empty restrictions sub-tree. Required keys per fixture — Dutchie
+        # NREs without them. RestrictionIds lists stay empty; SKU/brand/
+        # category scoping is enforced upstream.
+        empty_restriction = lambda: {'IsExclusion': False, 'RestrictionIds': []}
+        reward_restrictions = {
+            'Strain': empty_restriction(),
+            'Weight': empty_restriction(),
+            'Category': empty_restriction(),
+            'Tag': empty_restriction(),
+            'InventoryTag': empty_restriction(),
+            'Tier': empty_restriction(),
+            'Brand': empty_restriction(),
+            'Vendor': empty_restriction(),
+            'Product': empty_restriction(),
+        }
+
         return {
             'Id': existing_int,
-            'Name': (discount.name or '')[:120],
-            # Dutchie wants the integer POS LocId, NOT the UUID stored in
-            # dutchie_store_id. Read from dutchie_pos_location_id (new field
-            # backfilled per-store) and fall back to the UUID-int parse for
-            # legacy data — but the latter will resolve to 0 and the push
-            # path skips zero-LocId records to avoid garbage hitting Dutchie.
-            'LocId': self._resolve_pos_loc_id(store),
-            # mint.discount.is_active ("Active Now") is computed from valid_from/until
-            # against today, so it returns False for any discount scheduled for a
-            # future PTL day — but we want Dutchie's IsActive=True so the discount
-            # sits in Dutchie's catalog and fires on its scheduled day. Use
-            # is_published (the catalog-membership flag) instead. Both checks
-            # (and_) guard against pushing a soft-archived row.
-            'IsActive': bool(discount.is_published and discount.is_available_online),
-            'IsAvailableOnline': True,
-            'CalculationMethod': calc_method_map.get(discount.discount_type, 'PERCENT_OFF'),
-            # mint.discount stores discount_amount as 0–1 for percent (e.g. 0.5
-            # for "50% off") and as the raw value for fixed/price. Dutchie's
-            # Reward.DiscountValue (which this Amount maps to in v1) wants an
-            # integer percentage like 50, so multiply by 100 for percent types.
-            # For BOGO/bundle/clearance/points_multiplier the Amount is
-            # informational only — Dutchie reads other fields.
-            'Amount': self._resolve_dutchie_amount(discount),
-            # Day-of-week recurrence — Mint marketing flips these via the
-            # PTL day binding; the Dutchie shape uses a WeeklyRecurrenceInfo
-            # block that v2 will fill. v1 leaves it empty (= every day).
-            'WeeklyRecurrenceInfo': None,
-            'Restrictions': [],
+            'ApplicationMethodId': 1,  # 1=Automatic; 2=Manual; 3=Code
+            'CanStackAutomatically': bool(
+                discount.can_stack_automatically
+                if discount.can_stack_automatically is not None
+                else discount.stack_on_other_discounts
+            ),
+            'Constraints': [],
+            'DiscountDescription': (discount.description or name)[:500],
+            'ExternalId': f'odoo_{discount.id}',
+            'FirstTimeCustomerOnly': 1 if discount.first_time_customer_only else 0,
+            'IgnoreNetTax': False,
+            'IsAvailableOnline': bool(discount.is_available_online),
+            'IsBundledDiscount': discount.discount_type in ('bogo',),
+            'LocationRestrictions': [],
+            # OnlineName is the customer-facing label. Use the same as Name
+            # unless ops customizes via mint.discount in the future.
+            'OnlineName': name,
+            'PaymentRestrictions': {'PayByBankSignupIncentive': False},
+            'RedemptionLimit': '',
+            'RequireManagerApproval': False,
+            'RestrictToGroupIds': [],
+            'RestrictToSegmentIds': [],
+            # PlatformTypeId 2 = "Online" per the fixture; v1 leaves it as
+            # the only platform restriction so the discount applies online.
+            'PlatformTypeRestrictions': [{'PlatformTypeId': 2, 'IsExclusion': False}],
+            'OrderTypeRestrictions': [],
+            'Reward': {
+                'DiscountRewardId': None,
+                'HasThreshold': has_threshold,
+                'ApplyToOnlyOneItem': False,
+                'CalculationMethodId': calc_method_id,
+                'DiscountValue': amount,
+                'IncludeNonCannabis': False,
+                'ItemGroupTypeId': item_group_type_id,
+                'ManualDefaultApplyTo': 1,
+                'Restrictions': reward_restrictions,
+                'ThresholdMax': threshold_max,
+                'ThresholdMin': threshold_min if threshold_min else None,
+                'ThresholdTypeId': threshold_type_id,
+            },
+            'SavedWithAdvancedOptions': False,
+            'ValidDateFrom': self._format_dutchie_date(discount.valid_from),
+            'ValidDateTo': self._format_dutchie_date(discount.valid_until),
+            'DiscountCode': '',
+            'MaxRedemptions': None,
+            'RedemptionLimitCountingMode': 0,
+            # Day-of-week. mint.discount stores monday..sunday as separate
+            # booleans (set by _recompute_day_booleans from the PTL day binding).
+            # If all 7 are False, Dutchie treats the discount as every-day.
+            'Sunday': bool(discount.sunday),
+            'Monday': bool(discount.monday),
+            'Tuesday': bool(discount.tuesday),
+            'Wednesday': bool(discount.wednesday),
+            'Thursday': bool(discount.thursday),
+            'Friday': bool(discount.friday),
+            'Saturday': bool(discount.saturday),
+            'MenuDisplayRank': 0,
         }
 
     # ─── Push entry point — call AFTER _push_discounts_to_redis ──────────
