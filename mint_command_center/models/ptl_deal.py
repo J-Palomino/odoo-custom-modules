@@ -2,6 +2,37 @@ from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
 
+# Master master-category buckets used in the PTL Calendar sheet,
+# mapped to the product.category name fragments that fall under each.
+# Used by _resolve_master_categories to widen the category search so a
+# "Flower" master bucket includes "Prepack Flower", "Bulk Flower", etc.
+# Adjust here if Odoo's product.category taxonomy changes.
+MASTER_CATEGORY_PATTERNS = {
+    'Flower': [
+        'Flower', 'Bulk Flower', 'Prepack Flower', 'Shake', 'Trim',
+    ],
+    'Pre-Rolls': [
+        'Pre-Roll', 'Preroll', 'Pre Roll', 'Blunt', 'Joint',
+        'Infused Pre', 'Hash Hole',
+    ],
+    'Vapes': [
+        'Cartridge', 'AIO', 'Disposable', 'Vape', 'Distillate',
+        'Live Resin', 'Live Rosin', 'Pod',
+    ],
+    'Edibles & Tinctures': [
+        'Gumm', 'Chocolat', 'Edible', 'Beverage', 'Syrup', 'Tincture',
+        'Capsule', 'Drink', 'Cookie', 'Brownie', 'Sucker', 'Chew',
+        'Lozenge', 'Mint', 'Tablet',
+    ],
+    'Concentrates & Topicals': [
+        'Concentrate', 'Rosin', 'Hash', 'CNC-', 'Wax', 'Shatter',
+        'Diamond', 'Crumble', 'Topical', 'Salve', 'RSO', 'FSO',
+        'Live Sugar', 'Badder', 'Sauce',
+    ],
+    'Featured Deals': [],  # no category restriction — featured promos are brand-wide
+}
+
+
 class PtlDeal(models.Model):
     _name = 'mint.ptl.deal'
     _description = 'PTL Deal — Reusable deal template referenced by PTL days'
@@ -216,10 +247,36 @@ class PtlDeal(models.Model):
 
     # --- Computed fields ---
 
+    def _resolve_master_categories(self):
+        """Resolve product_category text to a product.category recordset.
+
+        For master-bucket cats (Flower / Pre-Rolls / Vapes / Edibles & Tinctures /
+        Concentrates & Topicals / Featured Deals), expand to the configured
+        name fragments so e.g. "Flower" includes "Prepack Flower", "Bulk Flower",
+        etc. For any other (legacy) text, fall back to an exact ilike name match.
+
+        Returns an empty recordset when product_category is empty OR the master
+        bucket is "Featured Deals" (which intentionally has no category limit).
+        """
+        self.ensure_one()
+        Category = self.env['product.category'].sudo()
+        if not self.product_category:
+            return Category.browse([])
+        patterns = MASTER_CATEGORY_PATTERNS.get(self.product_category)
+        if patterns is None:
+            # Legacy / non-master text — exact name match
+            return Category.search([('name', '=ilike', self.product_category)])
+        if not patterns:
+            # Master bucket with no patterns (Featured Deals) — no category limit
+            return Category.browse([])
+        domain = ['|'] * (len(patterns) - 1) + [
+            ('name', 'ilike', p) for p in patterns
+        ]
+        return Category.search(domain)
+
     @api.depends('brand_id', 'product_category', 'excluded_skus')
     def _compute_matching_products(self):
         Template = self.env['product.template'].sudo()
-        Category = self.env['product.category'].sudo()
         for rec in self:
             if not rec.brand_id:
                 rec.matching_product_ids = False
@@ -227,7 +284,7 @@ class PtlDeal(models.Model):
                 continue
             domain = [('brand_id', '=', rec.brand_id.id)]
             if rec.product_category:
-                cats = Category.search([('name', '=ilike', rec.product_category)])
+                cats = rec._resolve_master_categories()
                 if cats:
                     domain.append(('categ_id', 'in', cats.ids))
             tmpls = Template.search(domain)
