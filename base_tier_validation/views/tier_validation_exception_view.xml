@@ -78,7 +78,7 @@
                     name="flt_allowed_to_write_after_validation_true"
                     domain="[('allowed_to_write_after_validation', '=', True)]"
                 />
-                <group>
+                
                     <filter
                         string="Model"
                         name="grp_model"
@@ -91,7 +91,7 @@
                         domain="[]"
                         context="{'group_by': 'company_id'}"
                     />
-                </group>
+                
             </search>
         </field>
     </record>
