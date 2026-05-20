@@ -290,6 +290,9 @@
                             <list>
                                 <field name="default_code" string="SKU"/>
                                 <field name="name"/>
+                                <field name="x_display_label_override"
+                                       string="Budtender Label"
+                                       optional="show"/>
                                 <field name="categ_id"/>
                                 <field name="list_price"/>
                             </list>
