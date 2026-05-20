@@ -38,6 +38,7 @@ class ConflictResolutionWizard(models.TransientModel):
 
     entry_ids = fields.Many2many(
         'mint.brand.calendar.entry',
+        relation='mint_ptl_conflict_entry_rel',
         string='Entries in this Batch',
         readonly=True,
     )
