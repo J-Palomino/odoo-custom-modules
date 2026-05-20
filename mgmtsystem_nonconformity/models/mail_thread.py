@@ -46,8 +46,15 @@ class MailThread(models.AbstractModel):
                     ["res_id:count"],
                 )
             }
+            # Odoo 19: must use `add_records_fields` here, not `store.add`.
+            # `store.add(..., as_thread=True)` in v19 re-dispatches via
+            # records._thread_to_store(...) (see addons/mail/tools/discuss.py
+            # line 115) — calling it from inside this override re-enters this
+            # very method and recursion depth blows out before any real work
+            # finishes. `add_records_fields` is the documented escape hatch
+            # ("Same as Store.add() but without calling _to_store()").
             for thread in self:
-                store.add(
+                store.add_records_fields(
                     thread,
                     {"non_conformity_count": nonconformity_count.get(thread.id, 0)},
                     as_thread=True,
