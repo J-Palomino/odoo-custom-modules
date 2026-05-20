@@ -20,6 +20,14 @@
                     <button name="action_terminate" string="Terminate" type="object"
                             class="btn-danger"
                             invisible="state in ('draft', 'terminated')"/>
+                    <button name="action_generate_odoo_api_key" type="object"
+                            string="Generate Odoo API Key"
+                            invisible="not user_id or mcp_odoo_api_key"
+                            help="Mint an Odoo API key on this agent's user and save it for MCP."/>
+                    <button name="action_generate_odoo_api_key" type="object"
+                            string="Rotate Odoo API Key"
+                            invisible="not mcp_odoo_api_key"
+                            confirm="This will revoke the existing key and mint a new one. The Daisy+ chatflow MCP credential will be updated automatically. Continue?"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="draft,active,suspended,terminated"/>
                 </header>
@@ -88,7 +96,7 @@
                             <field name="livechat_channel_ids" widget="many2many_tags"/>
                         </page>
                         <page string="MCP Connection" name="mcp"
-                              invisible="not mcp_odoo_url">
+                              invisible="not mcp_odoo_url and not mcp_odoo_api_key">
                             <group>
                                 <group string="Odoo Credentials">
                                     <field name="mcp_odoo_url"/>

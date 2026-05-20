@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import secrets
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError
@@ -211,6 +212,12 @@ class DaisyAgent(models.Model):
             })
             self.user_id = user
 
+        # Mint an Odoo API key for the agent's user so the Daisy+ chatflow can
+        # call Odoo through the FastAPI MCP server as this agent. Skip if one
+        # already exists (rotation lives behind action_generate_odoo_api_key).
+        if not self.mcp_odoo_api_key:
+            self._mint_odoo_api_key()
+
         # Add agent's partner to livechat channels as operator
         if self.partner_id:
             for channel in self.livechat_channel_ids:
@@ -319,6 +326,91 @@ class DaisyAgent(models.Model):
             "res_id": self.user_id.id,
             "view_mode": "form",
             "target": "current",
+        }
+
+    # ---- Odoo API key for MCP ----
+
+    def _mint_odoo_api_key(self):
+        """Generate an Odoo API key on the agent's res.users, store the raw
+        key on the agent (mcp_odoo_api_key) so Daisy+/MCP can use it.
+
+        Any previous key minted by this method (matched by name) is deleted
+        first — Odoo only stores a pbkdf2 hash, so rotating is the only way
+        to "reissue" a lost key.
+        """
+        self.ensure_one()
+        if not self.user_id:
+            raise UserError(
+                "Hire the agent first — an API key needs a linked Odoo user."
+            )
+
+        from passlib.context import CryptContext
+
+        key_name = f"Daisy Agent: {self.name}"
+
+        # Rotate: drop the prior key row for this agent (if any)
+        self.env.cr.execute(
+            "DELETE FROM res_users_apikeys WHERE user_id = %s AND name = %s",
+            [self.user_id.id, key_name],
+        )
+
+        raw_key = secrets.token_hex(30)
+        key_index = raw_key[:8]
+        key_ctx = CryptContext(["pbkdf2_sha512"], pbkdf2_sha512__rounds=6000)
+        key_hash = key_ctx.hash(raw_key)
+
+        self.env.cr.execute(
+            """
+            INSERT INTO res_users_apikeys (name, user_id, scope, index, key, create_date)
+            VALUES (%s, %s, %s, %s, %s, NOW() AT TIME ZONE 'utc')
+            RETURNING id
+            """,
+            [key_name, self.user_id.id, "rpc", key_index, key_hash],
+        )
+        apikey_id = self.env.cr.fetchone()[0]
+
+        odoo_url = self.env["ir.config_parameter"].sudo().get_param(
+            "web.base.url", ""
+        )
+        mcp_server_url = self.env["ir.config_parameter"].sudo().get_param(
+            "daisy.mcp_server_url", "https://fastapi-mcp-production.up.railway.app"
+        )
+
+        self.write({
+            "mcp_odoo_url": self.mcp_odoo_url or odoo_url,
+            "mcp_odoo_username": self.user_id.login,
+            "mcp_odoo_api_key": raw_key,
+            "mcp_server_url": self.mcp_server_url or mcp_server_url,
+        })
+        _logger.info(
+            "Minted Odoo API key (id=%s) for agent %s (user %s)",
+            apikey_id, self.name, self.user_id.login,
+        )
+        return raw_key
+
+    def action_generate_odoo_api_key(self):
+        """Button handler: mint (or rotate) the agent's Odoo API key and show it.
+
+        The raw key is also stored on `mcp_odoo_api_key` so the Daisy+ chatflow
+        can read it; this notification is purely so a human admin sees the
+        new value once for paste-into-external-tools cases.
+        """
+        self.ensure_one()
+        existed = bool(self.mcp_odoo_api_key)
+        raw_key = self._mint_odoo_api_key()
+        verb = "rotated" if existed else "generated"
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": f"Odoo API key {verb}",
+                "message": (
+                    f"Key saved to MCP Connection → Odoo API Key on this agent. "
+                    f"Raw value: {raw_key}"
+                ),
+                "type": "success",
+                "sticky": True,
+            },
         }
 
     def _enqueue_response(self, channel_model, channel_id, user_text, history, conversation_id, context_prefix="", session_id=None):
