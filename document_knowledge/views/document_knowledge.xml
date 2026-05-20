@@ -20,11 +20,13 @@
                     string="Documents"
                     domain="[('res_model', 'not like', 'ir.%'), ('res_model', '!=', False)]"
                 />
-                <filter
-                    name="group_model"
-                    string="Model"
-                    context="{'group_by': 'res_model'}"
-                />
+                <group>
+                    <filter
+                        name="group_model"
+                        string="Model"
+                        context="{'group_by': 'res_model'}"
+                    />
+                </group>
             </search>
         </field>
     </record>
