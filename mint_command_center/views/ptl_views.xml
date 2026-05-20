@@ -27,6 +27,11 @@
                             type="object"
                             class="btn-secondary"
                             invisible="deal_count == 0"/>
+                    <button name="action_open_text_deals_wizard"
+                            string="Export Text Deals"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="deal_count == 0"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="draft,confirmed,published"/>
                 </header>

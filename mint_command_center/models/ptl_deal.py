@@ -560,6 +560,43 @@ class PtlDeal(models.Model):
             'domain': [('id', 'in', self.day_ids.ids)],
         }
 
+    # ─── Text Deals line formatter ────────────────────────────────────────
+
+    _STRIKE = '̶'  # Combining long stroke overlay — strikes the preceding glyph
+
+    def _format_pricing_plain(self):
+        """Take this deal's display_text (which uses markdown-style ~~strike~~)
+        and convert it to a plain-text equivalent with U+0336 combining-strike
+        overlays. Falls back to sales_details, then to an empty string.
+        """
+        import re
+        text = self.display_text or self.sales_details or ''
+        return re.sub(
+            r'~~(.+?)~~',
+            lambda m: ''.join(c + self._STRIKE for c in m.group(1)),
+            text,
+        )
+
+    def _compose_text_deal_line(self):
+        """One bud-tender-friendly text line for this deal. Used by
+        mint.ptl.day._compose_text_deals() for SMS / POS-paste exports.
+
+        Format: ``{emoji} {brand}: {label} — {strikethrough_pricing}``
+
+        The override on product.template (x_display_label_override) is
+        intentionally NOT consulted here: F6c exports at deal level (one
+        line per deal), not per-product. The override surfaces in the
+        embedded matching-SKU list and any future per-product export.
+        """
+        self.ensure_one()
+        emoji = (self.brand_id.display_emoji if self.brand_id else '') or '🌿'
+        brand = self.brand_id.name if self.brand_id else 'Unbranded'
+        label = self.name or ''
+        pricing = self._format_pricing_plain()
+        if pricing:
+            return f"{emoji} {brand}: {label} — {pricing}"
+        return f"{emoji} {brand}: {label}"
+
     @api.model
     def search_approved_for_dragboard(self, date_from=None, date_to=None, market_id=None):
         """Return approved deals available to schedule on the PTL Calendar.
