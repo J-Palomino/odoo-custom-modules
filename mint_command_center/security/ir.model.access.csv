@@ -35,6 +35,8 @@ access_revoke_wizard,mint.deal.revoke.wizard,model_mint_deal_revoke_wizard,group
 access_bulk_revoke_wizard,mint.deal.bulk.revoke.wizard,model_mint_deal_bulk_revoke_wizard,group_ptl_manager,1,1,1,1
 access_revocation_audit_viewer,mint.deal.revocation.audit.log.viewer,model_mint_deal_revocation_audit_log,group_viewer,1,0,0,0
 access_revocation_audit_manager,mint.deal.revocation.audit.log.manager,model_mint_deal_revocation_audit_log,group_ptl_manager,1,1,1,0
+access_conflict_resolution_wizard,mint.ptl.conflict.resolution.wizard,model_mint_ptl_conflict_resolution_wizard,group_ptl_manager,1,1,1,1
+access_conflict_line,mint.ptl.conflict.line,model_mint_ptl_conflict_line,group_ptl_manager,1,1,1,1
 access_national_promo_viewer,mint.national.promo.viewer,model_mint_national_promo,group_viewer,1,0,0,0
 access_national_promo_vendor_mgr,mint.national.promo.vendor_mgr,model_mint_national_promo,group_vendor_manager,1,1,1,1
 access_national_promo_ptl_mgr,mint.national.promo.ptl_mgr,model_mint_national_promo,group_ptl_manager,1,1,1,0

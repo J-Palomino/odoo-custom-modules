@@ -372,12 +372,88 @@ class BrandCalendarEntry(models.Model):
             f"or split the operation into smaller batches."
         )
 
+    # ─── Conflict detection (F3a) ────────────────────────────────────────
+
+    def _detect_plot_conflicts(self, eligible):
+        """For each eligible entry that targets an existing PTL day, find
+        existing deals on that day with overlapping (brand_id, product_category).
+
+        Returns a list of dicts:
+            [{'entry_id': int, 'day_id': int, 'existing_deal_ids': [int]}]
+        """
+        Day = self.env['mint.ptl.day']
+        out = []
+        for entry in eligible:
+            day = Day.search([
+                ('date', '=', entry.date),
+                ('market_id', '=', entry.market_id.id),
+            ], limit=1)
+            if not day or not day.deal_ids:
+                continue
+            ent_deal = entry.deal_id
+            existing = day.deal_ids.filtered(
+                lambda d, ent=ent_deal: (
+                    d.id != ent.id
+                    and d.brand_id.id == ent.brand_id.id
+                    and (d.product_category or '') == (ent.product_category or '')
+                )
+            )
+            if existing:
+                out.append({
+                    'entry_id': entry.id,
+                    'day_id': day.id,
+                    'existing_deal_ids': existing.ids,
+                })
+        return out
+
+    def _open_conflict_resolution_wizard(self, conflicts, eligible):
+        """Return an action that opens the Conflict Resolution wizard pre-
+        filled with the detected overlap lines."""
+        Wizard = self.env['mint.ptl.conflict.resolution.wizard']
+        line_vals = []
+        for c in conflicts:
+            # One wizard line per (entry × existing_deal) pair; usually one
+            # existing deal per overlap but we tolerate multiples.
+            for existing_id in c['existing_deal_ids']:
+                line_vals.append((0, 0, {
+                    'entry_id': c['entry_id'],
+                    'day_id': c['day_id'],
+                    'existing_deal_id': existing_id,
+                    'resolution': 'replace',
+                }))
+        conflict_entry_ids = {c['entry_id'] for c in conflicts}
+        non_conflict_count = len(eligible) - len(conflict_entry_ids)
+        wiz = Wizard.create({
+            'entry_ids': [(6, 0, eligible.ids)],
+            'conflict_line_ids': line_vals,
+            'non_conflict_count': non_conflict_count,
+        })
+        return {
+            'name': 'Resolve Plot Conflicts',
+            'type': 'ir.actions.act_window',
+            'res_model': Wizard._name,
+            'res_id': wiz.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
     def action_add_to_ptl(self):
-        """Create or link to a PTL Day and attach the deal."""
+        """Create or link to a PTL Day and attach the deal.
+
+        Flow:
+          1. F2 plot-volume guardrail (abort if batch too large)
+          2. F3a conflict detection (open wizard if overlaps found)
+          3. Plot normally otherwise
+        """
         eligible = self.filtered(
             lambda e: e.deal_id and e.state in ('tentative', 'confirmed', 'approved')
         )
         self._check_plot_volume_guardrail(eligible)
+
+        if not self.env.context.get('bypass_conflict_check'):
+            conflicts = self._detect_plot_conflicts(eligible)
+            if conflicts:
+                return self._open_conflict_resolution_wizard(conflicts, eligible)
 
         PtlDay = self.env['mint.ptl.day']
         for entry in eligible:
