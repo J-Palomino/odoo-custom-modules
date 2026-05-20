@@ -450,6 +450,31 @@ class PtlDay(models.Model):
             'target': 'self',
         }
 
+    # ─── Text Deals export (SMS / POS paste) ─────────────────────────────
+
+    def _compose_text_deals(self):
+        """Render this day's deals as a plain-text block suitable for SMS,
+        bud-tender clipboard paste, or POS terminal pinning.
+
+        One line per deal, ordered by sequence then id (matching the on-day
+        kanban order). Empty if the day has no deals.
+        """
+        self.ensure_one()
+        deals = self.deal_ids.sorted(lambda d: (d.sequence, d.id))
+        return '\n'.join(d._compose_text_deal_line() for d in deals)
+
+    def action_open_text_deals_wizard(self):
+        """Open the export wizard pre-filled with this day."""
+        self.ensure_one()
+        return {
+            'name': 'Export Text Deals',
+            'type': 'ir.actions.act_window',
+            'res_model': 'mint.ptl.text.deals.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_day_id': self.id},
+        }
+
     @api.model
     def schedule_deal(self, deal_id, date, market_id):
         """Schedule an approved deal on a given (date, market) PTL day.
