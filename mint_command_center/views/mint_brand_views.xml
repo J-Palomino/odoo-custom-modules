@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="mint_brand_view_list" model="ir.ui.view">
+        <field name="name">mint.brand.list</field>
+        <field name="model">mint.brand</field>
+        <field name="arch" type="xml">
+            <list string="Brands" editable="bottom">
+                <field name="display_emoji" string="Emoji" optional="show"/>
+                <field name="name"/>
+                <field name="slug" optional="hide"/>
+                <field name="dutchie_brand_id" optional="show"/>
+                <field name="product_count" string="# Products"/>
+                <field name="website" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="mint_brand_view_form" model="ir.ui.view">
+        <field name="name">mint.brand.form</field>
+        <field name="model">mint.brand</field>
+        <field name="arch" type="xml">
+            <form string="Brand">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="display_emoji" placeholder="🌿"
+                                   style="font-size:1.5em;width:2em;"/>
+                            <field name="name" placeholder="Brand name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="slug"/>
+                            <field name="website" widget="url"/>
+                            <field name="logo_url" widget="url"/>
+                        </group>
+                        <group>
+                            <field name="dutchie_brand_id"/>
+                            <field name="product_count"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description">
+                            <field name="description" placeholder="Brand description..."/>
+                        </page>
+                        <page string="Logo">
+                            <field name="logo" widget="image"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="mint_brand_view_search" model="ir.ui.view">
+        <field name="name">mint.brand.search</field>
+        <field name="model">mint.brand</field>
+        <field name="arch" type="xml">
+            <search string="Brands">
+                <field name="name"/>
+                <field name="dutchie_brand_id"/>
+                <separator/>
+                <filter name="has_emoji" string="Has Emoji"
+                        domain="[('display_emoji', '!=', False)]"/>
+                <filter name="missing_emoji" string="Missing Emoji"
+                        domain="[('display_emoji', '=', False)]"/>
+                <filter name="has_dutchie" string="Linked to Dutchie"
+                        domain="[('dutchie_brand_id', '!=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mint_brand" model="ir.actions.act_window">
+        <field name="name">Brands</field>
+        <field name="res_model">mint.brand</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="mint_brand_view_search"/>
+    </record>
+
+</odoo>
