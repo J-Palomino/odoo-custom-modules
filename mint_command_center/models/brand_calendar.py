@@ -12,6 +12,19 @@ _WEIGHT_RE_MASS = re.compile(r'\b(\d*\.?\d+)\s*(mg|g|oz)\b', re.IGNORECASE)
 _WEIGHT_RE_COUNT = re.compile(r'\b(\d*\.?\d+)\s*(pk|ct)\b', re.IGNORECASE)
 
 
+# Normalize a brand name for case/punctuation/whitespace-insensitive lookup.
+# Used by _compute_brand_id on mint.ptl.deal to avoid creating dupes like
+# "Cresco" when "Cresco " (trailing space) already exists, or "Tru Infusion"
+# when "TRU-Infusion" already exists. Matches the dedupe script's `norm()`.
+_BRAND_NORM_RE = re.compile(r"[\s\-_.&,'\"!?()]+")
+
+
+def _brand_lookup_key(name):
+    if not name:
+        return ''
+    return _BRAND_NORM_RE.sub('', str(name).strip().lower())
+
+
 # Common separators used between "Brand" and the rest of a deal title.
 # Verified against 4.1k production deal names; ` - ` and ` · ` cover the vast
 # majority. `: ` is rare but used (e.g. "Free Tacos: Sponsored by ...").
