@@ -1,6 +1,7 @@
 import re
 
 from odoo import api, fields, models
+from odoo.exceptions import UserError
 
 
 # Extracts cannabis-weight metadata from a free-text title.
@@ -310,10 +311,63 @@ class BrandCalendarEntry(models.Model):
             'is_published': False,
         })
 
+    # ─── Plot Volume Guardrail ───────────────────────────────────────────
+    #
+    # Hard cap on (entries × days) inserted into mint_ptl_day_deal_rel by
+    # action_add_to_ptl. Defaults: 200 normal, 1000 if any entry in the
+    # batch is EDLP (intentional everyday-low-price volume). Configurable
+    # via ir.config_parameter, bypassable via context['bypass_plot_guardrail'].
+
+    GUARDRAIL_PARAM_DEFAULT = 'mint_command_center.plot_max_entries_default'
+    GUARDRAIL_PARAM_HIGH = 'mint_command_center.plot_max_entries_high'
+    GUARDRAIL_DEFAULT_VALUE = 200
+    GUARDRAIL_HIGH_VALUE = 1000
+
+    def _get_plot_guardrail_threshold(self, eligible):
+        """Return the row-cap that applies to this eligible recordset."""
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        try:
+            default_cap = int(get_param(
+                self.GUARDRAIL_PARAM_DEFAULT, self.GUARDRAIL_DEFAULT_VALUE))
+            high_cap = int(get_param(
+                self.GUARDRAIL_PARAM_HIGH, self.GUARDRAIL_HIGH_VALUE))
+        except (ValueError, TypeError):
+            default_cap = self.GUARDRAIL_DEFAULT_VALUE
+            high_cap = self.GUARDRAIL_HIGH_VALUE
+        has_edlp = any(e.slot_type == 'edlp' for e in eligible)
+        return high_cap if has_edlp else default_cap
+
+    def _check_plot_volume_guardrail(self, eligible):
+        """Abort plotting if eligible entry count > applicable threshold."""
+        if self.env.context.get('bypass_plot_guardrail'):
+            return
+        if not eligible:
+            return
+        threshold = self._get_plot_guardrail_threshold(eligible)
+        count = len(eligible)
+        if count <= threshold:
+            return
+        kind = 'EDLP-aware' if any(e.slot_type == 'edlp' for e in eligible) else 'default'
+        raise UserError(
+            f"Plot Volume Guardrail: refusing to plot {count} entries in one "
+            f"action — exceeds the {kind} threshold of {threshold}.\n\n"
+            f"This guardrail exists to catch fan-out bugs before they pollute "
+            f"the PTL (the 3,407-entry WTF-over-expansion class of incident).\n\n"
+            f"If you genuinely intended this volume, raise the threshold via "
+            f"Settings → Technical → Parameters "
+            f"({self.GUARDRAIL_PARAM_DEFAULT} or {self.GUARDRAIL_PARAM_HIGH}), "
+            f"or split the operation into smaller batches."
+        )
+
     def action_add_to_ptl(self):
         """Create or link to a PTL Day and attach the deal."""
+        eligible = self.filtered(
+            lambda e: e.deal_id and e.state in ('tentative', 'confirmed', 'approved')
+        )
+        self._check_plot_volume_guardrail(eligible)
+
         PtlDay = self.env['mint.ptl.day']
-        for entry in self.filtered(lambda e: e.deal_id and e.state in ('tentative', 'confirmed', 'approved')):
+        for entry in eligible:
             day = PtlDay.search([
                 ('date', '=', entry.date),
                 ('market_id', '=', entry.market_id.id),
