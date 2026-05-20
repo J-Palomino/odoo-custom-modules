@@ -23,6 +23,11 @@
                             type="object" class="btn-success"
                             invisible="state != 'approved'"
                             confirm="This will create a new PTL Deal from this submission. Continue?"/>
+                    <button name="action_force_approve_and_plot"
+                            string="Force Approve &amp; Plot"
+                            type="object" class="btn-warning"
+                            invisible="state != 'approved'"
+                            groups="mint_command_center.group_ptl_manager"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="new,under_review,approved,converted"/>
                 </header>

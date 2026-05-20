@@ -171,6 +171,51 @@ class DealSubmission(models.Model):
             },
         }
 
+    # ─── Plot gate ───────────────────────────────────────────────────────
+    #
+    # Conversion to a mint.ptl.deal requires the parent campaign
+    # (mint.national.promo for this brand × market × year) to be approved
+    # — i.e. the brand × market is "blessed to plot" per Famous's approved-
+    # offers concept. The gate is bypassable via the Force-Approve wizard,
+    # which sets `force_override=True` in context and writes a reason to
+    # chatter on both the submission and the campaign.
+
+    PLOTTABLE_CAMPAIGN_STATES = ('approved', 'active')
+
+    def _check_plot_gate(self):
+        """Raise UserError if the submission's campaign isn't approved,
+        unless force_override is set in context."""
+        self.ensure_one()
+        if self.env.context.get('force_override'):
+            return
+        campaign = self.campaign_id
+        if not campaign:
+            raise UserError(
+                "No National Promo Campaign linked to this submission yet. "
+                "Approve the submission first (creates the campaign), then "
+                "approve the campaign — or use Force Approve & Plot."
+            )
+        if campaign.state not in self.PLOTTABLE_CAMPAIGN_STATES:
+            raise UserError(
+                f"Campaign \"{campaign.name}\" is in state "
+                f"\"{campaign.state}\" — only "
+                f"{', '.join(self.PLOTTABLE_CAMPAIGN_STATES)} campaigns can "
+                f"be plotted. Approve the campaign first, or use Force "
+                f"Approve & Plot to do both with an audit-logged reason."
+            )
+
+    def action_force_approve_and_plot(self):
+        """Open the Force Approve & Plot wizard for this submission."""
+        self.ensure_one()
+        return {
+            'name': 'Force Approve & Plot',
+            'type': 'ir.actions.act_window',
+            'res_model': 'mint.deal.force.approve.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_submission_id': self.id},
+        }
+
     def action_convert_to_deal(self):
         """Create a mint.ptl.deal from this approved submission."""
         self.ensure_one()
@@ -178,6 +223,8 @@ class DealSubmission(models.Model):
             raise UserError("This submission has already been converted to a deal.")
         if self.state not in ('approved',):
             raise UserError("Only approved submissions can be converted to deals.")
+
+        self._check_plot_gate()
 
         deal = self.env['mint.ptl.deal'].create({
             'name': self.name,
