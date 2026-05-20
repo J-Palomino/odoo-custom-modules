@@ -23,7 +23,6 @@ def post_init_hook(env):
             'code': 'model._cron_daily_lifecycle()',
             'interval_number': 1,
             'interval_type': 'days',
-            'numbercall': -1,
             'active': True,
             'priority': 50,
         })
@@ -42,7 +41,6 @@ def post_init_hook(env):
             'code': 'model._cron_recompute_active()',
             'interval_number': 1,
             'interval_type': 'hours',
-            'numbercall': -1,
             'active': True,
             'priority': 60,
         })
@@ -64,7 +62,6 @@ def post_init_hook(env):
             'code': 'model._cron_compute_velocity()',
             'interval_number': 1,
             'interval_type': 'days',
-            'numbercall': -1,
             'active': True,
             'priority': 70,
         })

@@ -83,9 +83,11 @@ class ProductTemplate(models.Model):
                     SUM(line.line_total)::numeric(12,2) AS revenue
                 FROM mint_pos_order_line line
                 JOIN product_template pt
-                  ON pt.x_dutchie_product_id = line.dutchie_product_id
+                  ON pt.x_dutchie_product_id::text = line.dutchie_product_id
                 WHERE line.dutchie_product_id IS NOT NULL
                   AND line.dutchie_product_id <> ''
+                  AND pt.x_dutchie_product_id IS NOT NULL
+                  AND pt.x_dutchie_product_id <> 0
                   AND line.create_date >= %s
                 GROUP BY pt.id
             )
@@ -107,7 +109,7 @@ class ProductTemplate(models.Model):
                    x_avg_daily_sales = 0
              WHERE NOT EXISTS (
                  SELECT 1 FROM mint_pos_order_line line
-                  WHERE line.dutchie_product_id = pt.x_dutchie_product_id
+                  WHERE pt.x_dutchie_product_id::text = line.dutchie_product_id
                     AND line.dutchie_product_id IS NOT NULL
                     AND line.create_date >= %s
              ) AND pt.x_units_sold_30d > 0
