@@ -142,4 +142,16 @@
               action="action_compliance_variance"
               sequence="10"/>
 
+    <!-- ── Setup Section ── -->
+    <menuitem id="menu_command_center_setup"
+              name="Setup"
+              parent="menu_command_center_root"
+              sequence="50"/>
+
+    <menuitem id="menu_setup_brands"
+              name="Brands"
+              parent="menu_command_center_setup"
+              action="action_mint_brand"
+              sequence="10"/>
+
 </odoo>
