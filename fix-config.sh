@@ -113,7 +113,11 @@ for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_fina
     account_account_tag_code account_journal_restrict_mode account_move_name_sequence \
     account_move_post_date_user account_move_print account_usability \
     account_invoice_fixed_discount account_invoice_pricelist account_invoice_pricelist_sale \
-    account_statement_base; do
+    account_statement_base \
+    base_tier_validation base_tier_validation_formula \
+    document_knowledge document_page document_page_procedure document_page_quality_manual \
+    mgmtsystem mgmtsystem_action mgmtsystem_audit mgmtsystem_manual \
+    mgmtsystem_nonconformity mgmtsystem_quality mgmtsystem_review; do
     for d in /var/lib/odoo/addons/*/$mod /var/lib/odoo/addons/$mod; do
         if [ -d "$d" ]; then
             echo "=== Removing stale $mod at $d ==="
