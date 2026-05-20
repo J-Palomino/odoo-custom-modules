@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== Competitor ==================== -->
+
+    <record id="view_competitor_list" model="ir.ui.view">
+        <field name="name">mint.competitor.list</field>
+        <field name="model">mint.competitor</field>
+        <field name="arch" type="xml">
+            <list string="Competitors" decoration-muted="not active"
+                  default_order="distance_from_mint">
+                <field name="name"/>
+                <field name="market_id"/>
+                <field name="city"/>
+                <field name="state_id"/>
+                <field name="nearest_company_id"/>
+                <field name="distance_from_mint" widget="float" sum="Total miles"/>
+                <field name="active_deal_count" string="Active Deals"/>
+                <field name="discovery_source" optional="hide"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_competitor_form" model="ir.ui.view">
+        <field name="name">mint.competitor.form</field>
+        <field name="model">mint.competitor</field>
+        <field name="arch" type="xml">
+            <form string="Competitor">
+                <header>
+                    <button name="action_update_from_google_places"
+                            string="Update from Google Places" type="object"
+                            class="btn-secondary"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_deals" type="object"
+                                class="oe_stat_button" icon="fa-tag">
+                            <field name="deal_count" widget="statinfo" string="Deals"/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Inactive" bg_color="bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Competitor Name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Market">
+                            <field name="market_id" options="{'no_create': True}"/>
+                            <field name="nearest_company_id" readonly="1"/>
+                            <field name="distance_from_mint" readonly="1"/>
+                            <field name="discovery_source"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Contact">
+                            <field name="phone" widget="phone"/>
+                            <field name="website" widget="url"/>
+                            <field name="hours"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Address">
+                            <field name="street" placeholder="Street"/>
+                            <field name="street2" placeholder="Street 2"/>
+                            <field name="city"/>
+                            <field name="state_id" options="{'no_create': True}"/>
+                            <field name="zip"/>
+                        </group>
+                        <group string="Coordinates">
+                            <field name="latitude"/>
+                            <field name="longitude"/>
+                            <field name="google_place_id" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Tracked Deals">
+                            <field name="deal_ids">
+                                <list editable="bottom"
+                                      decoration-muted="not is_active">
+                                    <field name="captured_at"/>
+                                    <field name="category"/>
+                                    <field name="source"/>
+                                    <field name="deal_text"/>
+                                    <field name="expires_at"/>
+                                    <field name="is_active" widget="boolean_toggle" readonly="1"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Notes">
+                            <field name="notes"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_competitor_kanban" model="ir.ui.view">
+        <field name="name">mint.competitor.kanban</field>
+        <field name="model">mint.competitor</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="market_id">
+                <field name="name"/>
+                <field name="city"/>
+                <field name="nearest_company_id"/>
+                <field name="distance_from_mint"/>
+                <field name="active_deal_count"/>
+                <templates>
+                    <t t-name="card">
+                        <field name="name" class="fw-bold"/>
+                        <div class="text-muted">
+                            <field name="city"/>, <field name="state_id"/>
+                        </div>
+                        <div class="text-muted" t-if="record.nearest_company_id.raw_value">
+                            <field name="distance_from_mint"/> mi from
+                            <field name="nearest_company_id"/>
+                        </div>
+                        <div t-if="record.active_deal_count.raw_value">
+                            <span class="badge text-bg-warning">
+                                <field name="active_deal_count"/> active deals
+                            </span>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_competitor_search" model="ir.ui.view">
+        <field name="name">mint.competitor.search</field>
+        <field name="model">mint.competitor</field>
+        <field name="arch" type="xml">
+            <search string="Competitors">
+                <field name="name"/>
+                <field name="city"/>
+                <field name="market_id"/>
+                <field name="nearest_company_id"/>
+                <filter name="active" string="Active" domain="[('active', '=', True)]"/>
+                <filter name="has_deals" string="Has Active Deals"
+                        domain="[('active_deal_count', '>', 0)]"/>
+                <filter name="within_5mi" string="Within 5 mi of Mint"
+                        domain="[('distance_from_mint', '&gt;', 0),
+                                 ('distance_from_mint', '&lt;=', 5)]"/>
+                <separator/>
+                <filter name="group_market" string="Market"
+                        context="{'group_by': 'market_id'}"/>
+                <filter name="group_nearest" string="Nearest Mint"
+                        context="{'group_by': 'nearest_company_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_competitor" model="ir.actions.act_window">
+        <field name="name">Competitors</field>
+        <field name="res_model">mint.competitor</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="view_competitor_search"/>
+        <field name="context">{'search_default_active': 1, 'search_default_group_market': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Track your first competitor</p>
+            <p>
+                Track competing dispensaries — addresses, distances from Mint stores,
+                and the deals they're running. The Update from Google Places button
+                backfills phone/website/coordinates from a single lookup.
+            </p>
+        </field>
+    </record>
+
+    <!-- ==================== Competitor Deal ==================== -->
+
+    <record id="view_competitor_deal_list" model="ir.ui.view">
+        <field name="name">mint.competitor.deal.list</field>
+        <field name="model">mint.competitor.deal</field>
+        <field name="arch" type="xml">
+            <list string="Competitor Deals"
+                  decoration-muted="not is_active">
+                <field name="captured_at"/>
+                <field name="competitor_id"/>
+                <field name="market_id" optional="hide"/>
+                <field name="category"/>
+                <field name="source"/>
+                <field name="deal_text"/>
+                <field name="expires_at"/>
+                <field name="is_active" widget="boolean_toggle" readonly="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_competitor_deal_form" model="ir.ui.view">
+        <field name="name">mint.competitor.deal.form</field>
+        <field name="model">mint.competitor.deal</field>
+        <field name="arch" type="xml">
+            <form string="Competitor Deal">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="competitor_id" options="{'no_create': True}"/>
+                            <field name="captured_at"/>
+                            <field name="expires_at"/>
+                            <field name="is_active" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="category"/>
+                            <field name="source"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="deal_text" placeholder="$5 off any 8th, in-store only…"/>
+                        <field name="notes"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_competitor_deal_search" model="ir.ui.view">
+        <field name="name">mint.competitor.deal.search</field>
+        <field name="model">mint.competitor.deal</field>
+        <field name="arch" type="xml">
+            <search string="Competitor Deals">
+                <field name="deal_text"/>
+                <field name="competitor_id"/>
+                <field name="market_id"/>
+                <filter name="active" string="Active" domain="[('is_active', '=', True)]"/>
+                <separator/>
+                <filter name="cat_flower" string="Flower" domain="[('category', '=', 'flower')]"/>
+                <filter name="cat_pre_rolls" string="Pre-Rolls" domain="[('category', '=', 'pre_rolls')]"/>
+                <filter name="cat_vapes" string="Vapes" domain="[('category', '=', 'vapes')]"/>
+                <filter name="cat_edibles" string="Edibles" domain="[('category', '=', 'edibles')]"/>
+                <filter name="cat_storewide" string="Store-wide" domain="[('category', '=', 'storewide')]"/>
+                <separator/>
+                <filter name="group_market" string="Market" context="{'group_by': 'market_id'}"/>
+                <filter name="group_category" string="Category" context="{'group_by': 'category'}"/>
+                <filter name="group_competitor" string="Competitor" context="{'group_by': 'competitor_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_competitor_deal" model="ir.actions.act_window">
+        <field name="name">Competitor Deals</field>
+        <field name="res_model">mint.competitor.deal</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_competitor_deal_search"/>
+        <field name="context">{'search_default_active': 1, 'search_default_group_market': 1}</field>
+    </record>
+
+</odoo>

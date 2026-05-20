@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== Ad Vendor (res.partner) ==================== -->
+
+    <!-- Add an "Advertising" notebook page to res.partner form -->
+    <record id="view_partner_form_ad_vendor" model="ir.ui.view">
+        <field name="name">res.partner.form.ad_vendor</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Advertising" name="advertising"
+                      invisible="not x_is_ad_vendor and not parent_id">
+                    <group>
+                        <group string="Vendor">
+                            <field name="x_is_ad_vendor"/>
+                            <field name="x_ad_vendor_type"
+                                   invisible="not x_is_ad_vendor"/>
+                            <field name="x_ad_market_ids"
+                                   widget="many2many_tags"
+                                   options="{'no_create': True}"
+                                   invisible="not x_is_ad_vendor"/>
+                        </group>
+                        <group string="Contact" invisible="not parent_id">
+                            <field name="x_is_primary_ad_contact"/>
+                        </group>
+                    </group>
+                    <group string="Documents" invisible="not x_is_ad_vendor">
+                        <field name="x_ad_document_ids" nolabel="1">
+                            <list editable="bottom">
+                                <field name="sequence" widget="handle"/>
+                                <field name="label"/>
+                                <field name="url" widget="url"/>
+                            </list>
+                        </field>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Dedicated list view: only ad-vendor partners, with type/market columns -->
+    <record id="view_ad_vendor_list" model="ir.ui.view">
+        <field name="name">res.partner.list.ad_vendor</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <list string="Advertising Vendors">
+                <field name="name"/>
+                <field name="x_ad_vendor_type"/>
+                <field name="x_ad_market_ids" widget="many2many_tags"/>
+                <field name="email" widget="email" optional="show"/>
+                <field name="phone" widget="phone" optional="show"/>
+                <field name="website" widget="url" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ad_vendor_search" model="ir.ui.view">
+        <field name="name">res.partner.search.ad_vendor</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <search string="Advertising Vendors">
+                <field name="name"/>
+                <field name="x_ad_market_ids"/>
+                <field name="email"/>
+                <filter name="t_billboard" string="Billboard"
+                        domain="[('x_ad_vendor_type', '=', 'billboard')]"/>
+                <filter name="t_print" string="Print"
+                        domain="[('x_ad_vendor_type', '=', 'print')]"/>
+                <filter name="t_digital" string="Digital"
+                        domain="[('x_ad_vendor_type', '=', 'digital')]"/>
+                <filter name="t_radio" string="Radio"
+                        domain="[('x_ad_vendor_type', '=', 'radio')]"/>
+                <filter name="t_other" string="Other"
+                        domain="[('x_ad_vendor_type', '=', 'other')]"/>
+                <separator/>
+                <filter name="group_type" string="Type"
+                        context="{'group_by': 'x_ad_vendor_type'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ad_vendor" model="ir.actions.act_window">
+        <field name="name">Advertising Vendors</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('x_is_ad_vendor', '=', True)]</field>
+        <field name="context">{
+            'default_x_is_ad_vendor': True,
+            'default_is_company': True,
+            'search_default_group_type': 1
+        }</field>
+        <field name="search_view_id" ref="view_ad_vendor_search"/>
+        <field name="view_ids" eval="[
+            Command.clear(),
+            Command.create({'sequence': 1, 'view_mode': 'list', 'view_id': ref('view_ad_vendor_list')}),
+            Command.create({'sequence': 2, 'view_mode': 'kanban'}),
+            Command.create({'sequence': 3, 'view_mode': 'form'}),
+        ]"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Add an advertising vendor</p>
+            <p>
+                Advertising vendors include billboard, print, digital, radio, and other
+                paid-media partners. Billboard vendors created in the Billboards section
+                appear here automatically once a Billing Partner is linked.
+            </p>
+        </field>
+    </record>
+
+</odoo>
