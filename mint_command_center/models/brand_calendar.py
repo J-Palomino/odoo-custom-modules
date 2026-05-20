@@ -11,6 +11,62 @@ _WEIGHT_RE_MASS = re.compile(r'\b(\d*\.?\d+)\s*(mg|g|oz)\b', re.IGNORECASE)
 _WEIGHT_RE_COUNT = re.compile(r'\b(\d*\.?\d+)\s*(pk|ct)\b', re.IGNORECASE)
 
 
+# Common separators used between "Brand" and the rest of a deal title.
+# Verified against 4.1k production deal names; ` - ` and ` · ` cover the vast
+# majority. `: ` is rare but used (e.g. "Free Tacos: Sponsored by ...").
+_BRAND_SEPARATORS = [
+    re.compile(r'\s+-\s+'),
+    re.compile(r'\s*·\s*'),
+    re.compile(r'\s+\|\s+'),
+    re.compile(r':\s+'),
+]
+
+
+def _looks_like_promo(s):
+    """Heuristics to reject promo-math fragments masquerading as brand names.
+    Catches '2 for $59 3 for $39', '30% Off', '$25 Each', etc."""
+    if not s:
+        return True
+    if '$' in s or '%' in s:
+        return True
+    if re.search(r'\b\d+\s+for\s+\$?\d', s, re.IGNORECASE):
+        return True
+    if re.search(r'\boff\b', s, re.IGNORECASE):
+        return True
+    if re.fullmatch(r'\d+(\.\d+)?', s):
+        return True
+    return False
+
+
+def _parse_brand_name(text):
+    """Extract the brand-name segment from a deal title.
+
+    Returns the trimmed string before the first separator, or None when no
+    plausible brand is found. Junk like promo math is filtered out.
+    Examples:
+        "Camino - Gummies 100mg" → "Camino"
+        "Sofa King · Bite Me Brownies"  → "Sofa King"
+        "DOUBLE FREE WEED FRIDAY" → None  (no separator)
+        "2 for $59 - some product" → None  (promo-math leader)
+    """
+    if not text:
+        return None
+    s = str(text).strip()
+    if not s:
+        return None
+    for sep_re in _BRAND_SEPARATORS:
+        m = sep_re.search(s)
+        if not m or m.start() == 0:
+            continue
+        candidate = s[:m.start()].strip()
+        if len(candidate) < 2 or len(candidate) > 50:
+            continue
+        if _looks_like_promo(candidate):
+            continue
+        return candidate
+    return None
+
+
 def _parse_weight(*sources):
     """Try each source string in order; return (value:float, unit:str) or (0.0, False).
     Mass units win over count units within the same string."""

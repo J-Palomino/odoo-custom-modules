@@ -4,7 +4,7 @@ from markupsafe import escape, Markup
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
-from .brand_calendar import _parse_weight
+from .brand_calendar import _parse_brand_name, _parse_weight
 
 
 _PRICE_RANGE_RE = re.compile(r'\$(\d+(?:\.\d+)?)\s*[-–—]\s*\$(\d+(?:\.\d+)?)')
@@ -64,6 +64,12 @@ class PtlDeal(models.Model):
         'mint.brand',
         string='Brand',
         tracking=True,
+        compute='_compute_brand_id',
+        store=True,
+        readonly=False,
+        help='Auto-linked from the deal name when null (matches the segment '
+             'before " - " / " · " / ":" against existing mint.brand records, '
+             'creating a new brand only if no match). Manually editable.',
     )
     product_category = fields.Selection(
         selection=[(k, k) for k in MASTER_CATEGORY_PATTERNS.keys()],
@@ -422,6 +428,32 @@ class PtlDeal(models.Model):
             value, unit = _parse_weight(rec.name, rec.sales_details)
             rec.weight_value = value
             rec.weight_unit = unit or False
+
+    @api.depends('name')
+    def _compute_brand_id(self):
+        # Skip when brand_id is already set — respects manual edits and
+        # avoids overwriting bulk-imported links. Batches the brand lookup
+        # so we hit the DB once per compute pass regardless of recordset size.
+        candidates = []
+        for rec in self:
+            if rec.brand_id:
+                continue
+            text = _parse_brand_name(rec.name)
+            if text:
+                candidates.append((rec, text))
+        if not candidates:
+            return
+        Brand = self.env['mint.brand']
+        # Load all brands once and index by lowercase name (avoids 908-row
+        # case sensitivity issues with SQL `IN`).
+        by_norm = {b.name.lower(): b for b in Brand.search([])}
+        for rec, text in candidates:
+            key = text.lower()
+            brand = by_norm.get(key)
+            if not brand:
+                brand = Brand.create({'name': text})
+                by_norm[key] = brand
+            rec.brand_id = brand.id
 
     @api.depends('discount_type', 'discount_value', 'original_price', 'sales_details')
     def _compute_display_text(self):
