@@ -4,7 +4,7 @@ from markupsafe import escape, Markup
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
-from .brand_calendar import _parse_brand_name, _parse_weight
+from .brand_calendar import _brand_lookup_key, _parse_brand_name, _parse_weight
 
 
 _PRICE_RANGE_RE = re.compile(r'\$(\d+(?:\.\d+)?)\s*[-–—]\s*\$(\d+(?:\.\d+)?)')
@@ -444,11 +444,19 @@ class PtlDeal(models.Model):
         if not candidates:
             return
         Brand = self.env['mint.brand']
-        # Load all brands once and index by lowercase name (avoids 908-row
-        # case sensitivity issues with SQL `IN`).
-        by_norm = {b.name.lower(): b for b in Brand.search([])}
+        # Load all brands once and index by normalized key (lowercase, trimmed,
+        # punct + whitespace stripped). Skip tombstoned [MERGED→...] records.
+        # Without normalization, "Tru Infusion" doesn't match "TRU-Infusion"
+        # and "Cresco" doesn't match "Cresco " (trailing space), creating dupes.
+        by_norm = {}
+        for b in Brand.search([]):
+            if b.name and b.name.startswith('[MERGED→'):
+                continue
+            k = _brand_lookup_key(b.name)
+            if k and k not in by_norm:
+                by_norm[k] = b
         for rec, text in candidates:
-            key = text.lower()
+            key = _brand_lookup_key(text)
             brand = by_norm.get(key)
             if not brand:
                 brand = Brand.create({'name': text})
