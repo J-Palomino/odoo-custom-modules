@@ -6,3 +6,4 @@ from . import force_approve_wizard
 from . import revoke_wizard
 from . import bulk_revoke_wizard
 from . import conflict_resolution_wizard
+from . import brand_reorder_wizard

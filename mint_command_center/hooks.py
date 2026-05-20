@@ -50,6 +50,28 @@ def post_init_hook(env):
     elif discount_model:
         _logger.info('PTL hourly active recompute cron already exists')
 
+    # Velocity compute cron (F7) — nightly aggregation of mint.pos.order.line
+    # → product.template velocity fields.
+    pt_model = env['ir.model'].sudo().search(
+        [('model', '=', 'product.template')], limit=1)
+    if pt_model and not Cron.search(
+        [('name', '=', 'MCC: Sales Velocity Compute')], limit=1
+    ):
+        Cron.create({
+            'name': 'MCC: Sales Velocity Compute',
+            'model_id': pt_model.id,
+            'state': 'code',
+            'code': 'model._cron_compute_velocity()',
+            'interval_number': 1,
+            'interval_type': 'days',
+            'numbercall': -1,
+            'active': True,
+            'priority': 70,
+        })
+        _logger.info('Velocity compute cron created')
+    elif pt_model:
+        _logger.info('Velocity compute cron already exists')
+
     # Backfill market_id for existing PTL days (migration from unique(date)
     # to unique(date, market_id))
     az_region = env['mint.region'].search([('code', '=', 'AZ')], limit=1)

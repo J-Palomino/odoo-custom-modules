@@ -154,6 +154,18 @@
               action="action_mint_brand"
               sequence="10"/>
 
+    <!-- ── Inventory Section ── -->
+    <menuitem id="menu_command_center_inventory"
+              name="Inventory"
+              parent="menu_command_center_root"
+              sequence="38"/>
+
+    <menuitem id="menu_inventory_brand_reorder"
+              name="Brand Reorder Builder"
+              parent="menu_command_center_inventory"
+              action="action_brand_reorder_wizard"
+              sequence="10"/>
+
     <!-- ── Audit Section ── -->
     <menuitem id="menu_command_center_audit"
               name="Audit"
