@@ -5,3 +5,4 @@ from . import text_deals_wizard
 from . import force_approve_wizard
 from . import revoke_wizard
 from . import bulk_revoke_wizard
+from . import conflict_resolution_wizard
