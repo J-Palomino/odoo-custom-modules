@@ -24,8 +24,14 @@ class MailThread(models.AbstractModel):
         action["context"] = self._get_non_conformities_context()
         return action
 
-    def _thread_to_store(self, store: Store, /, *, request_list=None, **kwargs):
-        result = super()._thread_to_store(store, request_list=request_list, **kwargs)
+    def _thread_to_store(self, store: Store, fields, /, *, request_list=None, **kwargs):
+        # Odoo 19 added a required positional `fields` argument; without it
+        # every mail.thread → store dispatch (e.g. mint_pos_bridge lane-change
+        # message_post → discuss.channel notification fan-out) raises
+        # "takes 2 positional arguments but 3 were given".
+        result = super()._thread_to_store(
+            store, fields, request_list=request_list, **kwargs
+        )
         if self.env.user.has_group("mgmtsystem.group_mgmtsystem_viewer"):
             nonconformity_count = {
                 res_id: res_count
