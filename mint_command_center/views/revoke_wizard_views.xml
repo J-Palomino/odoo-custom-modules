@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_revoke_wizard_form" model="ir.ui.view">
+        <field name="name">mint.deal.revoke.wizard.form</field>
+        <field name="model">mint.deal.revoke.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Revoke PTL Deal">
+                <sheet>
+                    <div class="alert alert-danger" role="alert">
+                        <strong>Revoke unlinks this deal from PTL days</strong>
+                        and rescopes (or deactivates) its mint.discount so the
+                        live site stops serving it. Permanent + audit-logged.
+                        Use Force-Approve &amp; Plot to re-introduce later.
+                    </div>
+                    <group>
+                        <group>
+                            <field name="deal_id" readonly="1"
+                                   options="{'no_open': True}"/>
+                            <field name="submission_id" readonly="1"
+                                   options="{'no_open': True}"/>
+                        </group>
+                        <group>
+                            <field name="scope" required="1"/>
+                            <field name="target_day_id"
+                                   invisible="scope != 'single_day'"
+                                   required="scope == 'single_day'"
+                                   domain="[('deal_ids', 'in', deal_id)]"
+                                   options="{'no_create': True}"/>
+                            <field name="from_date"
+                                   invisible="scope != 'from_date_forward'"
+                                   required="scope == 'from_date_forward'"/>
+                        </group>
+                    </group>
+                    <group string="Preview">
+                        <field name="affected_count" readonly="1"/>
+                        <field name="affected_day_ids" widget="many2many_tags"
+                               readonly="1" nolabel="1"
+                               options="{'no_create': True, 'no_open': True}"/>
+                    </group>
+                    <separator string="Reason (required, permanent audit-log entry)"/>
+                    <field name="reason" nolabel="1"
+                           placeholder="Be specific. Future you needs to understand why this revoke happened."/>
+                </sheet>
+                <footer>
+                    <button name="action_apply" type="object"
+                            string="Revoke Now"
+                            class="btn-danger"
+                            confirm="Revoke is permanent. The reason will be saved to the audit log. Continue?"/>
+                    <button special="cancel" string="Cancel"
+                            class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Audit log views -->
+    <record id="view_revocation_audit_log_list" model="ir.ui.view">
+        <field name="name">mint.deal.revocation.audit.log.list</field>
+        <field name="model">mint.deal.revocation.audit.log</field>
+        <field name="arch" type="xml">
+            <list string="Revocation Audit Log" create="0" edit="0">
+                <field name="create_date" string="When"/>
+                <field name="user_id"/>
+                <field name="deal_id"/>
+                <field name="submission_id"/>
+                <field name="scope" widget="badge"/>
+                <field name="from_date" optional="hide"/>
+                <field name="requeued_submission" widget="boolean_toggle"
+                       optional="show" readonly="1"/>
+                <field name="reason" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_revocation_audit_log_form" model="ir.ui.view">
+        <field name="name">mint.deal.revocation.audit.log.form</field>
+        <field name="model">mint.deal.revocation.audit.log</field>
+        <field name="arch" type="xml">
+            <form string="Revocation Audit Entry" create="0" edit="0">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="display_name"/>
+                            <field name="create_date" string="When"/>
+                            <field name="user_id"/>
+                            <field name="scope"/>
+                            <field name="from_date"/>
+                            <field name="requeued_submission"/>
+                        </group>
+                        <group>
+                            <field name="deal_id"/>
+                            <field name="submission_id"/>
+                        </group>
+                    </group>
+                    <separator string="Reason"/>
+                    <field name="reason" nolabel="1" readonly="1"/>
+                    <separator string="Affected (JSON)"/>
+                    <field name="affected_day_ids_json" nolabel="1" readonly="1"/>
+                    <field name="affected_discount_ids_json" nolabel="1" readonly="1"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_revocation_audit_log" model="ir.actions.act_window">
+        <field name="name">Revocation Audit Log</field>
+        <field name="res_model">mint.deal.revocation.audit.log</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

@@ -15,3 +15,4 @@ from . import push_banner
 from . import dutchie_discount_push
 from . import product_template_ext
 from . import mint_brand_ext
+from . import deal_revocation_audit

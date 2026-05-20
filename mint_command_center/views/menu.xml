@@ -154,4 +154,23 @@
               action="action_mint_brand"
               sequence="10"/>
 
+    <!-- ── Audit Section ── -->
+    <menuitem id="menu_command_center_audit"
+              name="Audit"
+              parent="menu_command_center_root"
+              sequence="45"/>
+
+    <menuitem id="menu_audit_revocations"
+              name="Revocation Log"
+              parent="menu_command_center_audit"
+              action="action_revocation_audit_log"
+              sequence="10"/>
+
+    <menuitem id="menu_audit_bulk_revoke"
+              name="Bulk Revoke By Brand"
+              parent="menu_command_center_audit"
+              action="action_bulk_revoke_wizard"
+              sequence="20"
+              groups="mint_command_center.group_ptl_manager"/>
+
 </odoo>

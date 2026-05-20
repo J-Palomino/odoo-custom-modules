@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_bulk_revoke_wizard_form" model="ir.ui.view">
+        <field name="name">mint.deal.bulk.revoke.wizard.form</field>
+        <field name="model">mint.deal.bulk.revoke.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Bulk Revoke By Brand">
+                <sheet>
+                    <div class="alert alert-danger" role="alert">
+                        <strong>Bulk Revoke</strong> unlinks every PTL deal
+                        matching this filter across all days in the range, then
+                        writes an audit-log row per deal. Use this when you
+                        need to clean up a class of incidents (e.g. the WTF
+                        over-expansion). Irreversible — confirm the brand
+                        name to proceed.
+                    </div>
+                    <group>
+                        <group>
+                            <field name="brand_id" required="1"
+                                   options="{'no_create': True}"/>
+                            <field name="market_id"
+                                   options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <field name="date_start" required="1"/>
+                            <field name="date_end" required="1"/>
+                        </group>
+                    </group>
+                    <group string="Preview (live)">
+                        <field name="matching_deal_count" readonly="1"/>
+                        <field name="matching_day_count" readonly="1"/>
+                        <field name="matching_deal_ids" widget="many2many_tags"
+                               readonly="1" nolabel="1"
+                               options="{'no_create': True, 'no_open': True}"/>
+                    </group>
+                    <separator string="Confirm + reason"/>
+                    <group>
+                        <field name="brand_name_typed" required="1"
+                               placeholder="Type the brand name EXACTLY to confirm"/>
+                    </group>
+                    <field name="reason" nolabel="1" required="1"
+                           placeholder="Required. e.g. WTF May-bug cleanup — 7,163 entries from submission dd250898."/>
+                </sheet>
+                <footer>
+                    <button name="action_apply" type="object"
+                            string="Bulk Revoke"
+                            class="btn-danger"
+                            confirm="This will revoke every matching PTL deal with scope=all_instances. The audit log will retain the per-deal trail. Continue?"/>
+                    <button special="cancel" string="Cancel"
+                            class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_bulk_revoke_wizard" model="ir.actions.act_window">
+        <field name="name">Bulk Revoke By Brand</field>
+        <field name="res_model">mint.deal.bulk.revoke.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>
