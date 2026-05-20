@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<odoo noupdate="0">
+<!-- noupdate="1": seed dashboards once, never overwrite. Marketing edits
+     the pivots interactively (Odoo 19 Spreadsheet "Insert in Spreadsheet"
+     toolbar) and those saves must survive module upgrades. -->
+<odoo noupdate="1">
 
     <!-- Dashboard group: surfaces in the left rail of /odoo/spreadsheet-dashboard
          alongside the stock Sales / Finance / Marketing groups. -->
