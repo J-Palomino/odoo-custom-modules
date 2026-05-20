@@ -126,6 +126,23 @@ for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_fina
     done
 done
 
+# Why: nuke compiled .pyc caches under /opt/extra-addons so Python re-compiles
+# from the freshly-COPY-ed .py sources every cold start. Without this, a stale
+# .pyc with an outdated method signature can survive across deploys and the
+# new .py source on disk is effectively ignored by the import system.
+echo "=== Wiping .pyc / __pycache__ under /opt/extra-addons ==="
+find /opt/extra-addons -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
+find /opt/extra-addons -name '*.pyc' -delete 2>/dev/null
+
+# Diagnostic: capture the first 30 lines of mgmtsystem_nonconformity's
+# mail_thread.py so we can confirm whether /opt/extra-addons actually
+# contains the hotfix or some stale copy.
+if [ -f /opt/extra-addons/mgmtsystem_nonconformity/models/mail_thread.py ]; then
+    echo "=== DEPLOYED mgmtsystem_nonconformity/models/mail_thread.py (head -35) ==="
+    head -35 /opt/extra-addons/mgmtsystem_nonconformity/models/mail_thread.py
+    echo "=== END diagnostic ==="
+fi
+
 # Remove broken/non-installable modules from ALL addons paths
 # These modules cause registry failures during update (view validation errors,
 # incompatible versions, missing dependencies)
