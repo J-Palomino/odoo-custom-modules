@@ -192,6 +192,28 @@ class PtlDeal(models.Model):
         help='Auto-formatted pricing display: ~~$MSRP~~ $SALE | X% Off',
     )
 
+    # --- Revoke audit (set by mint.deal.revoke.wizard) ---
+    previously_revoked = fields.Boolean(
+        string='Previously Revoked',
+        default=False,
+        tracking=True,
+        help='True if this deal has had at least one revoke action applied '
+             'against it. Surface in the kanban as a warning badge so '
+             'operators know to read the chatter before re-plotting.',
+    )
+    revoked_at = fields.Datetime(string='Last Revoked At', readonly=True)
+    revoked_by = fields.Many2one('res.users', string='Last Revoked By', readonly=True)
+    last_revoke_scope = fields.Selection(
+        selection=[
+            ('single_day', 'Single Day'),
+            ('from_date_forward', 'From Date Forward'),
+            ('all_future_with_requeue', 'All Future + Re-queue'),
+            ('all_instances', 'All Instances'),
+        ],
+        string='Last Revoke Scope',
+        readonly=True,
+    )
+
     # --- Stock check ---
     stock_status = fields.Selection(
         selection=[
@@ -501,6 +523,20 @@ class PtlDeal(models.Model):
                     rec.display_text = "Clearance"
             else:
                 rec.display_text = ''
+
+    # --- Revoke wizard launcher ---
+
+    def action_open_revoke_wizard(self):
+        """Open the 4-scope Revoke wizard for this deal."""
+        self.ensure_one()
+        return {
+            'name': 'Revoke Deal',
+            'type': 'ir.actions.act_window',
+            'res_model': 'mint.deal.revoke.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_deal_id': self.id},
+        }
 
     # --- State transition actions ---
 

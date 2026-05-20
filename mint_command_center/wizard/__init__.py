@@ -3,3 +3,5 @@ from . import deal_reject_wizard
 from . import stock_check_wizard
 from . import text_deals_wizard
 from . import force_approve_wizard
+from . import revoke_wizard
+from . import bulk_revoke_wizard

@@ -75,6 +75,8 @@
         'views/stock_check_wizard_views.xml',
         'views/text_deals_wizard_views.xml',
         'views/force_approve_wizard_views.xml',
+        'views/revoke_wizard_views.xml',
+        'views/bulk_revoke_wizard_views.xml',
         'views/vendor_submission_templates.xml',
         'views/mint_brand_views.xml',
         'views/product_template_ext_views.xml',

@@ -206,6 +206,11 @@
                     <button name="action_reset_to_pending" string="Reset to Pending"
                             type="object"
                             invisible="state not in ('rejected', 'expired')"/>
+                    <button name="action_open_revoke_wizard"
+                            string="Revoke"
+                            type="object" class="btn-danger"
+                            invisible="state == 'pending'"
+                            groups="mint_command_center.group_ptl_manager"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="pending,approved,live"/>
                 </header>
