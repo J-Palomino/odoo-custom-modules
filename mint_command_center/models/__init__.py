@@ -28,3 +28,5 @@ from . import advertising_document
 from . import res_partner_ad_ext
 from . import competitor
 from . import competitor_deal
+from . import ambassador
+from . import ambassador_shift

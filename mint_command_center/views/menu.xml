@@ -216,6 +216,27 @@
               action="action_ad_vendor"
               sequence="70"/>
 
+    <!-- ── Field Team Section ──
+         Brand ambassadors and the shifts they cover. Owned by group_operations
+         with read/write for group_vendor_manager (vendors coordinate their
+         own ambassadors). -->
+    <menuitem id="menu_field_team"
+              name="Field Team"
+              parent="menu_command_center_root"
+              sequence="37"/>
+
+    <menuitem id="menu_ambassadors"
+              name="Ambassadors"
+              parent="menu_field_team"
+              action="action_ambassador"
+              sequence="10"/>
+
+    <menuitem id="menu_ambassador_shifts"
+              name="Shifts"
+              parent="menu_field_team"
+              action="action_ambassador_shift"
+              sequence="20"/>
+
     <!-- ── Compliance Section ── -->
     <menuitem id="menu_compliance"
               name="Compliance"

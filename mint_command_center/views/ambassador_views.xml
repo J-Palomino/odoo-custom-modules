@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== Ambassador ==================== -->
+
+    <record id="view_ambassador_list" model="ir.ui.view">
+        <field name="name">mint.ambassador.list</field>
+        <field name="model">mint.ambassador</field>
+        <field name="arch" type="xml">
+            <list string="Ambassadors" decoration-muted="state == 'inactive'">
+                <field name="partner_id"/>
+                <field name="brand_id"/>
+                <field name="region_ids" widget="many2many_tags" optional="show"/>
+                <field name="upcoming_shift_count"/>
+                <field name="total_shift_count" optional="hide"/>
+                <field name="state"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ambassador_form" model="ir.ui.view">
+        <field name="name">mint.ambassador.form</field>
+        <field name="model">mint.ambassador</field>
+        <field name="arch" type="xml">
+            <form string="Ambassador">
+                <header>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_shifts" type="object"
+                                class="oe_stat_button" icon="fa-calendar">
+                            <field name="upcoming_shift_count" widget="statinfo"
+                                   string="Upcoming"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="partner_id" options="{'no_create_edit': True}"
+                                   placeholder="Select a contact…"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="brand_id" options="{'no_create': True}"/>
+                            <field name="region_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="notes" placeholder="Onboarding notes, scheduling preferences…"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ambassador_kanban" model="ir.ui.view">
+        <field name="name">mint.ambassador.kanban</field>
+        <field name="model">mint.ambassador</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="brand_id">
+                <field name="partner_id"/>
+                <field name="brand_id"/>
+                <field name="state"/>
+                <field name="upcoming_shift_count"/>
+                <field name="region_ids"/>
+                <templates>
+                    <t t-name="card">
+                        <field name="partner_id" class="fw-bold"/>
+                        <div class="text-muted">
+                            <field name="region_ids" widget="many2many_tags"/>
+                        </div>
+                        <div t-if="record.upcoming_shift_count.raw_value">
+                            <span class="badge text-bg-info">
+                                <field name="upcoming_shift_count"/> upcoming
+                            </span>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_ambassador_search" model="ir.ui.view">
+        <field name="name">mint.ambassador.search</field>
+        <field name="model">mint.ambassador</field>
+        <field name="arch" type="xml">
+            <search string="Ambassadors">
+                <field name="partner_id"/>
+                <field name="brand_id"/>
+                <field name="region_ids"/>
+                <filter name="active" string="Active" domain="[('state', '=', 'active')]"/>
+                <filter name="inactive" string="Inactive" domain="[('state', '=', 'inactive')]"/>
+                <filter name="has_upcoming" string="Has Upcoming Shifts"
+                        domain="[('upcoming_shift_count', '>', 0)]"/>
+                <separator/>
+                <filter name="group_brand" string="Brand"
+                        context="{'group_by': 'brand_id'}"/>
+                <filter name="group_state" string="Status"
+                        context="{'group_by': 'state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ambassador" model="ir.actions.act_window">
+        <field name="name">Ambassadors</field>
+        <field name="res_model">mint.ambassador</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="view_ambassador_search"/>
+        <field name="context">{'search_default_active': 1, 'search_default_group_brand': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Add your first ambassador</p>
+            <p>
+                Brand ambassadors are external contractors who represent vendors
+                at Mint stores, partner events, or competitor scouting.
+            </p>
+        </field>
+    </record>
+
+    <!-- ==================== Ambassador Shift ==================== -->
+
+    <record id="view_ambassador_shift_list" model="ir.ui.view">
+        <field name="name">mint.ambassador.shift.list</field>
+        <field name="model">mint.ambassador.shift</field>
+        <field name="arch" type="xml">
+            <list string="Shifts"
+                  decoration-info="state == 'scheduled'"
+                  decoration-success="state == 'completed'"
+                  decoration-muted="state in ('cancelled',)"
+                  decoration-danger="state == 'no_show'">
+                <field name="shift_date"/>
+                <field name="start_time" widget="float_time"/>
+                <field name="end_time" widget="float_time"/>
+                <field name="duration_hours" widget="float_time" sum="Total hrs"/>
+                <field name="ambassador_id"/>
+                <field name="brand_id" optional="show"/>
+                <field name="location_type"/>
+                <field name="company_id" optional="show"/>
+                <field name="external_location" optional="hide"/>
+                <field name="state"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ambassador_shift_form" model="ir.ui.view">
+        <field name="name">mint.ambassador.shift.form</field>
+        <field name="model">mint.ambassador.shift</field>
+        <field name="arch" type="xml">
+            <form string="Shift">
+                <header>
+                    <button name="action_mark_completed" string="Completed" type="object"
+                            class="btn-primary" invisible="state != 'scheduled'"/>
+                    <button name="action_mark_no_show" string="No Show" type="object"
+                            class="btn-warning" invisible="state != 'scheduled'"/>
+                    <button name="action_cancel" string="Cancel" type="object"
+                            class="btn-danger" invisible="state in ('cancelled', 'completed')"/>
+                    <button name="action_reset_scheduled" string="Reset to Scheduled"
+                            type="object" invisible="state == 'scheduled'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Who">
+                            <field name="ambassador_id" options="{'no_create': True}"/>
+                            <field name="brand_id" readonly="1"/>
+                        </group>
+                        <group string="When">
+                            <field name="shift_date"/>
+                            <field name="start_time" widget="float_time"/>
+                            <field name="end_time" widget="float_time"/>
+                            <field name="duration_hours" widget="float_time" readonly="1"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Where">
+                            <field name="location_type"/>
+                            <field name="company_id" options="{'no_create': True}"
+                                   invisible="location_type != 'mint_store'"
+                                   required="location_type == 'mint_store'"/>
+                            <field name="external_location"
+                                   invisible="location_type == 'mint_store'"
+                                   required="location_type != 'mint_store'"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="notes"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ambassador_shift_calendar" model="ir.ui.view">
+        <field name="name">mint.ambassador.shift.calendar</field>
+        <field name="model">mint.ambassador.shift</field>
+        <field name="arch" type="xml">
+            <calendar string="Shift Calendar"
+                      date_start="start_datetime"
+                      date_stop="end_datetime"
+                      color="ambassador_id"
+                      mode="week"
+                      quick_create="0">
+                <field name="ambassador_id"/>
+                <field name="brand_id"/>
+                <field name="company_id"/>
+                <field name="external_location"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <record id="view_ambassador_shift_search" model="ir.ui.view">
+        <field name="name">mint.ambassador.shift.search</field>
+        <field name="model">mint.ambassador.shift</field>
+        <field name="arch" type="xml">
+            <search string="Shifts">
+                <field name="ambassador_id"/>
+                <field name="brand_id"/>
+                <field name="company_id"/>
+                <field name="external_location"/>
+                <filter name="scheduled" string="Scheduled"
+                        domain="[('state', '=', 'scheduled')]"/>
+                <filter name="completed" string="Completed"
+                        domain="[('state', '=', 'completed')]"/>
+                <filter name="no_show" string="No-Shows"
+                        domain="[('state', '=', 'no_show')]"/>
+                <separator/>
+                <filter name="today" string="Today"
+                        domain="[('shift_date', '=', context_today())]"/>
+                <filter name="this_week" string="This Week"
+                        domain="[('shift_date', '&gt;=', (context_today() - relativedelta(days=context_today().weekday())).strftime('%Y-%m-%d')),
+                                 ('shift_date', '&lt;=', (context_today() + relativedelta(days=6 - context_today().weekday())).strftime('%Y-%m-%d'))]"/>
+                <filter name="upcoming" string="Upcoming"
+                        domain="[('shift_date', '&gt;=', context_today())]"/>
+                <separator/>
+                <filter name="group_ambassador" string="Ambassador"
+                        context="{'group_by': 'ambassador_id'}"/>
+                <filter name="group_brand" string="Brand"
+                        context="{'group_by': 'brand_id'}"/>
+                <filter name="group_date" string="Date"
+                        context="{'group_by': 'shift_date:week'}"/>
+                <filter name="group_state" string="Status"
+                        context="{'group_by': 'state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ambassador_shift" model="ir.actions.act_window">
+        <field name="name">Shifts</field>
+        <field name="res_model">mint.ambassador.shift</field>
+        <field name="view_mode">calendar,list,form</field>
+        <field name="search_view_id" ref="view_ambassador_shift_search"/>
+        <field name="context">{'search_default_upcoming': 1, 'search_default_group_date': 1}</field>
+    </record>
+
+</odoo>
