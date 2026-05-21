@@ -201,20 +201,24 @@ class PtlDayDutchiePush(models.Model):
         ) or (1 if threshold_min else 0)
         has_threshold = bool(threshold_min)
 
-        # Empty restrictions sub-tree. Required keys per fixture — Dutchie
-        # NREs without them. RestrictionIds lists stay empty; SKU/brand/
-        # category scoping is enforced upstream.
+        # Required keys per fixture — Dutchie NREs without them.
+        # Brand / Category / Product / Weight are populated by resolver helpers
+        # that read already-computed fields on mint.discount (brand_ids etc are
+        # set during _deal_to_discount_vals; excluded_skus is forwarded from the
+        # PTL deal; weight reads through discount.ptl_deal_id).
+        # Strain / Tag / InventoryTag / Tier / Vendor stay empty for v1 —
+        # bring those in when ops surfaces them in the PTL deal form (v2).
         empty_restriction = lambda: {'IsExclusion': False, 'RestrictionIds': []}
         reward_restrictions = {
             'Strain': empty_restriction(),
-            'Weight': empty_restriction(),
-            'Category': empty_restriction(),
+            'Weight':   self._resolve_weight_restriction(discount),
+            'Category': self._resolve_category_restriction(discount),
             'Tag': empty_restriction(),
             'InventoryTag': empty_restriction(),
             'Tier': empty_restriction(),
-            'Brand': empty_restriction(),
+            'Brand':    self._resolve_brand_restriction(discount),
             'Vendor': empty_restriction(),
-            'Product': empty_restriction(),
+            'Product':  self._resolve_product_restriction(discount),
         }
 
         return {
@@ -326,6 +330,130 @@ class PtlDayDutchiePush(models.Model):
                             else enabled_stores
             for store in target_stores:
                 self._push_one_discount(discount, store, mode, url, api_key, Log)
+
+    # ─── Restriction resolvers (Reward.Restrictions.*) ─────────────────────
+
+    @staticmethod
+    def _coerce_dutchie_ids(records, field):
+        """Coerce Char Dutchie cross-reference IDs on a recordset to ints.
+        Lifted from ptl_day.py:_discount_to_webhook_payload. Records with
+        empty / non-numeric Dutchie IDs are silently dropped — the downstream
+        resolver indexes by Dutchie ID only and would miss them anyway.
+        """
+        out = []
+        for r in records:
+            val = getattr(r, field, None)
+            if not val:
+                continue
+            try:
+                out.append(int(str(val).strip()))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    def _resolve_brand_restriction(self, discount):
+        """{IsExclusion, RestrictionIds} for Reward.Restrictions.Brand.
+
+        Precedence: positive scope (brand_ids) wins. Negative scope
+        (exclude_brand_ids) only emitted when no positive scope is set —
+        Dutchie's Restriction sub-object can't represent both simultaneously.
+        Empty default returned when neither is set.
+        """
+        if discount.brand_ids:
+            ids = self._coerce_dutchie_ids(discount.brand_ids, 'dutchie_brand_id')
+            if ids:
+                return {'IsExclusion': False, 'RestrictionIds': ids}
+        if discount.exclude_brand_ids:
+            ids = self._coerce_dutchie_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
+            if ids:
+                return {'IsExclusion': True, 'RestrictionIds': ids}
+        return {'IsExclusion': False, 'RestrictionIds': []}
+
+    def _resolve_category_restriction(self, discount):
+        """{IsExclusion, RestrictionIds} for Reward.Restrictions.Category.
+
+        Same positive-wins precedence as brand. Uses product.category records
+        already resolved by _deal_to_discount_vals' master-cat expansion.
+        """
+        if discount.category_ids:
+            ids = self._coerce_dutchie_ids(discount.category_ids, 'dutchie_category_id')
+            if ids:
+                return {'IsExclusion': False, 'RestrictionIds': ids}
+        if discount.exclude_category_ids:
+            ids = self._coerce_dutchie_ids(discount.exclude_category_ids, 'dutchie_category_id')
+            if ids:
+                return {'IsExclusion': True, 'RestrictionIds': ids}
+        return {'IsExclusion': False, 'RestrictionIds': []}
+
+    def _resolve_product_restriction(self, discount):
+        """{IsExclusion, RestrictionIds} for Reward.Restrictions.Product.
+
+        Two sources combine:
+          - discount.product_ids (positive scope — empty for PTL deals today)
+          - discount.excluded_skus (text → SKU set → product.template lookup
+            by default_code → dutchie_product_id)
+        Negative scope (excluded_skus → IsExclusion=True) is only emitted
+        when no positive scope exists. If both somehow exist, positive wins
+        and the excluded SKUs are dropped from the payload (filtered out
+        upstream via the brand+category scope shouldn't include them anyway).
+        """
+        if discount.product_ids:
+            ids = self._coerce_dutchie_ids(discount.product_ids, 'dutchie_product_id')
+            if ids:
+                return {'IsExclusion': False, 'RestrictionIds': ids}
+        # Excluded SKUs path
+        if discount.excluded_skus:
+            sku_set = discount._excluded_sku_set() if hasattr(discount, '_excluded_sku_set') else None
+            if sku_set is None:
+                # Fallback parser if the helper isn't on this discount model
+                sku_set = {
+                    s.strip().lower()
+                    for s in discount.excluded_skus.replace(',', '\n').split('\n')
+                    if s.strip()
+                }
+            if sku_set:
+                Template = self.env['product.template'].sudo()
+                tmpls = Template.search([
+                    ('default_code', '!=', False),
+                    ('default_code', 'in', list(sku_set) + [s.upper() for s in sku_set]),
+                ])
+                # Case-insensitive filter (default_code 'in' is case-sensitive in pg)
+                tmpls = tmpls.filtered(lambda t: (t.default_code or '').strip().lower() in sku_set)
+                ids = self._coerce_dutchie_ids(tmpls, 'dutchie_product_id')
+                if ids:
+                    return {'IsExclusion': True, 'RestrictionIds': ids}
+        return {'IsExclusion': False, 'RestrictionIds': []}
+
+    # Conversion factors to grams (Dutchie Reward.Restrictions.Weight.RestrictionIds
+    # expects gram floats, per __tests__/fixtures/discount-381839.json + test at
+    # discountSyncTransform.test.js:687 (RestrictionIds: [1.0] = 1 gram).
+    WEIGHT_UNIT_TO_GRAMS = {
+        'g':  1.0,
+        'mg': 0.001,
+        'oz': 28.3495,
+        # 'ct' = count, NOT a weight — produces no Weight restriction
+    }
+
+    def _resolve_weight_restriction(self, discount):
+        """{IsExclusion, RestrictionIds:[<gram_float>]} for Reward.Restrictions.Weight.
+
+        Reads weight_value + weight_unit from the linked mint.ptl.deal (the
+        weight feature is on ptl.deal, not mint.discount — landed in commit
+        bdeb5d1). Returns empty default when unit is 'ct' (count, not weight)
+        or fields are unpopulated.
+        """
+        deal = discount.ptl_deal_id
+        if not deal:
+            return {'IsExclusion': False, 'RestrictionIds': []}
+        value = getattr(deal, 'weight_value', 0) or 0
+        unit = getattr(deal, 'weight_unit', '') or ''
+        if not value or unit not in self.WEIGHT_UNIT_TO_GRAMS:
+            return {'IsExclusion': False, 'RestrictionIds': []}
+        grams = float(value) * self.WEIGHT_UNIT_TO_GRAMS[unit]
+        # Dutchie expects float grams with reasonable precision (3.5, 7.0, etc.)
+        # Round to 4 decimals to avoid 0.99999999 vs 1.0 mismatches with their
+        # canonical enum.
+        return {'IsExclusion': False, 'RestrictionIds': [round(grams, 4)]}
 
     def _resolve_dutchie_amount(self, discount):
         """Compute the integer/float Amount Dutchie expects for this discount.
