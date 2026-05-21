@@ -16,3 +16,17 @@ from . import dutchie_discount_push
 from . import product_template_ext
 from . import mint_brand_ext
 from . import deal_revocation_audit
+from . import placement_type
+from . import placement_inventory
+from . import placement_booking
+from . import billboard_vendor
+from . import billboard_board
+from . import billboard_creative
+from . import billboard_schedule
+from . import billboard_schedule_item
+from . import advertising_document
+from . import res_partner_ad_ext
+from . import competitor
+from . import competitor_deal
+from . import ambassador
+from . import ambassador_shift

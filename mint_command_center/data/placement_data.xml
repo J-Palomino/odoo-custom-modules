@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <record id="seq_mint_placement_booking" model="ir.sequence">
+            <field name="name">Placement Booking Reference</field>
+            <field name="code">mint.placement.booking</field>
+            <field name="prefix">BOOK-%(year)s-</field>
+            <field name="padding">4</field>
+            <field name="number_increment">1</field>
+            <field name="implementation">no_gap</field>
+        </record>
+
+    </data>
+</odoo>

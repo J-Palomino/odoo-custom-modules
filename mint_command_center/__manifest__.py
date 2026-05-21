@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.4.7.3',
+    'version': '19.0.4.11.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -15,6 +15,11 @@
           - Brand Rankings: Brand performance tracking per store/period
           - Compliance Variances: Regulatory approval tracker
           - Stock Check: Inventory verification against Dutchie API
+          - Placements: Paid placement catalog, inventory, bookings & revenue
+          - Billboards: Vendor/board/creative catalog and weekly schedules
+          - Advertising Vendors: res.partner extension tagging paid-media partners
+          - Competitors: Competitive intel with haversine nearest-Mint + Google Places lookup
+          - Ambassadors: Brand ambassadors and shift scheduling
 
         Features:
           - Multi-market PTL calendars (AZ, NV, FL, MI, MO, IL)
@@ -58,6 +63,8 @@
         'security/ir.model.access.csv',
         'security/record_rules.xml',
         'data/ptl_cron_data.xml',
+        'data/placement_data.xml',
+        'data/billboard_data.xml',
         'views/ptl_views.xml',
         'views/deal_submission_views.xml',
         'views/brand_calendar_views.xml',
@@ -82,6 +89,11 @@
         'views/vendor_submission_templates.xml',
         'views/mint_brand_views.xml',
         'views/product_template_ext_views.xml',
+        'views/placement_views.xml',
+        'views/billboard_views.xml',
+        'views/advertising_vendor_views.xml',
+        'views/competitor_views.xml',
+        'views/ambassador_views.xml',
         'views/menu.xml',
         'reports/ptl_calendar_reports.xml',
         'reports/ptl_calendar_pdf_template.xml',
