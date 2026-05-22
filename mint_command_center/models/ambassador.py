@@ -1,4 +1,5 @@
 from odoo import api, fields, models
+from odoo.exceptions import UserError
 
 
 class MintAmbassador(models.Model):
@@ -51,15 +52,16 @@ class MintAmbassador(models.Model):
         'ambassador_id',
         string='Shifts',
     )
-    # NOTE: store=True is required for the `has_upcoming` search filter to
-    # work (Odoo 19 rejects domain filters on unsearchable fields). Caveat:
-    # the compute depends on `today`, so the stored value drifts after
-    # midnight without a write to shift_ids — accept stale-by-one-day until
-    # a daily cron or proper `search=` method is added.
+    # `upcoming_shift_count` uses search= (not store=True) because the
+    # compute depends on `today`, which a stored value can't track — at
+    # midnight a stored count would silently include yesterday's shifts
+    # until shift_ids is next written. `_search_upcoming_shift_count`
+    # queries mint.ambassador.shift directly so the "Has Upcoming Shifts"
+    # filter is always time-correct.
     upcoming_shift_count = fields.Integer(
         string='Upcoming Shifts',
         compute='_compute_shift_counts',
-        store=True,
+        search='_search_upcoming_shift_count',
     )
     total_shift_count = fields.Integer(
         string='Total Shifts',
@@ -83,6 +85,37 @@ class MintAmbassador(models.Model):
                 lambda s: s.shift_date and s.shift_date >= today
                 and s.state == 'scheduled'
             ))
+
+    def _search_upcoming_shift_count(self, operator, value):
+        """Time-correct domain rewrite for `upcoming_shift_count`.
+
+        Without this, the search filter would either reject (no store=True)
+        or return stale results at midnight (with store=True, the cached
+        value wouldn't drop yesterday's shifts until shift_ids is next
+        written). We query mint.ambassador.shift directly so today's view
+        of "upcoming" is always honored.
+
+        Supports the operators the current views actually use:
+          - "has any upcoming"  → > 0, != 0, >= 1
+          - "has none upcoming" → = 0
+        Other operators raise so a future view writer hits a clear error
+        instead of silently incorrect filtering.
+        """
+        today = fields.Date.context_today(self)
+        with_upcoming = self.env['mint.ambassador.shift'].search([
+            ('shift_date', '>=', today),
+            ('state', '=', 'scheduled'),
+        ]).ambassador_id
+
+        if (operator in ('>', '!=') and value == 0) or \
+           (operator == '>=' and value == 1):
+            return [('id', 'in', with_upcoming.ids)]
+        if operator == '=' and value == 0:
+            return [('id', 'not in', with_upcoming.ids)]
+        raise UserError(
+            f"_search_upcoming_shift_count: unsupported ({operator!r}, "
+            f"{value!r}); add a branch here if a view needs it."
+        )
 
     def action_view_shifts(self):
         self.ensure_one()
