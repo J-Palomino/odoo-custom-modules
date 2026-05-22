@@ -257,7 +257,13 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
             if not existing[k]:
                 update_vals[k] = v
         if update_vals:
-            existing.write(update_vals)
+            # bulk_sync and upsert_from_dutchie are sync-only paths (Dutchie
+            # state being reflected into Odoo). Suppress the lane-change
+            # webhook so write() doesn't bounce a moveToLane back to Dutchie
+            # for a state we just READ from there. Without this, every
+            # bulk_sync of state='completed' fires a webhook that the invsvc
+            # handler short-circuits on "no lane mapping" — wasted RTT.
+            existing.with_context(from_dutchie_sync=True).write(update_vals)
 
         # Populate line items if the existing row has none. The lane-watcher
         # creates stubs without items (the v2/guest/checked-in payload doesn't
