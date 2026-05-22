@@ -93,10 +93,12 @@ class MintCompetitor(models.Model):
     deal_count = fields.Integer(
         string='Tracked Deals',
         compute='_compute_deal_count',
+        store=True,
     )
     active_deal_count = fields.Integer(
         string='Active Deals',
         compute='_compute_deal_count',
+        store=True,
     )
 
     @api.depends('deal_ids', 'deal_ids.is_active')
