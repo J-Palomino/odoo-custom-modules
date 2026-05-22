@@ -51,13 +51,20 @@ class MintAmbassador(models.Model):
         'ambassador_id',
         string='Shifts',
     )
+    # NOTE: store=True is required for the `has_upcoming` search filter to
+    # work (Odoo 19 rejects domain filters on unsearchable fields). Caveat:
+    # the compute depends on `today`, so the stored value drifts after
+    # midnight without a write to shift_ids — accept stale-by-one-day until
+    # a daily cron or proper `search=` method is added.
     upcoming_shift_count = fields.Integer(
         string='Upcoming Shifts',
         compute='_compute_shift_counts',
+        store=True,
     )
     total_shift_count = fields.Integer(
         string='Total Shifts',
         compute='_compute_shift_counts',
+        store=True,
     )
 
     name = fields.Char(
