@@ -600,6 +600,22 @@ if [ -f "$CONFIG_FILE" ]; then
     echo "workers = $WORKERS set in config"
 fi
 
+# Why: the persistent volume's odoo.conf is only seeded from /etc/odoo/odoo.conf
+# on first boot; subsequent deploys never re-copy. Volumes that were seeded before
+# `proxy_mode = True` was added to the bundled config stay stale forever, which
+# silently breaks OAuth SSO (request.scheme falls back to 'http' inside the
+# container, Google rejects with redirect_uri_mismatch). Same self-healing
+# pattern as workers/gevent_port above.
+PROXY_MODE_VALUE="${PROXY_MODE:-True}"
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "^proxy_mode" "$CONFIG_FILE"; then
+        sed -i "s/^proxy_mode\s*=\s*.*/proxy_mode = $PROXY_MODE_VALUE/g" "$CONFIG_FILE"
+    else
+        echo "proxy_mode = $PROXY_MODE_VALUE" >> "$CONFIG_FILE"
+    fi
+    echo "proxy_mode = $PROXY_MODE_VALUE set in config"
+fi
+
 # Ensure server_wide_modules includes mint_redis_session (Redis sessions)
 if [ -f "$CONFIG_FILE" ]; then
     if grep -q "server_wide_modules" "$CONFIG_FILE"; then
