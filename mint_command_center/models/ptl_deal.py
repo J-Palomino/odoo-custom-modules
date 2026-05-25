@@ -7,21 +7,6 @@ from odoo.exceptions import ValidationError
 from .brand_calendar import _brand_lookup_key, _parse_brand_name, _parse_weight
 
 
-_PRICE_RANGE_RE = re.compile(r'\$(\d+(?:\.\d+)?)\s*[-–—]\s*\$(\d+(?:\.\d+)?)')
-
-
-def _strike_price_range_html(text):
-    """HTML-escape ``text`` then wrap ``$X - $Y`` retail ranges in <s>.
-
-    Used so the pre-discount range renders strikethrough in the Odoo form/list
-    and OWL calendar views, matching the public daily-deals page.
-    """
-    if not text:
-        return ''
-    safe = escape(str(text))
-    return Markup(_PRICE_RANGE_RE.sub(r'<s>$\1 - $\2</s>', str(safe)))
-
-
 # Master master-category buckets used in the PTL Calendar sheet,
 # mapped to the product.category name fragments that fall under each.
 # Used by _resolve_master_categories to widen the category search so a
@@ -209,6 +194,28 @@ class PtlDeal(models.Model):
         store=True,
         sanitize=False,
         help='Auto-formatted pricing display: <s>$MSRP</s> $SALE | X% Off',
+    )
+
+    # --- Revoke audit (set by mint.deal.revoke.wizard) ---
+    previously_revoked = fields.Boolean(
+        string='Previously Revoked',
+        default=False,
+        tracking=True,
+        help='True if this deal has had at least one revoke action applied '
+             'against it. Surface in the kanban as a warning badge so '
+             'operators know to read the chatter before re-plotting.',
+    )
+    revoked_at = fields.Datetime(string='Last Revoked At', readonly=True)
+    revoked_by = fields.Many2one('res.users', string='Last Revoked By', readonly=True)
+    last_revoke_scope = fields.Selection(
+        selection=[
+            ('single_day', 'Single Day'),
+            ('from_date_forward', 'From Date Forward'),
+            ('all_future_with_requeue', 'All Future + Re-queue'),
+            ('all_instances', 'All Instances'),
+        ],
+        string='Last Revoke Scope',
+        readonly=True,
     )
 
     # --- Revoke audit (set by mint.deal.revoke.wizard) ---

@@ -1,0 +1,441 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== Placement Type ==================== -->
+
+    <record id="view_placement_type_list" model="ir.ui.view">
+        <field name="name">mint.placement.type.list</field>
+        <field name="model">mint.placement.type</field>
+        <field name="arch" type="xml">
+            <list string="Placement Catalog" decoration-muted="not active">
+                <field name="sequence" widget="handle"/>
+                <field name="category"/>
+                <field name="name"/>
+                <field name="price" widget="monetary"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="price_unit"/>
+                <field name="price_per"/>
+                <field name="min_commitment_months"/>
+                <field name="inventory_count"/>
+                <field name="booking_count"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_placement_type_form" model="ir.ui.view">
+        <field name="name">mint.placement.type.form</field>
+        <field name="model">mint.placement.type</field>
+        <field name="arch" type="xml">
+            <form string="Placement Type">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_inventory" type="object"
+                                class="oe_stat_button" icon="fa-database">
+                            <field name="inventory_count" widget="statinfo" string="Inventory"/>
+                        </button>
+                        <button name="action_view_bookings" type="object"
+                                class="oe_stat_button" icon="fa-calendar">
+                            <field name="booking_count" widget="statinfo" string="Bookings"/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Archived" bg_color="bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Placement Name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Catalog">
+                            <field name="category"/>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Pricing">
+                            <label for="price"/>
+                            <div class="o_row">
+                                <field name="price" widget="monetary"/>
+                                <field name="currency_id" invisible="1"/>
+                                <span>per</span>
+                                <field name="price_unit" placeholder="month"/>
+                            </div>
+                            <field name="price_per" placeholder="store, screen, slot…"/>
+                            <field name="min_commitment_months"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="notes" placeholder="Internal notes…"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_placement_type_kanban" model="ir.ui.view">
+        <field name="name">mint.placement.type.kanban</field>
+        <field name="model">mint.placement.type</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="category">
+                <field name="name"/>
+                <field name="price"/>
+                <field name="price_unit"/>
+                <field name="currency_id"/>
+                <field name="booking_count"/>
+                <field name="inventory_count"/>
+                <field name="category"/>
+                <templates>
+                    <t t-name="card">
+                        <field name="name" class="fw-bold"/>
+                        <div class="text-muted">
+                            <field name="price" widget="monetary"/> per <field name="price_unit"/>
+                        </div>
+                        <div>
+                            <span class="badge text-bg-info"><field name="inventory_count"/> slots</span>
+                            <span class="badge text-bg-success ms-1"><field name="booking_count"/> active</span>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_placement_type_search" model="ir.ui.view">
+        <field name="name">mint.placement.type.search</field>
+        <field name="model">mint.placement.type</field>
+        <field name="arch" type="xml">
+            <search string="Placement Catalog">
+                <field name="name"/>
+                <filter name="active" string="Active" domain="[('active', '=', True)]"/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+                <separator/>
+                <filter name="cat_budtender" string="Budtender Stations"
+                        domain="[('category', '=', 'budtender_stations')]"/>
+                <filter name="cat_display" string="Dispensary Displays"
+                        domain="[('category', '=', 'dispensary_displays')]"/>
+                <filter name="cat_digital" string="Digital"
+                        domain="[('category', '=', 'digital')]"/>
+                <filter name="cat_ecomm" string="E-Comm"
+                        domain="[('category', '=', 'ecomm')]"/>
+                <separator/>
+                <filter name="group_category" string="Category"
+                        context="{'group_by': 'category'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_placement_type" model="ir.actions.act_window">
+        <field name="name">Placement Catalog</field>
+        <field name="res_model">mint.placement.type</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="view_placement_type_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Define a new placement product
+            </p>
+            <p>
+                Placement types are the catalog of paid placements brands can buy —
+                budtender stations, dispensary displays, digital screens, e-comm slots.
+            </p>
+        </field>
+    </record>
+
+    <!-- ==================== Placement Inventory ==================== -->
+
+    <record id="view_placement_inventory_list" model="ir.ui.view">
+        <field name="name">mint.placement.inventory.list</field>
+        <field name="model">mint.placement.inventory</field>
+        <field name="arch" type="xml">
+            <list string="Placement Inventory"
+                  decoration-success="state == 'available'"
+                  decoration-warning="state == 'booked'"
+                  decoration-muted="state == 'maintenance'">
+                <field name="market_id"/>
+                <field name="placement_type_id"/>
+                <field name="company_id"/>
+                <field name="identifier"/>
+                <field name="state"/>
+                <field name="price" widget="monetary"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="notes" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_placement_inventory_form" model="ir.ui.view">
+        <field name="name">mint.placement.inventory.form</field>
+        <field name="model">mint.placement.inventory</field>
+        <field name="arch" type="xml">
+            <form string="Placement Inventory">
+                <header>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="available,booked,maintenance"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="placement_type_id" options="{'no_create': True}"
+                                   placeholder="Placement Type"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="market_id" options="{'no_create': True}"/>
+                            <field name="company_id" options="{'no_create': True}"/>
+                            <field name="identifier"/>
+                        </group>
+                        <group>
+                            <field name="category" readonly="1"/>
+                            <field name="price" widget="monetary" readonly="1"/>
+                            <field name="currency_id" invisible="1"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="notes" placeholder="Install notes, access constraints…"/>
+                    </group>
+                    <notebook>
+                        <page string="Bookings">
+                            <field name="booking_ids" readonly="1">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="brand_id"/>
+                                    <field name="start_date"/>
+                                    <field name="end_date"/>
+                                    <field name="state"/>
+                                    <field name="total_price" widget="monetary"/>
+                                    <field name="currency_id" column_invisible="True"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_placement_inventory_search" model="ir.ui.view">
+        <field name="name">mint.placement.inventory.search</field>
+        <field name="model">mint.placement.inventory</field>
+        <field name="arch" type="xml">
+            <search string="Placement Inventory">
+                <field name="placement_type_id"/>
+                <field name="market_id"/>
+                <field name="company_id"/>
+                <field name="identifier"/>
+                <filter name="available" string="Available"
+                        domain="[('state', '=', 'available')]"/>
+                <filter name="booked" string="Booked"
+                        domain="[('state', '=', 'booked')]"/>
+                <filter name="maintenance" string="Maintenance"
+                        domain="[('state', '=', 'maintenance')]"/>
+                <separator/>
+                <filter name="group_market" string="Market"
+                        context="{'group_by': 'market_id'}"/>
+                <filter name="group_type" string="Type"
+                        context="{'group_by': 'placement_type_id'}"/>
+                <filter name="group_state" string="Status"
+                        context="{'group_by': 'state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_placement_inventory" model="ir.actions.act_window">
+        <field name="name">Placement Inventory</field>
+        <field name="res_model">mint.placement.inventory</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_placement_inventory_search"/>
+        <field name="context">{'search_default_available': 1, 'search_default_group_market': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Add a placement inventory unit</p>
+            <p>
+                Inventory units are the actual sellable slots — one row per
+                budtender counter, screen, or e-comm slot.
+            </p>
+        </field>
+    </record>
+
+    <!-- ==================== Placement Booking ==================== -->
+
+    <record id="view_placement_booking_list" model="ir.ui.view">
+        <field name="name">mint.placement.booking.list</field>
+        <field name="model">mint.placement.booking</field>
+        <field name="arch" type="xml">
+            <list string="Placement Bookings"
+                  decoration-info="state == 'draft'"
+                  decoration-success="state == 'active'"
+                  decoration-muted="state in ('completed', 'cancelled')">
+                <field name="name"/>
+                <field name="market_id"/>
+                <field name="placement_type_id"/>
+                <field name="brand_id"/>
+                <field name="start_date"/>
+                <field name="end_date"/>
+                <field name="duration_days" string="Days"/>
+                <field name="total_price" widget="monetary" sum="Total"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="payment_state" widget="badge"
+                       decoration-warning="payment_state == 'pending_invoice'"
+                       decoration-info="payment_state == 'invoiced'"
+                       decoration-success="payment_state == 'paid'"/>
+                <field name="state"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_placement_booking_form" model="ir.ui.view">
+        <field name="name">mint.placement.booking.form</field>
+        <field name="model">mint.placement.booking</field>
+        <field name="arch" type="xml">
+            <form string="Placement Booking">
+                <header>
+                    <button name="action_confirm" string="Confirm" type="object"
+                            class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_set_active" string="Mark Active" type="object"
+                            class="btn-primary" invisible="state != 'confirmed'"/>
+                    <button name="action_complete" string="Complete" type="object"
+                            class="btn-secondary" invisible="state not in ('confirmed', 'active')"/>
+                    <button name="action_cancel" string="Cancel" type="object"
+                            class="btn-danger" invisible="state in ('completed', 'cancelled')"/>
+                    <button name="action_set_draft" string="Reset to Draft" type="object"
+                            invisible="state == 'draft'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,confirmed,active,completed"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Placement">
+                            <field name="placement_type_id" options="{'no_create': True}"/>
+                            <field name="placement_inventory_id"
+                                   options="{'no_create': True}"/>
+                            <field name="market_id" options="{'no_create': True}"/>
+                            <field name="company_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"/>
+                        </group>
+                        <group string="Customer">
+                            <field name="brand_id" options="{'no_create': True}"/>
+                            <field name="partner_id" options="{'no_create_edit': True}"/>
+                            <field name="contact_id" options="{'no_create_edit': True}"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Schedule">
+                            <field name="start_date"/>
+                            <field name="end_date"/>
+                            <field name="duration_days" readonly="1"/>
+                            <field name="quantity"/>
+                        </group>
+                        <group string="Billing">
+                            <field name="total_price" widget="monetary"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="payment_state"/>
+                            <field name="invoice_number"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="notes" placeholder="Creative delivery notes, install dates…"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_placement_booking_calendar" model="ir.ui.view">
+        <field name="name">mint.placement.booking.calendar</field>
+        <field name="model">mint.placement.booking</field>
+        <field name="arch" type="xml">
+            <calendar string="Placement Bookings"
+                      date_start="start_date"
+                      date_stop="end_date"
+                      color="placement_type_id"
+                      mode="month"
+                      quick_create="0">
+                <field name="name"/>
+                <field name="brand_id"/>
+                <field name="market_id"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <record id="view_placement_booking_pivot" model="ir.ui.view">
+        <field name="name">mint.placement.booking.pivot</field>
+        <field name="model">mint.placement.booking</field>
+        <field name="arch" type="xml">
+            <pivot string="Placement Revenue">
+                <field name="market_id" type="row"/>
+                <field name="placement_type_id" type="col"/>
+                <field name="total_price" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_placement_booking_search" model="ir.ui.view">
+        <field name="name">mint.placement.booking.search</field>
+        <field name="model">mint.placement.booking</field>
+        <field name="arch" type="xml">
+            <search string="Placement Bookings">
+                <field name="name"/>
+                <field name="brand_id"/>
+                <field name="partner_id"/>
+                <field name="placement_type_id"/>
+                <field name="market_id"/>
+                <filter name="active" string="Active"
+                        domain="[('state', '=', 'active')]"/>
+                <filter name="confirmed" string="Confirmed"
+                        domain="[('state', '=', 'confirmed')]"/>
+                <filter name="draft" string="Draft"
+                        domain="[('state', '=', 'draft')]"/>
+                <separator/>
+                <filter name="pending_invoice" string="Pending Invoice"
+                        domain="[('payment_state', '=', 'pending_invoice')]"/>
+                <filter name="paid" string="Paid"
+                        domain="[('payment_state', '=', 'paid')]"/>
+                <separator/>
+                <filter name="current" string="Current"
+                        domain="[('start_date', '&lt;=', context_today()),
+                                 ('end_date', '&gt;=', context_today())]"/>
+                <filter name="upcoming" string="Upcoming"
+                        domain="[('start_date', '&gt;', context_today())]"/>
+                <separator/>
+                <filter name="group_market" string="Market"
+                        context="{'group_by': 'market_id'}"/>
+                <filter name="group_type" string="Type"
+                        context="{'group_by': 'placement_type_id'}"/>
+                <filter name="group_state" string="Status"
+                        context="{'group_by': 'state'}"/>
+                <filter name="group_payment" string="Payment"
+                        context="{'group_by': 'payment_state'}"/>
+                <filter name="group_month" string="Month"
+                        context="{'group_by': 'start_date:month'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_placement_booking" model="ir.actions.act_window">
+        <field name="name">Placement Bookings</field>
+        <field name="res_model">mint.placement.booking</field>
+        <field name="view_mode">list,calendar,pivot,form</field>
+        <field name="search_view_id" ref="view_placement_booking_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Book a placement</p>
+            <p>
+                Bookings represent sold placement inventory. Confirm a booking to
+                lock the slot and trigger invoicing.
+            </p>
+        </field>
+    </record>
+
+    <record id="action_placement_revenue" model="ir.actions.act_window">
+        <field name="name">Placement Revenue</field>
+        <field name="res_model">mint.placement.booking</field>
+        <field name="view_mode">pivot,list</field>
+        <field name="search_view_id" ref="view_placement_booking_search"/>
+        <field name="context">{'search_default_group_market': 1}</field>
+        <field name="domain">[('state', 'not in', ('draft', 'cancelled'))]</field>
+    </record>
+
+</odoo>

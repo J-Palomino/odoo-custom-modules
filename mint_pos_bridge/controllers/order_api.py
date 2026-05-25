@@ -257,7 +257,13 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
             if not existing[k]:
                 update_vals[k] = v
         if update_vals:
-            existing.write(update_vals)
+            # bulk_sync and upsert_from_dutchie are sync-only paths (Dutchie
+            # state being reflected into Odoo). Suppress the lane-change
+            # webhook so write() doesn't bounce a moveToLane back to Dutchie
+            # for a state we just READ from there. Without this, every
+            # bulk_sync of state='completed' fires a webhook that the invsvc
+            # handler short-circuits on "no lane mapping" — wasted RTT.
+            existing.with_context(from_dutchie_sync=True).write(update_vals)
 
         # Populate line items if the existing row has none. The lane-watcher
         # creates stubs without items (the v2/guest/checked-in payload doesn't
@@ -856,9 +862,26 @@ class MintPosOrderAPI(http.Controller):
         if new_state == 'cancelled' and reason:
             vals['notes'] = (order.notes or '') + '\nCancelled: ' + reason
 
-        order.with_context(cancel_reason=reason).write(vals)
+        # ── Lane-change webhook suppression ────────────────────────────────
+        # write() fires _fire_lane_change_webhook for every state change unless
+        # `from_dutchie_sync` is set in context. We INVERT the default for this
+        # public endpoint: by default suppress the webhook (most callers are
+        # sync jobs reflecting Dutchie state back into Odoo, and firing the
+        # webhook would race with the budtender's next move in Dutchie).
+        # Callers that ARE a user action in our flow (customer cancel button,
+        # admin tool, etc.) opt back in via the `X-User-Initiated: true` header.
+        user_initiated = request.httprequest.headers.get(
+            'X-User-Initiated', ''
+        ).strip().lower() in ('1', 'true', 'yes')
+        order.with_context(
+            cancel_reason=reason,
+            from_dutchie_sync=not user_initiated,
+        ).write(vals)
 
-        _logger.info('POS order %s state -> %s', order.name, new_state)
+        _logger.info(
+            'POS order %s state -> %s (user_initiated=%s)',
+            order.name, new_state, user_initiated,
+        )
 
         # Send push notification directly from controller (belt + suspenders)
         if order.partner_id:
@@ -1151,7 +1174,13 @@ class MintPosOrderAPI(http.Controller):
                 400,
             )
 
-        order.write({
+        # Same X-User-Initiated convention as PUT /state. A real customer cancel
+        # through the frontend sets this header → webhook fires and Dutchie is
+        # flagged [CANCELLED]. A backfill/sync cancel does not.
+        user_initiated = request.httprequest.headers.get(
+            'X-User-Initiated', ''
+        ).strip().lower() in ('1', 'true', 'yes')
+        order.with_context(from_dutchie_sync=not user_initiated).write({
             'state': 'cancelled',
             'notes': (order.notes or '') + '\nCancelled: ' + (data.get('reason') or 'No reason'),
         })

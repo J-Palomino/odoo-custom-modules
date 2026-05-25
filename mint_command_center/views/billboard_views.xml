@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ==================== Billboard Vendor ==================== -->
+
+    <record id="view_billboard_vendor_list" model="ir.ui.view">
+        <field name="name">mint.billboard.vendor.list</field>
+        <field name="model">mint.billboard.vendor</field>
+        <field name="arch" type="xml">
+            <list string="Billboard Vendors" decoration-muted="not active">
+                <field name="name"/>
+                <field name="market_ids" widget="many2many_tags"/>
+                <field name="board_count"/>
+                <field name="partner_id"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_billboard_vendor_form" model="ir.ui.view">
+        <field name="name">mint.billboard.vendor.form</field>
+        <field name="model">mint.billboard.vendor</field>
+        <field name="arch" type="xml">
+            <form string="Billboard Vendor">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_boards" type="object"
+                                class="oe_stat_button" icon="fa-rectangle">
+                            <field name="board_count" widget="statinfo" string="Boards"/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Archived" bg_color="bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Vendor Name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="partner_id" options="{'no_create_edit': True}"/>
+                            <field name="market_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"/>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Contacts">
+                            <field name="contact_ids" context="{'default_parent_id': partner_id}">
+                                <list editable="bottom">
+                                    <field name="name"/>
+                                    <field name="email" widget="email"/>
+                                    <field name="phone" widget="phone"/>
+                                    <field name="function"/>
+                                </list>
+                            </field>
+                            <p class="text-muted" invisible="partner_id">
+                                Pick a Billing Partner first; contacts attach to it.
+                            </p>
+                        </page>
+                        <page string="Boards">
+                            <field name="board_ids" readonly="1">
+                                <list>
+                                    <field name="board_code"/>
+                                    <field name="market_id"/>
+                                    <field name="description"/>
+                                    <field name="size"/>
+                                    <field name="nearest_company_id"/>
+                                    <field name="active"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Notes">
+                            <field name="notes" placeholder="Internal notes…"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_billboard_vendor_search" model="ir.ui.view">
+        <field name="name">mint.billboard.vendor.search</field>
+        <field name="model">mint.billboard.vendor</field>
+        <field name="arch" type="xml">
+            <search string="Billboard Vendors">
+                <field name="name"/>
+                <field name="market_ids"/>
+                <filter name="active" string="Active" domain="[('active', '=', True)]"/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_billboard_vendor" model="ir.actions.act_window">
+        <field name="name">Billboard Vendors</field>
+        <field name="res_model">mint.billboard.vendor</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_billboard_vendor_search"/>
+    </record>
+
+    <!-- ==================== Billboard Board ==================== -->
+
+    <record id="view_billboard_board_list" model="ir.ui.view">
+        <field name="name">mint.billboard.board.list</field>
+        <field name="model">mint.billboard.board</field>
+        <field name="arch" type="xml">
+            <list string="Billboards" decoration-muted="not active">
+                <field name="vendor_id"/>
+                <field name="market_id"/>
+                <field name="board_code"/>
+                <field name="geopath_id"/>
+                <field name="description"/>
+                <field name="size"/>
+                <field name="face_direction" optional="hide"/>
+                <field name="nearest_company_id"/>
+                <field name="audience_type" optional="hide"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_billboard_board_form" model="ir.ui.view">
+        <field name="name">mint.billboard.board.form</field>
+        <field name="model">mint.billboard.board</field>
+        <field name="arch" type="xml">
+            <form string="Billboard">
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="board_code" placeholder="Board ID"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="vendor_id" options="{'no_create': True}"/>
+                            <field name="market_id" options="{'no_create': True}"/>
+                            <field name="geopath_id"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="size"/>
+                            <field name="face_direction"/>
+                            <field name="audience_type"/>
+                            <field name="nearest_company_id" options="{'no_create': True}"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="description"/>
+                        <field name="notes"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_billboard_board_search" model="ir.ui.view">
+        <field name="name">mint.billboard.board.search</field>
+        <field name="model">mint.billboard.board</field>
+        <field name="arch" type="xml">
+            <search string="Billboards">
+                <field name="board_code"/>
+                <field name="geopath_id"/>
+                <field name="vendor_id"/>
+                <field name="market_id"/>
+                <field name="nearest_company_id"/>
+                <filter name="active" string="Active" domain="[('active', '=', True)]"/>
+                <separator/>
+                <filter name="group_vendor" string="Vendor"
+                        context="{'group_by': 'vendor_id'}"/>
+                <filter name="group_market" string="Market"
+                        context="{'group_by': 'market_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_billboard_board" model="ir.actions.act_window">
+        <field name="name">Billboards</field>
+        <field name="res_model">mint.billboard.board</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_billboard_board_search"/>
+        <field name="context">{'search_default_active': 1, 'search_default_group_vendor': 1}</field>
+    </record>
+
+    <!-- ==================== Billboard Creative ==================== -->
+
+    <record id="view_billboard_creative_list" model="ir.ui.view">
+        <field name="name">mint.billboard.creative.list</field>
+        <field name="model">mint.billboard.creative</field>
+        <field name="arch" type="xml">
+            <list string="Creatives"
+                  decoration-muted="state == 'archived'">
+                <field name="name"/>
+                <field name="market_id"/>
+                <field name="size"/>
+                <field name="state"/>
+                <field name="drive_url" widget="url"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_billboard_creative_form" model="ir.ui.view">
+        <field name="name">mint.billboard.creative.form</field>
+        <field name="model">mint.billboard.creative</field>
+        <field name="arch" type="xml">
+            <form string="Creative">
+                <header>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Creative Name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="market_id" options="{'no_create': True}"/>
+                            <field name="size"/>
+                        </group>
+                        <group>
+                            <field name="drive_url" widget="url"/>
+                            <field name="attachment_id"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="notes"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_billboard_creative" model="ir.actions.act_window">
+        <field name="name">Creatives</field>
+        <field name="res_model">mint.billboard.creative</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ==================== Billboard Schedule ==================== -->
+
+    <record id="view_billboard_schedule_list" model="ir.ui.view">
+        <field name="name">mint.billboard.schedule.list</field>
+        <field name="model">mint.billboard.schedule</field>
+        <field name="arch" type="xml">
+            <list string="Billboard Schedules"
+                  decoration-info="state == 'draft'"
+                  decoration-warning="state == 'sent'"
+                  decoration-success="state == 'confirmed'">
+                <field name="name"/>
+                <field name="market_id"/>
+                <field name="week_start_date"/>
+                <field name="item_count"/>
+                <field name="state"/>
+                <field name="sent_at"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_billboard_schedule_form" model="ir.ui.view">
+        <field name="name">mint.billboard.schedule.form</field>
+        <field name="model">mint.billboard.schedule</field>
+        <field name="arch" type="xml">
+            <form string="Billboard Schedule">
+                <header>
+                    <button name="action_mark_sent" string="Mark Sent" type="object"
+                            class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_mark_confirmed" string="Mark Confirmed" type="object"
+                            class="btn-primary" invisible="state != 'sent'"/>
+                    <button name="action_reset_draft" string="Reset to Draft" type="object"
+                            invisible="state == 'draft'"/>
+                    <button name="action_duplicate_to_next_week" string="Duplicate → Next Week"
+                            type="object" class="btn-secondary"/>
+                    <button name="action_email_to_vendors" string="Email Schedule"
+                            type="object" class="btn-secondary"
+                            invisible="state == 'draft'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="market_id" options="{'no_create': True}"/>
+                            <field name="week_start_date"/>
+                        </group>
+                        <group>
+                            <field name="sent_at" readonly="1"/>
+                        </group>
+                    </group>
+                    <field name="item_ids">
+                        <list editable="bottom">
+                            <field name="sequence" widget="handle"/>
+                            <field name="creative_id" options="{'no_create': True}"/>
+                            <field name="board_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"/>
+                            <field name="time_slot"/>
+                            <field name="run_percentage"/>
+                            <field name="location_override" optional="hide"/>
+                            <field name="notes" optional="hide"/>
+                        </list>
+                    </field>
+                    <group>
+                        <field name="notes" placeholder="Schedule notes…"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_billboard_schedule_search" model="ir.ui.view">
+        <field name="name">mint.billboard.schedule.search</field>
+        <field name="model">mint.billboard.schedule</field>
+        <field name="arch" type="xml">
+            <search string="Billboard Schedules">
+                <field name="market_id"/>
+                <field name="week_start_date"/>
+                <filter name="draft" string="Draft"
+                        domain="[('state', '=', 'draft')]"/>
+                <filter name="sent" string="Sent"
+                        domain="[('state', '=', 'sent')]"/>
+                <filter name="confirmed" string="Confirmed"
+                        domain="[('state', '=', 'confirmed')]"/>
+                <separator/>
+                <filter name="group_market" string="Market"
+                        context="{'group_by': 'market_id'}"/>
+                <filter name="group_week" string="Week"
+                        context="{'group_by': 'week_start_date'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_billboard_schedule" model="ir.actions.act_window">
+        <field name="name">Schedules</field>
+        <field name="res_model">mint.billboard.schedule</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_billboard_schedule_search"/>
+    </record>
+
+</odoo>

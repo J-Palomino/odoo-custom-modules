@@ -5,7 +5,7 @@
     "name": "Spreadsheet Oca",
     "summary": """
         Allow to edit spreadsheets""",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.0.2",
     "license": "AGPL-3",
     "author": "CreuBlanca,Odoo Community Association (OCA)",
     "website": "https://github.com/OCA/spreadsheet",
@@ -17,6 +17,7 @@
         "data/spreadsheet_spreadsheet_import_mode.xml",
         "wizards/spreadsheet_select_row_number.xml",
         "wizards/spreadsheet_spreadsheet_import.xml",
+        "views/spreadsheet_cell_watch.xml",
     ],
     "demo": ["demo/spreadsheet_spreadsheet.xml"],
     "assets": {
@@ -42,6 +43,7 @@
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet_controlpanel.esm.js",
             "spreadsheet_oca/static/src/spreadsheet/bundle/spreadsheet_action.esm.js",
             "spreadsheet_oca/static/src/spreadsheet/bundle/file_menu_items.esm.js",
+            "spreadsheet_oca/static/src/spreadsheet/bundle/cell_watch.esm.js",
         ],
     },
 }

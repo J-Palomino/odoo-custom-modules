@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <record id="mail_template_billboard_schedule" model="mail.template">
+            <field name="name">Billboard Schedule — Vendor Notification</field>
+            <field name="model_id" ref="model_mint_billboard_schedule"/>
+            <field name="subject">Mint Billboard Schedule — {{ object.market_id.name }} — week of {{ object.week_start_date }}</field>
+            <field name="email_from">{{ user.email_formatted }}</field>
+            <field name="body_html" type="html">
+                <div>
+                    <p>Hi team,</p>
+                    <p>
+                        Attached is the Mint Cannabis billboard schedule for
+                        <strong t-out="object.market_id.name or ''"/>, week of
+                        <strong t-out="object.week_start_date or ''"/>.
+                    </p>
+                    <p t-if="object.notes"><em t-out="object.notes"/></p>
+                    <p>Reply to confirm receipt.</p>
+                    <p>— Mint Cannabis Marketing</p>
+                </div>
+            </field>
+            <field name="auto_delete" eval="True"/>
+        </record>
+
+    </data>
+</odoo>

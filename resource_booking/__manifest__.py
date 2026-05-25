@@ -6,14 +6,14 @@
 {
     "name": "Resource booking",
     "summary": "Manage appointments and resource booking",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.0.1",
     "development_status": "Production/Stable",
     "category": "Appointments",
     "website": "https://github.com/OCA/calendar",
     "author": "Tecnativa, Odoo Community Association (OCA)",
     "maintainers": ["pedrobaeza", "ows-cloud"],
     "license": "AGPL-3",
-    "application": True,
+    "application": False,
     "installable": True,
     "uninstall_hook": "uninstall_hook",
     "external_dependencies": {

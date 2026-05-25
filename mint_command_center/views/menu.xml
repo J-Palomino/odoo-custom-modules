@@ -130,6 +130,113 @@
 
     <delete id="mint_api_v2.menu_mint_discount_root" model="ir.ui.menu"/>
 
+    <!-- ── Intel Section ──
+         Competitive intelligence — competitor dispensaries and the deals
+         they're running. Read by Marketing, edited by Operations. -->
+    <menuitem id="menu_intel"
+              name="Intel"
+              parent="menu_command_center_root"
+              sequence="33"/>
+
+    <menuitem id="menu_competitors"
+              name="Competitors"
+              parent="menu_intel"
+              action="action_competitor"
+              sequence="10"/>
+
+    <menuitem id="menu_competitor_deals"
+              name="Competitor Deals"
+              parent="menu_intel"
+              action="action_competitor_deal"
+              sequence="20"/>
+
+    <!-- ── Operations Section ──
+         Paid placements, billboards, advertising-vendor CRM. -->
+    <menuitem id="menu_operations"
+              name="Operations"
+              parent="menu_command_center_root"
+              sequence="36"/>
+
+    <menuitem id="menu_placement_catalog"
+              name="Placement Catalog"
+              parent="menu_operations"
+              action="action_placement_type"
+              sequence="10"/>
+
+    <menuitem id="menu_placement_inventory"
+              name="Placement Inventory"
+              parent="menu_operations"
+              action="action_placement_inventory"
+              sequence="20"/>
+
+    <menuitem id="menu_placement_bookings"
+              name="Bookings"
+              parent="menu_operations"
+              action="action_placement_booking"
+              sequence="30"/>
+
+    <menuitem id="menu_placement_revenue"
+              name="Revenue"
+              parent="menu_operations"
+              action="action_placement_revenue"
+              sequence="40"/>
+
+    <menuitem id="menu_billboards"
+              name="Billboards"
+              parent="menu_operations"
+              sequence="60"/>
+
+    <menuitem id="menu_billboard_vendors"
+              name="Vendors"
+              parent="menu_billboards"
+              action="action_billboard_vendor"
+              sequence="10"/>
+
+    <menuitem id="menu_billboard_boards"
+              name="Boards"
+              parent="menu_billboards"
+              action="action_billboard_board"
+              sequence="20"/>
+
+    <menuitem id="menu_billboard_creatives"
+              name="Creatives"
+              parent="menu_billboards"
+              action="action_billboard_creative"
+              sequence="30"/>
+
+    <menuitem id="menu_billboard_schedules"
+              name="Schedules"
+              parent="menu_billboards"
+              action="action_billboard_schedule"
+              sequence="40"/>
+
+    <menuitem id="menu_advertising_vendors"
+              name="Advertising Vendors"
+              parent="menu_operations"
+              action="action_ad_vendor"
+              sequence="70"/>
+
+    <!-- ── Field Team Section ──
+         Brand ambassadors and the shifts they cover. Owned by group_operations
+         with read/write for group_vendor_manager (vendors coordinate their
+         own ambassadors). -->
+    <menuitem id="menu_field_team"
+              name="Field Team"
+              parent="menu_command_center_root"
+              sequence="37"/>
+
+    <menuitem id="menu_ambassadors"
+              name="Ambassadors"
+              parent="menu_field_team"
+              action="action_ambassador"
+              sequence="10"/>
+
+    <menuitem id="menu_ambassador_shifts"
+              name="Shifts"
+              parent="menu_field_team"
+              action="action_ambassador_shift"
+              sequence="20"/>
+
     <!-- ── Compliance Section ── -->
     <menuitem id="menu_compliance"
               name="Compliance"
