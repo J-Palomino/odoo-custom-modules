@@ -1,9 +1,11 @@
 """Hook for posting Odoo project.task records to the daisy.plus ci-fleet-v2
 Functional Analyst agency.
 
-Triggered by a ``base.automation`` rule that watches for the ``daisy-fa``
-tag landing on a task. The action calls :py:meth:`_trigger_daisy_fa` here
-so safe-eval doesn't need to import ``urllib``/``requests``.
+When the ``daisy-fa`` ``project.tags`` is added to a task — via ANY write
+path (UI, XML-RPC, REST, base.automation, server actions) — this module's
+``write()`` override fires :py:meth:`_trigger_daisy_fa` against the newly
+tagged record. A ``base.automation`` rule is still acceptable but no
+longer required, because :py:meth:`write` enforces the trigger universally.
 
 API key + agency ID live in ``ir.config_parameter``:
 
@@ -19,10 +21,32 @@ from odoo import models
 _logger = logging.getLogger(__name__)
 
 _DAISY_PREDICTION_URL = 'https://daisy.plus/api/v1/prediction/{agency_id}'
+_DAISY_TAG_NAME = 'daisy-fa'
 
 
 class ProjectTaskDaisy(models.Model):
     _inherit = 'project.task'
+
+    def write(self, vals):
+        """Fire the daisy FA trigger when the ``daisy-fa`` tag transitions
+        from absent → present on a record. Idempotent: a record that already
+        has the tag will not re-fire on subsequent writes.
+        """
+        # Identify the tag id once (cheap; cached for the transaction).
+        tag = self.env['project.tags'].sudo().search(
+            [('name', '=', _DAISY_TAG_NAME)], limit=1)
+        had_tag_before = {r.id: tag and tag.id in r.tag_ids.ids for r in self}
+        result = super().write(vals)
+        if tag and 'tag_ids' in vals:
+            for rec in self:
+                has_tag_now = tag.id in rec.tag_ids.ids
+                if has_tag_now and not had_tag_before.get(rec.id):
+                    try:
+                        rec._trigger_daisy_fa()
+                    except Exception:
+                        _logger.exception(
+                            'daisy.plus FA trigger error on task %s', rec.id)
+        return result
 
     def _trigger_daisy_fa(self):
         """POST each record in ``self`` to the configured daisy.plus agency.
