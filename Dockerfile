@@ -70,6 +70,10 @@ COPY --chown=odoo:odoo mint_sw_buster /opt/extra-addons/mint_sw_buster
 COPY --chown=odoo:odoo mint_loki_logger /opt/extra-addons/mint_loki_logger
 COPY --chown=odoo:odoo mint_sms_telnyx /opt/extra-addons/mint_sms_telnyx
 
+# ── themintcannabis.com careers site (2026-05-26) ────────────────────
+COPY --chown=odoo:odoo mint_career /opt/extra-addons/mint_career
+COPY --chown=odoo:odoo mint_candidate_portal /opt/extra-addons/mint_candidate_portal
+
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
 COPY --chown=odoo:odoo daisy_error_handler /opt/extra-addons/daisy_error_handler
@@ -161,6 +165,8 @@ RUN test -f /opt/extra-addons/mint_pos_bridge/__manifest__.py && echo "MINT_POS_
 RUN test -f /opt/extra-addons/mint_redis_session/__manifest__.py && echo "MINT_REDIS_SESSION VERIFIED" || (echo "MINT_REDIS_SESSION MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_inventory_ops/__manifest__.py && echo "MINT_INVENTORY_OPS VERIFIED" || (echo "MINT_INVENTORY_OPS MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_sms_telnyx/__manifest__.py && echo "MINT_SMS_TELNYX VERIFIED" || (echo "MINT_SMS_TELNYX MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_career/__manifest__.py && echo "MINT_CAREER VERIFIED" || (echo "MINT_CAREER MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_candidate_portal/__manifest__.py && echo "MINT_CANDIDATE_PORTAL VERIFIED" || (echo "MINT_CANDIDATE_PORTAL MISSING" && exit 1)
 RUN python3 -c "compile(open('/opt/extra-addons/mint_sms_telnyx/models/sms_sms.py').read(), 'sms_sms.py', 'exec')" && echo "SMS_SMS SYNTAX OK" || (echo "SMS_SMS SYNTAX ERROR" && head -60 /opt/extra-addons/mint_sms_telnyx/models/sms_sms.py && exit 1)
 RUN python3 -c "compile(open('/opt/extra-addons/mint_pos_bridge/models/pos_order.py').read(), 'pos_order.py', 'exec')" && echo "POS_ORDER SYNTAX OK" || (echo "POS_ORDER SYNTAX ERROR" && head -60 /opt/extra-addons/mint_pos_bridge/models/pos_order.py && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
