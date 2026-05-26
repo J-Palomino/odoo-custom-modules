@@ -269,6 +269,10 @@
                                    placeholder="Product exclusions and conditions..."/>
                         </group>
                     </group>
+                    <group string="Deal Options"
+                           help="Each option produces its own PTL row at plot time (e.g. Bundle + BOGO on the same product).">
+                        <field name="option_ids" nolabel="1"/>
+                    </group>
                     <group string="Exclusion Rules">
                         <field name="excluded_skus" nolabel="1"
                                placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002&#10;CRT-PINEAPPLE"/>

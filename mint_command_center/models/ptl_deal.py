@@ -256,6 +256,12 @@ class PtlDeal(models.Model):
         help='The mint.discount record synced to Redis for this deal.',
         ondelete='set null',
     )
+    option_ids = fields.One2many(
+        'mint.ptl.deal.option',
+        'ptl_deal_id',
+        string='Deal Options',
+        help='Each option produces its own PTL row (e.g. Bundle + BOGO on the same product).',
+    )
     day_ids = fields.Many2many(
         'mint.ptl.day',
         'mint_ptl_day_deal_rel',

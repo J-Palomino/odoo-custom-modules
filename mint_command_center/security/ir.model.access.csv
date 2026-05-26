@@ -3,6 +3,8 @@ access_ptl_day_viewer,mint.ptl.day.viewer,model_mint_ptl_day,group_viewer,1,0,0,
 access_ptl_day_manager,mint.ptl.day.manager,model_mint_ptl_day,group_ptl_manager,1,1,1,1
 access_ptl_deal_viewer,mint.ptl.deal.viewer,model_mint_ptl_deal,group_viewer,1,0,0,0
 access_ptl_deal_manager,mint.ptl.deal.manager,model_mint_ptl_deal,group_ptl_manager,1,1,1,1
+access_ptl_deal_option_viewer,mint.ptl.deal.option.viewer,model_mint_ptl_deal_option,group_viewer,1,0,0,0
+access_ptl_deal_option_manager,mint.ptl.deal.option.manager,model_mint_ptl_deal_option,group_ptl_manager,1,1,1,1
 access_hotbox_deal_viewer,mint.hotbox.deal.viewer,model_mint_hotbox_deal,group_viewer,1,0,0,0
 access_hotbox_deal_manager,mint.hotbox.deal.manager,model_mint_hotbox_deal,group_ptl_manager,1,1,1,1
 access_brand_ranking_viewer,mint.brand.ranking.viewer,model_mint_brand_ranking,group_viewer,1,0,0,0

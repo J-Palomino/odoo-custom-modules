@@ -1,5 +1,6 @@
 from . import ptl_day
 from . import ptl_deal
+from . import ptl_deal_option
 from . import deal_submission
 from . import brand_calendar
 from . import national_promo
