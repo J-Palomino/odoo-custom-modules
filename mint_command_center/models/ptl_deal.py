@@ -425,6 +425,58 @@ class PtlDeal(models.Model):
             expired.write({'state': 'expired'})
         return len(expired)
 
+    # ─── Multi-window plotting (drives the submission-form picker) ───────
+
+    def _resolve_market_id(self, market_id=None):
+        """Return an int market_id from the arg or self.market_id.
+        Raises UserError when neither is available."""
+        self.ensure_one()
+        mid = market_id or (self.market_id.id if self.market_id else False)
+        if not mid:
+            from odoo.exceptions import UserError
+            raise UserError(
+                "Cannot plot/unplot windows without a market — set market_id "
+                "on the deal or pass market_id explicitly."
+            )
+        return int(mid)
+
+    def action_plot_windows(self, dates, market_id=None):
+        """Plot this deal onto every (date, market) day in `dates`.
+
+        `dates` is a list of ISO-format strings (YYYY-MM-DD). For each date we
+        upsert a mint.ptl.day (the date_market_uniq SQL constraint guarantees
+        idempotency) and link this deal into its deal_ids via the existing
+        mint.ptl.day.schedule_deal primitive — which already returns the
+        resulting day_id, so no follow-up search is needed.
+
+        Returns the list of resulting mint.ptl.day ids.
+        """
+        self.ensure_one()
+        Day = self.env['mint.ptl.day']
+        mid = self._resolve_market_id(market_id)
+        return [
+            Day.schedule_deal(deal_id=self.id, date=d, market_id=mid)['day_id']
+            for d in dates
+        ]
+
+    def action_unplot_windows(self, dates, market_id=None):
+        """Inverse of action_plot_windows: unlink this deal from each day.
+
+        Leaves the mint.ptl.day rows in place (they may carry other deals).
+        Returns the list of affected mint.ptl.day ids.
+        """
+        self.ensure_one()
+        Day = self.env['mint.ptl.day']
+        mid = self._resolve_market_id(market_id)
+        days = Day.search([
+            ('date', 'in', list(dates)),
+            ('market_id', '=', mid),
+            ('deal_ids', 'in', self.id),
+        ])
+        if days:
+            days.write({'deal_ids': [(3, self.id)]})
+        return days.ids
+
     @api.depends('name', 'sales_details')
     def _compute_weight(self):
         for rec in self:
