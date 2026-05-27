@@ -196,14 +196,11 @@ RUN for mod in spreadsheet_oca spreadsheet_dashboard_oca \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
 
-# Verify OCA Tier Validation + Knowledge + QMS modules (ported from 18.0)
-RUN for mod in base_tier_validation base_tier_validation_formula \
-      document_knowledge document_page \
-      mgmtsystem mgmtsystem_action mgmtsystem_nonconformity document_page_procedure \
-      mgmtsystem_manual document_page_quality_manual mgmtsystem_audit mgmtsystem_review \
-      mgmtsystem_quality; do \
-      test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
-    done
+# OCA Tier Validation / Knowledge / QMS bundle verification — REMOVED 2026-05-27.
+# These 13 modules were intentionally dropped from the image on 2026-05-20
+# (see the "DROPPED" comment block at the top of this Dockerfile). The verify
+# block that previously lived here was orphaned by that change and caused
+# every PR preview build to fail with "$mod MISSING".
 
 # Verify OCA storage modules
 RUN for mod in fs_storage fs_attachment fs_attachment_s3; do \
