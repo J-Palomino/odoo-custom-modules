@@ -1,4 +1,4 @@
-from datetime import date as _date, timedelta
+from datetime import date as _date
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
@@ -292,19 +292,9 @@ class DealSubmission(models.Model):
         # that only set preferred_start/end use the old free-text path).
         plotted_count = 0
         if self.window_ids and self.market_id:
-            dates = []
-            for w in self.window_ids:
-                if not w.date_start or not w.date_end:
-                    continue
-                cur = w.date_start
-                while cur <= w.date_end:
-                    dates.append(cur.isoformat())
-                    cur += timedelta(days=1)
-            # Dedupe while preserving order.
-            seen = set()
-            uniq = [d for d in dates if not (d in seen or seen.add(d))]
-            if uniq:
-                day_ids = deal.action_plot_windows(uniq, market_id=self.market_id.id)
+            dates = self.window_ids.all_dates()
+            if dates:
+                day_ids = deal.action_plot_windows(dates, market_id=self.market_id.id)
                 plotted_count = len(day_ids)
 
         body = f"Converted to PTL Deal: {deal.name} (id={deal.id})"
