@@ -1,4 +1,4 @@
-"""Pre-migration for 19.0.4.13.0 — schema additions for #93723.
+"""Pre-migration for 19.0.4.14.0 — schema additions for #93723.
 
 Additive only. Adds new fields on mint.deal.submission and a new child
 table mint_deal_submission_day. Backfills the new market_ids m2m from the

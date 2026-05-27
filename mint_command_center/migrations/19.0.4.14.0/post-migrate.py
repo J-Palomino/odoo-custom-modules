@@ -1,4 +1,4 @@
-"""Post-migration for 19.0.4.13.0 — backfill market_ids m2m for #93723.
+"""Post-migration for 19.0.4.14.0 — backfill market_ids m2m for #93723.
 
 Runs AFTER Odoo creates the new mint_deal_submission_market_rel table
 (via ORM model load). Copies the legacy single market_id into the m2m
@@ -35,7 +35,7 @@ def migrate(cr, version):
         """
     )
     _logger.info(
-        "19.0.4.13.0 post-migrate: backfilled %d row(s) into "
+        "19.0.4.14.0 post-migrate: backfilled %d row(s) into "
         "mint_deal_submission_market_rel from legacy market_id",
         cr.rowcount,
     )

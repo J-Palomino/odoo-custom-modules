@@ -124,8 +124,36 @@ class PtlDeal(models.Model):
         help='PTL Column E — sale classification',
     )
     details_exclusions = fields.Text(
-        string='Details & Exclusions',
-        help='Product details, exclusions, and conditions (PTL Column C)',
+        string='Exclusions',
+        help='What this deal does NOT apply to (limits, conditions, exclusions). '
+             'Renders in PTL Column C alongside Inclusions.',
+    )
+    inclusions = fields.Text(
+        string='Inclusions',
+        help='What this deal applies to (SKUs, strains, sizes, etc.). '
+             'Carried from vendor submission; renders alongside Exclusions.',
+    )
+    product_ids = fields.Many2many(
+        'product.template',
+        'mint_ptl_deal_product_rel',
+        'deal_id',
+        'product_id',
+        string='Products',
+        help='Specific products this deal applies to. Carried from vendor submission '
+             '(see #93723). Mirror of mint.deal.submission.product_ids.',
+    )
+    is_holiday = fields.Boolean(
+        string='Special Event / Holiday',
+        default=False,
+        tracking=True,
+        help='Carried from vendor submission. Causes Event Name to render in '
+             'the PTL Category column (#93650) and unlocks the Daily Deals Sheet callout.',
+    )
+    event_name = fields.Char(
+        string='Event Name',
+        tracking=True,
+        help='Name of the holiday or special event (e.g. "Mother\'s Day", "420"). '
+             'Surfaces in the PTL Category column when is_holiday is True.',
     )
     excluded_skus = fields.Text(
         string='Excluded SKUs',
