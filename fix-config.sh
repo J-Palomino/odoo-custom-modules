@@ -150,6 +150,33 @@ if [ -f /opt/extra-addons/mgmtsystem_nonconformity/models/mail_thread.py ]; then
     echo "=== END diagnostic ==="
 fi
 
+# Purge volume-persistent module copies named by env var.
+# Why: Odoo's data_dir implicitly scans /var/lib/odoo/addons/<series>/, so any
+# module ever bootstrapped there outlives Dockerfile COPY drops. Listing names
+# here (comma-separated, no spaces) wipes them on every boot so a real removal
+# takes effect on the running container, not just the next image build.
+# Example: ODOO_PURGE_VOLUME_MODULES=mgmtsystem,mgmtsystem_audit,document_page
+if [ -n "$ODOO_PURGE_VOLUME_MODULES" ]; then
+    echo "=== Purging volume-persistent modules: $ODOO_PURGE_VOLUME_MODULES ==="
+    IFS=',' read -ra _PURGE_MODS <<< "$ODOO_PURGE_VOLUME_MODULES"
+    for mod in "${_PURGE_MODS[@]}"; do
+        mod="$(echo "$mod" | tr -d '[:space:]')"
+        [ -z "$mod" ] && continue
+        # Reject anything that isn't a plain module name — defends against
+        # path-traversal (e.g. '../foo') escaping /var/lib/odoo/addons/.
+        if ! [[ "$mod" =~ ^[A-Za-z0-9_]+$ ]]; then
+            echo "=== Skipping invalid module name: '$mod' ==="
+            continue
+        fi
+        for d in /var/lib/odoo/addons/*/"$mod" /var/lib/odoo/addons/"$mod"; do
+            if [ -d "$d" ]; then
+                echo "=== Purging $mod at $d ==="
+                rm -rf "$d"
+            fi
+        done
+    done
+fi
+
 # Remove broken/non-installable modules from ALL addons paths
 # These modules cause registry failures during update (view validation errors,
 # incompatible versions, missing dependencies)

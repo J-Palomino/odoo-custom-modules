@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=127
+ARG CACHEBUST=130
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -95,19 +95,28 @@ COPY --chown=odoo:odoo onlyoffice_odoo /opt/extra-addons/onlyoffice_odoo
 # ── Mail FK hardening (idempotent FK repairs for module installs) ────
 COPY --chown=odoo:odoo mint_mail_fk_hardening /opt/extra-addons/mint_mail_fk_hardening
 
-# ── DROPPED 2026-05-20: OCA Tier Validation / Knowledge / QMS bundle ──
-# 13 OCA modules (base_tier_validation*, document_knowledge, document_page*,
-# mgmtsystem*) were ported from 18.0→19.0 in commit 3946172 but shipped
-# multiple v19-incompat bugs:
-#   • base_tier_validation: top-level `await import` in systray JS →
-#     entire web.assets_backend bundle failed, white-paged the SPA
-#   • mgmtsystem_nonconformity: stale _thread_to_store override on
-#     mail.thread → first TypeError on signature, then RecursionError on
-#     store.add (Odoo 19 dispatches recursively via Store.add → _thread_to_store)
-# Module files still live in the repo (odoo-custom-modules/<module>/) for
-# future reference, but they are NOT shipped to the image. Re-installing
-# requires a proper v19 port + staging smoke test. See memory entry
-# `oca-port-bundle-v19-broken` for the full incident log.
+# ── OCA Tier Validation (approval workflows, ported from 18.0) ───────
+# Originally dropped 2026-05-20 (e1d1875) after v19-incompat bugs in the
+# 18→19 port. Staging branch has carried fixes since 2026-05-22 (await
+# import → lazy load; mgmtsystem_nonconformity uses add_records_fields).
+# Re-shipped 2026-05-27 — see memory entry `oca-bundle-v19-working-set`.
+COPY --chown=odoo:odoo base_tier_validation /opt/extra-addons/base_tier_validation
+COPY --chown=odoo:odoo base_tier_validation_formula /opt/extra-addons/base_tier_validation_formula
+
+# ── OCA Knowledge (internal wiki/documentation, ported from 18.0) ────
+COPY --chown=odoo:odoo document_knowledge /opt/extra-addons/document_knowledge
+COPY --chown=odoo:odoo document_page /opt/extra-addons/document_page
+
+# ── OCA Management System / QMS (quality mgmt, ported from 18.0) ─────
+COPY --chown=odoo:odoo mgmtsystem /opt/extra-addons/mgmtsystem
+COPY --chown=odoo:odoo mgmtsystem_action /opt/extra-addons/mgmtsystem_action
+COPY --chown=odoo:odoo mgmtsystem_nonconformity /opt/extra-addons/mgmtsystem_nonconformity
+COPY --chown=odoo:odoo document_page_procedure /opt/extra-addons/document_page_procedure
+COPY --chown=odoo:odoo mgmtsystem_manual /opt/extra-addons/mgmtsystem_manual
+COPY --chown=odoo:odoo document_page_quality_manual /opt/extra-addons/document_page_quality_manual
+COPY --chown=odoo:odoo mgmtsystem_audit /opt/extra-addons/mgmtsystem_audit
+COPY --chown=odoo:odoo mgmtsystem_review /opt/extra-addons/mgmtsystem_review
+COPY --chown=odoo:odoo mgmtsystem_quality /opt/extra-addons/mgmtsystem_quality
 
 # ── OCA modules (flattened from submodules) ──────────────────────────
 COPY --chown=odoo:odoo vault /opt/extra-addons/vault
