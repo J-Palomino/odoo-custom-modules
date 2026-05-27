@@ -1,4 +1,4 @@
-from datetime import date as _date
+from datetime import date as _date, timedelta
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
@@ -99,6 +99,44 @@ class DealSubmission(models.Model):
         string='Preferred Days of Week',
         help='e.g. Mon, Wed, Fri',
     )
+
+    # --- Plot windows (structured replacement for preferred_start/end) ---
+    window_ids = fields.One2many(
+        'mint.deal.submission.window',
+        'submission_id',
+        string='Plot Windows',
+        help='Non-contiguous date windows. Replayed onto the resulting '
+             'mint.ptl.deal.day_ids when the submission is converted.',
+    )
+    windows_summary = fields.Char(
+        string='Schedule Summary',
+        compute='_compute_windows_summary',
+        store=True,
+    )
+
+    @api.depends('window_ids.date_start', 'window_ids.date_end')
+    def _compute_windows_summary(self):
+        for rec in self:
+            parts = []
+            for w in rec.window_ids:
+                if not w.date_start or not w.date_end:
+                    continue
+                if w.date_start == w.date_end:
+                    parts.append(w.date_start.strftime('%b %-d'))
+                else:
+                    same_year = w.date_start.year == w.date_end.year
+                    same_month = same_year and w.date_start.month == w.date_end.month
+                    if same_month:
+                        parts.append(
+                            f"{w.date_start.strftime('%b %-d')}–"
+                            f"{w.date_end.strftime('%-d')}"
+                        )
+                    else:
+                        parts.append(
+                            f"{w.date_start.strftime('%b %-d')}–"
+                            f"{w.date_end.strftime('%b %-d')}"
+                        )
+            rec.windows_summary = ', '.join(parts) or False
 
     # --- State machine ---
     state = fields.Selection(
@@ -248,10 +286,34 @@ class DealSubmission(models.Model):
             'state': 'converted',
             'deal_id': deal.id,
         })
-        self.message_post(
-            body=f"Converted to PTL Deal: {deal.name} (id={deal.id})",
-            message_type='comment',
-        )
+
+        # Replay any structured plot windows onto the new deal's day_ids.
+        # Falls back to no-op when window_ids is empty (legacy submissions
+        # that only set preferred_start/end use the old free-text path).
+        plotted_count = 0
+        if self.window_ids and self.market_id:
+            dates = []
+            for w in self.window_ids:
+                if not w.date_start or not w.date_end:
+                    continue
+                cur = w.date_start
+                while cur <= w.date_end:
+                    dates.append(cur.isoformat())
+                    cur += timedelta(days=1)
+            # Dedupe while preserving order.
+            seen = set()
+            uniq = [d for d in dates if not (d in seen or seen.add(d))]
+            if uniq:
+                day_ids = deal.action_plot_windows(uniq, market_id=self.market_id.id)
+                plotted_count = len(day_ids)
+
+        body = f"Converted to PTL Deal: {deal.name} (id={deal.id})"
+        if plotted_count:
+            body += (
+                f" — plotted {plotted_count} day(s) across "
+                f"{len(self.window_ids)} window(s)."
+            )
+        self.message_post(body=body, message_type='comment')
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'mint.ptl.deal',
