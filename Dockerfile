@@ -69,6 +69,7 @@ COPY --chown=odoo:odoo mint_posthog /opt/extra-addons/mint_posthog
 COPY --chown=odoo:odoo mint_sw_buster /opt/extra-addons/mint_sw_buster
 COPY --chown=odoo:odoo mint_loki_logger /opt/extra-addons/mint_loki_logger
 COPY --chown=odoo:odoo mint_sms_telnyx /opt/extra-addons/mint_sms_telnyx
+COPY --chown=odoo:odoo mint_messaging_menu_jump /opt/extra-addons/mint_messaging_menu_jump
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
