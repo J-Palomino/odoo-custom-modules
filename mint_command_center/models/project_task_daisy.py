@@ -1,16 +1,22 @@
 """Hook for posting Odoo project.task records to the daisy.plus ci-fleet-v2
 Functional Analyst agency.
 
-When the ``daisy-fa`` ``project.tags`` is added to a task — via ANY write
-path (UI, XML-RPC, REST, base.automation, server actions) — this module's
-``write()`` override fires :py:meth:`_trigger_daisy_fa` against the newly
-tagged record. A ``base.automation`` rule is still acceptable but no
-longer required, because :py:meth:`write` enforces the trigger universally.
+The trigger fires on ``project.task.write()`` for two independent signals:
 
-API key + agency ID live in ``ir.config_parameter``:
+1. The ``daisy-fa`` ``project.tags`` is added to a task (absent → present).
+2. A configured Daisy bot user is assigned to a task (absent → present in
+   ``user_ids``). The bot user id lives in
+   ``ir.config_parameter`` key ``daisy.plus.fa_user_id``.
 
-    daisy.plus.api_key
-    daisy.plus.ci_fleet_v2.agency_id
+Either signal posts the task to the configured daisy.plus agency. The
+write() override enforces this universally — UI, XML-RPC, REST, server
+actions, base.automation all go through write().
+
+ir.config_parameter keys consumed:
+
+    daisy.plus.api_key                 — Bearer token (optional)
+    daisy.plus.ci_fleet_v2.agency_id   — agency UUID
+    daisy.plus.fa_user_id              — res.users id of the Daisy FA bot
 """
 import json
 import logging
@@ -28,24 +34,54 @@ class ProjectTaskDaisy(models.Model):
     _inherit = 'project.task'
 
     def write(self, vals):
-        """Fire the daisy FA trigger when the ``daisy-fa`` tag transitions
-        from absent → present on a record. Idempotent: a record that already
-        has the tag will not re-fire on subsequent writes.
+        """Fire the daisy FA trigger on tag-add OR bot-user-assign.
+        Idempotent per signal: a record that already has the tag/user won't
+        re-fire on subsequent writes.
         """
-        # Identify the tag id once (cheap; cached for the transaction).
+        # Diagnostic — confirms the override is actually being invoked.
+        _logger.warning(
+            'DAISY_WRITE_HIT ids=%s keys=%s', self.ids, list(vals.keys()))
+
+        icp = self.env['ir.config_parameter'].sudo()
         tag = self.env['project.tags'].sudo().search(
             [('name', '=', _DAISY_TAG_NAME)], limit=1)
-        had_tag_before = {r.id: tag and tag.id in r.tag_ids.ids for r in self}
+        bot_user_id_str = icp.get_param('daisy.plus.fa_user_id') or ''
+        bot_user_id = int(bot_user_id_str) if bot_user_id_str.isdigit() else 0
+
+        had_tag_before = {
+            r.id: bool(tag) and tag.id in r.tag_ids.ids for r in self}
+        had_bot_before = {
+            r.id: bot_user_id and bot_user_id in r.user_ids.ids
+            for r in self}
+
         result = super().write(vals)
-        if tag and 'tag_ids' in vals:
-            for rec in self:
+
+        tag_write = bool(tag) and 'tag_ids' in vals
+        user_write = bool(bot_user_id) and 'user_ids' in vals
+        if not (tag_write or user_write):
+            return result
+
+        for rec in self:
+            fire = False
+            reason = []
+            if tag_write:
                 has_tag_now = tag.id in rec.tag_ids.ids
                 if has_tag_now and not had_tag_before.get(rec.id):
-                    try:
-                        rec._trigger_daisy_fa()
-                    except Exception:
-                        _logger.exception(
-                            'daisy.plus FA trigger error on task %s', rec.id)
+                    fire = True
+                    reason.append('tag')
+            if user_write:
+                has_bot_now = bot_user_id in rec.user_ids.ids
+                if has_bot_now and not had_bot_before.get(rec.id):
+                    fire = True
+                    reason.append('assignee')
+            if fire:
+                _logger.warning(
+                    'DAISY_FIRE task=%s reason=%s', rec.id, ','.join(reason))
+                try:
+                    rec._trigger_daisy_fa()
+                except Exception:
+                    _logger.exception(
+                        'daisy.plus FA trigger error on task %s', rec.id)
         return result
 
     def _trigger_daisy_fa(self):
@@ -56,8 +92,6 @@ class ProjectTaskDaisy(models.Model):
         """
         icp = self.env['ir.config_parameter'].sudo()
         agency_id = icp.get_param('daisy.plus.ci_fleet_v2.agency_id')
-        # The prediction endpoint does not require auth (UUID-as-secret model);
-        # we still send the key if configured, in case daisy enables it later.
         api_key = icp.get_param('daisy.plus.api_key')
         if not agency_id:
             _logger.warning('daisy.plus.ci_fleet_v2.agency_id is not configured')
