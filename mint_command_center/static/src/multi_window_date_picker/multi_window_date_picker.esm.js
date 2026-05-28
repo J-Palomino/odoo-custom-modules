@@ -4,6 +4,7 @@ import { registry } from "@web/core/registry";
 import { Component } from "@odoo/owl";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { _t } from "@web/core/l10n/translation";
+import { serializeDate } from "@web/core/l10n/dates";
 
 /**
  * Multi-window date picker — bound to mint.deal.submission.window_ids.
@@ -25,27 +26,23 @@ export class MultiWindowDatePicker extends Component {
     }
 
     get records() {
-        // StaticList.records is the canonical accessor in Odoo 19.
         return this.list.records || [];
     }
 
-    /** Total number of distinct days across the union of all windows. */
+    /** Total number of distinct days across the union of all windows.
+     * Iterates via Luxon's .plus({days: 1}) to stay in the field's local
+     * calendar — sidesteps the JS Date / .toISOString() UTC drift that
+     * misdedupes ranges for users east of UTC. */
     get dayCount() {
         const seen = new Set();
         for (const rec of this.records) {
             const ds = rec.data.date_start;
             const de = rec.data.date_end;
-            if (!ds || !de) continue;
-            // Odoo passes Luxon DateTime objects for Date fields; tolerate
-            // both Luxon and ISO-string shapes.
-            const start = ds.toJSDate ? ds.toJSDate() : new Date(ds);
-            const end = de.toJSDate ? de.toJSDate() : new Date(de);
-            if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) continue;
-            const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-            const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-            while (cur <= last) {
-                seen.add(cur.toISOString().slice(0, 10));
-                cur.setDate(cur.getDate() + 1);
+            if (!ds || !de || !ds.toFormat || de < ds) continue;
+            let cur = ds;
+            while (cur <= de) {
+                seen.add(serializeDate(cur));
+                cur = cur.plus({ days: 1 });
             }
         }
         return seen.size;
@@ -55,28 +52,32 @@ export class MultiWindowDatePicker extends Component {
         return this.records.length;
     }
 
-    /** ISO date (YYYY-MM-DD) suitable for an HTML <input type="date"> value. */
+    /** ISO date (YYYY-MM-DD) for HTML <input type="date">. Date fields
+     * always materialize as Luxon DateTime in the OWL record layer. */
     isoFor(field, rec) {
         const v = rec.data[field];
-        if (!v) return "";
-        if (v.toISODate) return v.toISODate();  // Luxon
-        if (typeof v === "string") return v.slice(0, 10);
-        return "";
+        return v ? serializeDate(v) : "";
     }
 
     async addWindow() {
-        // Default new window to "today..today" — the user immediately picks
-        // real dates. Sequence trails the highest existing seq by +10.
         const maxSeq = this.records.reduce(
             (m, r) => Math.max(m, r.data.sequence || 0), 0
         );
-        const today = new Date().toISOString().slice(0, 10);
+        // Default new window to (last_end + 1 day) for natural composition;
+        // fall back to today when there's no prior window.
+        let defaultStart;
+        const lastRec = this.records[this.records.length - 1];
+        if (lastRec && lastRec.data.date_end && lastRec.data.date_end.plus) {
+            defaultStart = serializeDate(lastRec.data.date_end.plus({ days: 1 }));
+        } else {
+            defaultStart = new Date().toISOString().slice(0, 10);
+        }
         await this.list.addNewRecord({
             position: "bottom",
             context: {
                 default_sequence: maxSeq + 10,
-                default_date_start: today,
-                default_date_end: today,
+                default_date_start: defaultStart,
+                default_date_end: defaultStart,
             },
             mode: "edit",
         });
@@ -96,6 +97,17 @@ export const multiWindowDatePicker = {
     component: MultiWindowDatePicker,
     displayName: _t("Multi-Window Date Picker"),
     supportedTypes: ["one2many"],
+    // Eagerly load these child fields — without relatedFields AND without an
+    // inner <list> in the form view, the relational model only loads id +
+    // display_name, leaving rec.data.date_start etc. undefined at render.
+    // Precedent: base_tier_validation/.../tier_review_widget.esm.js:39-50.
+    relatedFields: [
+        { name: "id",         type: "integer" },
+        { name: "sequence",   type: "integer" },
+        { name: "date_start", type: "date" },
+        { name: "date_end",   type: "date" },
+        { name: "day_count",  type: "integer" },
+    ],
 };
 
 registry.category("fields").add("multi_window_date_picker", multiWindowDatePicker);
