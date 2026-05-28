@@ -90,6 +90,16 @@ class MintPosOrder(models.Model):
         tracking=True,
         index=True,
     )
+    lane_id = fields.Many2one(
+        'mint.pos.lane',
+        string='Lane',
+        index=True,
+        tracking=True,
+        domain="[('company_id', '=', company_id)]",
+        help='Per-store Dutchie swimlane. NULL for terminal-state orders. '
+             'Source-of-truth for live orders; state mirrors lane.category. '
+             'See mint.pos.lane.',
+    )
     order_type = fields.Selection(
         selection=ORDER_TYPES,
         string='Order Type',
@@ -241,11 +251,62 @@ class MintPosOrder(models.Model):
                 ) or 'New'
         return super().create(vals_list)
 
+    # Terminal states never have a Dutchie lane (Dutchie drops the order from
+    # getCheckedInGuests once it hits these). `state` stays source-of-truth here.
+    _TERMINAL_STATES = ('completed', 'cancelled', 'picked_up', 'delivery_completed')
+
     def write(self, vals):
+        # ---- lane_id <-> state synchronizer (Phase 1 of swimlane-mirror) ----
+        # Keep state and lane_id consistent without breaking any existing
+        # state= writer. Three cases:
+        #
+        # 1. vals sets lane_id only → derive state from the lane's category.
+        # 2. vals sets state to a terminal value → clear lane_id (Dutchie drops it).
+        # 3. vals sets state to a non-terminal value → backfill lane_id post-write
+        #    on records that don't already have one (handled after super().write()
+        #    since we need per-record company_id).
+        if vals.get('lane_id') and 'state' not in vals:
+            lane = self.env['mint.pos.lane'].browse(vals['lane_id'])
+            if lane.exists() and lane.category:
+                vals['state'] = lane.category
+        if vals.get('state') in self._TERMINAL_STATES:
+            vals['lane_id'] = False
+
         res = super().write(vals)
         new_state = vals.get('state')
         if not new_state:
             return res
+
+        # Case 3: non-terminal state write, no lane_id explicitly set.
+        # Group orders by company so we can find_or_create per-store lanes.
+        if (
+            new_state not in self._TERMINAL_STATES
+            and 'lane_id' not in vals
+        ):
+            Lane = self.env['mint.pos.lane'].sudo()
+            needs_lane = self.filtered(
+                lambda o: not o.lane_id or o.lane_id.category != new_state
+            )
+            for order in needs_lane:
+                if not order.company_id:
+                    continue
+                target = Lane.search(
+                    [
+                        ('company_id', '=', order.company_id.id),
+                        ('category', '=', new_state),
+                        ('active', '=', True),
+                    ],
+                    order='sequence, id',
+                    limit=1,
+                )
+                if not target:
+                    target = Lane.find_or_create_by_dutchie_name(
+                        order.company_id.id,
+                        new_state.replace('_', ' ').title(),
+                    )
+                    target.category = new_state
+                # Bypass write() recursion: lane_id only, no state change here.
+                super(MintPosOrder, order).write({'lane_id': target.id})
 
         now = fields.Datetime.now()
 
