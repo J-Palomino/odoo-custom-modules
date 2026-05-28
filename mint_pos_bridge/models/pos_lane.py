@@ -45,6 +45,46 @@ LANE_CATEGORIES = [
     ('other', 'Other'),
 ]
 
+VALID_CATEGORIES = frozenset(c for c, _ in LANE_CATEGORIES)
+
+# Order state (mint.pos.order.state) → nearest lane category.
+# The state enum carries legacy/frontend values (placed/confirmed/preparing/
+# ready) that aren't lane categories — map them to the nearest live lane.
+# Terminal states (completed/cancelled/picked_up/delivery_completed) are
+# intentionally absent: those orders carry NO lane (lane_id=NULL).
+STATE_TO_CATEGORY = {
+    'lobby': 'lobby',
+    'online_orders': 'online_orders',
+    'sales_floor': 'sales_floor',
+    'processing': 'processing',
+    'pickup': 'pickup',
+    'deli_counter': 'deli_counter',
+    'credit_checkout': 'credit_checkout',
+    'delivery': 'delivery',
+    'ready_delivery': 'ready_delivery',
+    'delivery_progress': 'delivery_progress',
+    'placed': 'online_orders',
+    'confirmed': 'online_orders',
+    'preparing': 'processing',
+    'ready': 'pickup',
+}
+
+# Lane category → order state, for the reverse (lane_id write → mirror state).
+# Only the 1:1 overlap is mapped. employee/unassigned/other have no order
+# state, so an order moved into one of those lanes keeps its current state.
+CATEGORY_TO_STATE = {
+    'lobby': 'lobby',
+    'online_orders': 'online_orders',
+    'sales_floor': 'sales_floor',
+    'processing': 'processing',
+    'pickup': 'pickup',
+    'deli_counter': 'deli_counter',
+    'credit_checkout': 'credit_checkout',
+    'delivery': 'delivery',
+    'ready_delivery': 'ready_delivery',
+    'delivery_progress': 'delivery_progress',
+}
+
 
 class MintPosLane(models.Model):
     _name = 'mint.pos.lane'
