@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="mint_command_center.MultiWindowDatePicker">
+        <div class="o_mwdp" data-testid="multi-window-date-picker">
+            <table class="o_mwdp_table table table-sm mb-2">
+                <thead>
+                    <tr>
+                        <th style="width: 40%">Start Date</th>
+                        <th style="width: 40%">End Date</th>
+                        <th style="width: 10%; text-align: right">Days</th>
+                        <th style="width: 10%"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <t t-if="records.length === 0">
+                        <tr>
+                            <td colspan="4" class="o_mwdp_empty text-muted text-center py-3">
+                                No windows yet. Click <b>+ Add Window</b> to plot the deal on one or more date ranges.
+                            </td>
+                        </tr>
+                    </t>
+                    <t t-foreach="records" t-as="rec" t-key="rec.id">
+                        <tr class="o_mwdp_row" t-att-data-testid="'mwdp-row-' + rec_index">
+                            <td>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       t-att-data-testid="'mwdp-start-' + rec_index"
+                                       t-att-value="isoFor('date_start', rec)"
+                                       t-on-change="(ev) => this.onDateChange(rec, 'date_start', ev)"/>
+                            </td>
+                            <td>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       t-att-data-testid="'mwdp-end-' + rec_index"
+                                       t-att-value="isoFor('date_end', rec)"
+                                       t-on-change="(ev) => this.onDateChange(rec, 'date_end', ev)"/>
+                            </td>
+                            <td class="text-end align-middle text-muted">
+                                <span t-att-data-testid="'mwdp-row-days-' + rec_index"
+                                      t-esc="rec.data.day_count or 0"/>
+                            </td>
+                            <td class="text-end align-middle">
+                                <button type="button"
+                                        class="btn btn-sm btn-link text-danger p-0"
+                                        title="Remove window"
+                                        t-att-data-testid="'mwdp-delete-' + rec_index"
+                                        t-on-click="() => this.removeWindow(rec)">
+                                    <i class="fa fa-trash-o"/>
+                                </button>
+                            </td>
+                        </tr>
+                    </t>
+                </tbody>
+            </table>
+            <div class="d-flex justify-content-between align-items-center">
+                <button type="button"
+                        class="btn btn-sm btn-secondary"
+                        data-testid="mwdp-add-window"
+                        t-on-click="addWindow">
+                    <i class="fa fa-plus me-1"/> Add Window
+                </button>
+                <div class="o_mwdp_counter text-muted small" data-testid="mwdp-counter">
+                    Selected: <b><t t-esc="dayCount"/></b> day<t t-if="dayCount !== 1">s</t>
+                    across <b><t t-esc="windowCount"/></b> window<t t-if="windowCount !== 1">s</t>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>

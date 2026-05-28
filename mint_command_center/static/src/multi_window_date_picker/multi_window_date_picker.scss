@@ -1,0 +1,32 @@
+.o_mwdp {
+    .o_mwdp_table {
+        margin-bottom: 0.5rem;
+
+        thead th {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: #6c757d;
+            border-bottom-width: 1px;
+        }
+
+        tbody td {
+            vertical-align: middle;
+            padding: 0.35rem 0.5rem;
+        }
+
+        .o_mwdp_empty {
+            font-style: italic;
+        }
+    }
+
+    .o_mwdp_counter {
+        font-size: 0.85rem;
+    }
+
+    .btn-link.text-danger {
+        text-decoration: none;
+    }
+    .btn-link.text-danger:hover i {
+        opacity: 0.7;
+    }
+}

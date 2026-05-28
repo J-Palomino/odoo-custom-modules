@@ -73,31 +73,52 @@
                             <field name="vendor_funding_terms" placeholder="Payment terms, MOQ, etc."/>
                         </group>
                     </group>
-                    <group>
-                        <group string="Targeting">
+                    <group string="Targeting">
+                        <group>
                             <field name="market_id" options="{'no_create': True}"/>
+                        </group>
+                        <group>
                             <field name="store_ids" widget="many2many_tags"
                                    options="{'no_create': True}"/>
                         </group>
-                        <group string="Date Preferences">
-                            <field name="preferred_start_date"/>
-                            <field name="preferred_end_date"/>
-                            <field name="preferred_days"/>
-                        </group>
                     </group>
-                    <group string="Details &amp; Exclusions">
-                        <field name="details_exclusions" nolabel="1"
-                               placeholder="Product exclusions and conditions..."/>
-                    </group>
-                    <group string="Review" invisible="not reviewed_by">
-                        <group>
-                            <field name="reviewed_by"/>
-                            <field name="reviewed_at"/>
-                        </group>
-                        <group>
-                            <field name="reviewer_notes"/>
-                        </group>
-                    </group>
+                    <notebook>
+                        <page string="Schedule" name="schedule">
+                            <group>
+                                <field name="windows_summary" readonly="1"/>
+                            </group>
+                            <field name="window_ids"
+                                   widget="multi_window_date_picker"
+                                   nolabel="1"/>
+                            <group string="Legacy vendor preferences (read-only)"
+                                   class="o_mdcc_legacy_prefs">
+                                <field name="preferred_start_date" readonly="1"/>
+                                <field name="preferred_end_date" readonly="1"/>
+                                <field name="preferred_days" readonly="1"/>
+                            </group>
+                        </page>
+                        <page string="Inclusions" name="inclusions" invisible="True">
+                            <!-- Stub: filled in by the sibling rule-tabs ticket. -->
+                        </page>
+                        <page string="Exclusions" name="exclusions" invisible="True">
+                            <!-- Stub: filled in by the sibling rule-tabs ticket. -->
+                        </page>
+                        <page string="Details &amp; Exclusions Notes" name="details_notes">
+                            <field name="details_exclusions" nolabel="1"
+                                   placeholder="Product exclusions and conditions..."/>
+                        </page>
+                        <page string="Review" name="review" invisible="not reviewed_by">
+                            <group>
+                                <group>
+                                    <field name="reviewed_by"/>
+                                    <field name="reviewed_at"/>
+                                </group>
+                                <group>
+                                    <field name="reviewer_notes"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
                 </sheet>
                 <chatter/>
             </form>
