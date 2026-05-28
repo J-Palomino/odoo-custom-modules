@@ -57,11 +57,16 @@
                         </group>
                         <group string="Deal Details">
                             <field name="product_category"/>
-                            <field name="discount_type"/>
-                            <field name="discount_value"/>
+                            <field name="discount_type" readonly="1"
+                                   help="Mirrors the first option below. Edit options to change."/>
+                            <field name="discount_value" readonly="1"/>
                             <field name="original_price"/>
                             <field name="sales_details"/>
                         </group>
+                    </group>
+                    <group string="Deal Options"
+                           help="Add one row per distinct discount. Each option becomes its own PTL row after approve/convert.">
+                        <field name="option_ids" nolabel="1"/>
                     </group>
                     <group string="Vendor Funding">
                         <group>

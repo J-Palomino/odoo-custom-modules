@@ -66,8 +66,25 @@ class DealSubmission(models.Model):
             ('clearance', 'Clearance (Near Expiry)'),
         ],
         string='Discount Type',
+        compute='_compute_primary_option_fields',
+        inverse='_inverse_primary_option_fields',
+        store=True,
+        readonly=False,
     )
-    discount_value = fields.Float(string='Discount Value')
+    discount_value = fields.Float(
+        string='Discount Value',
+        compute='_compute_primary_option_fields',
+        inverse='_inverse_primary_option_fields',
+        store=True,
+        readonly=False,
+    )
+    option_ids = fields.One2many(
+        'mint.deal.submission.option',
+        'submission_id',
+        string='Deal Options',
+        help='Each option becomes its own PTL row after approve/convert '
+             '(e.g. Bundle + BOGO on the same product).',
+    )
     original_price = fields.Float(string='Original / MSRP Price')
     sales_details = fields.Text(
         string='Sales Details',
@@ -126,6 +143,51 @@ class DealSubmission(models.Model):
     reviewed_at = fields.Datetime(string='Reviewed At', readonly=True)
     rejection_reason = fields.Text(string='Rejection Reason')
     reviewer_notes = fields.Text(string='Reviewer Notes')
+
+    # --- Primary-option mirror (same pattern as mint.ptl.deal, Phase 2) ---
+
+    def _primary_option(self):
+        # Sort explicitly: same-transaction sequence writes don't re-sort
+        # the in-cache o2m until flush.
+        self.ensure_one()
+        return self.option_ids.sorted(lambda o: (o.sequence, o.id))[:1]
+
+    def _primary_option_vals(self, discount_type, discount_value):
+        return {
+            'submission_id': self.id,
+            'sequence': 10,
+            'discount_type': discount_type,
+            'discount_value': discount_value or 0.0,
+        }
+
+    @api.depends('option_ids', 'option_ids.discount_type',
+                 'option_ids.discount_value', 'option_ids.sequence')
+    def _compute_primary_option_fields(self):
+        for rec in self:
+            primary = rec._primary_option()
+            rec.discount_type = primary.discount_type if primary else False
+            rec.discount_value = primary.discount_value if primary else 0.0
+
+    def _inverse_primary_option_fields(self):
+        # Legacy write-path: setting discount_type/value on the submission
+        # upserts the first option; clearing discount_type unlinks it so the
+        # mirror doesn't snap back on next recompute.
+        Option = self.env['mint.deal.submission.option']
+        for rec in self:
+            primary = rec._primary_option()
+            if not rec.discount_type:
+                if primary:
+                    primary.unlink()
+                continue
+            if primary:
+                primary.write({
+                    'discount_type': rec.discount_type,
+                    'discount_value': rec.discount_value,
+                })
+            else:
+                Option.create(rec._primary_option_vals(
+                    rec.discount_type, rec.discount_value,
+                ))
 
     # --- Actions ---
 
@@ -226,15 +288,27 @@ class DealSubmission(models.Model):
 
         self._check_plot_gate()
 
+        # Copy options across so a multi-option submission converts to a
+        # multi-option deal. The mirror compute on ptl.deal refreshes
+        # discount_type/discount_value from option[0] automatically, so we
+        # don't pass them in create() vals here.
+        option_vals = [
+            (0, 0, {
+                'sequence': opt.sequence,
+                'discount_type': opt.discount_type,
+                'discount_value': opt.discount_value,
+                'sales_details': opt.sales_details or False,
+            })
+            for opt in self.option_ids.sorted(lambda o: (o.sequence, o.id))
+        ]
         deal = self.env['mint.ptl.deal'].create({
             'name': self.name,
             'brand_id': self.brand_id.id if self.brand_id else False,
             'product_category': self.product_category,
-            'discount_type': self.discount_type,
-            'discount_value': self.discount_value,
             'original_price': self.original_price,
             'sales_details': self.sales_details,
             'details_exclusions': self.details_exclusions,
+            'option_ids': option_vals,
             'store_ids': [(6, 0, self.store_ids.ids)] if self.store_ids else False,
             'market_id': self.market_id.id if self.market_id else False,
             'state': 'approved',

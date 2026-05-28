@@ -25,6 +25,9 @@ access_push_banner_manager,mint.push.banner.manager,model_mint_push_banner,group
 access_deal_submission_viewer,mint.deal.submission.viewer,model_mint_deal_submission,group_viewer,1,0,0,0
 access_deal_submission_vendor_mgr,mint.deal.submission.vendor_mgr,model_mint_deal_submission,group_vendor_manager,1,1,1,1
 access_deal_submission_ptl_mgr,mint.deal.submission.ptl_mgr,model_mint_deal_submission,group_ptl_manager,1,1,1,0
+access_deal_submission_option_viewer,mint.deal.submission.option.viewer,model_mint_deal_submission_option,group_viewer,1,0,0,0
+access_deal_submission_option_vendor_mgr,mint.deal.submission.option.vendor_mgr,model_mint_deal_submission_option,group_vendor_manager,1,1,1,1
+access_deal_submission_option_ptl_mgr,mint.deal.submission.option.ptl_mgr,model_mint_deal_submission_option,group_ptl_manager,1,1,1,1
 access_brand_calendar_viewer,mint.brand.calendar.entry.viewer,model_mint_brand_calendar_entry,group_viewer,1,0,0,0
 access_brand_calendar_vendor_mgr,mint.brand.calendar.entry.vendor_mgr,model_mint_brand_calendar_entry,group_vendor_manager,1,1,1,1
 access_brand_calendar_ptl_mgr,mint.brand.calendar.entry.ptl_mgr,model_mint_brand_calendar_entry,group_ptl_manager,1,1,1,1
