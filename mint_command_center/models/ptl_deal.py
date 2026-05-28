@@ -350,13 +350,22 @@ class PtlDeal(models.Model):
         ]
         return Category.search(domain)
 
-    @api.depends('brand_id', 'product_category', 'excluded_skus')
+    @api.depends('brand_id', 'product_category', 'excluded_skus', 'explicit_product_ids')
     def _compute_matching_products(self):
         Template = self.env['product.template'].sudo()
         for rec in self:
             if not rec.brand_id:
                 rec.matching_product_ids = False
                 rec.matching_product_count = 0
+                continue
+            # Explicit set wins when populated — intersect with brand_id
+            # so a stale-brand pick doesn't sneak through.
+            if rec.explicit_product_ids:
+                explicit = rec.explicit_product_ids.filtered(
+                    lambda p: p.brand_id == rec.brand_id
+                )
+                rec.matching_product_ids = explicit
+                rec.matching_product_count = len(explicit)
                 continue
             domain = [('brand_id', '=', rec.brand_id.id)]
             if rec.product_category:
