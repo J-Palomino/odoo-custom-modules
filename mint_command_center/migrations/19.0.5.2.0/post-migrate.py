@@ -23,6 +23,7 @@ def migrate(cr, version):
         SELECT s.id, s.discount_type, s.discount_value
         FROM mint_deal_submission s
         WHERE s.discount_type IS NOT NULL
+          AND s.discount_type <> ''
           AND NOT EXISTS (
             SELECT 1
             FROM mint_deal_submission_option o

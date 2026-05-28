@@ -301,6 +301,16 @@ class DealSubmission(models.Model):
             })
             for opt in self.option_ids.sorted(lambda o: (o.sequence, o.id))
         ]
+        # Fallback for submissions with no options (legacy rows not yet
+        # backfilled, or created via a path that bypassed the inverse):
+        # seed one option from the mirror fields so the converted deal
+        # still carries its discount instead of plotting a no-op.
+        if not option_vals and self.discount_type:
+            option_vals = [(0, 0, {
+                'sequence': 10,
+                'discount_type': self.discount_type,
+                'discount_value': self.discount_value,
+            })]
         deal = self.env['mint.ptl.deal'].create({
             'name': self.name,
             'brand_id': self.brand_id.id if self.brand_id else False,

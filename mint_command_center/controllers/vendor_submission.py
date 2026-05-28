@@ -69,7 +69,10 @@ class VendorSubmissionController(http.Controller):
             'vendor_phone': post.get('vendor_phone', '').strip(),
             'name': post.get('deal_name', '').strip(),
             'product_category': post.get('product_category', ''),
-            'discount_type': post.get('discount_type', ''),
+            # Coerce blank → False: discount_type is now a Selection mirror of
+            # option_ids; an empty string is not a valid Selection member and
+            # would break the option-backfill migration's required field.
+            'discount_type': post.get('discount_type') or False,
             'details_exclusions': post.get('details_exclusions', '').strip(),
             'sales_details': post.get('sales_details', '').strip(),
             'vendor_funding_terms': post.get('vendor_funding_terms', '').strip(),
