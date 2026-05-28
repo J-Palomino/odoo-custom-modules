@@ -4,7 +4,7 @@ import { registry } from "@web/core/registry";
 import { Component } from "@odoo/owl";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { _t } from "@web/core/l10n/translation";
-import { serializeDate } from "@web/core/l10n/dates";
+import { serializeDate, deserializeDate } from "@web/core/l10n/dates";
 
 /**
  * Multi-window date picker — bound to mint.deal.submission.window_ids.
@@ -88,7 +88,11 @@ export class MultiWindowDatePicker extends Component {
     }
 
     async onDateChange(rec, fieldName, ev) {
-        const v = ev.target.value || false;
+        // The <input type="date"> yields a "yyyy-MM-dd" string, but record.update
+        // for a Date field expects a Luxon DateTime — passing the raw string
+        // silently no-ops and the row keeps its default value. Deserialize first.
+        const raw = ev.target.value;
+        const v = raw ? deserializeDate(raw) : false;
         await rec.update({ [fieldName]: v });
     }
 }
