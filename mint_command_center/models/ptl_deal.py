@@ -191,6 +191,18 @@ class PtlDeal(models.Model):
         store=True,
         help='Auto-formatted pricing display: ~~$MSRP~~ $SALE | X% Off',
     )
+    format_key = fields.Char(
+        string='Format Key',
+        compute='_compute_format_key',
+        store=True,
+        index=True,
+        help='Rollup key for the public PTL: Brand + Product Line + Weight + rounded '
+             'MSRP. Collapses strain variants of the same format into a single PTL '
+             'row. Blank until a matching product carries a Product Line '
+             '(product.template.x_product_line, backfilled in a later phase); while '
+             'blank the storefront falls back to the deal name so behavior is '
+             'unchanged for unmastered products.',
+    )
 
     # --- Revoke audit (set by mint.deal.revoke.wizard) ---
     previously_revoked = fields.Boolean(
@@ -575,6 +587,42 @@ class PtlDeal(models.Model):
                     rec.display_text = "Clearance"
             else:
                 rec.display_text = ''
+
+    @api.depends('brand_id', 'product_category', 'excluded_skus',
+                 'weight_value', 'weight_unit', 'original_price')
+    def _compute_format_key(self):
+        for rec in self:
+            rec.format_key = rec._build_format_key()
+
+    def _build_format_key(self):
+        """Brand + Product Line + Weight + rounded MSRP.
+
+        Returns False unless both a brand and a resolvable product line are
+        present — a "format" isn't well-defined without the line, and the
+        storefront's `format_key || name` fallback then preserves the current
+        per-deal display until x_product_line is backfilled (phase A3).
+
+        Note: the product line is read from the matching products, so a deal's
+        format_key does NOT auto-recompute when x_product_line changes on a
+        product after the fact. The A3 backfill recomputes affected deals
+        explicitly after writing x_product_line.
+        """
+        self.ensure_one()
+        if not self.brand_id:
+            return False
+        line = ''
+        for prod in self.matching_product_ids:
+            if prod.x_product_line:
+                line = prod.x_product_line.strip()
+                break
+        if not line:
+            return False
+        parts = [(self.brand_id.name or '').strip(), line]
+        if self.weight_value:
+            parts.append(f"{self.weight_value:g}{self.weight_unit or ''}")
+        if self.original_price:
+            parts.append(f"${round(self.original_price)}")
+        return ' '.join(p for p in parts if p)
 
     # --- Revoke wizard launcher ---
 
