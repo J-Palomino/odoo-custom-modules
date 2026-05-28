@@ -298,6 +298,13 @@ class PtlDay(models.Model):
             if cats:
                 vals['category_ids'] = [(6, 0, cats.ids)]
 
+        # Explicit per-product restriction. mint.discount._match_product
+        # already intersects: `if self.product_ids and product.id not in
+        # self.product_ids.ids: return False`, so passing product_ids
+        # narrows the discount without widening anything else.
+        if deal.explicit_product_ids:
+            vals['product_ids'] = [(6, 0, deal.explicit_product_ids.ids)]
+
         return vals
 
     # ─── Webhook Push to Inventory Service ───────────────────────────────
