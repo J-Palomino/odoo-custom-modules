@@ -141,9 +141,10 @@ class PtlDay(models.Model):
         discount_ids = []
 
         for deal in self.deal_ids:
-            discount = self._ensure_discount(deal)
-            Discount._recompute_day_booleans(discount)
-            discount_ids.append(discount.id)
+            discounts = self._ensure_discounts(deal)
+            for discount in discounts:
+                Discount._recompute_day_booleans(discount)
+                discount_ids.append(discount.id)
 
         # Push to inventory service
         self._push_discounts_to_redis(discount_ids)
@@ -181,30 +182,27 @@ class PtlDay(models.Model):
         rescoped = 0
 
         for deal in self.deal_ids:
-            discount = deal.discount_id
-            if not discount:
-                continue
-
             other_days = Day.search([
                 ('id', '!=', self.id),
                 ('state', '=', 'published'),
                 ('deal_ids', 'in', deal.id),
             ])
 
-            if other_days:
-                dates = other_days.mapped('date')
-                discount.write({
-                    'is_published': True,
-                    'valid_from': min(dates),
-                    'valid_until': max(dates),
-                })
-                self.env['mint.discount']._recompute_day_booleans(discount)
-                rescoped += 1
-            else:
-                discount.write({'is_published': False})
-                deactivated += 1
+            for discount in deal.discount_ids:
+                if other_days:
+                    dates = other_days.mapped('date')
+                    discount.write({
+                        'is_published': True,
+                        'valid_from': min(dates),
+                        'valid_until': max(dates),
+                    })
+                    self.env['mint.discount']._recompute_day_booleans(discount)
+                    rescoped += 1
+                else:
+                    discount.write({'is_published': False})
+                    deactivated += 1
 
-            affected_ids.append(discount.id)
+                affected_ids.append(discount.id)
 
         if affected_ids:
             self._push_discounts_to_redis(affected_ids)
@@ -233,33 +231,89 @@ class PtlDay(models.Model):
             },
         }
 
-    def _ensure_discount(self, deal):
-        """Create or update the mint.discount record for a PTL deal."""
+    def _ensure_discounts(self, deal):
+        """Create or update one mint.discount per option on the deal.
+
+        Fans out: a deal with N options produces N discount rows, each with a
+        distinct dutchie_discount_id (ptl_{deal}_opt_{option}). Existing rows
+        are matched by dutchie_discount_id and updated in place; rows that no
+        longer correspond to any option are unpublished so a deleted option
+        stops serving. Returns the recordset of live (kept) discounts.
+        """
         Discount = self.env['mint.discount'].sudo()
-        vals = self._deal_to_discount_vals(deal)
+        options = deal.option_ids.sorted(lambda o: (o.sequence, o.id))
 
-        if deal.discount_id:
-            deal.discount_id.write(vals)
-            return deal.discount_id
+        existing = deal.discount_ids
+        by_ddid = {d.dutchie_discount_id: d for d in existing}
 
-        vals['source'] = 'ptl'
-        discount = Discount.create(vals)
-        deal.write({'discount_id': discount.id})
-        return discount
+        # Fallback for a deal with no options (shouldn't happen post-Phase-2
+        # backfill, but keeps an optionless deal plotting via the mirror
+        # fields instead of silently dropping it).
+        if not options:
+            vals = self._deal_to_discount_vals(deal)
+            match = by_ddid.get(vals['dutchie_discount_id'])
+            if match:
+                match.write(vals)
+                return match
+            if not deal.discount_type:
+                return Discount.browse([])
+            vals['source'] = 'ptl'
+            return Discount.create(vals)
 
-    def _deal_to_discount_vals(self, deal):
-        """Map ptl.deal fields → mint.discount values."""
-        disc_type = DISCOUNT_TYPE_MAP.get(deal.discount_type, 'percent')
+        kept = Discount.browse([])
+        for idx, option in enumerate(options):
+            vals = self._deal_to_discount_vals(deal, option)
+            ddid = vals['dutchie_discount_id']
+            # Migration grace: the legacy single discount used 'ptl_{deal.id}'
+            # (no _opt_ suffix). Reuse it for the first option so we update in
+            # place instead of orphaning it and creating a duplicate.
+            legacy = by_ddid.get(f'ptl_{deal.id}') if idx == 0 else None
+            match = by_ddid.get(ddid) or legacy
+            if match:
+                match.write(vals)
+                discount = match
+            else:
+                vals['source'] = 'ptl'
+                discount = Discount.create(vals)
+            kept |= discount
+
+        # Unpublish any existing discount that no longer maps to an option.
+        orphans = existing - kept
+        if orphans:
+            orphans.write({'is_published': False})
+
+        return kept
+
+    def _deal_to_discount_vals(self, deal, option=None):
+        """Map ptl.deal (+ optional option) fields → mint.discount values.
+
+        When `option` is given, discount_type/value/description and the
+        dutchie_discount_id come from the option; everything else (targeting,
+        dates, brand, category) is deal-level. When omitted, fall back to the
+        deal's mirror fields and the legacy single-discount id.
+        """
+        src_type = option.discount_type if option else deal.discount_type
+        src_value = option.discount_value if option else deal.discount_value
+        disc_type = DISCOUNT_TYPE_MAP.get(src_type, 'percent')
 
         # Normalize discount amount
-        if disc_type == 'percent' and deal.discount_value > 1:
-            amount = deal.discount_value / 100.0
+        if disc_type == 'percent' and src_value > 1:
+            amount = src_value / 100.0
         else:
-            amount = deal.discount_value
+            amount = src_value
+
+        description = (
+            (option.sales_details if option else None)
+            or deal.sales_details
+            or ''
+        )
+        dutchie_discount_id = (
+            f'ptl_{deal.id}_opt_{option.id}' if option else f'ptl_{deal.id}'
+        )
 
         vals = {
             'name': deal.name,
-            'description': deal.sales_details or '',
+            'description': description,
             'terms': deal.details_exclusions or '',
             'discount_type': disc_type,
             'discount_amount': amount,
@@ -267,7 +321,7 @@ class PtlDay(models.Model):
             'is_featured': deal.is_featured,
             'is_available_online': True,
             'ptl_deal_id': deal.id,
-            'dutchie_discount_id': f'ptl_{deal.id}',
+            'dutchie_discount_id': dutchie_discount_id,
             'excluded_skus': deal.excluded_skus or False,
         }
 

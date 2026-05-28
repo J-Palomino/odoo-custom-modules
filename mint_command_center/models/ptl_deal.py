@@ -258,11 +258,21 @@ class PtlDeal(models.Model):
     )
 
     # --- Relations ---
+    discount_ids = fields.One2many(
+        'mint.discount',
+        'ptl_deal_id',
+        string='Discount Records',
+        help='One mint.discount per option, synced to Redis. Fan-out happens '
+             'at plot time in mint.ptl.day._ensure_discounts.',
+    )
     discount_id = fields.Many2one(
         'mint.discount',
-        string='Discount Record',
-        help='The mint.discount record synced to Redis for this deal.',
+        string='Primary Discount Record',
+        compute='_compute_discount_id',
+        store=True,
         ondelete='set null',
+        help='First of discount_ids — kept as a computed alias for legacy '
+             'views/callers that expect a single discount per deal.',
     )
     option_ids = fields.One2many(
         'mint.ptl.deal.option',
@@ -376,6 +386,11 @@ class PtlDeal(models.Model):
                     )
             rec.matching_product_ids = tmpls
             rec.matching_product_count = len(tmpls)
+
+    @api.depends('discount_ids')
+    def _compute_discount_id(self):
+        for rec in self:
+            rec.discount_id = rec.discount_ids[:1].id if rec.discount_ids else False
 
     @api.depends('day_ids')
     def _compute_day_count(self):

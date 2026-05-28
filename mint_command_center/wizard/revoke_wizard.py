@@ -132,25 +132,27 @@ class RevokeDealWizard(models.TransientModel):
         for day in days:
             day.write({'deal_ids': [(3, deal.id)]})
 
-        # 2. Rescope or deactivate the linked mint.discount.
+        # 2. Rescope or deactivate the linked mint.discount(s). A multi-option
+        #    deal has one discount per option (discount_ids); rescope/deactivate
+        #    all of them so a revoke doesn't leave secondary options serving.
         affected_discount_ids = []
-        if deal.discount_id:
-            discount = deal.discount_id
+        if deal.discount_ids:
             remaining_days = self.env['mint.ptl.day'].search([
                 ('deal_ids', 'in', deal.id),
                 ('state', '=', 'published'),
             ])
-            if remaining_days:
-                dates = remaining_days.mapped('date')
-                discount.write({
-                    'is_published': True,
-                    'valid_from': min(dates),
-                    'valid_until': max(dates),
-                })
-                self.env['mint.discount']._recompute_day_booleans(discount)
-            else:
-                discount.write({'is_published': False})
-            affected_discount_ids.append(discount.id)
+            for discount in deal.discount_ids:
+                if remaining_days:
+                    dates = remaining_days.mapped('date')
+                    discount.write({
+                        'is_published': True,
+                        'valid_from': min(dates),
+                        'valid_until': max(dates),
+                    })
+                    self.env['mint.discount']._recompute_day_booleans(discount)
+                else:
+                    discount.write({'is_published': False})
+                affected_discount_ids.append(discount.id)
 
             # Push the updated discount(s) to mintinvsvc so Redis catches up.
             # Reuse the existing day-level helper via any one of the affected
