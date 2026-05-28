@@ -75,10 +75,18 @@ class PtlDeal(models.Model):
             ('clearance', 'Clearance (Near Expiry)'),
         ],
         string='Discount Type',
+        compute='_compute_primary_option_fields',
+        inverse='_inverse_primary_option_fields',
+        store=True,
+        readonly=False,
     )
     discount_value = fields.Float(
         string='Discount Value',
         help='For points_multiplier, this is the points multiplier (e.g. 2.0 = 2x points).',
+        compute='_compute_primary_option_fields',
+        inverse='_inverse_primary_option_fields',
+        store=True,
+        readonly=False,
     )
     original_price = fields.Float(
         string='Original / MSRP Price',
@@ -471,6 +479,37 @@ class PtlDeal(models.Model):
                 brand = Brand.create({'name': text})
                 by_norm[key] = brand
             rec.brand_id = brand.id
+
+    @api.depends('option_ids', 'option_ids.discount_type',
+                 'option_ids.discount_value', 'option_ids.sequence')
+    def _compute_primary_option_fields(self):
+        # discount_type / discount_value on the parent mirror the first option
+        # (by sequence, then id — same order as the o2m default).
+        for rec in self:
+            primary = rec.option_ids[:1]
+            rec.discount_type = primary.discount_type if primary else False
+            rec.discount_value = primary.discount_value if primary else 0.0
+
+    def _inverse_primary_option_fields(self):
+        # Legacy write-path: `deal.write({'discount_type': 'percent', ...})`
+        # writes through to the first option, creating one when none exists.
+        Option = self.env['mint.ptl.deal.option']
+        for rec in self:
+            if not rec.discount_type:
+                continue
+            primary = rec.option_ids[:1]
+            if primary:
+                primary.write({
+                    'discount_type': rec.discount_type,
+                    'discount_value': rec.discount_value or 0.0,
+                })
+            else:
+                Option.create({
+                    'ptl_deal_id': rec.id,
+                    'sequence': 10,
+                    'discount_type': rec.discount_type,
+                    'discount_value': rec.discount_value or 0.0,
+                })
 
     @api.depends('discount_type', 'discount_value', 'original_price', 'sales_details')
     def _compute_display_text(self):
