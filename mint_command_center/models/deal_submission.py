@@ -37,6 +37,17 @@ class DealSubmission(models.Model):
         string='Brand',
         help='Link to the brand record',
     )
+    product_ids = fields.Many2many(
+        'product.template',
+        'mint_deal_submission_product_rel',
+        'submission_id',
+        'product_id',
+        string='Specific Products',
+        help='When populated, the resulting PTL deal targets ONLY these '
+             'products and ignores the implicit brand+category widening. '
+             'Leave empty to keep today\'s "all-of-brand-and-category" '
+             'fallback. Picker is brand-scoped via the view domain.',
+    )
 
     # --- Vendor funding terms ---
     vendor_funding_amount = fields.Monetary(

@@ -63,6 +63,15 @@
                             <field name="sales_details"/>
                         </group>
                     </group>
+                    <group string="Specific Products (optional — overrides brand-wide matching)">
+                        <field name="product_ids"
+                               nolabel="1"
+                               widget="many2many_tags"
+                               domain="[('brand_id','=',brand_id)]"
+                               options="{'no_create': True, 'no_create_edit': True}"
+                               invisible="not brand_id"
+                               placeholder="Pick specific products to restrict the deal. Leave empty for all of brand+category."/>
+                    </group>
                     <group string="Vendor Funding">
                         <group>
                             <field name="vendor_funding_amount" widget="monetary"/>
