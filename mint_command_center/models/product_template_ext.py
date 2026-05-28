@@ -25,6 +25,19 @@ class ProductTemplate(models.Model):
         self.ensure_one()
         return self.x_display_label_override or self.name or ''
 
+    # ─── Format rollup: product line (master data) ──────────────────────
+
+    x_product_line = fields.Char(
+        string='Product Line',
+        size=128,
+        index=True,
+        help='Product line within a brand (e.g. "Live Resin", "Solventless"). '
+             'Mastered here on the product, not on the PTL deal, so the same '
+             'product always rolls up under one format. Combined with brand + '
+             'weight + MSRP to form the PTL format key (mint.ptl.deal.format_key) '
+             'that collapses strain variants into a single public PTL row.',
+    )
+
     # ─── F7: Sales velocity (computed nightly from mint.pos.order.line) ──
 
     x_units_sold_30d = fields.Integer(
