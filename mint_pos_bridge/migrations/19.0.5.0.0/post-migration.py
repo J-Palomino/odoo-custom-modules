@@ -21,6 +21,11 @@ any lane Dutchie surfaces that we haven't seeded here. Idempotent: the
 
 import logging
 
+from odoo.addons.mint_pos_bridge.models.pos_lane import (
+    STATE_TO_CATEGORY,
+    VALID_CATEGORIES,
+)
+
 _logger = logging.getLogger(__name__)
 
 
@@ -66,17 +71,15 @@ _STORE_SPECIFIC_LANES = {
     'power':             ['Unassigned'],
 }
 
-# State → category (non-terminal only). Drives the backfill: every live order's
-# `state` selects the lane on its company that has the matching category.
-_NON_TERMINAL_STATES = (
-    'lobby', 'online_orders', 'sales_floor', 'processing', 'pickup',
-    'deli_counter', 'credit_checkout', 'delivery', 'ready_delivery',
-    'delivery_progress', 'placed', 'confirmed', 'preparing', 'ready',
-)
+# Live (non-terminal) order states drive the backfill. These are exactly the
+# keys of STATE_TO_CATEGORY (terminal states are absent → those orders get no
+# lane). Each maps to a valid lane category.
+_LIVE_STATES = tuple(STATE_TO_CATEGORY.keys())
 
 
 def _categorize(dutchie_name):
-    return _LANE_NAME_TO_CATEGORY.get((dutchie_name or '').strip().lower())
+    cat = _LANE_NAME_TO_CATEGORY.get((dutchie_name or '').strip().lower())
+    return cat if cat in VALID_CATEGORIES else None
 
 
 def _seed_lanes_for_company(env, company):
@@ -102,8 +105,10 @@ def _seed_lanes_for_company(env, company):
             if not lane_name or lane_name in seen_names:
                 continue
             seen_names.add(lane_name)
-            # state_key is the Odoo state key; use it directly as category when valid.
-            cat = state_key if state_key in _NON_TERMINAL_STATES else _categorize(lane_name)
+            # Prefer the Odoo state_key → category mapping; fall back to
+            # categorizing the verbatim lane name. Both yield a valid category
+            # or None (uncategorized → ops triage).
+            cat = STATE_TO_CATEGORY.get(state_key) or _categorize(lane_name)
             try:
                 Lane.create({
                     'company_id': company.id,
@@ -147,7 +152,7 @@ def _backfill_lane_id(env):
     updated = 0
     orders = PosOrder.search([
         ('lane_id', '=', False),
-        ('state', 'in', list(_NON_TERMINAL_STATES)),
+        ('state', 'in', list(_LIVE_STATES)),
     ])
     _logger.info('  backfilling lane_id on %d live orders', len(orders))
 
@@ -155,7 +160,11 @@ def _backfill_lane_id(env):
     lane_cache = {}
     for order in orders:
         cid = order.company_id.id
-        cat = order.state
+        # Map the order's state to a valid lane category. Skip if unmappable
+        # (shouldn't happen — search domain already filters to live states).
+        cat = STATE_TO_CATEGORY.get(order.state)
+        if not cat or not cid:
+            continue
         key = (cid, cat)
         if key not in lane_cache:
             lane = Lane.search(

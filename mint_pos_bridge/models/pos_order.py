@@ -6,6 +6,8 @@ from datetime import timedelta
 
 from odoo import api, fields, models
 
+from .pos_lane import CATEGORY_TO_STATE, STATE_TO_CATEGORY
+
 _logger = logging.getLogger(__name__)
 
 ORDER_STATES = [
@@ -268,7 +270,10 @@ class MintPosOrder(models.Model):
         if vals.get('lane_id') and 'state' not in vals:
             lane = self.env['mint.pos.lane'].browse(vals['lane_id'])
             if lane.exists() and lane.category:
-                vals['state'] = lane.category
+                mapped_state = CATEGORY_TO_STATE.get(lane.category)
+                # employee/unassigned/other have no order state — leave it.
+                if mapped_state:
+                    vals['state'] = mapped_state
         if vals.get('state') in self._TERMINAL_STATES:
             vals['lane_id'] = False
 
@@ -278,14 +283,18 @@ class MintPosOrder(models.Model):
             return res
 
         # Case 3: non-terminal state write, no lane_id explicitly set.
-        # Group orders by company so we can find_or_create per-store lanes.
+        # Map the state to a lane category (legacy frontend states like
+        # placed/preparing fold onto the nearest live category), then place
+        # the order in that company's lane for the category.
+        target_category = STATE_TO_CATEGORY.get(new_state)
         if (
             new_state not in self._TERMINAL_STATES
             and 'lane_id' not in vals
+            and target_category
         ):
             Lane = self.env['mint.pos.lane'].sudo()
             needs_lane = self.filtered(
-                lambda o: not o.lane_id or o.lane_id.category != new_state
+                lambda o: not o.lane_id or o.lane_id.category != target_category
             )
             for order in needs_lane:
                 if not order.company_id:
@@ -293,7 +302,7 @@ class MintPosOrder(models.Model):
                 target = Lane.search(
                     [
                         ('company_id', '=', order.company_id.id),
-                        ('category', '=', new_state),
+                        ('category', '=', target_category),
                         ('active', '=', True),
                     ],
                     order='sequence, id',
@@ -302,9 +311,10 @@ class MintPosOrder(models.Model):
                 if not target:
                     target = Lane.find_or_create_by_dutchie_name(
                         order.company_id.id,
-                        new_state.replace('_', ' ').title(),
+                        target_category.replace('_', ' ').title(),
                     )
-                    target.category = new_state
+                    if not target.category:
+                        target.category = target_category
                 # Bypass write() recursion: lane_id only, no state change here.
                 super(MintPosOrder, order).write({'lane_id': target.id})
 
