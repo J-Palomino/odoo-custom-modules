@@ -53,9 +53,9 @@
             'mint_command_center/static/src/ptl_calendar/ptl_calendar.esm.js',
             'mint_command_center/static/src/ptl_calendar/ptl_calendar.xml',
             'mint_command_center/static/src/ptl_calendar/ptl_calendar.scss',
-            'mint_command_center/static/src/multi_window_date_picker/multi_window_date_picker.esm.js',
-            'mint_command_center/static/src/multi_window_date_picker/multi_window_date_picker.xml',
-            'mint_command_center/static/src/multi_window_date_picker/multi_window_date_picker.scss',
+            'mint_command_center/static/src/ptl_day_grid/ptl_day_grid.esm.js',
+            'mint_command_center/static/src/ptl_day_grid/ptl_day_grid.xml',
+            'mint_command_center/static/src/ptl_day_grid/ptl_day_grid.scss',
         ],
         'web.assets_frontend_lazy': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',

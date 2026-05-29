@@ -97,7 +97,7 @@
                                 <field name="windows_summary" readonly="1"/>
                             </group>
                             <!-- The inner <list> is NOT rendered (the
-                                 multi_window_date_picker widget owns the DOM);
+                                 ptl_day_grid widget owns the DOM);
                                  it exists so date_start/date_end/sequence are
                                  ACTIVE fields. Without it the children load via
                                  the widget's relatedFields for display only,
@@ -107,7 +107,7 @@
                                  rejects with "Missing required value for
                                  'Start Date'". -->
                             <field name="window_ids"
-                                   widget="multi_window_date_picker"
+                                   widget="ptl_day_grid"
                                    nolabel="1">
                                 <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
