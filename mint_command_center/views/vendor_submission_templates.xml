@@ -105,12 +105,16 @@
                                     <label class="form-label" for="product_picker">
                                         Specific Products <span class="text-muted">(optional)</span>
                                     </label>
+                                    <input type="text" class="form-control mb-1" id="product_search"
+                                           autocomplete="off" disabled="disabled"
+                                           placeholder="Select your brand above first…"/>
                                     <select class="form-select" id="product_picker" multiple="multiple"
                                             size="6" disabled="disabled">
                                         <option value="" disabled="disabled">Select your brand above to load its products…</option>
                                     </select>
                                     <input type="hidden" id="product_ids" name="product_ids"
                                            t-att-value="form_values.get('product_ids', '')"/>
+                                    <small class="form-text text-muted" id="product_count_hint"></small>
                                     <small class="form-text text-muted">
                                         Leave empty to apply the deal to your whole brand + category.
                                         Pick one or more SKUs to restrict the deal to only those products.
@@ -250,9 +254,13 @@
                             var hidden = document.getElementById('brand_id');
                             var picker = document.getElementById('product_picker');
                             var prodHidden = document.getElementById('product_ids');
+                            var search = document.getElementById('product_search');
+                            var hint = document.getElementById('product_count_hint');
                             if (!input || !hidden) return;
                             var options = document.getElementById('brand_options').options;
                             var lastBrandId = null;
+                            var selected = {};   // id -> label; persists across searches (#94167)
+                            var debounceTimer = null;
 
                             function resolveBrand() {
                                 var v = (input.value || '').trim().toLowerCase();
@@ -277,15 +285,70 @@
                                 picker.disabled = true;
                             }
 
-                            function syncPicked() {
+                            function label(it) {
+                                return it.code ? (it.name + ' (' + it.code + ')') : it.name;
+                            }
+
+                            // Update `selected` from the currently-visible options (a search
+                            // only shows a page, so only touch what's on screen), then write
+                            // the hidden field from the full selected set.
+                            function syncSelected() {
                                 if (!picker || !prodHidden) return;
-                                var ids = [];
                                 for (var i = 0; i &lt; picker.options.length; i++) {
-                                    if (picker.options[i].selected &amp;&amp; picker.options[i].value) {
-                                        ids.push(picker.options[i].value);
-                                    }
+                                    var op = picker.options[i];
+                                    if (!op.value) continue;
+                                    if (op.selected) selected[op.value] = op.textContent;
+                                    else delete selected[op.value];
                                 }
-                                prodHidden.value = ids.join(',');
+                                prodHidden.value = Object.keys(selected).join(',');
+                            }
+
+                            // Render selected-but-unlisted picks first so a search never drops
+                            // an earlier selection, then the search/page results.
+                            function render(items, total, term) {
+                                picker.innerHTML = '';
+                                var byId = {};
+                                items.forEach(function(it) { byId[String(it.id)] = label(it); });
+                                Object.keys(selected).forEach(function(id) { if (byId[id]) selected[id] = byId[id]; });
+                                var shown = {};
+                                Object.keys(selected).forEach(function(id) {
+                                    var o = document.createElement('option');
+                                    o.value = id; o.textContent = selected[id]; o.selected = true;
+                                    picker.appendChild(o); shown[id] = true;
+                                });
+                                items.forEach(function(it) {
+                                    if (shown[String(it.id)]) return;
+                                    var o = document.createElement('option');
+                                    o.value = it.id; o.textContent = label(it);
+                                    picker.appendChild(o);
+                                });
+                                picker.disabled = false;
+                                if (hint) {
+                                    if (term) hint.textContent = 'Showing ' + items.length + ' match(es) of ' + total + ' in this brand.';
+                                    else if (total &gt; items.length) hint.textContent = 'Showing first ' + items.length + ' of ' + total + ' — type to search the rest.';
+                                    else hint.textContent = 'Showing all ' + total + ' products.';
+                                }
+                            }
+
+                            function fetchProducts(brandId, term) {
+                                var url = '/promos/brand-products?brand_id=' + encodeURIComponent(brandId);
+                                if (term) url += '&amp;q=' + encodeURIComponent(term);
+                                var total = 0;
+                                fetch(url)
+                                    .then(function(r) {
+                                        total = parseInt(r.headers.get('X-Total-Count') || '0', 10) || 0;
+                                        return r.json();
+                                    })
+                                    .then(function(items) {
+                                        if (!items.length &amp;&amp; !Object.keys(selected).length) {
+                                            setMsg(term ? 'No matches — try a different search.'
+                                                        : 'No products on file for this brand — leave empty.');
+                                            if (hint) hint.textContent = '';
+                                            return;
+                                        }
+                                        render(items, total, term);
+                                    })
+                                    .catch(function() { setMsg('Could not load products — leave empty.'); });
                             }
 
                             function loadProducts(brandId) {
@@ -293,43 +356,39 @@
                                 if (!brandId) {
                                     setMsg('Select your brand above to load its products…');
                                     if (prodHidden) prodHidden.value = '';
+                                    selected = {};
+                                    if (search) { search.value = ''; search.disabled = true; search.placeholder = 'Select your brand above first…'; }
+                                    if (hint) hint.textContent = '';
                                     lastBrandId = null;
                                     return;
                                 }
                                 if (brandId === lastBrandId) return;
                                 lastBrandId = brandId;
-                                var preselect = (prodHidden &amp;&amp; prodHidden.value)
-                                    ? prodHidden.value.split(',') : [];
-                                fetch('/promos/brand-products?brand_id=' + encodeURIComponent(brandId))
-                                    .then(function(r) { return r.json(); })
-                                    .then(function(items) {
-                                        picker.innerHTML = '';
-                                        if (!items.length) {
-                                            setMsg('No products on file for this brand — leave empty.');
-                                            return;
-                                        }
-                                        items.forEach(function(it) {
-                                            var o = document.createElement('option');
-                                            o.value = it.id;
-                                            o.textContent = it.code ? (it.name + ' (' + it.code + ')') : it.name;
-                                            if (preselect.indexOf(String(it.id)) !== -1) o.selected = true;
-                                            picker.appendChild(o);
-                                        });
-                                        picker.disabled = false;
-                                        syncPicked();
-                                    })
-                                    .catch(function() {
-                                        setMsg('Could not load products — leave empty.');
-                                    });
+                                // Seed selection from the hidden field (POST re-render); real
+                                // labels get filled in by render() once the products load.
+                                selected = {};
+                                if (prodHidden &amp;&amp; prodHidden.value) {
+                                    prodHidden.value.split(',').forEach(function(id) { if (id) selected[id] = id; });
+                                }
+                                if (search) { search.disabled = false; search.value = ''; search.placeholder = "Type to search this brand's products..."; }
+                                fetchProducts(brandId, '');
                             }
 
                             function onBrand() { loadProducts(resolveBrand()); }
 
                             input.addEventListener('change', onBrand);
                             input.addEventListener('blur', onBrand);
-                            if (picker) picker.addEventListener('change', syncPicked);
+                            if (picker) picker.addEventListener('change', syncSelected);
+                            if (search) search.addEventListener('input', function() {
+                                var term = (search.value || '').trim();
+                                if (debounceTimer) clearTimeout(debounceTimer);
+                                if (term.length === 1) return;   // wait for >= 2 chars
+                                debounceTimer = setTimeout(function() {
+                                    if (hidden.value) fetchProducts(hidden.value, term);
+                                }, 250);
+                            });
                             input.form &amp;&amp; input.form.addEventListener('submit', function() {
-                                resolveBrand(); syncPicked();
+                                resolveBrand(); syncSelected();
                             });
 
                             // POST re-render: if a brand is already chosen, repopulate + re-select.
