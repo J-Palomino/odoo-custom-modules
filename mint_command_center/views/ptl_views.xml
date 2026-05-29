@@ -250,6 +250,8 @@
                             <field name="discount_value"/>
                             <field name="original_price"/>
                             <field name="display_text" readonly="1"/>
+                            <field name="format_key" readonly="1"
+                                   help="Blank until the matching product has a Product Line set"/>
                             <label for="weight_value" string="Weight"/>
                             <div class="o_row">
                                 <field name="weight_value" nolabel="1"/>
