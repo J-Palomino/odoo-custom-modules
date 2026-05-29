@@ -1,7 +1,11 @@
+import logging
+
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
 from .brand_calendar import _brand_lookup_key, _parse_brand_name, _parse_weight
+
+_logger = logging.getLogger(__name__)
 
 
 # Master master-category buckets used in the PTL Calendar sheet,
@@ -647,6 +651,44 @@ class PtlDeal(models.Model):
         if self.original_price:
             parts.append(f"${round(self.original_price)}")
         return ' '.join(p for p in parts if p)
+
+    @api.model
+    def _cron_fill_format_key(self, batch=300):
+        """One-shot batched backfill of the stored format_key for existing deals.
+
+        Computing format_key for all ~7.6k deals at upgrade time is too slow (a
+        product.template.search per deal over ~62k products) and rolled the
+        module upgrade back, so pre-migrate.py pre-creates the column
+        (suppressing the ORM mass-recompute) and this cron fills it in batches.
+
+        Drains by an id watermark in ir.config_parameter rather than a
+        "format_key is empty" filter: many deals legitimately compute to an
+        empty key (no whitelisted product line) and would otherwise be
+        re-selected forever. Disables itself (ir_cron_fill_format_key) once it
+        runs past the last deal. New deals get format_key via the normal
+        @api.depends compute on write, so the cron is genuinely one-shot.
+        """
+        Param = self.env['ir.config_parameter'].sudo()
+        last_id = int(Param.get_param('mint_cc.format_key_fill_last_id', '0'))
+        deals = self.search(
+            [('id', '>', last_id), ('brand_id', '!=', False)],
+            order='id', limit=batch,
+        )
+        if not deals:
+            cron = self.env.ref(
+                'mint_command_center.ir_cron_fill_format_key',
+                raise_if_not_found=False)
+            if cron and cron.active:
+                cron.active = False
+            _logger.info("fill_format_key: backfill complete — cron disabled")
+            return
+        deals.invalidate_recordset(['format_key'])
+        deals._compute_format_key()
+        deals.flush_recordset(['format_key'])
+        Param.set_param('mint_cc.format_key_fill_last_id', str(deals[-1].id))
+        _logger.info(
+            "fill_format_key: processed %s deal(s) up to id %s",
+            len(deals), deals[-1].id)
 
     # --- Revoke wizard launcher ---
 
