@@ -101,6 +101,21 @@
                                         </t>
                                     </select>
                                 </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="product_picker">
+                                        Specific Products <span class="text-muted">(optional)</span>
+                                    </label>
+                                    <select class="form-select" id="product_picker" multiple="multiple"
+                                            size="6" disabled="disabled">
+                                        <option value="" disabled="disabled">Select your brand above to load its products…</option>
+                                    </select>
+                                    <input type="hidden" id="product_ids" name="product_ids"
+                                           t-att-value="form_values.get('product_ids', '')"/>
+                                    <small class="form-text text-muted">
+                                        Leave empty to apply the deal to your whole brand + category.
+                                        Pick one or more SKUs to restrict the deal to only those products.
+                                    </small>
+                                </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="discount_type">Discount Type</label>
                                     <select class="form-select" id="discount_type" name="discount_type">
@@ -227,27 +242,98 @@
                         </button>
                     </form>
 
-                    <!-- Resolve brand_lookup text → brand_id hidden value on submit -->
+                    <!-- Resolve brand_lookup text → brand_id, then load that brand's
+                         products into the optional "Specific Products" picker (#93642). -->
                     <script>
                         (function() {
                             var input = document.getElementById('brand_lookup');
                             var hidden = document.getElementById('brand_id');
+                            var picker = document.getElementById('product_picker');
+                            var prodHidden = document.getElementById('product_ids');
                             if (!input || !hidden) return;
                             var options = document.getElementById('brand_options').options;
-                            function resolve() {
+                            var lastBrandId = null;
+
+                            function resolveBrand() {
                                 var v = (input.value || '').trim().toLowerCase();
                                 hidden.value = '';
-                                if (!v) return;
-                                for (var i = 0; i &lt; options.length; i++) {
-                                    if ((options[i].value || '').trim().toLowerCase() === v) {
-                                        hidden.value = options[i].getAttribute('data-id') || '';
-                                        return;
+                                if (v) {
+                                    for (var i = 0; i &lt; options.length; i++) {
+                                        if ((options[i].value || '').trim().toLowerCase() === v) {
+                                            hidden.value = options[i].getAttribute('data-id') || '';
+                                            break;
+                                        }
                                     }
                                 }
+                                return hidden.value;
                             }
-                            input.addEventListener('change', resolve);
-                            input.addEventListener('blur', resolve);
-                            input.form &amp;&amp; input.form.addEventListener('submit', resolve);
+
+                            function setMsg(text) {
+                                if (!picker) return;
+                                picker.innerHTML = '';
+                                var o = document.createElement('option');
+                                o.value = ''; o.disabled = true; o.textContent = text;
+                                picker.appendChild(o);
+                                picker.disabled = true;
+                            }
+
+                            function syncPicked() {
+                                if (!picker || !prodHidden) return;
+                                var ids = [];
+                                for (var i = 0; i &lt; picker.options.length; i++) {
+                                    if (picker.options[i].selected &amp;&amp; picker.options[i].value) {
+                                        ids.push(picker.options[i].value);
+                                    }
+                                }
+                                prodHidden.value = ids.join(',');
+                            }
+
+                            function loadProducts(brandId) {
+                                if (!picker) return;
+                                if (!brandId) {
+                                    setMsg('Select your brand above to load its products…');
+                                    if (prodHidden) prodHidden.value = '';
+                                    lastBrandId = null;
+                                    return;
+                                }
+                                if (brandId === lastBrandId) return;
+                                lastBrandId = brandId;
+                                var preselect = (prodHidden &amp;&amp; prodHidden.value)
+                                    ? prodHidden.value.split(',') : [];
+                                fetch('/promos/brand-products?brand_id=' + encodeURIComponent(brandId))
+                                    .then(function(r) { return r.json(); })
+                                    .then(function(items) {
+                                        picker.innerHTML = '';
+                                        if (!items.length) {
+                                            setMsg('No products on file for this brand — leave empty.');
+                                            return;
+                                        }
+                                        items.forEach(function(it) {
+                                            var o = document.createElement('option');
+                                            o.value = it.id;
+                                            o.textContent = it.code ? (it.name + ' (' + it.code + ')') : it.name;
+                                            if (preselect.indexOf(String(it.id)) !== -1) o.selected = true;
+                                            picker.appendChild(o);
+                                        });
+                                        picker.disabled = false;
+                                        syncPicked();
+                                    })
+                                    .catch(function() {
+                                        setMsg('Could not load products — leave empty.');
+                                    });
+                            }
+
+                            function onBrand() { loadProducts(resolveBrand()); }
+
+                            input.addEventListener('change', onBrand);
+                            input.addEventListener('blur', onBrand);
+                            if (picker) picker.addEventListener('change', syncPicked);
+                            input.form &amp;&amp; input.form.addEventListener('submit', function() {
+                                resolveBrand(); syncPicked();
+                            });
+
+                            // POST re-render: if a brand is already chosen, repopulate + re-select.
+                            if (hidden.value) { loadProducts(hidden.value); }
                         })();
                     </script>
                 </t>

@@ -288,11 +288,25 @@ class PtlDeal(models.Model):
         help='Live product.template records this deal will apply to, '
              'resolved from brand_id + product_category at form open. '
              'Mirrors the matching used by mint.discount._ensure (brand_ids + '
-             'category_ids resolved via product.category name match).',
+             'category_ids resolved via product.category name match). '
+             'When explicit_product_ids is populated, equals that set '
+             '(intersected with brand_id) instead.',
     )
     matching_product_count = fields.Integer(
         string='# Matching SKUs',
         compute='_compute_matching_products',
+    )
+    explicit_product_ids = fields.Many2many(
+        'product.template',
+        'mint_ptl_deal_explicit_product_rel',
+        'deal_id',
+        'product_id',
+        string='Explicit Products',
+        help='When populated, _compute_matching_products returns exactly '
+             'this set (intersected with brand_id) and _deal_to_discount_vals '
+             'forwards it to mint.discount.product_ids so the Dutchie '
+             'discount restricts at the SKU level. Empty = use today\'s '
+             'brand+category+excluded_skus fallback.',
     )
 
     # --- Validity range ---
@@ -348,13 +362,22 @@ class PtlDeal(models.Model):
         ]
         return Category.search(domain)
 
-    @api.depends('brand_id', 'product_category', 'excluded_skus')
+    @api.depends('brand_id', 'product_category', 'excluded_skus', 'explicit_product_ids')
     def _compute_matching_products(self):
         Template = self.env['product.template'].sudo()
         for rec in self:
             if not rec.brand_id:
                 rec.matching_product_ids = False
                 rec.matching_product_count = 0
+                continue
+            # Explicit set wins when populated — intersect with brand_id
+            # so a stale-brand pick doesn't sneak through.
+            if rec.explicit_product_ids:
+                explicit = rec.explicit_product_ids.filtered(
+                    lambda p: p.brand_id == rec.brand_id
+                )
+                rec.matching_product_ids = explicit
+                rec.matching_product_count = len(explicit)
                 continue
             domain = [('brand_id', '=', rec.brand_id.id)]
             if rec.product_category:
@@ -589,7 +612,8 @@ class PtlDeal(models.Model):
                 rec.display_text = ''
 
     @api.depends('brand_id', 'product_category', 'excluded_skus',
-                 'weight_value', 'weight_unit', 'original_price')
+                 'explicit_product_ids', 'weight_value', 'weight_unit',
+                 'original_price')
     def _compute_format_key(self):
         for rec in self:
             rec.format_key = rec._build_format_key()

@@ -251,11 +251,54 @@ class MintPosOrder(models.Model):
                 vals['name'] = self.env['ir.sequence'].next_by_code(
                     'mint.pos.order'
                 ) or 'New'
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        # Resolve lane_id for newly-created live orders so they don't sit in a
+        # NULL lane until their first state write. Mirrors the write()
+        # synchronizer's case-3 logic.
+        records._sync_lane_from_state()
+        return records
 
     # Terminal states never have a Dutchie lane (Dutchie drops the order from
     # getCheckedInGuests once it hits these). `state` stays source-of-truth here.
     _TERMINAL_STATES = ('completed', 'cancelled', 'picked_up', 'delivery_completed')
+
+    def _sync_lane_from_state(self):
+        """Place each live order in its company's lane for the order's state.
+
+        Maps state → lane category (legacy states fold onto the nearest live
+        category), finds or creates that company's lane, and sets lane_id.
+        Skips terminal-state orders (no lane) and orders that already match.
+        Writes lane_id with from_dutchie_sync=True so no lane-change webhook
+        fires from this internal bookkeeping.
+        """
+        Lane = self.env['mint.pos.lane'].sudo()
+        for order in self:
+            if order.state in self._TERMINAL_STATES or not order.company_id:
+                continue
+            target_category = STATE_TO_CATEGORY.get(order.state)
+            if not target_category:
+                continue
+            if order.lane_id and order.lane_id.category == target_category:
+                continue
+            target = Lane.search(
+                [
+                    ('company_id', '=', order.company_id.id),
+                    ('category', '=', target_category),
+                    ('active', '=', True),
+                ],
+                order='sequence, id',
+                limit=1,
+            )
+            if not target:
+                target = Lane.find_or_create_by_dutchie_name(
+                    order.company_id.id,
+                    target_category.replace('_', ' ').title(),
+                )
+                if not target.category:
+                    target.category = target_category
+            # Explicit super() write: lane_id only, no state change, no
+            # recursion into the synchronizer, no lane-change webhook.
+            super(MintPosOrder, order).write({'lane_id': target.id})
 
     def write(self, vals):
         # ---- lane_id <-> state synchronizer (Phase 1 of swimlane-mirror) ----
@@ -282,41 +325,13 @@ class MintPosOrder(models.Model):
         if not new_state:
             return res
 
-        # Case 3: non-terminal state write, no lane_id explicitly set.
-        # Map the state to a lane category (legacy frontend states like
-        # placed/preparing fold onto the nearest live category), then place
-        # the order in that company's lane for the category.
-        target_category = STATE_TO_CATEGORY.get(new_state)
+        # Case 3: non-terminal state write, no lane_id explicitly set —
+        # reconcile lane_id with the new state. Shares the create() logic.
         if (
             new_state not in self._TERMINAL_STATES
             and 'lane_id' not in vals
-            and target_category
         ):
-            Lane = self.env['mint.pos.lane'].sudo()
-            needs_lane = self.filtered(
-                lambda o: not o.lane_id or o.lane_id.category != target_category
-            )
-            for order in needs_lane:
-                if not order.company_id:
-                    continue
-                target = Lane.search(
-                    [
-                        ('company_id', '=', order.company_id.id),
-                        ('category', '=', target_category),
-                        ('active', '=', True),
-                    ],
-                    order='sequence, id',
-                    limit=1,
-                )
-                if not target:
-                    target = Lane.find_or_create_by_dutchie_name(
-                        order.company_id.id,
-                        target_category.replace('_', ' ').title(),
-                    )
-                    if not target.category:
-                        target.category = target_category
-                # Bypass write() recursion: lane_id only, no state change here.
-                super(MintPosOrder, order).write({'lane_id': target.id})
+            self._sync_lane_from_state()
 
         now = fields.Datetime.now()
 

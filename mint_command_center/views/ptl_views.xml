@@ -296,7 +296,14 @@
                                placeholder="All stores (leave empty for all)"/>
                         <field name="day_ids" widget="many2many_tags" readonly="1"/>
                     </group>
-                    <group string="Matching SKUs (resolved from brand + category)" col="1">
+                    <group string="Explicit Products (overrides brand-wide matching when populated)" col="1"
+                           invisible="not explicit_product_ids">
+                        <field name="explicit_product_ids"
+                               nolabel="1"
+                               readonly="1"
+                               widget="many2many_tags"/>
+                    </group>
+                    <group string="Matching SKUs (resolved from brand + category, or explicit set above)" col="1">
                         <field name="matching_product_count" readonly="1"/>
                         <field name="matching_product_ids" nolabel="1" readonly="1">
                             <list>

@@ -134,13 +134,10 @@ class MintPosLane(models.Model):
     active = fields.Boolean(string='Active', default=True)
     note = fields.Text(string='Ops Notes')
 
-    _sql_constraints = [
-        (
-            'uniq_company_dutchie',
-            'UNIQUE(company_id, dutchie_lane_name)',
-            'Dutchie lane name must be unique per store.',
-        ),
-    ]
+    _uniq_company_dutchie = models.Constraint(
+        'UNIQUE(company_id, dutchie_lane_name)',
+        'Dutchie lane name must be unique per store.',
+    )
 
     @api.model
     def find_or_create_by_dutchie_name(self, company_id, dutchie_lane_name, name=None):

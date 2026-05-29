@@ -1,3 +1,4 @@
+import json
 import logging
 
 from odoo import http
@@ -106,6 +107,25 @@ class VendorSubmissionController(http.Controller):
             except (ValueError, TypeError):
                 pass
 
+        # Specific products (optional, #93642). The picker posts a comma-separated
+        # list of product.template ids. Keep only ids that exist AND belong to the
+        # chosen brand — a public form must not let a vendor restrict a deal to
+        # another brand's SKUs. Empty list → brand+category fallback downstream.
+        product_ids_raw = post.get('product_ids', '') or ''
+        picked_ids = []
+        for tok in product_ids_raw.replace(',', ' ').split():
+            try:
+                picked_ids.append(int(tok))
+            except (ValueError, TypeError):
+                continue
+        if picked_ids and vals.get('brand_id'):
+            valid = request.env['product.template'].sudo().search([
+                ('id', 'in', picked_ids),
+                ('brand_id', '=', vals['brand_id']),
+            ])
+            if valid:
+                vals['product_ids'] = [(6, 0, valid.ids)]
+
         # Market
         market_id = post.get('market_id')
         if market_id:
@@ -172,6 +192,42 @@ class VendorSubmissionController(http.Controller):
             ctx['error'] = 'An error occurred while submitting your deal. Please try again.'
 
         return request.render('mint_command_center.vendor_deal_form', ctx)
+
+    @http.route(
+        '/promos/brand-products',
+        type='http',
+        auth='public',
+        website=True,
+        methods=['GET'],
+        sitemap=False,
+    )
+    def vendor_brand_products(self, brand_id=None, **kw):
+        """Public JSON list of a brand's products, for the deal-form picker.
+
+        Returns only id / name / code (no pricing or internal data). Used by the
+        inline script on /promos to populate the optional "Specific Products"
+        multi-select once a vendor selects their brand (#93642 phase 5).
+        """
+        products = []
+        try:
+            bid = int(brand_id)
+        except (ValueError, TypeError):
+            bid = 0
+        if bid:
+            recs = request.env['product.template'].sudo().search_read(
+                [('brand_id', '=', bid)],
+                ['id', 'name', 'default_code'],
+                order='name',
+                limit=500,
+            )
+            products = [
+                {'id': r['id'], 'name': r['name'], 'code': r['default_code'] or ''}
+                for r in recs
+            ]
+        return request.make_response(
+            json.dumps(products),
+            headers=[('Content-Type', 'application/json')],
+        )
 
     def _form_context(self, **extra):
         markets = request.env['mint.region'].sudo().search([], order='name')

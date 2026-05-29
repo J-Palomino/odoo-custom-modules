@@ -6,6 +6,8 @@ import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { _t } from "@web/core/l10n/translation";
 import { serializeDate, deserializeDate } from "@web/core/l10n/dates";
 
+const { DateTime } = luxon;
+
 /**
  * Multi-window date picker — bound to mint.deal.submission.window_ids.
  *
@@ -64,22 +66,32 @@ export class MultiWindowDatePicker extends Component {
             (m, r) => Math.max(m, r.data.sequence || 0), 0
         );
         // Default new window to (last_end + 1 day) for natural composition;
-        // fall back to today when there's no prior window.
+        // fall back to today when there's no prior window. Keep it as a Luxon
+        // DateTime so we can write it through record.update() below.
         let defaultStart;
         const lastRec = this.records[this.records.length - 1];
         if (lastRec && lastRec.data.date_end && lastRec.data.date_end.plus) {
-            defaultStart = serializeDate(lastRec.data.date_end.plus({ days: 1 }));
+            defaultStart = lastRec.data.date_end.plus({ days: 1 });
         } else {
-            defaultStart = new Date().toISOString().slice(0, 10);
+            // DateTime.now() resolves "today" in the user's local zone; the
+            // old new Date().toISOString().slice(0,10) used the UTC date, which
+            // seeds tomorrow for users west of UTC late in the day — the exact
+            // drift dayCount() avoids.
+            defaultStart = DateTime.now();
         }
-        await this.list.addNewRecord({
-            position: "bottom",
-            context: {
-                default_sequence: maxSeq + 10,
-                default_date_start: defaultStart,
-                default_date_end: defaultStart,
-            },
-            mode: "edit",
+        // Passing default_* through addNewRecord's context does NOT reliably
+        // mark date_start/date_end dirty on the virtual record, so web_save
+        // omits them and the server rejects the create ("Missing required
+        // value for 'Start Date'"). Set them explicitly via update() — the same
+        // reason onDateChange must hand record.update a Luxon DateTime, not a
+        // raw string.
+        const rec =
+            (await this.list.addNewRecord({ position: "bottom", mode: "edit" })) ||
+            this.records[this.records.length - 1];
+        await rec.update({
+            sequence: maxSeq + 10,
+            date_start: defaultStart,
+            date_end: defaultStart,
         });
     }
 

@@ -37,6 +37,17 @@ class DealSubmission(models.Model):
         string='Brand',
         help='Link to the brand record',
     )
+    product_ids = fields.Many2many(
+        'product.template',
+        'mint_deal_submission_product_rel',
+        'submission_id',
+        'product_id',
+        string='Specific Products',
+        help='When populated, the resulting PTL deal targets ONLY these '
+             'products and ignores the implicit brand+category widening. '
+             'Leave empty to keep today\'s "all-of-brand-and-category" '
+             'fallback. Picker is brand-scoped via the view domain.',
+    )
 
     # --- Vendor funding terms ---
     vendor_funding_amount = fields.Monetary(
@@ -264,6 +275,14 @@ class DealSubmission(models.Model):
 
         self._check_plot_gate()
 
+        # Drop any product picks whose brand no longer matches the
+        # submission's brand_id (e.g. user changed brand after picking).
+        # Silent drop is fine — the deal-form's explicit picker is also
+        # brand-scoped, so a stale pick would be invisible anyway.
+        explicit_products = self.product_ids.filtered(
+            lambda p: p.brand_id == self.brand_id
+        ) if self.brand_id else self.product_ids.browse([])
+
         deal = self.env['mint.ptl.deal'].create({
             'name': self.name,
             'brand_id': self.brand_id.id if self.brand_id else False,
@@ -281,6 +300,7 @@ class DealSubmission(models.Model):
             'vendor_funding_amount': self.vendor_funding_amount,
             'vendor_funding_percent': self.vendor_funding_percent,
             'campaign_id': self.campaign_id.id if self.campaign_id else False,
+            'explicit_product_ids': [(6, 0, explicit_products.ids)] if explicit_products else False,
         })
         self.write({
             'state': 'converted',
