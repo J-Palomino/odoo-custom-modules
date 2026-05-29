@@ -264,9 +264,24 @@
                             <field name="sales_details" nolabel="1"
                                    placeholder="Formatted pricing (e.g. $45 $22.50 Each When you buy 2)"/>
                         </group>
-                        <group string="Details &amp; Exclusions">
+                        <group string="Inclusions / Exclusions">
+                            <field name="inclusions" nolabel="1"
+                                   placeholder="What this deal applies to..."/>
                             <field name="details_exclusions" nolabel="1"
-                                   placeholder="Product exclusions and conditions..."/>
+                                   placeholder="What this deal does NOT apply to..."/>
+                        </group>
+                    </group>
+                    <group string="Special Event / Holiday">
+                        <group>
+                            <field name="is_holiday"/>
+                            <field name="event_name"
+                                   invisible="not is_holiday"
+                                   required="is_holiday"/>
+                        </group>
+                        <group>
+                            <field name="product_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"
+                                   domain="[('brand_id', '=', brand_id)]"/>
                         </group>
                     </group>
                     <group string="Exclusion Rules">

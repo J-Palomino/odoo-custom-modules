@@ -57,6 +57,14 @@
                         </group>
                         <group string="Deal Details">
                             <field name="product_category"/>
+                            <field name="product_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"
+                                   domain="[('brand_id', '=', brand_id)]"/>
+                            <label for="weight_value"/>
+                            <div class="o_row">
+                                <field name="weight_value"/>
+                                <field name="weight_unit"/>
+                            </div>
                             <field name="discount_type"/>
                             <field name="discount_value"/>
                             <field name="original_price"/>
@@ -75,19 +83,63 @@
                     </group>
                     <group>
                         <group string="Targeting">
-                            <field name="market_id" options="{'no_create': True}"/>
+                            <field name="market_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"/>
+                            <field name="market_id" options="{'no_create': True}"
+                                   readonly="1"
+                                   help="Primary market — auto-derived from Markets."/>
                             <field name="store_ids" widget="many2many_tags"
                                    options="{'no_create': True}"/>
                         </group>
-                        <group string="Date Preferences">
+                        <group string="Date Preferences (Brand Rep's Preference)">
                             <field name="preferred_start_date"/>
                             <field name="preferred_end_date"/>
-                            <field name="preferred_days"/>
+                            <field name="preferred_days"
+                                   invisible="plot_date_ids"
+                                   readonly="1"
+                                   help="Deprecated — use Plot Dates instead."/>
+                            <field name="plot_date_ids" widget="one2many">
+                                <list editable="bottom">
+                                    <field name="date"/>
+                                </list>
+                            </field>
                         </group>
                     </group>
-                    <group string="Details &amp; Exclusions">
-                        <field name="details_exclusions" nolabel="1"
-                               placeholder="Product exclusions and conditions..."/>
+                    <group>
+                        <group string="Inclusions">
+                            <field name="inclusions" nolabel="1"
+                                   placeholder="What this deal applies to..."/>
+                        </group>
+                        <group string="Exclusions">
+                            <field name="details_exclusions" nolabel="1"
+                                   placeholder="What this deal does NOT apply to..."/>
+                        </group>
+                    </group>
+                    <group string="Special Event / Holiday">
+                        <group>
+                            <field name="is_holiday"/>
+                            <field name="event_name"
+                                   invisible="not is_holiday"
+                                   required="is_holiday"/>
+                        </group>
+                    </group>
+                    <group string="Promo Units (Internal-Only)"
+                           invisible="not is_holiday">
+                        <group>
+                            <field name="promo_units_enabled"/>
+                            <field name="promo_units_product"
+                                   invisible="not promo_units_enabled"/>
+                            <field name="promo_units_quantity"
+                                   invisible="not promo_units_enabled"/>
+                            <field name="promo_units_delivery_date"
+                                   invisible="not promo_units_enabled"/>
+                        </group>
+                        <group>
+                            <div class="alert alert-info" role="alert"
+                                 invisible="not promo_units_enabled">
+                                Promo Units are internal-only — they never display on the public PTL.
+                            </div>
+                        </group>
                     </group>
                     <group string="Review" invisible="not reviewed_by">
                         <group>
@@ -121,6 +173,8 @@
                 <field name="discount_type"/>
                 <field name="discount_value"/>
                 <field name="market_id"/>
+                <field name="is_holiday" widget="boolean_toggle" optional="show"/>
+                <field name="event_name" optional="show"/>
                 <field name="preferred_start_date"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'new'"
@@ -171,6 +225,8 @@
                 <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
                 <filter name="rejected" string="Rejected" domain="[('state', '=', 'rejected')]"/>
                 <filter name="converted" string="Converted" domain="[('state', '=', 'converted')]"/>
+                <separator/>
+                <filter name="holiday" string="Holiday / Special Event" domain="[('is_holiday', '=', True)]"/>
                 <separator/>
                 <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
                 <filter name="group_market" string="Market" context="{'group_by': 'market_id'}"/>

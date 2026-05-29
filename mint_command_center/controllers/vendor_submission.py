@@ -1,9 +1,35 @@
 import logging
+from datetime import datetime
 
 from odoo import http
 from odoo.http import request
 
 _logger = logging.getLogger(__name__)
+
+
+def _parse_id_list(raw):
+    """Parse a multi-value POST key into a list of valid int IDs.
+
+    Accepts either a list of strings (when the form posts the field multiple
+    times) or a single comma-separated string (when an HTML widget joins them
+    client-side). Filters non-integer entries silently.
+    """
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.split(',') if p.strip()]
+    else:
+        parts = []
+        for item in raw:
+            if isinstance(item, str):
+                parts.extend(p.strip() for p in item.split(',') if p.strip())
+    out = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except (ValueError, TypeError):
+            continue
+    return out
 
 PRODUCT_CATEGORIES = [
     ('flower', 'Flower'),
@@ -57,6 +83,14 @@ class VendorSubmissionController(http.Controller):
         if not post.get('vendor_email', '').strip():
             errors.append('Vendor Email is required.')
 
+        # Conditional-required: Event Name when is_holiday is set (#93648).
+        # Server-side guard backing the model's @api.constrains; surfaces
+        # earlier in the form re-render than the ORM exception would.
+        is_holiday_raw = post.get('is_holiday', '')
+        is_holiday = str(is_holiday_raw).lower() in ('1', 'true', 'on', 'yes')
+        if is_holiday and not post.get('event_name', '').strip():
+            errors.append('Event Name is required when Special Event / Holiday is enabled.')
+
         if errors:
             ctx['error'] = ' '.join(errors)
             return request.render('mint_command_center.vendor_deal_form', ctx)
@@ -70,9 +104,16 @@ class VendorSubmissionController(http.Controller):
             'name': post.get('deal_name', '').strip(),
             'product_category': post.get('product_category', ''),
             'discount_type': post.get('discount_type', ''),
+            'inclusions': post.get('inclusions', '').strip(),
             'details_exclusions': post.get('details_exclusions', '').strip(),
             'sales_details': post.get('sales_details', '').strip(),
             'vendor_funding_terms': post.get('vendor_funding_terms', '').strip(),
+            'is_holiday': is_holiday,
+            'event_name': post.get('event_name', '').strip(),
+            'promo_units_enabled': str(
+                post.get('promo_units_enabled', '')
+            ).lower() in ('1', 'true', 'on', 'yes'),
+            'promo_units_product': post.get('promo_units_product', '').strip(),
         }
 
         # Numeric fields
@@ -96,6 +137,19 @@ class VendorSubmissionController(http.Controller):
         except (ValueError, TypeError):
             vals['vendor_funding_percent'] = 0.0
 
+        try:
+            vals['weight_value'] = float(post.get('weight_value') or 0)
+        except (ValueError, TypeError):
+            vals['weight_value'] = 0.0
+        weight_unit = post.get('weight_unit', '').strip()
+        if weight_unit in ('g', 'mg', 'oz', 'ct'):
+            vals['weight_unit'] = weight_unit
+
+        try:
+            vals['promo_units_quantity'] = int(post.get('promo_units_quantity') or 0)
+        except (ValueError, TypeError):
+            vals['promo_units_quantity'] = 0
+
         # Brand (mint.brand lookup, with text fallback)
         brand_id_raw = post.get('brand_id', '').strip()
         if brand_id_raw:
@@ -106,13 +160,50 @@ class VendorSubmissionController(http.Controller):
             except (ValueError, TypeError):
                 pass
 
-        # Market
-        market_id = post.get('market_id')
-        if market_id:
+        # Markets — multi-select replaces the single market_id picker on the
+        # public form. market_id is now a stored compute = market_ids[:1] so
+        # downstream readers stay compatible.
+        market_ids_raw = (
+            request.httprequest.form.getlist('market_ids')
+            if hasattr(request.httprequest, 'form')
+            else post.get('market_ids')
+        )
+        market_ids = _parse_id_list(market_ids_raw)
+        if not market_ids and post.get('market_id'):
+            # Legacy single-market POST shape — keep working.
             try:
-                vals['market_id'] = int(market_id)
+                market_ids = [int(post['market_id'])]
             except (ValueError, TypeError):
-                pass
+                market_ids = []
+        if market_ids:
+            valid = request.env['mint.region'].sudo().browse(market_ids).exists().ids
+            if valid:
+                vals['market_ids'] = [(6, 0, valid)]
+
+        # Stores — multi-select (the locale picker on the public form).
+        # Render filtered by chosen markets in the template; server validates ids.
+        store_ids_raw = (
+            request.httprequest.form.getlist('store_ids')
+            if hasattr(request.httprequest, 'form')
+            else post.get('store_ids')
+        )
+        store_ids = _parse_id_list(store_ids_raw)
+        if store_ids:
+            valid = request.env['res.company'].sudo().browse(store_ids).exists().ids
+            if valid:
+                vals['store_ids'] = [(6, 0, valid)]
+
+        # Products — multi-select filtered by brand_id ∩ product_category.
+        product_ids_raw = (
+            request.httprequest.form.getlist('product_ids')
+            if hasattr(request.httprequest, 'form')
+            else post.get('product_ids')
+        )
+        product_ids = _parse_id_list(product_ids_raw)
+        if product_ids:
+            valid = request.env['product.template'].sudo().browse(product_ids).exists().ids
+            if valid:
+                vals['product_ids'] = [(6, 0, valid)]
 
         # Dates
         if post.get('preferred_start_date'):
@@ -121,6 +212,32 @@ class VendorSubmissionController(http.Controller):
             vals['preferred_end_date'] = post['preferred_end_date']
         if post.get('preferred_days'):
             vals['preferred_days'] = post['preferred_days'].strip()
+
+        # Promo Units delivery date — only meaningful when promo_units_enabled
+        if vals.get('promo_units_enabled') and post.get('promo_units_delivery_date'):
+            vals['promo_units_delivery_date'] = post['promo_units_delivery_date']
+
+        # Plot Dates — multi-date picker on the public form sends one
+        # plot_dates entry per checked day (YYYY-MM-DD). Build an o2m create
+        # command for mint.deal.submission.day.
+        plot_dates_raw = (
+            request.httprequest.form.getlist('plot_dates')
+            if hasattr(request.httprequest, 'form')
+            else post.get('plot_dates')
+        )
+        if isinstance(plot_dates_raw, str):
+            plot_dates_raw = [d.strip() for d in plot_dates_raw.split(',') if d.strip()]
+        elif not plot_dates_raw:
+            plot_dates_raw = []
+        plot_day_creates = []
+        for date_str in plot_dates_raw:
+            try:
+                datetime.strptime(date_str, '%Y-%m-%d')
+            except (ValueError, TypeError):
+                continue
+            plot_day_creates.append((0, 0, {'date': date_str}))
+        if plot_day_creates:
+            vals['plot_date_ids'] = plot_day_creates
 
         try:
             env = request.env
@@ -179,13 +296,32 @@ class VendorSubmissionController(http.Controller):
         brands = request.env['mint.brand'].sudo().search_read(
             [], ['id', 'name'], order='name',
         )
+        # Stores per market — fuels the locale (store) multi-select that
+        # narrows on chosen Markets. Distribution Hub is excluded (#93666):
+        # filter by name to keep the public surface honest even without a
+        # dedicated flag on res.company.
+        Store = request.env['res.company'].sudo()
+        store_domain = [
+            ('id', 'in', markets.mapped('store_ids').ids),
+            ('name', 'not ilike', 'Distribution Hub'),
+        ]
+        stores = Store.search_read(store_domain, ['id', 'name'], order='name')
+        # Map of market_id → [store_id, ...] for client-side narrowing.
+        stores_by_market = {
+            market.id: [s.id for s in market.store_ids
+                        if 'Distribution Hub' not in (s.name or '')]
+            for market in markets
+        }
         currency = request.env.company.currency_id
         ctx = {
             'markets': markets,
             'brands': brands,
+            'stores': stores,
+            'stores_by_market': stores_by_market,
             'currency_symbol': currency.symbol if currency else '$',
             'categories': PRODUCT_CATEGORIES,
             'discount_types': DISCOUNT_TYPES,
+            'weight_units': [('g', 'g'), ('mg', 'mg'), ('oz', 'oz'), ('ct', 'ct')],
             'error': None,
             'success': None,
             'form_values': {},

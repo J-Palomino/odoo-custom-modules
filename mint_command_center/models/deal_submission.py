@@ -1,7 +1,7 @@
 from datetime import date as _date
 
 from odoo import api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
 
 class DealSubmission(models.Model):
@@ -55,6 +55,27 @@ class DealSubmission(models.Model):
     # --- Deal details ---
     name = fields.Char(string='Deal Name', required=True, tracking=True)
     product_category = fields.Char(string='Product Category')
+    product_ids = fields.Many2many(
+        'product.template',
+        'mint_deal_submission_product_rel',
+        'submission_id',
+        'product_id',
+        string='Products',
+        help='Specific products this deal applies to (filtered by brand × category).',
+    )
+    weight_value = fields.Float(
+        string='Weight',
+        help='Numeric weight/count of the product (e.g. 3.5 for an eighth).',
+    )
+    weight_unit = fields.Selection(
+        selection=[
+            ('g', 'g'),
+            ('mg', 'mg'),
+            ('oz', 'oz'),
+            ('ct', 'ct'),
+        ],
+        string='Unit',
+    )
     discount_type = fields.Selection(
         selection=[
             ('percent', 'Percentage Off'),
@@ -73,16 +94,34 @@ class DealSubmission(models.Model):
         string='Sales Details',
         help='Formatted pricing text — how this deal should be displayed',
     )
+    inclusions = fields.Text(
+        string='Inclusions',
+        help='What this deal applies to (SKUs, strains, sizes, etc.).',
+    )
     details_exclusions = fields.Text(
-        string='Details & Exclusions',
-        help='Product details, exclusions, and conditions',
+        string='Exclusions',
+        help='What this deal does NOT apply to (limits, conditions, exclusions).',
     )
 
     # --- Targeting ---
+    market_ids = fields.Many2many(
+        'mint.region',
+        'mint_deal_submission_market_rel',
+        'submission_id',
+        'market_id',
+        string='Markets',
+        tracking=True,
+        help='Regions this deal targets. Use the public form to pick multiple.',
+    )
     market_id = fields.Many2one(
         'mint.region',
-        string='Market',
+        string='Primary Market',
+        compute='_compute_primary_market',
+        store=True,
+        readonly=False,
         tracking=True,
+        help='First of market_ids — kept for downstream compatibility '
+             '(action_approve, action_convert_to_deal, mint.national.promo.get_or_create).',
     )
     store_ids = fields.Many2many(
         'res.company',
@@ -97,7 +136,50 @@ class DealSubmission(models.Model):
     preferred_end_date = fields.Date(string='Preferred End Date')
     preferred_days = fields.Char(
         string='Preferred Days of Week',
-        help='e.g. Mon, Wed, Fri',
+        help='Deprecated free-text field. Use plot_date_ids for structured day picks; '
+             'kept for one release to avoid breaking existing submissions.',
+    )
+    plot_date_ids = fields.One2many(
+        'mint.deal.submission.day',
+        'submission_id',
+        string='Plot Dates',
+        help='Specific calendar days the vendor wants this deal to run. '
+             'Supports non-contiguous selection.',
+    )
+
+    # --- Holiday / Special Event ---
+    is_holiday = fields.Boolean(
+        string='Special Event / Holiday',
+        default=False,
+        tracking=True,
+        help='Marks this deal as a Holiday / Special Event submission '
+             '(unlocks Event Name + Promo Units sub-form on the public form).',
+    )
+    event_name = fields.Char(
+        string='Event Name',
+        tracking=True,
+        help='Required when is_holiday=True. Surfaces in the PTL Category column downstream.',
+    )
+
+    # --- Promo Units (internal-only, only shown when is_holiday=True) ---
+    promo_units_enabled = fields.Boolean(
+        string='Provide Promo Units',
+        default=False,
+        help='Vendor opts in to providing doorbuster giveaway units '
+             '(only applicable for Holiday / Special Event deals). Internal-only — '
+             'never displayed on the public PTL.',
+    )
+    promo_units_product = fields.Char(
+        string='Promo Units — Product',
+        help='Product the vendor will send for doorbuster giveaways.',
+    )
+    promo_units_quantity = fields.Integer(
+        string='Promo Units — Quantity',
+        help='How many promo units the vendor will send.',
+    )
+    promo_units_delivery_date = fields.Date(
+        string='Promo Units — Estimated Delivery',
+        help='Rough delivery target; intake team coordinates the actual drop.',
     )
 
     # --- State machine ---
@@ -126,6 +208,26 @@ class DealSubmission(models.Model):
     reviewed_at = fields.Datetime(string='Reviewed At', readonly=True)
     rejection_reason = fields.Text(string='Rejection Reason')
     reviewer_notes = fields.Text(string='Reviewer Notes')
+
+    # --- Computes & constraints ---
+
+    @api.depends('market_ids')
+    def _compute_primary_market(self):
+        for rec in self:
+            # Fall back to the existing market_id value if market_ids is empty —
+            # protects legacy rows during the additive migration window.
+            if rec.market_ids:
+                rec.market_id = rec.market_ids[:1]
+            elif not rec.market_id:
+                rec.market_id = False
+
+    @api.constrains('is_holiday', 'event_name')
+    def _check_event_name_when_holiday(self):
+        for rec in self:
+            if rec.is_holiday and not (rec.event_name and rec.event_name.strip()):
+                raise ValidationError(
+                    "Event Name is required when Special Event / Holiday is enabled."
+                )
 
     # --- Actions ---
 
@@ -230,13 +332,19 @@ class DealSubmission(models.Model):
             'name': self.name,
             'brand_id': self.brand_id.id if self.brand_id else False,
             'product_category': self.product_category,
+            'product_ids': [(6, 0, self.product_ids.ids)] if self.product_ids else False,
+            'weight_value': self.weight_value or 0.0,
+            'weight_unit': self.weight_unit or False,
             'discount_type': self.discount_type,
             'discount_value': self.discount_value,
             'original_price': self.original_price,
             'sales_details': self.sales_details,
+            'inclusions': self.inclusions,
             'details_exclusions': self.details_exclusions,
             'store_ids': [(6, 0, self.store_ids.ids)] if self.store_ids else False,
             'market_id': self.market_id.id if self.market_id else False,
+            'is_holiday': self.is_holiday,
+            'event_name': self.event_name,
             'state': 'approved',
             'submitted_by': self.create_uid.id,
             'submitted_at': self.create_date,
