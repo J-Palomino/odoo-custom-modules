@@ -73,6 +73,9 @@ def migrate(cr, version):
 
     # 2nd `` - `` segment, parenthetical suffix stripped, trimmed; only rows
     # with >= 3 segments (Brand - Line - Strain...) and an exact whitelist hit.
+    # product_template.name is a translatable field => stored as jsonb
+    # ({"en_US": "..."}), so extract the en_US text before string ops
+    # (en_US is the only active language on this instance, verified 2026-05-29).
     cr.execute(
         r"""
         UPDATE product_template pt
@@ -81,13 +84,13 @@ def migrate(cr, version):
               SELECT id,
                      btrim(
                          regexp_replace(
-                             split_part(name, ' - ', 2),
+                             split_part(name->>'en_US', ' - ', 2),
                              '\s*\([^)]*\)\s*$', ''
                          )
                      ) AS line
                 FROM product_template
-               WHERE name IS NOT NULL
-                 AND array_length(string_to_array(name, ' - '), 1) >= 3
+               WHERE name->>'en_US' IS NOT NULL
+                 AND array_length(string_to_array(name->>'en_US', ' - '), 1) >= 3
                  AND (x_product_line IS NULL OR x_product_line = '')
           ) trimmed
          WHERE pt.id = trimmed.id
