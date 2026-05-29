@@ -1,4 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- Cron is created programmatically in hooks.py post_init_hook -->
+
+    <!-- One-shot batched backfill of mint.ptl.deal.format_key (#93687, 2026-05-29).
+         Computing format_key for the ~7.6k existing deals at upgrade time is too
+         slow (a product.template.search per deal over ~62k products) and rolled
+         the module upgrade back. pre-migrate.py pre-creates the column so the ORM
+         skips the mass recompute; this cron then fills format_key in batches and
+         disables itself when done. New deals get format_key via the normal
+         @api.depends compute on write, so this is genuinely one-shot.
+         noupdate="1" so a later module upgrade doesn't re-activate a finished
+         backfill. -->
+    <data noupdate="1">
+        <record id="ir_cron_fill_format_key" model="ir.cron">
+            <field name="name">PTL: backfill format_key (batched, one-shot)</field>
+            <field name="model_id" ref="model_mint_ptl_deal"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_fill_format_key()</field>
+            <field name="interval_number">3</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

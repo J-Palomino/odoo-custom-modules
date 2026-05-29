@@ -101,19 +101,16 @@ def migrate(cr, version):
         filled,
     )
 
-    # Recompute the stored format_key on every deal that has a brand. format_key
-    # @api.depends does NOT list x_product_line (it lives on the product, not the
-    # deal), so writing the column above does NOT auto-trigger recompute — we
-    # force it here, once, after the backfill. Deals whose matching products got
-    # a line now produce a real key; the rest stay False (storefront fallback).
-    env = api.Environment(cr, SUPERUSER_ID, {})
-    deals = env['mint.ptl.deal'].search([('brand_id', '!=', False)])
-    deals.invalidate_recordset(['format_key'])
-    deals._compute_format_key()
-    deals.flush_recordset(['format_key'])
-    keyed = len(deals.filtered('format_key'))
+    # format_key is intentionally NOT recomputed here. Computing it for all
+    # ~7.6k deals means a product.template.search per deal (over ~62k products),
+    # which cannot finish inside an HTTP-bound module upgrade — it rolled the
+    # upgrade back repeatedly on prod (2026-05-29). The columns are pre-created
+    # in pre-migrate.py so the ORM does not mass-recompute on load, and the
+    # stored format_key is filled in batches afterward by the cron
+    # ir_cron_fill_format_key (mint.ptl.deal._cron_fill_format_key). Until a
+    # deal's key is filled the storefront uses its format_key||name fallback, so
+    # behavior is unchanged meanwhile.
     _logger.info(
-        "mint_command_center 19.0.6.0.0: recomputed format_key on %s deal(s); "
-        "%s now have a non-blank key",
-        len(deals), keyed,
+        "mint_command_center 19.0.6.0.0: x_product_line backfilled; format_key "
+        "compute deferred to batch cron ir_cron_fill_format_key"
     )
