@@ -98,7 +98,12 @@
                                    invisible="plot_date_ids"
                                    readonly="1"
                                    help="Deprecated — use Plot Dates instead."/>
-                            <field name="plot_date_ids" widget="one2many">
+                            <!-- The inner <list> is NOT rendered (the
+                                 ptl_day_grid widget owns the DOM); it keeps the
+                                 child `date` field ACTIVE so record.update()
+                                 tracks it into _changes and web_save persists
+                                 the new day rows. -->
+                            <field name="plot_date_ids" widget="ptl_day_grid" nolabel="1">
                                 <list editable="bottom">
                                     <field name="date"/>
                                 </list>

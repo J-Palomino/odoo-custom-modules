@@ -476,6 +476,27 @@ class PtlDay(models.Model):
         }
 
     @api.model
+    def plotted_dates_for_market(self, market_id, date_from, date_to):
+        """Return the ISO dates (YYYY-MM-DD) that already have a mint.ptl.day
+        for the given market within [date_from, date_to] inclusive.
+
+        Read-only helper for the ptl_day_grid widget — shades days already on
+        the PTL for this market while the reviewer clicks days for a new deal.
+        Returns [] when no market is set.
+        """
+        if not market_id:
+            return []
+        rows = self.search_read(
+            [
+                ('market_id', '=', int(market_id)),
+                ('date', '>=', date_from),
+                ('date', '<=', date_to),
+            ],
+            ['date'],
+        )
+        return [str(r['date']) for r in rows]
+
+    @api.model
     def schedule_deal(self, deal_id, date, market_id):
         """Schedule an approved deal on a given (date, market) PTL day.
 

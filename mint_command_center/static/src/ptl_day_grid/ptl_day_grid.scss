@@ -1,0 +1,84 @@
+.o_ptl_day_grid {
+    max-width: 340px;
+
+    .o_pdg_month {
+        font-size: 1rem;
+    }
+
+    .o_pdg_table {
+        width: 100%;
+        table-layout: fixed;
+        border-collapse: collapse;
+
+        .o_pdg_wd {
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.75rem;
+            color: var(--text-muted, #6c757d);
+            padding: 2px 0;
+        }
+
+        .o_pdg_cell {
+            text-align: center;
+            vertical-align: middle;
+            height: 36px;
+            cursor: pointer;
+            border-radius: 6px;
+            user-select: none;
+            transition: background-color 0.1s ease, color 0.1s ease;
+
+            &:hover:not(.o_pdg_readonly) {
+                background-color: rgba(0, 0, 0, 0.06);
+            }
+
+            // days outside the visible month
+            &.o_pdg_out {
+                color: var(--text-muted, #adb5bd);
+                opacity: 0.45;
+            }
+
+            // already plotted for this market (context only)
+            &.o_pdg_plotted {
+                box-shadow: inset 0 0 0 1px rgba(25, 135, 84, 0.45);
+                background-color: rgba(25, 135, 84, 0.08);
+            }
+
+            // chosen for THIS deal
+            &.o_pdg_selected {
+                background-color: #198754;
+                color: #fff;
+                font-weight: 600;
+
+                &:hover {
+                    background-color: #157347;
+                }
+            }
+
+            // today marker
+            &.o_pdg_today:not(.o_pdg_selected) {
+                font-weight: 700;
+                text-decoration: underline;
+            }
+
+            &.o_pdg_readonly {
+                cursor: default;
+            }
+        }
+    }
+
+    .o_pdg_swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        vertical-align: middle;
+
+        &.o_pdg_selected {
+            background-color: #198754;
+        }
+        &.o_pdg_plotted {
+            background-color: rgba(25, 135, 84, 0.08);
+            box-shadow: inset 0 0 0 1px rgba(25, 135, 84, 0.45);
+        }
+    }
+}

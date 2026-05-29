@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="mint_command_center.PtlDayGrid">
+        <div class="o_ptl_day_grid" data-testid="ptl-day-grid">
+            <div class="o_pdg_header d-flex align-items-center justify-content-between mb-2">
+                <button type="button" class="btn btn-sm btn-light" data-testid="pdg-prev"
+                        t-on-click="prevMonth" title="Previous month">
+                    <i class="fa fa-chevron-left"/>
+                </button>
+                <span class="o_pdg_month fw-bold" data-testid="pdg-month" t-esc="monthLabel"/>
+                <button type="button" class="btn btn-sm btn-light" data-testid="pdg-next"
+                        t-on-click="nextMonth" title="Next month">
+                    <i class="fa fa-chevron-right"/>
+                </button>
+            </div>
+
+            <table class="o_pdg_table">
+                <thead>
+                    <tr>
+                        <th t-foreach="weekdays" t-as="wd" t-key="wd" class="o_pdg_wd" t-esc="wd"/>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr t-foreach="weeks" t-as="week" t-key="week_index">
+                        <td t-foreach="week" t-as="cell" t-key="cell.iso"
+                            class="o_pdg_cell"
+                            t-att-class="{
+                                'o_pdg_out': !cell.inMonth,
+                                'o_pdg_selected': cell.selected,
+                                'o_pdg_plotted': cell.plotted &amp;&amp; !cell.selected,
+                                'o_pdg_today': cell.today,
+                                'o_pdg_readonly': props.readonly,
+                            }"
+                            t-att-data-testid="'pdg-cell-' + cell.iso"
+                            t-att-title="cell.plotted ? 'Already plotted for this market' : ''"
+                            t-on-click="() => this.toggleDay(cell.iso)">
+                            <span t-esc="cell.day"/>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="o_pdg_footer d-flex align-items-center justify-content-between mt-2">
+                <div class="o_pdg_legend text-muted small">
+                    <span class="o_pdg_swatch o_pdg_selected"/> selected
+                    <span class="o_pdg_swatch o_pdg_plotted ms-2"/> already plotted
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="o_pdg_counter text-muted small" data-testid="pdg-counter">
+                        Selected: <b><t t-esc="dayCount"/></b> day<t t-if="dayCount !== 1">s</t>
+                    </span>
+                    <button type="button" class="btn btn-sm btn-link text-danger p-0"
+                            data-testid="pdg-clear" t-if="dayCount &gt; 0 &amp;&amp; !props.readonly"
+                            t-on-click="clearAll">Clear</button>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>
