@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.4.16.0',
+    'version': '19.0.4.17.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -46,6 +46,13 @@
         'mint_push',
         'mint_banner',
         'mint_api_v2',
+        # required by the marketing ROLE groups in security/security_groups.xml
+        'mass_mailing',
+        'marketing_card',
+        'im_livechat',
+        'project',
+        'website_slides',
+        'analytic',
     ],
     'assets': {
         'web.assets_backend': [
