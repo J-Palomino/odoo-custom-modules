@@ -71,3 +71,61 @@ class TestPtlDealTargeting(MintPtlDealCommon):
         self.assertIn(self.cat_flower.id, vals["category_ids"][0][2])
         # Exclusion text is forwarded verbatim
         self.assertEqual(vals["excluded_skus"], "FA-FLW-0")
+
+
+@tagged("post_install", "-at_install")
+class TestPtlDealExplicitProducts(MintPtlDealCommon):
+    """Locks the explicit-product-picker contract added for Odoo task #93642:
+    when `explicit_product_ids` is populated the deal targets ONLY those SKUs
+    (intersected with brand_id) and forwards them to mint.discount.product_ids;
+    when empty it falls back to the brand+category+excluded_skus matching that
+    TestPtlDealTargeting covers.
+    """
+
+    def _make_deal(self, **overrides):
+        vals = {
+            "name": "FA-93642 Explicit Deal",
+            "brand_id": self.brand.id,
+            "product_category": "Flower",
+            "discount_type": "percent",
+            "discount_value": 0.2,
+        }
+        vals.update(overrides)
+        return self.PtlDeal.create(vals)
+
+    def test_explicit_products_override_brand_category(self):
+        """A populated explicit set wins over brand+category widening."""
+        picks = self.flowers[:2]
+        deal = self._make_deal(explicit_product_ids=[(6, 0, picks.ids)])
+        self.assertEqual(deal.matching_product_count, 2)
+        self.assertEqual(set(deal.matching_product_ids.ids), set(picks.ids))
+        # The other 3 brand flowers and all vapes must be untouched.
+        self.assertFalse(deal.matching_product_ids & (self.flowers[2:] | self.vapes))
+
+    def test_explicit_filters_stale_brand_picks(self):
+        """Picks whose brand != the deal's brand are dropped (no leak)."""
+        picks = self.flowers[:1] | self.other_flowers[:1]
+        deal = self._make_deal(explicit_product_ids=[(6, 0, picks.ids)])
+        # Only the in-brand pick survives.
+        self.assertEqual(set(deal.matching_product_ids.ids), set(self.flowers[:1].ids))
+        self.assertFalse(deal.matching_product_ids & self.other_flowers)
+
+    def test_empty_explicit_falls_back_to_brand_category(self):
+        """Empty explicit set keeps today's brand+category matching."""
+        deal = self._make_deal()
+        self.assertEqual(set(deal.matching_product_ids.ids), set(self.flowers.ids))
+
+    def test_discount_vals_forwards_product_ids_when_explicit(self):
+        """_deal_to_discount_vals forwards explicit picks to product_ids so the
+        Dutchie discount restricts at the SKU level (Phase 4)."""
+        picks = self.flowers[:2]
+        deal = self._make_deal(explicit_product_ids=[(6, 0, picks.ids)])
+        vals = self.PtlDay._deal_to_discount_vals(deal)
+        self.assertIn("product_ids", vals)
+        self.assertEqual(set(vals["product_ids"][0][2]), set(picks.ids))
+
+    def test_discount_vals_no_product_ids_without_explicit(self):
+        """No explicit picks → no product_ids emitted (back-compat guard)."""
+        deal = self._make_deal()
+        vals = self.PtlDay._deal_to_discount_vals(deal)
+        self.assertNotIn("product_ids", vals)
