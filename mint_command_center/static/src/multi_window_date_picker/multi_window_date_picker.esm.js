@@ -6,6 +6,8 @@ import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { _t } from "@web/core/l10n/translation";
 import { serializeDate, deserializeDate } from "@web/core/l10n/dates";
 
+const { DateTime } = luxon;
+
 /**
  * Multi-window date picker — bound to mint.deal.submission.window_ids.
  *
@@ -71,7 +73,11 @@ export class MultiWindowDatePicker extends Component {
         if (lastRec && lastRec.data.date_end && lastRec.data.date_end.plus) {
             defaultStart = lastRec.data.date_end.plus({ days: 1 });
         } else {
-            defaultStart = deserializeDate(new Date().toISOString().slice(0, 10));
+            // DateTime.now() resolves "today" in the user's local zone; the
+            // old new Date().toISOString().slice(0,10) used the UTC date, which
+            // seeds tomorrow for users west of UTC late in the day — the exact
+            // drift dayCount() avoids.
+            defaultStart = DateTime.now();
         }
         // Passing default_* through addNewRecord's context does NOT reliably
         // mark date_start/date_end dirty on the virtual record, so web_save
