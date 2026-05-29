@@ -96,9 +96,26 @@
                             <group>
                                 <field name="windows_summary" readonly="1"/>
                             </group>
+                            <!-- The inner <list> is NOT rendered (the
+                                 multi_window_date_picker widget owns the DOM);
+                                 it exists so date_start/date_end/sequence are
+                                 ACTIVE fields. Without it the children load via
+                                 the widget's relatedFields for display only,
+                                 record.update() never tracks them into
+                                 _changes, and web_save emits empty create
+                                 commands ([0, virtual, {}]) → the server
+                                 rejects with "Missing required value for
+                                 'Start Date'". -->
                             <field name="window_ids"
                                    widget="multi_window_date_picker"
-                                   nolabel="1"/>
+                                   nolabel="1">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="date_start"/>
+                                    <field name="date_end"/>
+                                    <field name="day_count" readonly="1"/>
+                                </list>
+                            </field>
                             <group string="Legacy vendor preferences (read-only)"
                                    class="o_mdcc_legacy_prefs">
                                 <field name="preferred_start_date" readonly="1"/>
