@@ -140,6 +140,14 @@ class PtlDay(models.Model):
         Discount = self.env['mint.discount'].sudo()
         discount_ids = []
 
+        # Mark this day published BEFORE recomputing day-of-week booleans.
+        # _recompute_day_booleans only counts days in state='published', so if
+        # this write ran afterward the day being published would be excluded
+        # from its own recompute — dropping its weekday from the discount and
+        # hiding that day (e.g. the last window of a non-contiguous deal) from
+        # the Daily Deals page. (Odoo #93649 AC05.)
+        self.write({'state': 'published'})
+
         for deal in self.deal_ids:
             discount = self._ensure_discount(deal)
             Discount._recompute_day_booleans(discount)
@@ -153,7 +161,6 @@ class PtlDay(models.Model):
         # the default until ops flips it).
         self._push_discounts_to_dutchie(discount_ids)
 
-        self.write({'state': 'published'})
         self.message_post(
             body=f"Published {len(discount_ids)} deal(s) to frontend.",
             message_type='comment',
