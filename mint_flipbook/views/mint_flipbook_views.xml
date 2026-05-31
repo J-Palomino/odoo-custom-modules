@@ -76,10 +76,9 @@
                 <field name="vendor_id"/>
                 <filter name="filter_draft" string="Draft" domain="[('state', '=', 'draft')]"/>
                 <filter name="filter_published" string="Published" domain="[('state', '=', 'published')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_vendor" string="Vendor" context="{'group_by': 'vendor_id'}"/>
-                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
-                </group>
+                <separator/>
+                <filter name="group_vendor" string="Vendor" context="{'group_by': 'vendor_id'}"/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
             </search>
         </field>
     </record>
