@@ -123,18 +123,12 @@ class RedisSessionStore(SessionStore):
             # Check if a concurrent request already rotated
             recent_session = self.get(session.sid)
             if 'next_sid' in recent_session:
+                # Match stock FilesystemSessionStore exactly: adopt the sid the
+                # concurrent request already persisted and let _save_session set
+                # the new cookie. The next request reloads that record (which
+                # already carries the correct token), so we deliberately do NOT
+                # recompute the token here.
                 session.sid = recent_session['next_sid']
-                # The concurrent request persisted the new record with a fresh
-                # token, but THIS in-memory session still carries the token
-                # computed for the OLD sid. compute_session_token() HMACs the
-                # sid, so leaving the stale token here means the very next
-                # request fails session validation → forced re-login. Recompute
-                # for the adopted sid and stop flagging a rotation.
-                if session.uid and env:
-                    session.session_token = security.compute_session_token(
-                        session, env
-                    )
-                session.should_rotate = False
                 return
 
             next_sid = static + self.generate_key()[STORED_SESSION_BYTES:]
