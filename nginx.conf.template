@@ -77,7 +77,15 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            # TLS terminates at the Cloudflare/Railway edge; the connection to
+            # this container is plain HTTP, so $scheme is "http". With
+            # proxy_mode=True Odoo trusts this header, and seeing "http" it
+            # emits the session_id cookie WITHOUT the Secure flag — which
+            # iOS/Safari PWAs purge aggressively and which weakens the
+            # rotation handoff (premature logouts). Force https to match the
+            # /websocket and /longpolling blocks above.
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Host $host;
             proxy_read_timeout 600;
             proxy_connect_timeout 300;
         }

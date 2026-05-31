@@ -71,7 +71,20 @@ class RedisSessionStore(SessionStore):
         except (json.JSONDecodeError, TypeError):
             _logger.warning("Corrupt session data for %s…", sid[:8])
             return self.new()
-        return self.session_class(data, sid, False)
+        session = self.session_class(data, sid, False)
+        # Sliding expiration: refresh the TTL on every read so an actively-used
+        # session never hard-expires mid-use. Without this the TTL is only set
+        # on save()/rotate(), so a logged-in user whose session data doesn't
+        # change counts down from login and gets logged out ~SESSION_LIFETIME
+        # later regardless of activity. Don't refresh sessions mid-rotation
+        # (a ``next_sid`` pointer is short-lived by design).
+        if 'next_sid' not in data:
+            try:
+                ttl = self.expiration if session.uid else ANON_EXPIRATION
+                self.redis.expire(self._key(sid), ttl)
+            except Exception:
+                pass
+        return session
 
     def save(self, session):
         """Persist session to Redis with appropriate TTL."""
@@ -111,6 +124,17 @@ class RedisSessionStore(SessionStore):
             recent_session = self.get(session.sid)
             if 'next_sid' in recent_session:
                 session.sid = recent_session['next_sid']
+                # The concurrent request persisted the new record with a fresh
+                # token, but THIS in-memory session still carries the token
+                # computed for the OLD sid. compute_session_token() HMACs the
+                # sid, so leaving the stale token here means the very next
+                # request fails session validation → forced re-login. Recompute
+                # for the adopted sid and stop flagging a rotation.
+                if session.uid and env:
+                    session.session_token = security.compute_session_token(
+                        session, env
+                    )
+                session.should_rotate = False
                 return
 
             next_sid = static + self.generate_key()[STORED_SESSION_BYTES:]
