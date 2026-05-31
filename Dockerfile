@@ -34,7 +34,7 @@ COPY --chown=odoo:odoo fs_storage /opt/extra-addons/fs_storage
 COPY --chown=odoo:odoo fs_attachment /opt/extra-addons/fs_attachment
 COPY --chown=odoo:odoo fs_attachment_s3 /opt/extra-addons/fs_attachment_s3
 
-# ── Mint custom modules (CACHEBUST=103) ─────────────────────────────
+# ── Mint custom modules (CACHEBUST=104) ─────────────────────────────
 COPY --chown=odoo:odoo avancir_inventory /opt/extra-addons/avancir_inventory
 COPY --chown=odoo:odoo mint_api_v2 /opt/extra-addons/mint_api_v2
 COPY --chown=odoo:odoo mint_theme /opt/extra-addons/mint_theme
@@ -43,6 +43,7 @@ COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financia
 COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price_precision
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
+COPY --chown=odoo:odoo mint_flipbook /opt/extra-addons/mint_flipbook
 COPY --chown=odoo:odoo mint_dutchie_discount_mirror /opt/extra-addons/mint_dutchie_discount_mirror
 COPY --chown=odoo:odoo mint_redis_push /opt/extra-addons/mint_redis_push
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
