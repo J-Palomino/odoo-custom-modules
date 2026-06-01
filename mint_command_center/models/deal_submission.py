@@ -7,7 +7,10 @@ from odoo.exceptions import UserError
 class DealSubmission(models.Model):
     _name = 'mint.deal.submission'
     _description = 'Vendor Deal Submission'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = [
+        'mail.thread', 'mail.activity.mixin',
+        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
+    ]
     _order = 'create_date desc'
 
     # --- CRM linkage ---
@@ -50,36 +53,15 @@ class DealSubmission(models.Model):
     )
 
     # --- Vendor funding terms ---
-    vendor_funding_amount = fields.Monetary(
-        string='Vendor Funding Amount',
-        currency_field='currency_id',
-        tracking=True,
-    )
-    vendor_funding_percent = fields.Float(string='Vendor Funding %', tracking=True)
+    # vendor_funding_amount / vendor_funding_percent / currency_id come from
+    # mint.vendor.funding.mixin.
     vendor_funding_terms = fields.Text(string='Funding Terms')
-    currency_id = fields.Many2one(
-        'res.currency',
-        string='Currency',
-        default=lambda self: self.env.company.currency_id,
-    )
 
     # --- Deal details ---
     name = fields.Char(string='Deal Name', required=True, tracking=True)
     product_category = fields.Char(string='Product Category')
-    discount_type = fields.Selection(
-        selection=[
-            ('percent', 'Percentage Off'),
-            ('fixed', 'Fixed Amount Off'),
-            ('bogo', 'BOGO'),
-            ('bundle', 'Bundle Deal'),
-            ('price', 'Set Price'),
-            ('points_multiplier', 'Loyalty Points Multiplier'),
-            ('clearance', 'Clearance (Near Expiry)'),
-        ],
-        string='Discount Type',
-    )
-    discount_value = fields.Float(string='Discount Value')
-    original_price = fields.Float(string='Original / MSRP Price')
+    # discount_type / discount_value / original_price come from
+    # mint.discount.core.mixin.
     sales_details = fields.Text(
         string='Sales Details',
         help='Formatted pricing text — how this deal should be displayed',
