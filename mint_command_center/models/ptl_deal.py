@@ -3,7 +3,7 @@ import logging
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
-from .brand_calendar import _brand_lookup_key, _parse_brand_name, _parse_weight
+from .brand_calendar import _brand_lookup_key, _parse_brand_name
 
 _logger = logging.getLogger(__name__)
 
@@ -42,7 +42,11 @@ MASTER_CATEGORY_PATTERNS = {
 class PtlDeal(models.Model):
     _name = 'mint.ptl.deal'
     _description = 'PTL Deal — Reusable deal template referenced by PTL days'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = [
+        'mail.thread', 'mail.activity.mixin',
+        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
+        'mint.weight.parsed.mixin',
+    ]
     _order = 'sequence, id'
 
     name = fields.Char(string='Deal Name', required=True, tracking=True)
@@ -68,47 +72,15 @@ class PtlDeal(models.Model):
         help='Original free-text value captured before the 19.0.4.5.6 conversion '
              'to a Selection. Preserved for audit; not shown in standard views.',
     )
-    discount_type = fields.Selection(
-        selection=[
-            ('percent', 'Percentage Off'),
-            ('fixed', 'Fixed Amount Off'),
-            ('bogo', 'BOGO'),
-            ('bundle', 'Bundle Deal'),
-            ('price', 'Set Price'),
-            ('points_multiplier', 'Loyalty Points Multiplier'),
-            ('clearance', 'Clearance (Near Expiry)'),
-        ],
-        string='Discount Type',
-    )
+    # discount_type, discount_value, original_price come from
+    # mint.discount.core.mixin; weight_value/weight_unit from
+    # mint.weight.parsed.mixin (see _inherit). Only the PTL-specific help text
+    # is re-declared here.
     discount_value = fields.Float(
-        string='Discount Value',
         help='For points_multiplier, this is the points multiplier (e.g. 2.0 = 2x points).',
     )
     original_price = fields.Float(
-        string='Original / MSRP Price',
         help='Manufacturer suggested retail price — used to compute display text',
-    )
-    weight_value = fields.Float(
-        string='Weight',
-        compute='_compute_weight',
-        store=True,
-        readonly=False,
-        tracking=True,
-        help='Numeric weight/count parsed from the deal name (e.g. "Aeriz 1g AIO" → 1.0). '
-             'Manually editable; clear the name/sales_details to auto-recompute.',
-    )
-    weight_unit = fields.Selection(
-        selection=[
-            ('g', 'g'),
-            ('mg', 'mg'),
-            ('oz', 'oz'),
-            ('ct', 'ct'),
-        ],
-        string='Unit',
-        compute='_compute_weight',
-        store=True,
-        readonly=False,
-        tracking=True,
     )
     sales_details = fields.Text(
         string='Sales Details',
@@ -245,18 +217,8 @@ class PtlDeal(models.Model):
     stock_locations_total = fields.Integer(string='Total Locations', default=0)
     stock_checked_at = fields.Datetime(string='Last Stock Check')
 
-    # --- Vendor funding (carried forward from submission/campaign) ---
-    vendor_funding_amount = fields.Monetary(
-        string='Vendor Funding Amount',
-        currency_field='currency_id',
-        tracking=True,
-    )
-    vendor_funding_percent = fields.Float(string='Vendor Funding %', tracking=True)
-    currency_id = fields.Many2one(
-        'res.currency',
-        string='Currency',
-        default=lambda self: self.env.company.currency_id,
-    )
+    # vendor_funding_amount / vendor_funding_percent / currency_id (carried
+    # forward from submission/campaign) come from mint.vendor.funding.mixin.
     campaign_id = fields.Many2one(
         'mint.national.promo',
         string='Campaign',
@@ -516,12 +478,14 @@ class PtlDeal(models.Model):
             days.write({'deal_ids': [(3, self.id)]})
         return days.ids
 
+    def _weight_source(self):
+        return (self.name, self.sales_details)
+
     @api.depends('name', 'sales_details')
     def _compute_weight(self):
-        for rec in self:
-            value, unit = _parse_weight(rec.name, rec.sales_details)
-            rec.weight_value = value
-            rec.weight_unit = unit or False
+        # Source fields + deps are PTL-specific; the parse/assign body lives in
+        # mint.weight.parsed.mixin.
+        return super()._compute_weight()
 
     @api.depends('name')
     def _compute_brand_id(self):

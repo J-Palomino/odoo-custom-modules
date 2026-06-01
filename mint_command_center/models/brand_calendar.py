@@ -3,6 +3,8 @@ import re
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
+from .deal_mixins import DISCOUNT_TYPE_SELECTION
+
 
 # Extracts cannabis-weight metadata from a free-text title.
 # Two-pass: prefer mass units (mg/g/oz) over count units (pk/ct) so titles like
@@ -104,7 +106,11 @@ def _parse_weight(*sources):
 class BrandCalendarEntry(models.Model):
     _name = 'mint.brand.calendar.entry'
     _description = 'Brand Calendar Entry — Scheduled brand promotion slot'
-    _inherit = ['mail.thread']
+    _inherit = [
+        'mail.thread',
+        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
+        'mint.weight.parsed.mixin',
+    ]
     _order = 'date, brand_id'
 
     # ── Identity ──────────────────────────────────────────────────────────
@@ -165,74 +171,40 @@ class BrandCalendarEntry(models.Model):
         tracking=True,
         help='Raw XLSX cell content (e.g. "40% off", "2 for $59").',
     )
-    discount_type = fields.Selection(
-        selection=[
-            ('percent', 'Percentage Off'),
-            ('fixed', 'Fixed Amount Off'),
-            ('bogo', 'BOGO'),
-            ('bundle', 'Bundle Deal'),
-            ('price', 'Set Price'),
-            ('points_multiplier', 'Loyalty Points Multiplier'),
-            ('clearance', 'Clearance (Near Expiry)'),
-        ],
-        string='Discount Type',
-        tracking=True,
-    )
-    discount_value = fields.Float(string='Discount Value', tracking=True)
-    original_price = fields.Float(string='Original / MSRP Price', tracking=True)
+    # discount_type / discount_value / original_price come from
+    # mint.discount.core.mixin; brand calendar tracks all three. The selection
+    # is re-passed explicitly (shared constant) so the override can't drop it.
+    discount_type = fields.Selection(DISCOUNT_TYPE_SELECTION, tracking=True)
+    discount_value = fields.Float(tracking=True)
+    original_price = fields.Float(tracking=True)
 
     # ── Weight metadata (parsed from sku_or_category / promo_text) ───────
     # Stored compute with readonly=False: auto-derives from the title but can be
     # overridden manually. Useful for filtering/badging deals on the PTL calendar
     # (e.g. show "1g" or "3.5g" next to the deal card).
 
+    # weight_value / weight_unit come from mint.weight.parsed.mixin; brand
+    # calendar parses from the SKU/Category title (see _weight_source below) and
+    # re-declares only its own help text.
     weight_value = fields.Float(
-        string='Weight',
-        compute='_compute_weight',
-        store=True,
-        readonly=False,
-        tracking=True,
         help='Numeric weight/count parsed from the SKU/Category title (e.g. "1g AIO" → 1.0). '
              'Manually editable; clear to auto-recompute from the title.',
     )
-    weight_unit = fields.Selection(
-        selection=[
-            ('g', 'g'),
-            ('mg', 'mg'),
-            ('oz', 'oz'),
-            ('ct', 'ct'),
-        ],
-        string='Unit',
-        compute='_compute_weight',
-        store=True,
-        readonly=False,
-        tracking=True,
-    )
+
+    def _weight_source(self):
+        return (self.sku_or_category, self.promo_text)
 
     @api.depends('sku_or_category', 'promo_text')
     def _compute_weight(self):
-        for rec in self:
-            # Skip if user has manually set non-default values that don't match either source.
-            # The stored-compute + readonly=False pattern recomputes on dependency change;
-            # to preserve a manual override, the user should clear sku_or_category last
-            # (or just edit the weight field after — Odoo only recomputes when deps change).
-            value, unit = _parse_weight(rec.sku_or_category, rec.promo_text)
-            rec.weight_value = value
-            rec.weight_unit = unit or False
+        # Source fields + deps are brand-calendar-specific; the parse/assign body
+        # lives in mint.weight.parsed.mixin.
+        return super()._compute_weight()
 
     # ── Vendor funding (per-entry override; defaults inherited from campaign) ──
 
-    vendor_funding_amount = fields.Monetary(
-        string='Vendor Funding (Per Entry)',
-        currency_field='currency_id',
-        tracking=True,
-    )
-    vendor_funding_percent = fields.Float(string='Vendor Funding %', tracking=True)
-    currency_id = fields.Many2one(
-        'res.currency',
-        string='Currency',
-        default=lambda self: self.env.company.currency_id,
-    )
+    # vendor_funding_percent / currency_id come from mint.vendor.funding.mixin;
+    # only the per-entry label is re-declared here.
+    vendor_funding_amount = fields.Monetary(string='Vendor Funding (Per Entry)')
 
     # ── Scheduling ────────────────────────────────────────────────────────
 
