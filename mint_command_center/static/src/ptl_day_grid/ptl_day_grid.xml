@@ -15,6 +15,27 @@
                 </button>
             </div>
 
+            <!-- Quick-fill row (#93653): bulk-select Every Day / Weekdays / Weekends
+                 for the currently-visible month. Non-destructive (additive). -->
+            <div class="o_pdg_quick d-flex flex-wrap gap-1 mb-2"
+                 t-if="!props.readonly" data-testid="pdg-quick">
+                <button type="button" class="btn btn-sm btn-outline-primary"
+                        data-testid="pdg-edlp" t-on-click="setEdlpMonth"
+                        title="Select every day in this month (EDLP)">
+                    Every Day (EDLP)
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        data-testid="pdg-weekdays" t-on-click="setWeekdaysMonth"
+                        title="Select Mon–Fri in this month">
+                    Weekdays
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        data-testid="pdg-weekends" t-on-click="setWeekendsMonth"
+                        title="Select Sat–Sun in this month">
+                    Weekends
+                </button>
+            </div>
+
             <table class="o_pdg_table">
                 <thead>
                     <tr>
