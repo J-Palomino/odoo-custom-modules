@@ -15,4 +15,39 @@
         </field>
     </record>
 
+    <!-- F7 Sales Velocity: surface velocity fields in the product list + a
+         "Has Velocity" filter. Mirrors DB views created live via RPC on
+         2026-06-01; pre-migration 19.0.4.18.0 removes those orphan DB copies
+         so columns do not double up. -->
+    <record id="product_template_list_velocity" model="ir.ui.view">
+        <field name="name">mcc.product.template.list.velocity</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_tree_view"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='list_price']" position="after">
+                <field name="x_velocity_rank" optional="show" string="Velocity Rank"/>
+                <field name="x_units_sold_30d" optional="show" string="Units 30d"/>
+                <field name="x_avg_daily_sales" optional="hide" string="Avg/Day"/>
+                <field name="x_revenue_30d" optional="hide" string="Revenue 30d"/>
+                <field name="x_velocity_updated_at" optional="hide" string="Velocity Updated"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="product_template_search_velocity" model="ir.ui.view">
+        <field name="name">mcc.product.template.search.velocity</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_search_view"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <filter name="has_velocity" string="Has Velocity (ranked)"
+                        domain="[('x_velocity_rank', '&gt;', 0)]"/>
+                <field name="x_velocity_rank"/>
+            </xpath>
+        </field>
+    </record>
+
 </odoo>
