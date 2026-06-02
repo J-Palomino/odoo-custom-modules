@@ -34,7 +34,7 @@ COPY --chown=odoo:odoo fs_storage /opt/extra-addons/fs_storage
 COPY --chown=odoo:odoo fs_attachment /opt/extra-addons/fs_attachment
 COPY --chown=odoo:odoo fs_attachment_s3 /opt/extra-addons/fs_attachment_s3
 
-# ── Mint custom modules (CACHEBUST=105) ─────────────────────────────
+# ── Mint custom modules (CACHEBUST=106) ─────────────────────────────
 COPY --chown=odoo:odoo avancir_inventory /opt/extra-addons/avancir_inventory
 COPY --chown=odoo:odoo mint_api_v2 /opt/extra-addons/mint_api_v2
 COPY --chown=odoo:odoo mint_theme /opt/extra-addons/mint_theme
