@@ -1,6 +1,8 @@
 import logging
 from datetime import timedelta
 
+import psycopg2
+
 from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
@@ -62,92 +64,117 @@ class ProductTemplate(models.Model):
 
     @api.model
     def _cron_compute_velocity(self):
-        """Aggregate mint.pos.order.line for last 30 days, write per-product
-        velocity fields, recompute rank.
+        """Aggregate mint.pos.order.line for the last 30 days into per-product
+        velocity fields + dense rank.
 
-        Performance note: one direct SQL aggregation + one bulk update so we
-        don't spin per-record ORM writes across thousands of SKUs.
+        Batched + retry: a single bulk UPDATE over ~63k product_template rows
+        runs under Odoo's REPEATABLE READ isolation and deterministically hits
+        psycopg2 SerializationFailure against the constant product_template
+        writers (Dutchie/inventory/order sync), rolling the whole job back. So
+        we stage desired values in a session temp table (reads only — no
+        write-lock, no conflict), then apply the writes in small id-range
+        batches, each its own committed transaction with retry. See
+        [cron-health:velocity] / Odoo task 94273.
+
+        NOTE: the live prod cron runs an inline-SQL copy of this logic in its
+        ir.cron code field (cache-trap workaround); this method is the
+        source-of-truth mirror so a reinstall/repoint can't reintroduce the
+        non-batched version.
         """
-        _logger.info('Velocity Compute: starting')
+        _logger.info('Velocity Compute: starting (batched)')
         cutoff = fields.Datetime.now() - timedelta(days=30)
         cr = self.env.cr
 
-        # Aggregate units + revenue per product.template via:
-        #   mint.pos.order.line.dutchie_product_id → product.template.x_dutchie_product_id
-        # Skip lines without a dutchie id; they can't link back.
+        # 1. Stage desired final state for every product_template row. This
+        #    reads product_template + mint_pos_order_line but only writes the
+        #    session-local temp table, so it cannot serialization-conflict.
+        cr.execute("DROP TABLE IF EXISTS _velo_stage")
         cr.execute("""
-            WITH aggregated AS (
-                SELECT
-                    pt.id AS tmpl_id,
-                    SUM(line.quantity)::int AS units,
-                    SUM(line.line_total)::numeric(12,2) AS revenue
-                FROM mint_pos_order_line line
-                JOIN product_template pt
-                  ON pt.x_dutchie_product_id::text = line.dutchie_product_id
-                WHERE line.dutchie_product_id IS NOT NULL
-                  AND line.dutchie_product_id <> ''
-                  AND pt.x_dutchie_product_id IS NOT NULL
-                  AND pt.x_dutchie_product_id <> 0
-                  AND line.create_date >= %s
-                GROUP BY pt.id
+            CREATE TEMP TABLE _velo_stage AS
+            WITH agg AS (
+                SELECT pt.id AS tmpl_id,
+                       SUM(line.quantity)::int AS units,
+                       SUM(line.line_total)::numeric(12,2) AS revenue
+                  FROM mint_pos_order_line line
+                  JOIN product_template pt
+                    ON pt.x_dutchie_product_id::text = line.dutchie_product_id
+                 WHERE line.dutchie_product_id IS NOT NULL
+                   AND line.dutchie_product_id <> ''
+                   AND pt.x_dutchie_product_id IS NOT NULL
+                   AND pt.x_dutchie_product_id <> 0
+                   AND line.create_date >= %s
+                 GROUP BY pt.id
+            ),
+            base AS (
+                SELECT pt.id AS tmpl_id,
+                       COALESCE(a.units, 0) AS units,
+                       COALESCE(a.revenue, 0)::double precision AS revenue
+                  FROM product_template pt
+                  LEFT JOIN agg a ON a.tmpl_id = pt.id
             )
-            UPDATE product_template pt
-               SET x_units_sold_30d = COALESCE(a.units, 0),
-                   x_revenue_30d    = COALESCE(a.revenue, 0),
-                   x_avg_daily_sales = COALESCE(a.units, 0) / 30.0
-              FROM aggregated a
-             WHERE pt.id = a.tmpl_id
+            SELECT tmpl_id, units, revenue,
+                   (units / 30.0)::double precision AS avg_daily,
+                   CASE WHEN units > 0
+                        THEN DENSE_RANK() OVER (ORDER BY units DESC)
+                        ELSE 0 END AS rank
+              FROM base
         """, (cutoff,))
-        updated = cr.rowcount
+        cr.execute("CREATE INDEX _velo_stage_idx ON _velo_stage (tmpl_id)")
+        cr.commit()
 
-        # Zero out anything that didn't show up in the 30-day window so stale
-        # values from previous runs don't linger.
-        cr.execute("""
-            UPDATE product_template pt
-               SET x_units_sold_30d = 0,
-                   x_revenue_30d = 0,
-                   x_avg_daily_sales = 0
-             WHERE NOT EXISTS (
-                 SELECT 1 FROM mint_pos_order_line line
-                  WHERE pt.x_dutchie_product_id::text = line.dutchie_product_id
-                    AND line.dutchie_product_id IS NOT NULL
-                    AND line.create_date >= %s
-             ) AND pt.x_units_sold_30d > 0
-        """, (cutoff,))
-        zeroed = cr.rowcount
+        # 2. Apply in small id-range batches, each its own committed txn with
+        #    retry-on-serialization. Only touch rows whose values changed.
+        cr.execute(
+            "SELECT COALESCE(MIN(tmpl_id), 0), COALESCE(MAX(tmpl_id), 0) "
+            "FROM _velo_stage")
+        lo, hi = cr.fetchone()
+        batch, retries = 4000, 8
+        i = lo
+        while i <= hi:
+            for attempt in range(retries):
+                try:
+                    cr.execute("""
+                        UPDATE product_template pt
+                           SET x_units_sold_30d  = s.units,
+                               x_revenue_30d     = s.revenue,
+                               x_avg_daily_sales = s.avg_daily,
+                               x_velocity_rank   = s.rank,
+                               x_velocity_updated_at = CASE WHEN s.units > 0
+                                   THEN NOW() ELSE pt.x_velocity_updated_at END
+                          FROM _velo_stage s
+                         WHERE pt.id = s.tmpl_id
+                           AND pt.id >= %s AND pt.id < %s
+                           AND (pt.x_units_sold_30d IS DISTINCT FROM s.units
+                             OR pt.x_revenue_30d    IS DISTINCT FROM s.revenue
+                             OR pt.x_velocity_rank  IS DISTINCT FROM s.rank)
+                    """, (i, i + batch))
+                    cr.commit()
+                    break
+                except (psycopg2.errors.SerializationFailure,
+                        psycopg2.errors.DeadlockDetected):
+                    cr.rollback()
+                    if attempt == retries - 1:
+                        raise
+            i += batch
 
-        # Recompute dense rank by units desc (1 = fastest mover).
-        # Products with units=0 get rank=0 so they sort to the bottom and
-        # the index can use rank>0 as a "has any velocity" filter.
-        cr.execute("""
-            WITH ranked AS (
-                SELECT id, DENSE_RANK() OVER (ORDER BY x_units_sold_30d DESC) AS rk
-                  FROM product_template
-                 WHERE x_units_sold_30d > 0
-            )
-            UPDATE product_template pt
-               SET x_velocity_rank = r.rk
-              FROM ranked r
-             WHERE pt.id = r.id
-        """)
-        cr.execute("""
-            UPDATE product_template
-               SET x_velocity_rank = 0
-             WHERE x_units_sold_30d = 0 AND x_velocity_rank > 0
-        """)
+        # 3. Guaranteed daily freshness heartbeat: always stamp the current
+        #    top mover (1 row) so x_velocity_updated_at advances even on a day
+        #    where no ranks moved.
+        for attempt in range(retries):
+            try:
+                cr.execute("""
+                    UPDATE product_template SET x_velocity_updated_at = NOW()
+                     WHERE id = (SELECT tmpl_id FROM _velo_stage
+                                  WHERE rank = 1 LIMIT 1)
+                """)
+                cr.commit()
+                break
+            except psycopg2.errors.SerializationFailure:
+                cr.rollback()
+                if attempt == retries - 1:
+                    raise
 
-        # Stamp the timestamp on touched products only (avoid bumping 80k
-        # rows just to record "last computed"; the per-row stamp is on the
-        # ones that actually have current sales).
-        now = fields.Datetime.now()
-        cr.execute("""
-            UPDATE product_template
-               SET x_velocity_updated_at = %s
-             WHERE x_units_sold_30d > 0
-        """, (now,))
-
-        _logger.info(
-            'Velocity Compute: %d products updated, %d zeroed, cutoff=%s',
-            updated, zeroed, cutoff,
-        )
-        return {'updated': updated, 'zeroed': zeroed, 'cutoff': str(cutoff)}
+        cr.execute("DROP TABLE IF EXISTS _velo_stage")
+        cr.commit()
+        _logger.info('Velocity Compute: done (batched), cutoff=%s', cutoff)
+        return True
