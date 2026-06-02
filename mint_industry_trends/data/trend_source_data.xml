@@ -1,32 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo noupdate="1">
-    <!-- Starter Apify sources, one per signal type. Actor slugs are the
-         current best-known store actors but MUST be confirmed against a live
-         Apify account before the collector is enabled (Phase 3). Admins can
-         edit these records in Settings without a code change. -->
+    <!-- Starter Apify sources, one per signal type. Actor slugs + output shapes
+         were CONFIRMED against live Apify runs on 2026-06-02 (account
+         selective_jive). Trends + Reddit are active and proven end-to-end;
+         News + Competitor are inactive (see per-record notes). Admins can edit
+         these in Settings → Industry Trends → Sources without a code change. -->
 
     <record id="source_google_trends" model="mint.trend.source">
         <field name="name">Google Trends — Cannabis Terms</field>
         <field name="signal_type">search_trend</field>
-        <field name="apify_actor">emastra/google-trends-scraper</field>
-        <field name="apify_input">{"searchTerms": [], "geo": "US", "timeRange": "today 3-m", "isPublic": true}</field>
-        <field name="notes">Search terms are injected from linked trend terms at run time. CONFIRM actor slug on live Apify before enabling.</field>
+        <field name="apify_actor">apify/google-trends-scraper</field>
+        <field name="apify_input">{"geo": "US", "timeRange": "today 3-m", "isPublic": false}</field>
+        <field name="active" eval="True"/>
+        <field name="notes">VERIFIED 2026-06-02. Collector runs one actor call per linked term (isMultiple=false) so each 0-100 index is self-normalized and comparable day-to-day. PAY_PER_EVENT (~cents/run).</field>
     </record>
 
     <record id="source_reddit" model="mint.trend.source">
         <field name="name">Reddit — Cannabis Subreddits</field>
         <field name="signal_type">social_mention</field>
         <field name="apify_actor">trudax/reddit-scraper-lite</field>
-        <field name="apify_input">{"searches": ["cannabis", "trees", "weed"], "type": "posts", "sort": "new", "maxItems": 200}</field>
-        <field name="notes">CONFIRM actor slug + input schema on live Apify before enabling.</field>
+        <field name="apify_input">{"searches": ["cannabis", "trees", "weed"], "type": "posts", "sort": "new", "maxItems": 200, "maxPostCount": 200, "skipComments": true, "skipUserPosts": true, "skipCommunity": true}</field>
+        <field name="active" eval="True"/>
+        <field name="notes">VERIFIED 2026-06-02. Linked terms' keywords override the default searches at run time; posts are attributed to a term by keyword match. PAY_PER_EVENT. Note: lite mode returns null upVotes (value defaults to 1 = one mention).</field>
     </record>
 
     <record id="source_google_news" model="mint.trend.source">
         <field name="name">Google News — Cannabis Industry</field>
         <field name="signal_type">news</field>
-        <field name="apify_actor">lhotanok/google-news-scraper</field>
+        <field name="apify_actor">lhotanova/google-news-scraper</field>
         <field name="apify_input">{"query": "cannabis dispensary", "region": "US:en", "maxItems": 100}</field>
-        <field name="notes">CONFIRM actor slug + input schema on live Apify before enabling.</field>
+        <field name="active" eval="False"/>
+        <field name="notes">Slug corrected to lhotanova/google-news-scraper (2026-06-02). DISABLED: this actor is FLAT_PRICE_PER_MONTH (monthly rental) — not runnable on the FREE plan. Rent it, then flip active. Until then, emerging-interest signals come from Google Trends relatedQueries_rising.</field>
     </record>
 
     <record id="source_competitor_menus" model="mint.trend.source">
@@ -34,6 +38,7 @@
         <field name="signal_type">competitor_price</field>
         <field name="apify_actor">apify/web-scraper</field>
         <field name="apify_input">{"startUrls": [], "maxItems": 500}</field>
-        <field name="notes">Competitor menu/pricing scrapes flow into mint.competitor.deal, not observations. Wire per-competitor start URLs. CONFIRM actor before enabling.</field>
+        <field name="active" eval="False"/>
+        <field name="notes">DISABLED scaffold. Competitor menu/pricing belongs in mint.competitor.deal, not observations, and needs per-competitor start URLs + a custom page function — not wired in collector v1. apify/web-scraper is free/open-source (pay compute only).</field>
     </record>
 </odoo>
