@@ -1,0 +1,10 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_trend_source_viewer,mint.trend.source.viewer,model_mint_trend_source,mint_command_center.group_viewer,1,0,0,0
+access_trend_source_marketing,mint.trend.source.marketing,model_mint_trend_source,mint_command_center.group_marketing,1,1,1,0
+access_trend_source_operations,mint.trend.source.operations,model_mint_trend_source,mint_command_center.group_operations,1,1,1,1
+access_trend_term_viewer,mint.trend.term.viewer,model_mint_trend_term,mint_command_center.group_viewer,1,0,0,0
+access_trend_term_marketing,mint.trend.term.marketing,model_mint_trend_term,mint_command_center.group_marketing,1,1,1,0
+access_trend_term_operations,mint.trend.term.operations,model_mint_trend_term,mint_command_center.group_operations,1,1,1,1
+access_trend_observation_viewer,mint.trend.observation.viewer,model_mint_trend_observation,mint_command_center.group_viewer,1,0,0,0
+access_trend_observation_marketing,mint.trend.observation.marketing,model_mint_trend_observation,mint_command_center.group_marketing,1,1,1,0
+access_trend_observation_operations,mint.trend.observation.operations,model_mint_trend_observation,mint_command_center.group_operations,1,1,1,1

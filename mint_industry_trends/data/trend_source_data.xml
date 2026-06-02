@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- Starter Apify sources, one per signal type. Actor slugs are the
+         current best-known store actors but MUST be confirmed against a live
+         Apify account before the collector is enabled (Phase 3). Admins can
+         edit these records in Settings without a code change. -->
+
+    <record id="source_google_trends" model="mint.trend.source">
+        <field name="name">Google Trends — Cannabis Terms</field>
+        <field name="signal_type">search_trend</field>
+        <field name="apify_actor">emastra/google-trends-scraper</field>
+        <field name="apify_input">{"searchTerms": [], "geo": "US", "timeRange": "today 3-m", "isPublic": true}</field>
+        <field name="notes">Search terms are injected from linked trend terms at run time. CONFIRM actor slug on live Apify before enabling.</field>
+    </record>
+
+    <record id="source_reddit" model="mint.trend.source">
+        <field name="name">Reddit — Cannabis Subreddits</field>
+        <field name="signal_type">social_mention</field>
+        <field name="apify_actor">trudax/reddit-scraper-lite</field>
+        <field name="apify_input">{"searches": ["cannabis", "trees", "weed"], "type": "posts", "sort": "new", "maxItems": 200}</field>
+        <field name="notes">CONFIRM actor slug + input schema on live Apify before enabling.</field>
+    </record>
+
+    <record id="source_google_news" model="mint.trend.source">
+        <field name="name">Google News — Cannabis Industry</field>
+        <field name="signal_type">news</field>
+        <field name="apify_actor">lhotanok/google-news-scraper</field>
+        <field name="apify_input">{"query": "cannabis dispensary", "region": "US:en", "maxItems": 100}</field>
+        <field name="notes">CONFIRM actor slug + input schema on live Apify before enabling.</field>
+    </record>
+
+    <record id="source_competitor_menus" model="mint.trend.source">
+        <field name="name">Competitor Menus — Pricing</field>
+        <field name="signal_type">competitor_price</field>
+        <field name="apify_actor">apify/web-scraper</field>
+        <field name="apify_input">{"startUrls": [], "maxItems": 500}</field>
+        <field name="notes">Competitor menu/pricing scrapes flow into mint.competitor.deal, not observations. Wire per-competitor start URLs. CONFIRM actor before enabling.</field>
+    </record>
+</odoo>
