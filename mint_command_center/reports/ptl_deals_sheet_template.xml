@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- PTL Daily Deals Sheet — QWeb rebuild of the legacy
+         scripts/ptl-generate-deals-sheet.mjs export (one row per discount,
+         grouped by category, Featured first). Renders mint.ptl.day. -->
+    <template id="report_ptl_deals_sheet">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="doc">
+                <div class="page">
+                    <style>
+                        .page { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+                                color: #1a1a1a; font-size: 9.5pt; line-height: 1.35; }
+                        .page header { border-bottom: 3px solid #064f3f; padding-bottom: 8px; margin-bottom: 14px; }
+                        .page header h1 { margin: 0; font-size: 18pt; color: #064f3f; letter-spacing: -0.01em; }
+                        .page header .meta { display: flex; justify-content: space-between; align-items: baseline;
+                                             margin-top: 4px; font-size: 10pt; color: #555; }
+                        .page header .meta strong { color: #064f3f; }
+                        .page h2.cat { font-size: 11pt; color: #fff; background: #064f3f; padding: 4px 8px;
+                                       margin: 14px 0 6px; border-radius: 3px; page-break-after: avoid; }
+                        .page table { width: 100%; border-collapse: collapse; margin-bottom: 6px; page-break-inside: auto; }
+                        .page thead { display: table-header-group; }
+                        .page tr { page-break-inside: avoid; }
+                        .page th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.04em;
+                                   color: #666; border-bottom: 1px solid #ccc; padding: 4px 6px; font-weight: 600; }
+                        .page td { padding: 4px 6px; border-bottom: 1px solid #eee; vertical-align: top; }
+                        .page td.discount { font-weight: 700; color: #064f3f; white-space: nowrap; }
+                        .page td.featured::before { content: '\2605 '; color: #c79a2b; }
+                        .page td.thumb { width: 48px; padding: 4px 4px 4px 0; }
+                        .page td.thumb img { width: 44px; height: 44px; object-fit: contain;
+                                             border: 1px solid #eee; border-radius: 4px; background: #fafafa; }
+                        .page td.thumb .placeholder { width: 44px; height: 44px; border: 1px dashed #ddd;
+                                                      border-radius: 4px; background: #fafafa; }
+                        .page .brand { color: #555; font-size: 8.5pt; }
+                        .page .details { color: #777; font-size: 8pt; font-style: italic; }
+                        .page .excluded { color: #a04040; font-size: 8pt; }
+                        .page footer { margin-top: 18px; padding-top: 8px; border-top: 1px solid #ddd;
+                                       font-size: 8pt; color: #888; text-align: center; }
+                    </style>
+
+                    <header>
+                        <h1>PTL Daily Deals Sheet</h1>
+                        <div class="meta">
+                            <span><strong t-out="doc.market_id.name or ''"/> &#183; Mint Cannabis</span>
+                            <span t-out="doc.date and doc.date.strftime('%A, %B %d, %Y') or ''"/>
+                            <span><t t-out="doc.deal_count"/> deals</span>
+                        </div>
+                    </header>
+
+                    <t t-foreach="doc._report_sheet_groups()" t-as="grp">
+                        <h2 class="cat">
+                            <t t-out="grp[0]"/>
+                            <span style="opacity:0.6;font-weight:400;font-size:9pt"> (<t t-out="len(grp[1])"/>)</span>
+                        </h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th/>
+                                    <th>Product</th>
+                                    <th>Brand</th>
+                                    <th>Discount</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="grp[1]" t-as="deal">
+                                    <t t-set="is_feat" t-value="deal.is_featured or deal.product_category == 'Featured Deals'"/>
+                                    <t t-set="thumb" t-value="deal._report_thumb()"/>
+                                    <tr>
+                                        <td class="thumb">
+                                            <img t-if="thumb" t-att-src="image_data_uri(thumb)" alt=""/>
+                                            <div t-else="" class="placeholder"/>
+                                        </td>
+                                        <td t-attf-class="#{'featured' if is_feat else ''}">
+                                            <strong t-out="deal.name"/>
+                                        </td>
+                                        <td class="brand"><t t-out="deal.brand_id.name or ''"/></td>
+                                        <td class="discount">
+                                            <t t-set="disc" t-value="deal._report_discount()"/>
+                                            <t t-out="disc or '—'"/>
+                                        </td>
+                                        <td class="details">
+                                            <t t-out="deal.sales_details or ''"/>
+                                            <span t-if="deal.details_exclusions" class="excluded">
+                                                <br/>Excl: <t t-out="deal.details_exclusions"/>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                    </t>
+
+                    <footer>
+                        Generated <t t-out="context_timestamp(datetime.datetime.now()).strftime('%Y-%m-%d %H:%M')"/> — Mint Cannabis PTL
+                    </footer>
+                </div>
+            </t>
+        </t>
+    </template>
+
+</odoo>

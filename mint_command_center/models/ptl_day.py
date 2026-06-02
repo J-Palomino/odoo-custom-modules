@@ -111,6 +111,33 @@ class PtlDay(models.Model):
         for rec in self:
             rec.deal_count = len(rec.deal_ids)
 
+    # ─── Deals Sheet report ──────────────────────────────────────────────
+
+    # Category display order for the PTL Daily Deals Sheet (Featured first).
+    _DEALS_SHEET_ORDER = [
+        'Featured Deals', 'Flower', 'Pre-Rolls', 'Vapes',
+        'Edibles & Tinctures', 'Concentrates & Topicals',
+    ]
+
+    def _report_sheet_groups(self):
+        """Return [(category_label, deals_recordset)] for the deals sheet —
+        Featured first, then the standard category order, trailing 'Other'."""
+        self.ensure_one()
+        buckets = {}
+        for deal in self.deal_ids:
+            cat = deal.product_category or 'Other'
+            if deal.is_featured or cat == 'Featured Deals':
+                cat = 'Featured Deals'
+            buckets.setdefault(cat, self.env['mint.ptl.deal'])
+            buckets[cat] |= deal
+        groups = []
+        for cat in self._DEALS_SHEET_ORDER:
+            if cat in buckets:
+                groups.append((cat, buckets.pop(cat).sorted(lambda d: (d.sequence, d.name or ''))))
+        for cat in sorted(buckets):
+            groups.append((cat, buckets[cat].sorted(lambda d: (d.sequence, d.name or ''))))
+        return groups
+
     # ─── Dynamic Store UUID Map ──────────────────────────────────────────
 
     def _get_store_uuid_map(self):

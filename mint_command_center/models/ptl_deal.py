@@ -580,6 +580,39 @@ class PtlDeal(models.Model):
             else:
                 rec.display_text = ''
 
+    # --- Deals Sheet report helpers ---
+
+    def _report_discount(self):
+        """Short discount tag for the deals-sheet 'Discount' column
+        (mirrors the legacy ptl-generate-deals-sheet formatter)."""
+        self.ensure_one()
+        v = self.discount_value or 0.0
+        orig = self.original_price or 0.0
+        t = self.discount_type
+        if t == 'percent' and v:
+            return "%.0f%% Off" % (v if v > 1 else v * 100)
+        if t == 'fixed' and v:
+            return "$%.0f Off" % v
+        if t == 'price' and v:
+            return "$%.2f%s" % (v, (" (was $%.0f)" % orig) if orig else "")
+        if t == 'bogo':
+            return "BOGO"
+        if t == 'bundle':
+            return "%.0f%% Off (bundle)" % (v if v > 1 else v * 100) if v else "Bundle"
+        if t == 'points_multiplier' and v:
+            mult = v if v >= 1 else (1 / v if v else 0)
+            return ("%dx Points" % int(mult)) if mult == int(mult) else ("%.1fx Points" % mult)
+        if t == 'clearance':
+            return "Clearance"
+        return ""
+
+    def _report_thumb(self):
+        """Base64 thumbnail for the deals sheet — first matching product's
+        image_128, or False (template renders a placeholder)."""
+        self.ensure_one()
+        prod = self.matching_product_ids[:1]
+        return prod.image_128 if prod else False
+
     # --- Revoke wizard launcher ---
 
     def action_open_revoke_wizard(self):
