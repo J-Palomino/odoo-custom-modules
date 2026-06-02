@@ -71,14 +71,21 @@ class MintFlipbook(models.Model):
         for page in self.page_ids.sorted(lambda p: (p.sequence, p.id)):
             if not page.file:
                 continue
-            raw = base64.b64decode(page.file)
+            label = page.name or page.filename or _("untitled page")
             mime = page.mimetype or mimetypes.guess_type(page.filename or '')[0] or ''
-            if mime == 'application/pdf':
-                pdf_blobs.append(raw)
-            elif mime.startswith('image/'):
-                pdf_blobs.append(self._image_to_pdf(raw))
-            else:
-                skipped.append(page.name or page.filename or _("untitled page"))
+            try:
+                raw = base64.b64decode(page.file)
+                if mime == 'application/pdf':
+                    pdf_blobs.append(raw)
+                elif mime.startswith('image/'):
+                    pdf_blobs.append(self._image_to_pdf(raw))
+                else:
+                    skipped.append(label)
+            except Exception:
+                _logger.exception("mint_flipbook: failed to process page %s", page.id)
+                raise UserError(_(
+                    "Could not process page '%s' — the file may be corrupt or an "
+                    "unsupported format.") % label)
         if not pdf_blobs:
             raise UserError(_("No PDF or image pages to merge."))
         merged = merge_pdf(pdf_blobs)
@@ -92,16 +99,9 @@ class MintFlipbook(models.Model):
             msg += _(" Skipped %(n)d unsupported page(s): %(names)s") % {
                 'n': len(skipped), 'names': ", ".join(skipped)}
         self.message_post(body=msg)
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'type': 'success',
-                'title': _("Flipbook PDF"),
-                'message': msg,
-                'sticky': False,
-            },
-        }
+        # Return True (not an action) so the web client reloads the record and
+        # the generated-PDF download link appears immediately.
+        return True
 
     @staticmethod
     def _image_to_pdf(raw):
