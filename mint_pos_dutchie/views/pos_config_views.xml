@@ -22,6 +22,22 @@
                         <field name="dutchie_room_id"/>
                     </group>
                 </group>
+                <group string="Zebra ZD410 Local Printing">
+                    <group>
+                        <field name="mint_zebra_enabled" widget="boolean_toggle"/>
+                        <field name="mint_zebra_transport"
+                               invisible="not mint_zebra_enabled"/>
+                        <field name="mint_zebra_dpi"
+                               invisible="not mint_zebra_enabled"/>
+                    </group>
+                    <group invisible="not mint_zebra_enabled">
+                        <field name="mint_zebra_autoprint" widget="boolean_toggle"/>
+                        <field name="mint_zebra_print_label" widget="boolean_toggle"/>
+                        <field name="mint_zebra_print_receipt" widget="boolean_toggle"/>
+                        <field name="mint_printnode_printer_id"
+                               invisible="mint_zebra_transport == 'webusb'"/>
+                    </group>
+                </group>
             </xpath>
         </field>
     </record>
