@@ -106,7 +106,14 @@ class MintPrintJob(models.Model):
     role = fields.Selection(
         [('label', 'Label'), ('receipt', 'Receipt'), ('other', 'Other')],
         default='label')
-    zpl = fields.Text(required=True)
+    doc_type = fields.Selection(
+        [('zpl', 'ZPL / raw'), ('pdf', 'PDF (OS driver)')],
+        default='zpl', required=True,
+        help='ZPL/raw bytes go straight to the printer; PDF is rendered by the '
+             'OS print driver (works on non-Zebra printers).')
+    zpl = fields.Text(help='Raw ZPL / printer commands (for doc_type=zpl).')
+    pdf_data = fields.Binary(string='PDF', attachment=True,
+                             help='Base64 PDF (for doc_type=pdf).')
     state = fields.Selection(
         [('pending', 'Pending'), ('printing', 'Printing'),
          ('done', 'Done'), ('error', 'Error'), ('cancelled', 'Cancelled')],
@@ -172,3 +179,21 @@ class MintPrintJob(models.Model):
             job_ids.append(job.id)
         return {'ok': True, 'node': node.name, 'online': node.online,
                 'job_ids': job_ids}
+
+    @api.model
+    def enqueue_pdf(self, printer_id, pdf_b64, title=None):
+        """Queue a PDF to a node printer — rendered by the OS driver (any printer)."""
+        printer = self.env['print.printer'].browse(printer_id)
+        if not printer.exists():
+            return {'ok': False, 'error': 'printer_not_found'}
+        job = self.create({
+            'node_id': printer.node_id.id,
+            'printer_id': printer.id,
+            'role': printer.role,
+            'doc_type': 'pdf',
+            'pdf_data': pdf_b64,
+            'name': title or 'PDF Document',
+            'source': 'pdf:%s' % (title or 'document'),
+        })
+        return {'ok': True, 'job_id': job.id, 'node': printer.node_id.name,
+                'online': printer.node_id.online}
