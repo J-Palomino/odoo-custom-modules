@@ -4,3 +4,11 @@ access_pos_order_dutchie_manager,pos.order.dutchie.manager,point_of_sale.model_p
 access_pos_config_dutchie_manager,pos.config.dutchie.manager,point_of_sale.model_pos_config,mint_pos_bridge.group_pos_manager,1,1,1,0
 access_product_location_budtender,mint.product.location.budtender,model_mint_product_location,mint_pos_bridge.group_pos_budtender,1,0,0,0
 access_product_location_manager,mint.product.location.manager,model_mint_product_location,mint_pos_bridge.group_pos_manager,1,1,1,1
+access_zebra_label_manager,mint.zebra.label.manager,model_mint_zebra_label,mint_pos_bridge.group_pos_manager,1,1,1,1
+access_zebra_label_budtender,mint.zebra.label.budtender,model_mint_zebra_label,mint_pos_bridge.group_pos_budtender,1,0,0,0
+access_print_node_manager,mint.print.node.manager,model_mint_print_node,mint_pos_bridge.group_pos_manager,1,1,1,1
+access_print_node_budtender,mint.print.node.budtender,model_mint_print_node,mint_pos_bridge.group_pos_budtender,1,0,0,0
+access_print_printer_manager,mint.print.printer.manager,model_mint_print_printer,mint_pos_bridge.group_pos_manager,1,1,1,1
+access_print_printer_budtender,mint.print.printer.budtender,model_mint_print_printer,mint_pos_bridge.group_pos_budtender,1,0,0,0
+access_print_job_manager,mint.print.job.manager,model_mint_print_job,mint_pos_bridge.group_pos_manager,1,1,1,1
+access_print_job_budtender,mint.print.job.budtender,model_mint_print_job,mint_pos_bridge.group_pos_budtender,1,1,1,0
