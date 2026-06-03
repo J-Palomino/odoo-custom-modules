@@ -5,3 +5,4 @@ from . import product_pos_config
 from . import pos_order
 from . import pos_config
 from . import zebra_label
+from . import print_node
