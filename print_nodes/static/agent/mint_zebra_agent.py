@@ -253,7 +253,8 @@ class Handler(BaseHTTPRequestHandler):
 def _odoo_post(path, obj):
     req = urllib.request.Request(
         ODOO_URL + path, data=json.dumps(obj).encode('utf-8'),
-        headers={'Content-Type': 'application/json'}, method='POST')
+        headers={'Content-Type': 'application/json',
+                 'User-Agent': 'MintPrintAgent/1.0'}, method='POST')
     with urllib.request.urlopen(req, timeout=20) as resp:
         return json.loads(resp.read() or b'{}')
 
