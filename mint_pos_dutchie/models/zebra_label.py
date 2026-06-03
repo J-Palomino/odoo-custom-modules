@@ -74,7 +74,7 @@ class ZebraLabel(models.Model):
     length_in = fields.Float(string='Length (in)', default=4.0, required=True)
     dpi = fields.Selection(
         [('203', '203 dpi'), ('300', '300 dpi')], default='203', required=True)
-    darkness = fields.Integer(string='Darkness (0-30)', default=20)
+    darkness = fields.Integer(string='Darkness (0-30)', default=30)
 
     sample_json = fields.Text(
         string='Sample Data (JSON)',
@@ -97,6 +97,15 @@ class ZebraLabel(models.Model):
              'PrintNode API key lives in System Parameter '
              'mint_pos_dutchie.printnode_api_key.',
     )
+    node_id = fields.Many2one(
+        'mint.print.node', string='Print Node',
+        help='Print this label to a store print node (queued; the node agent '
+             'prints it). Lets you configure + print remotely from this GUI.')
+    node_printer_id = fields.Many2one(
+        'mint.print.printer', string='Node Printer',
+        domain="[('node_id', '=', node_id)]",
+        help='Printer on the node to send to. Defaults to the node label '
+             'printer if blank.')
 
     # ── rendering ────────────────────────────────────────────────────
     def _sample(self):
@@ -242,6 +251,38 @@ class ZebraLabel(models.Model):
             'type': 'ir.actions.client', 'tag': 'display_notification',
             'params': {'type': 'success', 'sticky': False,
                        'message': _('Sent to PrintNode (job %s).') % job},
+        }
+
+    def action_print_to_node(self):
+        """Queue the rendered ZPL to a store print node (remote printing).
+
+        The node's agent polls the queue and prints — so this works from any
+        Odoo GUI session, anywhere.
+        """
+        self.ensure_one()
+        node = self.node_id
+        if not node:
+            raise UserError(_('Pick a Print Node first.'))
+        printer = self.node_printer_id
+        if not printer:
+            printer = self.env['mint.print.job']._default_printer(node, 'label')
+        job = self.env['mint.print.job'].create({
+            'node_id': node.id,
+            'printer_id': printer.id if printer else False,
+            'role': 'label',
+            'zpl': self._resolve_zpl(),
+            'source': 'designer:%s' % self.name,
+        })
+        return {
+            'type': 'ir.actions.client', 'tag': 'display_notification',
+            'params': {
+                'type': 'success', 'sticky': False,
+                'message': _('Queued to node "%s"%s. Job #%s — the node agent '
+                             'will print it.') % (
+                    node.name,
+                    (' (printer %s)' % printer.name) if printer else '',
+                    job.id),
+            },
         }
 
     @api.onchange('kind')

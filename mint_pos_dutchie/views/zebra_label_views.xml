@@ -9,6 +9,9 @@
                 <header>
                     <button name="action_refresh_preview" type="object"
                             string="Refresh Preview" class="btn-primary" icon="fa-refresh"/>
+                    <button name="action_print_to_node" type="object"
+                            string="Print to Node" icon="fa-print" class="btn-primary"
+                            invisible="not node_id"/>
                     <button name="action_test_print" type="object"
                             string="Test Print (PrintNode)" icon="fa-print"/>
                     <button name="action_load_builtin_into_custom" type="object"
@@ -27,6 +30,9 @@
                             <field name="length_in"/>
                             <field name="dpi"/>
                             <field name="darkness"/>
+                            <field name="node_id"/>
+                            <field name="node_printer_id"
+                                   invisible="not node_id"/>
                             <field name="printnode_printer_id"/>
                         </group>
                         <group string="Preview">
