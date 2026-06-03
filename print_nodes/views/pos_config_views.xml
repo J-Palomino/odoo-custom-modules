@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_pos_config_form_printnodes" model="ir.ui.view">
+        <field name="name">pos.config.form.printnodes</field>
+        <field name="model">pos.config</field>
+        <field name="inherit_id" ref="point_of_sale.pos_config_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside">
+                <group string="PrintNodes — Zebra ZD410 Printing">
+                    <group>
+                        <field name="mint_zebra_enabled" widget="boolean_toggle"/>
+                        <field name="mint_zebra_transport"
+                               invisible="not mint_zebra_enabled"/>
+                        <field name="mint_zebra_dpi"
+                               invisible="not mint_zebra_enabled"/>
+                    </group>
+                    <group invisible="not mint_zebra_enabled">
+                        <field name="mint_zebra_autoprint" widget="boolean_toggle"/>
+                        <field name="mint_zebra_print_label" widget="boolean_toggle"/>
+                        <field name="mint_zebra_print_receipt" widget="boolean_toggle"/>
+                        <field name="mint_printnode_printer_id"
+                               invisible="mint_zebra_transport in ('webusb', 'local_agent')"/>
+                    </group>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

@@ -8,7 +8,7 @@ image before printing, and optionally TEST PRINT it via PrintNode.
 Preview rendering uses Labelary (http://labelary.com), a ZPL->PNG service.
 Only label template/sample data is sent — no order or customer PII — but if
 that is a concern, Labelary is self-hostable (swap the base URL in the
-System Parameter ``mint_pos_dutchie.labelary_url``).
+System Parameter ``print_nodes.labelary_url``).
 """
 import base64
 import json
@@ -54,7 +54,7 @@ RECEIPT_SAMPLE = {
 
 
 class ZebraLabel(models.Model):
-    _name = 'mint.zebra.label'
+    _name = 'print.label'
     _description = 'Zebra Label Designer'
     _order = 'name'
 
@@ -95,14 +95,14 @@ class ZebraLabel(models.Model):
         string='PrintNode Printer ID',
         help='Used by Test Print. Falls back to a POS config value if 0. The '
              'PrintNode API key lives in System Parameter '
-             'mint_pos_dutchie.printnode_api_key.',
+             'print_nodes.printnode_api_key.',
     )
     node_id = fields.Many2one(
-        'mint.print.node', string='Print Node',
+        'print.node', string='Print Node',
         help='Print this label to a store print node (queued; the node agent '
              'prints it). Lets you configure + print remotely from this GUI.')
     node_printer_id = fields.Many2one(
-        'mint.print.printer', string='Node Printer',
+        'print.printer', string='Node Printer',
         domain="[('node_id', '=', node_id)]",
         help='Printer on the node to send to. Defaults to the node label '
              'printer if blank.')
@@ -136,7 +136,7 @@ class ZebraLabel(models.Model):
 
     def _labelary_url(self):
         base = self.env['ir.config_parameter'].sudo().get_param(
-            'mint_pos_dutchie.labelary_url', DEFAULT_LABELARY)
+            'print_nodes.labelary_url', DEFAULT_LABELARY)
         dpmm = 12 if self.dpi == '300' else 8
         return '%s/%ddpmm/labels/%sx%s/0/' % (
             base.rstrip('/'), dpmm,
@@ -219,10 +219,10 @@ class ZebraLabel(models.Model):
             raise UserError(_(
                 'Set a PrintNode Printer ID on this label or a POS config.'))
         api_key = self.env['ir.config_parameter'].sudo().get_param(
-            'mint_pos_dutchie.printnode_api_key', '')
+            'print_nodes.printnode_api_key', '')
         if not api_key:
             raise UserError(_(
-                'Set System Parameter mint_pos_dutchie.printnode_api_key.'))
+                'Set System Parameter print_nodes.printnode_api_key.'))
 
         auth = base64.b64encode(('%s:' % api_key).encode()).decode()
         payload = {
@@ -265,8 +265,8 @@ class ZebraLabel(models.Model):
             raise UserError(_('Pick a Print Node first.'))
         printer = self.node_printer_id
         if not printer:
-            printer = self.env['mint.print.job']._default_printer(node, 'label')
-        job = self.env['mint.print.job'].create({
+            printer = self.env['print.job']._default_printer(node, 'label')
+        job = self.env['print.job'].create({
             'node_id': node.id,
             'printer_id': printer.id if printer else False,
             'role': 'label',
