@@ -835,3 +835,458 @@ class PtlDeal(models.Model):
                 'date_end': deal.date_end.isoformat() if deal.date_end else False,
             })
         return result
+
+    @api.depends('date_start', 'date_end', 'state')
+    def _compute_is_active_today(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            if rec.state in ('rejected', 'expired'):
+                rec.is_active_today = False
+                continue
+            start_ok = (not rec.date_start) or rec.date_start <= today
+            end_ok = (not rec.date_end) or today <= rec.date_end
+            rec.is_active_today = bool(start_ok and end_ok)
+
+    def _search_is_active_today(self, operator, value):
+        today = fields.Date.context_today(self)
+        active_domain = [
+            '|', ('date_start', '=', False), ('date_start', '<=', today),
+            '|', ('date_end', '=', False), ('date_end', '>=', today),
+            ('state', 'not in', ('rejected', 'expired')),
+        ]
+        if (operator == '=' and value) or (operator == '!=' and not value):
+            return active_domain
+        return ['!'] + active_domain
+
+    @api.constrains('date_start', 'date_end')
+    def _check_date_range(self):
+        for rec in self:
+            if rec.date_start and rec.date_end and rec.date_start > rec.date_end:
+                raise ValidationError(
+                    f"Start date ({rec.date_start}) must be on or before "
+                    f"end date ({rec.date_end})."
+                )
+
+    def cron_expire_past_deals(self):
+        """Flip live → expired for deals whose date_end has passed.
+        Wire from a daily cron in data/ptl_cron_data.xml if/when desired.
+        """
+        today = fields.Date.context_today(self)
+        expired = self.search([
+            ('state', '=', 'live'),
+            ('date_end', '!=', False),
+            ('date_end', '<', today),
+        ])
+        if expired:
+            expired.write({'state': 'expired'})
+        return len(expired)
+
+    # ─── Multi-window plotting (drives the submission-form picker) ───────
+
+    def _resolve_market_id(self, market_id=None):
+        """Return an int market_id from the arg or self.market_id.
+        Raises UserError when neither is available."""
+        self.ensure_one()
+        mid = market_id or (self.market_id.id if self.market_id else False)
+        if not mid:
+            from odoo.exceptions import UserError
+            raise UserError(
+                "Cannot plot/unplot windows without a market — set market_id "
+                "on the deal or pass market_id explicitly."
+            )
+        return int(mid)
+
+    def action_plot_windows(self, dates, market_id=None):
+        """Plot this deal onto every (date, market) day in `dates`.
+
+        `dates` is a list of ISO-format strings (YYYY-MM-DD). For each date we
+        upsert a mint.ptl.day (the date_market_uniq SQL constraint guarantees
+        idempotency) and link this deal into its deal_ids via the existing
+        mint.ptl.day.schedule_deal primitive — which already returns the
+        resulting day_id, so no follow-up search is needed.
+
+        Returns the list of resulting mint.ptl.day ids.
+        """
+        self.ensure_one()
+        Day = self.env['mint.ptl.day']
+        mid = self._resolve_market_id(market_id)
+        return [
+            Day.schedule_deal(deal_id=self.id, date=d, market_id=mid)['day_id']
+            for d in dates
+        ]
+
+    def action_unplot_windows(self, dates, market_id=None):
+        """Inverse of action_plot_windows: unlink this deal from each day.
+
+        Leaves the mint.ptl.day rows in place (they may carry other deals).
+        Returns the list of affected mint.ptl.day ids.
+        """
+        self.ensure_one()
+        Day = self.env['mint.ptl.day']
+        mid = self._resolve_market_id(market_id)
+        days = Day.search([
+            ('date', 'in', list(dates)),
+            ('market_id', '=', mid),
+            ('deal_ids', 'in', self.id),
+        ])
+        if days:
+            days.write({'deal_ids': [(3, self.id)]})
+        return days.ids
+
+    def _weight_source(self):
+        return (self.name, self.sales_details)
+
+    @api.depends('name', 'sales_details')
+    def _compute_weight(self):
+        # Source fields + deps are PTL-specific; the parse/assign body lives in
+        # mint.weight.parsed.mixin.
+        return super()._compute_weight()
+
+    @api.depends('name')
+    def _compute_brand_id(self):
+        # Skip when brand_id is already set — respects manual edits and
+        # avoids overwriting bulk-imported links. Batches the brand lookup
+        # so we hit the DB once per compute pass regardless of recordset size.
+        candidates = []
+        for rec in self:
+            if rec.brand_id:
+                continue
+            text = _parse_brand_name(rec.name)
+            if text:
+                candidates.append((rec, text))
+        if not candidates:
+            return
+        Brand = self.env['mint.brand']
+        # Load all brands once and index by normalized key (lowercase, trimmed,
+        # punct + whitespace stripped). Skip tombstoned [MERGED→...] records.
+        # Without normalization, "Tru Infusion" doesn't match "TRU-Infusion"
+        # and "Cresco" doesn't match "Cresco " (trailing space), creating dupes.
+        by_norm = {}
+        for b in Brand.search([]):
+            if b.name and b.name.startswith('[MERGED→'):
+                continue
+            k = _brand_lookup_key(b.name)
+            if k and k not in by_norm:
+                by_norm[k] = b
+        for rec, text in candidates:
+            key = _brand_lookup_key(text)
+            brand = by_norm.get(key)
+            if not brand:
+                brand = Brand.create({'name': text})
+                by_norm[key] = brand
+            rec.brand_id = brand.id
+
+    @api.depends('discount_type', 'discount_value', 'original_price', 'sales_details')
+    def _compute_display_text(self):
+        for rec in self:
+            # If sales_details is manually set, prefer it
+            if rec.sales_details:
+                rec.display_text = rec.sales_details
+                continue
+
+            msrp = rec.original_price
+            val = rec.discount_value
+            dtype = rec.discount_type
+
+            if dtype == 'percent' and val:
+                pct = val if val > 1 else val * 100
+                if msrp:
+                    sale = msrp * (1 - pct / 100)
+                    rec.display_text = f"~~${msrp:.0f}~~ ${sale:.2f} | {pct:.0f}% Off"
+                else:
+                    rec.display_text = f"{pct:.0f}% Off"
+            elif dtype == 'fixed' and val:
+                if msrp:
+                    sale = msrp - val
+                    rec.display_text = f"~~${msrp:.0f}~~ ${sale:.2f} | ${val:.0f} Off"
+                else:
+                    rec.display_text = f"${val:.0f} Off"
+            elif dtype == 'price' and val:
+                if msrp:
+                    rec.display_text = f"~~${msrp:.0f}~~ ${val:.2f}"
+                else:
+                    rec.display_text = f"${val:.2f}"
+            elif dtype == 'bogo':
+                if msrp:
+                    rec.display_text = f"Starting @ ${msrp:.0f} | BOGO"
+                else:
+                    rec.display_text = "Buy One Get One"
+            elif dtype == 'bundle' and val:
+                if msrp:
+                    rec.display_text = f"${msrp:.0f} Value! Only ${val:.2f}"
+                else:
+                    rec.display_text = f"${val:.2f} Bundle"
+            elif dtype == 'points_multiplier' and val:
+                mult = val if val >= 1 else 1 / val if val else 0
+                if mult == int(mult):
+                    rec.display_text = f"{int(mult)}x Points"
+                else:
+                    rec.display_text = f"{mult:.1f}x Points"
+            elif dtype == 'clearance':
+                pct = (val if val > 1 else val * 100) if val else 0
+                if msrp and pct:
+                    sale = msrp * (1 - pct / 100)
+                    rec.display_text = f"Clearance: ~~${msrp:.0f}~~ ${sale:.2f} | {pct:.0f}% Off"
+                elif pct:
+                    rec.display_text = f"Clearance: {pct:.0f}% Off"
+                else:
+                    rec.display_text = "Clearance"
+            else:
+                rec.display_text = ''
+
+    @api.depends('brand_id', 'product_category', 'excluded_skus',
+                 'explicit_product_ids', 'weight_value', 'weight_unit',
+                 'original_price')
+    def _compute_format_key(self):
+        for rec in self:
+            rec.format_key = rec._build_format_key()
+
+    def _build_format_key(self):
+        """Brand + Product Line + Weight + rounded MSRP.
+
+        Returns False unless both a brand and a resolvable product line are
+        present — a "format" isn't well-defined without the line, and the
+        storefront's `format_key || name` fallback then preserves the current
+        per-deal display until x_product_line is backfilled (phase A3).
+
+        Note: the product line is read from the matching products, so a deal's
+        format_key does NOT auto-recompute when x_product_line changes on a
+        product after the fact. The A3 backfill recomputes affected deals
+        explicitly after writing x_product_line.
+        """
+        self.ensure_one()
+        if not self.brand_id:
+            return False
+        line = ''
+        for prod in self.matching_product_ids:
+            if prod.x_product_line:
+                line = prod.x_product_line.strip()
+                break
+        if not line:
+            return False
+        parts = [(self.brand_id.name or '').strip(), line]
+        if self.weight_value:
+            parts.append(f"{self.weight_value:g}{self.weight_unit or ''}")
+        if self.original_price:
+            parts.append(f"${round(self.original_price)}")
+        return ' '.join(p for p in parts if p)
+
+    @api.model
+    def _cron_fill_format_key(self, batch=300):
+        """One-shot batched backfill of the stored format_key for existing deals.
+
+        Computing format_key for all ~7.6k deals at upgrade time is too slow (a
+        product.template.search per deal over ~62k products) and rolled the
+        module upgrade back, so pre-migrate.py pre-creates the column
+        (suppressing the ORM mass-recompute) and this cron fills it in batches.
+
+        Drains by an id watermark in ir.config_parameter rather than a
+        "format_key is empty" filter: many deals legitimately compute to an
+        empty key (no whitelisted product line) and would otherwise be
+        re-selected forever. Disables itself (ir_cron_fill_format_key) once it
+        runs past the last deal. New deals get format_key via the normal
+        @api.depends compute on write, so the cron is genuinely one-shot.
+        """
+        Param = self.env['ir.config_parameter'].sudo()
+        last_id = int(Param.get_param('mint_cc.format_key_fill_last_id', '0'))
+        deals = self.search(
+            [('id', '>', last_id), ('brand_id', '!=', False)],
+            order='id', limit=batch,
+        )
+        if not deals:
+            cron = self.env.ref(
+                'mint_command_center.ir_cron_fill_format_key',
+                raise_if_not_found=False)
+            if cron and cron.active:
+                cron.active = False
+            _logger.info("fill_format_key: backfill complete — cron disabled")
+            return
+        deals.invalidate_recordset(['format_key'])
+        deals._compute_format_key()
+        deals.flush_recordset(['format_key'])
+        Param.set_param('mint_cc.format_key_fill_last_id', str(deals[-1].id))
+        _logger.info(
+            "fill_format_key: processed %s deal(s) up to id %s",
+            len(deals), deals[-1].id)
+
+    @api.model
+    def action_review_recompute_format_keys(self):
+        """Re-arm the batched format_key backfill after curating product lines.
+
+        format_key does NOT auto-recompute when x_product_line changes on a
+        product (see _build_format_key), so marketing runs this after Product
+        Line Review. It does NOT recompute synchronously: a full in-request
+        recompute (a product.template.search per deal over ~62k products) is
+        the operation that previously rolled back a module upgrade (see
+        _cron_fill_format_key). Instead it resets the id watermark and
+        re-enables the one-shot batched cron (batch=300), which re-drains every
+        deal in the background and disables itself when done — perf-safe and
+        re-runnable.
+        """
+        Param = self.env['ir.config_parameter'].sudo()
+        Param.set_param('mint_cc.format_key_fill_last_id', '0')
+        cron = self.env.ref(
+            'mint_command_center.ir_cron_fill_format_key',
+            raise_if_not_found=False)
+        if cron:
+            cron.active = True
+        pending = self.search_count(
+            [('format_key', 'in', [False, '']), ('brand_id', '!=', False)])
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Format-Key Backfill Re-armed',
+                'message': (
+                    'The batched backfill will re-drain all deals in the '
+                    f'background over the next few minutes ({pending} currently '
+                    'have a blank format key). Newly-curated product lines will '
+                    'be picked up as it runs.'
+                ),
+                'type': 'success',
+                'sticky': False,
+            },
+        }
+
+    # --- Revoke wizard launcher ---
+
+    def action_open_revoke_wizard(self):
+        """Open the 4-scope Revoke wizard for this deal."""
+        self.ensure_one()
+        return {
+            'name': 'Revoke Deal',
+            'type': 'ir.actions.act_window',
+            'res_model': 'mint.deal.revoke.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_deal_id': self.id},
+        }
+
+    # --- State transition actions ---
+
+    def action_approve(self):
+        self.filtered(lambda d: d.state in ('pending', 'rejected')).write({
+            'state': 'approved',
+            'reviewed_by': self.env.uid,
+            'reviewed_at': fields.Datetime.now(),
+            'rejection_reason': False,
+        })
+
+    def action_reject(self):
+        return {
+            'name': 'Reject Deal',
+            'type': 'ir.actions.act_window',
+            'res_model': 'mint.deal.reject.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {
+                'active_model': self._name,
+                'active_ids': self.ids,
+            },
+        }
+
+    def action_set_live(self):
+        self.filtered(lambda d: d.state == 'approved').write({'state': 'live'})
+
+    def action_expire(self):
+        self.filtered(lambda d: d.state in ('approved', 'live')).write({'state': 'expired'})
+
+    def action_reset_to_pending(self):
+        self.filtered(lambda d: d.state in ('rejected', 'expired')).write({
+            'state': 'pending',
+            'rejection_reason': False,
+        })
+
+    def action_view_days(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'PTL Days',
+            'res_model': 'mint.ptl.day',
+            'view_mode': 'list,form',
+            'domain': [('id', 'in', self.day_ids.ids)],
+        }
+
+    # ─── Text Deals line formatter ────────────────────────────────────────
+
+    _STRIKE = '̶'  # Combining long stroke overlay — strikes the preceding glyph
+
+    def _format_pricing_plain(self):
+        """Take this deal's display_text (which uses markdown-style ~~strike~~)
+        and convert it to a plain-text equivalent with U+0336 combining-strike
+        overlays. Falls back to sales_details, then to an empty string.
+        """
+        import re
+        text = self.display_text or self.sales_details or ''
+        return re.sub(
+            r'~~(.+?)~~',
+            lambda m: ''.join(c + self._STRIKE for c in m.group(1)),
+            text,
+        )
+
+    def _compose_text_deal_line(self):
+        """One bud-tender-friendly text line for this deal. Used by
+        mint.ptl.day._compose_text_deals() for SMS / POS-paste exports.
+
+        Format: ``{emoji} {brand}: {label} — {strikethrough_pricing}``
+
+        The override on product.template (x_display_label_override) is
+        intentionally NOT consulted here: F6c exports at deal level (one
+        line per deal), not per-product. The override surfaces in the
+        embedded matching-SKU list and any future per-product export.
+        """
+        self.ensure_one()
+        emoji = (self.brand_id.display_emoji if self.brand_id else '') or '🌿'
+        brand = self.brand_id.name if self.brand_id else 'Unbranded'
+        label = self.name or ''
+        pricing = self._format_pricing_plain()
+        if pricing:
+            return f"{emoji} {brand}: {label} — {pricing}"
+        return f"{emoji} {brand}: {label}"
+
+    @api.model
+    def search_approved_for_dragboard(self, date_from=None, date_to=None, market_id=None):
+        """Return approved deals available to schedule on the PTL Calendar.
+
+        Filters:
+          - state == 'approved'
+          - If market_id is given, deal.market_id matches or is unset.
+          - If date_from/date_to given, the deal's validity window must
+            overlap the calendar range. Deals without a window are always
+            considered valid.
+
+        Returns a list of dicts the dragboard renders directly.
+        """
+        domain = [('state', '=', 'approved')]
+        if market_id:
+            domain += ['|', ('market_id', '=', int(market_id)), ('market_id', '=', False)]
+        if date_from:
+            domain.append('|')
+            domain.append(('date_end', '=', False))
+            domain.append(('date_end', '>=', date_from))
+        if date_to:
+            domain.append('|')
+            domain.append(('date_start', '=', False))
+            domain.append(('date_start', '<=', date_to))
+
+        deals = self.search(domain, order='sequence, id', limit=200)
+        result = []
+        for deal in deals:
+            result.append({
+                'id': deal.id,
+                'name': deal.name or '',
+                'brand': deal.brand_id.name or '',
+                'category': deal.product_category or '',
+                'sale_type': dict(deal._fields['sale_type'].selection).get(deal.sale_type, '') if deal.sale_type else '',
+                'discount_type': dict(deal._fields['discount_type'].selection).get(deal.discount_type, '') if deal.discount_type else '',
+                'discount_value': deal.discount_value or 0.0,
+                'display_text': deal.display_text or '',
+                'weight_value': deal.weight_value or 0.0,
+                'weight_unit': deal.weight_unit or '',
+                'market_id': deal.market_id.id if deal.market_id else False,
+                'market': deal.market_id.name or '',
+                'is_featured': bool(deal.is_featured),
+                'date_start': deal.date_start.isoformat() if deal.date_start else False,
+                'date_end': deal.date_end.isoformat() if deal.date_end else False,
+            })
+        return result
