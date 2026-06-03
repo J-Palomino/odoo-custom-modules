@@ -654,6 +654,45 @@ class PtlDeal(models.Model):
             "fill_format_key: processed %s deal(s) up to id %s",
             len(deals), deals[-1].id)
 
+    @api.model
+    def action_review_recompute_format_keys(self):
+        """Re-arm the batched format_key backfill after curating product lines.
+
+        format_key does NOT auto-recompute when x_product_line changes on a
+        product (see _build_format_key), so marketing runs this after Product
+        Line Review. It does NOT recompute synchronously: a full in-request
+        recompute (a product.template.search per deal over ~62k products) is
+        the operation that previously rolled back a module upgrade (see
+        _cron_fill_format_key). Instead it resets the id watermark and
+        re-enables the one-shot batched cron (batch=300), which re-drains every
+        deal in the background and disables itself when done — perf-safe and
+        re-runnable.
+        """
+        Param = self.env['ir.config_parameter'].sudo()
+        Param.set_param('mint_cc.format_key_fill_last_id', '0')
+        cron = self.env.ref(
+            'mint_command_center.ir_cron_fill_format_key',
+            raise_if_not_found=False)
+        if cron:
+            cron.active = True
+        pending = self.search_count(
+            [('format_key', 'in', [False, '']), ('brand_id', '!=', False)])
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Format-Key Backfill Re-armed',
+                'message': (
+                    'The batched backfill will re-drain all deals in the '
+                    f'background over the next few minutes ({pending} currently '
+                    'have a blank format key). Newly-curated product lines will '
+                    'be picked up as it runs.'
+                ),
+                'type': 'success',
+                'sticky': False,
+            },
+        }
+
     # --- Revoke wizard launcher ---
 
     def action_open_revoke_wizard(self):
