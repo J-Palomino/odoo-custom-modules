@@ -21,7 +21,7 @@ from odoo import api, fields, models
 
 
 class MintPrintNode(models.Model):
-    _name = 'mint.print.node'
+    _name = 'print.node'
     _description = 'Store Print Node'
     _order = 'company_id, name'
 
@@ -41,7 +41,7 @@ class MintPrintNode(models.Model):
     last_seen = fields.Datetime(readonly=True)
     online = fields.Boolean(compute='_compute_online')
     active = fields.Boolean(default=True)
-    printer_ids = fields.One2many('mint.print.printer', 'node_id', string='Printers')
+    printer_ids = fields.One2many('print.printer', 'node_id', string='Printers')
     job_count = fields.Integer(compute='_compute_job_count')
 
     @api.depends('last_seen')
@@ -51,7 +51,7 @@ class MintPrintNode(models.Model):
             n.online = bool(n.last_seen and n.last_seen >= cutoff)
 
     def _compute_job_count(self):
-        data = self.env['mint.print.job']._read_group(
+        data = self.env['print.job']._read_group(
             [('node_id', 'in', self.ids), ('state', '=', 'pending')],
             ['node_id'], ['__count'])
         counts = {n.id: c for n, c in data}
@@ -64,12 +64,12 @@ class MintPrintNode(models.Model):
 
 
 class MintPrintPrinter(models.Model):
-    _name = 'mint.print.printer'
+    _name = 'print.printer'
     _description = 'Print Node Printer'
     _order = 'node_id, role, name'
 
     name = fields.Char(required=True)
-    node_id = fields.Many2one('mint.print.node', required=True, ondelete='cascade')
+    node_id = fields.Many2one('print.node', required=True, ondelete='cascade')
     company_id = fields.Many2one(related='node_id.company_id', store=True)
     system_name = fields.Char(
         string='OS Printer Name', required=True,
@@ -94,14 +94,14 @@ class MintPrintPrinter(models.Model):
 
 
 class MintPrintJob(models.Model):
-    _name = 'mint.print.job'
+    _name = 'print.job'
     _description = 'Print Job'
     _order = 'create_date desc'
 
     name = fields.Char(default='Print Job')
-    node_id = fields.Many2one('mint.print.node', required=True, ondelete='cascade')
+    node_id = fields.Many2one('print.node', required=True, ondelete='cascade')
     company_id = fields.Many2one(related='node_id.company_id', store=True)
-    printer_id = fields.Many2one('mint.print.printer', ondelete='set null',
+    printer_id = fields.Many2one('print.printer', ondelete='set null',
                                  help='Resolved target printer.')
     role = fields.Selection(
         [('label', 'Label'), ('receipt', 'Receipt'), ('other', 'Other')],
@@ -127,7 +127,7 @@ class MintPrintJob(models.Model):
     # ── routing helpers (used by the POS) ───────────────────────────
     @api.model
     def _node_for_company(self, company_id):
-        return self.env['mint.print.node'].search(
+        return self.env['print.node'].search(
             [('company_id', '=', company_id), ('active', '=', True)],
             order='last_seen desc', limit=1)
 
@@ -160,7 +160,7 @@ class MintPrintJob(models.Model):
             pieces.append(('receipt', zpl['receipt']))
         job_ids = []
         for role, content in pieces:
-            printer = (self.env['mint.print.printer'].browse(printer_id)
+            printer = (self.env['print.printer'].browse(printer_id)
                        if printer_id else self._default_printer(node, role))
             job = self.create({
                 'node_id': node.id,

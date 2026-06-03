@@ -1,6 +1,6 @@
 # Zebra ZD410 local printing (Odoo POS)
 
-Lets the **native Odoo POS register** (this `mint_pos_dutchie` module) print
+Lets the **native Odoo POS register** (this `print_nodes` module) print
 **exit labels** and **receipts** to a **Zebra ZD410** attached to the machine
 running the POS in the browser/PWA.
 
@@ -45,13 +45,13 @@ Point of Sale ▸ Configuration ▸ *(your register)* ▸ **Zebra ZD410 Local Pr
 
 ## Global setup (once)
 
-1. **Install / upgrade** `mint_pos_dutchie` (custom modules do **not** auto-deploy
-   — trigger an upgrade: `-u mint_pos_dutchie` or the Apps UI).
+1. **Install / upgrade** `print_nodes` (custom modules do **not** auto-deploy
+   — trigger an upgrade: `-u print_nodes` or the Apps UI).
 2. **PrintNode** (for the cloud transport): install the PrintNode client on each
    register, add the ZD410, note its printer id, and set the API key system
    parameter:
    - Settings ▸ Technical ▸ System Parameters →
-     `mint_pos_dutchie.printnode_api_key` = `<your PrintNode API key>`
+     `print_nodes.printnode_api_key` = `<your PrintNode API key>`
 3. **WebUSB on Windows**: the OS print queue can hold the USB interface and make
    `claimInterface` fail. Either use the **PrintNode** transport on Windows, or
    replace the printer driver with **WinUSB via Zadig** so Chrome can claim it.
