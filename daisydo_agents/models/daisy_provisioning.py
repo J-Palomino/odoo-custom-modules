@@ -132,7 +132,11 @@ class DaisyAIServiceProvisioning(models.AbstractModel):
 
     @api.model
     def create_apikey(self, api_key, key_name):
-        """Create a Daisy+ workspace API key. Returns {id, apiKey, ...}."""
+        """Create a Daisy+ workspace API key. Returns the created key dict {id, apiKey, ...}.
+
+        Daisy+ `POST /apikey` responds with the FULL list of workspace keys (not
+        just the created one), so pick out the entry matching key_name.
+        """
         base_url = self._get_daisy_api_base()
         resp = requests.post(
             f"{base_url}/apikey",
@@ -140,7 +144,11 @@ class DaisyAIServiceProvisioning(models.AbstractModel):
             headers=self._daisy_headers(api_key), timeout=30,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, list):
+            matches = [k for k in data if k.get("keyName") == key_name]
+            return matches[-1] if matches else (data[-1] if data else {})
+        return data
 
     @api.model
     def link_apikey(self, api_key, chatflow_id, key_id):
