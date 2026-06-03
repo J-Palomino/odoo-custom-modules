@@ -38,8 +38,8 @@ class MintPrintAgentApi(http.Controller):
 
     def _node(self, token):
         if not token:
-            return request.env['mint.print.node']
-        return request.env['mint.print.node'].sudo().search(
+            return request.env['print.node']
+        return request.env['print.node'].sudo().search(
             [('token', '=', token), ('active', '=', True)], limit=1)
 
     @http.route('/mint/print/register', type='http', auth='public',
@@ -54,7 +54,7 @@ class MintPrintAgentApi(http.Controller):
             'last_seen': fields.Datetime.now(),
         })
         # upsert printers reported by the agent (by system_name)
-        Printer = request.env['mint.print.printer'].sudo()
+        Printer = request.env['print.printer'].sudo()
         existing = {p.system_name: p for p in node.printer_ids}
         has_label_default = bool(node.printer_ids.filtered(
             lambda x: x.role == 'label' and x.is_default))
@@ -91,7 +91,7 @@ class MintPrintAgentApi(http.Controller):
         if not node:
             return request.make_json_response({'error': 'bad token'}, status=401)
         node.sudo().write({'last_seen': fields.Datetime.now()})
-        Job = request.env['mint.print.job'].sudo()
+        Job = request.env['print.job'].sudo()
         jobs = Job.search([('node_id', '=', node.id), ('state', '=', 'pending')],
                           order='create_date', limit=20)
         jobs.write({'state': 'printing'})
@@ -110,7 +110,7 @@ class MintPrintAgentApi(http.Controller):
         node = self._node(data.get('token'))
         if not node:
             return request.make_json_response({'error': 'bad token'}, status=401)
-        job = request.env['mint.print.job'].sudo().browse(int(data.get('job_id') or 0))
+        job = request.env['print.job'].sudo().browse(int(data.get('job_id') or 0))
         if not job.exists() or job.node_id.id != node.id:
             return request.make_json_response({'error': 'job not found'}, status=404)
         if data.get('ok'):

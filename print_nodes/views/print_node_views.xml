@@ -3,8 +3,8 @@
 
     <!-- Print Node -->
     <record id="view_mint_print_node_form" model="ir.ui.view">
-        <field name="name">mint.print.node.form</field>
-        <field name="model">mint.print.node</field>
+        <field name="name">print.node.form</field>
+        <field name="model">print.node</field>
         <field name="arch" type="xml">
             <form string="Print Node">
                 <header>
@@ -51,8 +51,8 @@
     </record>
 
     <record id="view_mint_print_node_list" model="ir.ui.view">
-        <field name="name">mint.print.node.list</field>
-        <field name="model">mint.print.node</field>
+        <field name="name">print.node.list</field>
+        <field name="model">print.node</field>
         <field name="arch" type="xml">
             <list string="Print Nodes">
                 <field name="name"/>
@@ -67,14 +67,14 @@
 
     <record id="action_mint_print_node" model="ir.actions.act_window">
         <field name="name">Print Nodes</field>
-        <field name="res_model">mint.print.node</field>
+        <field name="res_model">print.node</field>
         <field name="view_mode">list,form</field>
     </record>
 
     <!-- Print Jobs -->
     <record id="view_mint_print_job_list" model="ir.ui.view">
-        <field name="name">mint.print.job.list</field>
-        <field name="model">mint.print.job</field>
+        <field name="name">print.job.list</field>
+        <field name="model">print.job</field>
         <field name="arch" type="xml">
             <list string="Print Jobs" create="false">
                 <field name="create_date"/>
@@ -98,15 +98,15 @@
 
     <record id="action_mint_print_job" model="ir.actions.act_window">
         <field name="name">Print Jobs</field>
-        <field name="res_model">mint.print.job</field>
+        <field name="res_model">print.job</field>
         <field name="view_mode">list,form</field>
     </record>
 
-    <menuitem id="menu_mint_print_root" name="Print Network"
+    <menuitem id="menu_mint_print_root" name="PrintNodes"
               parent="point_of_sale.menu_point_root" sequence="92"/>
     <menuitem id="menu_mint_print_node" name="Print Nodes"
-              parent="menu_mint_print_root" action="action_mint_print_node" sequence="10"/>
+              parent="menu_mint_print_root" action="action_mint_print_node" sequence="20"/>
     <menuitem id="menu_mint_print_job" name="Print Jobs"
-              parent="menu_mint_print_root" action="action_mint_print_job" sequence="20"/>
+              parent="menu_mint_print_root" action="action_mint_print_job" sequence="30"/>
 
 </odoo>
