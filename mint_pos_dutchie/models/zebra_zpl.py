@@ -50,16 +50,17 @@ def _truncate(value, max_chars):
     return value
 
 
-def _media_header(width, length, darkness, media):
+def _media_header(width, length, darkness, media, speed=2):
     head = ['^XA', '^CI28']
     if media:
-        head += ['^MNY', '^MTD', '^MD%d' % int(darkness)]
+        # gap sensing, direct thermal, darkness, slow speed -> crisp text
+        head += ['^MNY', '^MTD', '^MD%d' % int(darkness), '^PR%d' % int(speed)]
     head += ['^PW%d' % width, '^LL%d' % length, '^LS0', '^LH0,0']
     return head
 
 
 def build_label_zpl(data, dpi=203, width_in=2.0, length_in=4.0,
-                    darkness=20, media=True):
+                    darkness=30, media=True):
     """Cannabis exit / compliance label, sized to fill a 2" x 4" label.
 
     ``data`` keys: store, order_ref, date, customer, barcode, item_count.
@@ -109,7 +110,7 @@ def build_label_zpl(data, dpi=203, width_in=2.0, length_in=4.0,
 
 
 def build_product_label_zpl(data, dpi=203, width_in=2.0, length_in=4.0,
-                            darkness=20, media=True):
+                            darkness=30, media=True):
     """Cannabis product / compliance (METRC) label, portrait 2" x 4".
 
     ``data`` keys: store, address, product_name, lot, pkg_date, use_by,
@@ -179,7 +180,7 @@ def build_product_label_zpl(data, dpi=203, width_in=2.0, length_in=4.0,
 
 
 def build_receipt_zpl(data, dpi=203, width_in=2.0, length_in=4.0,
-                      darkness=20, media=True):
+                      darkness=30, media=True):
     """Condensed itemized sales receipt, sized for 2"-wide label media.
 
     Fills at least ``length_in`` and grows downward for long orders (the gap
