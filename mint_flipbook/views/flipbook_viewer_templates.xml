@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <!--
+      Public flipbook viewer (task #94304, Phase 3).
+      Minimal standalone layout (pattern: onlyoffice_odoo.onlyoffice_layout)
+      so the embedded viewer carries no storefront chrome. noindex,nofollow
+      keeps token URLs out of crawlers. Phase 1 renders the merged PDF in a
+      native inline embed; Phase 2 replaces the embed with the StPageFlip
+      page-flip viewer.
+    -->
+    <template id="flipbook_layout" name="Flipbook Viewer Layout">
+        <html lang="en">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <meta name="robots" content="noindex,nofollow" />
+                <title><t t-esc="flipbook_name" /></title>
+                <style>
+                    html, body { margin: 0; height: 100%; background: #222; }
+                    .fb-wrap { display: flex; flex-direction: column; height: 100vh; }
+                    .fb-embed { flex: 1 1 auto; border: 0; width: 100%; }
+                    .fb-msg {
+                        color: #eee; font-family: sans-serif; text-align: center;
+                        margin-top: 20vh; font-size: 1.1rem;
+                    }
+                </style>
+            </head>
+            <body>
+                <t t-out="0" />
+            </body>
+        </html>
+    </template>
+
+    <template id="flipbook_viewer" name="Flipbook Viewer">
+        <t t-call="mint_flipbook.flipbook_layout">
+            <div class="fb-wrap">
+                <t t-if="has_pdf">
+                    <embed class="fb-embed" t-att-src="pdf_url" type="application/pdf" />
+                </t>
+                <t t-else="">
+                    <div class="fb-msg">This flipbook is not ready yet.</div>
+                </t>
+            </div>
+        </t>
+    </template>
+</odoo>
