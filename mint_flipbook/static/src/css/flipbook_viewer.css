@@ -1,0 +1,25 @@
+/* mint_flipbook public page-flip viewer (task #94304, Phase 3 / Phase 2). */
+.fb-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100vh;
+    box-sizing: border-box;
+    padding: 12px;
+}
+
+#flipbook {
+    margin: 0 auto;
+}
+
+.fb-page {
+    background: #fff;
+    overflow: hidden;
+}
+
+.fb-page canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
