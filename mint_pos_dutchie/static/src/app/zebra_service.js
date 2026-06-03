@@ -3,14 +3,17 @@
 import { registry } from "@web/core/registry";
 import { _t } from "@web/core/l10n/translation";
 import { ZebraWebUsb } from "./zebra_webusb";
+import { ZebraLocalAgent } from "./zebra_local_agent";
 
 /**
  * Orchestrates printing a POS order to a Zebra ZD410.
  *
- *  - WebUSB:    direct from the browser (client-side, offline-capable).
- *  - PrintNode: server-side proxy (pos.order.mint_printnode_print) so the
- *               API key never reaches the cashier's browser and CORS is moot.
- *  - auto:      try a paired USB printer, fall back to PrintNode.
+ *  - WebUSB:     direct from the browser (client-side, Mac/ChromeOS-friendly).
+ *  - local_agent: POST ZPL to a localhost print agent on the register (uses
+ *                 the OS driver — no Zadig; best for Windows). Self-hosted.
+ *  - PrintNode:  server-side proxy (pos.order.mint_printnode_print) so the
+ *                API key never reaches the cashier's browser; cloud SaaS.
+ *  - auto:       WebUSB -> local_agent -> PrintNode.
  *
  * The ZPL itself is always generated server-side from reliable ORM fields
  * (pos.order.get_mint_zebra_zpl) so output does not depend on POS JS getters.
@@ -31,6 +34,14 @@ export const mintZebraService = {
             return cachedDevice;
         }
 
+        async function getZpl(ref, which) {
+            const zpl = await orm.call("pos.order", "get_mint_zebra_zpl", [ref, which]);
+            if (!zpl || zpl.error) {
+                throw new Error((zpl && zpl.error) || "no_zpl");
+            }
+            return zpl;
+        }
+
         async function printViaWebUsb(ref, which, allowRequest) {
             if (!ZebraWebUsb.isSupported()) {
                 return { ok: false, error: "webusb_unsupported" };
@@ -39,10 +50,7 @@ export const mintZebraService = {
             if (!device) {
                 return { ok: false, error: "no_usb_device" };
             }
-            const zpl = await orm.call("pos.order", "get_mint_zebra_zpl", [ref, which]);
-            if (!zpl || zpl.error) {
-                return { ok: false, error: (zpl && zpl.error) || "no_zpl" };
-            }
+            const zpl = await getZpl(ref, which);
             if (zpl.label) {
                 await ZebraWebUsb.send(device, zpl.label);
             }
@@ -50,6 +58,20 @@ export const mintZebraService = {
                 await ZebraWebUsb.send(device, zpl.receipt);
             }
             return { ok: true, transport: "webusb" };
+        }
+
+        async function printViaLocalAgent(ref, which, agentUrl, agentToken) {
+            if (!(await ZebraLocalAgent.isAvailable(agentUrl))) {
+                return { ok: false, error: "no_local_agent" };
+            }
+            const zpl = await getZpl(ref, which);
+            if (zpl.label) {
+                await ZebraLocalAgent.send(agentUrl, zpl.label, { token: agentToken });
+            }
+            if (zpl.receipt) {
+                await ZebraLocalAgent.send(agentUrl, zpl.receipt, { token: agentToken });
+            }
+            return { ok: true, transport: "local_agent" };
         }
 
         async function printViaPrintNode(ref, which) {
@@ -91,20 +113,25 @@ export const mintZebraService = {
                 return { ok: false, error: "no_order_ref" };
             }
 
+            const { agentUrl, agentToken } = opts;
+            const tryWebUsb = () =>
+                printViaWebUsb(ref, which, allowRequest).catch((e) => ({ ok: false, error: e.message }));
+            const tryAgent = () =>
+                printViaLocalAgent(ref, which, agentUrl, agentToken).catch((e) => ({ ok: false, error: e.message }));
+
             let result;
             if (transport === "printnode") {
                 result = await printViaPrintNode(ref, which);
             } else if (transport === "webusb") {
-                result = await printViaWebUsb(ref, which, allowRequest).catch((e) => ({
-                    ok: false,
-                    error: e.message,
-                }));
+                result = await tryWebUsb();
+            } else if (transport === "local_agent") {
+                result = await tryAgent();
             } else {
-                // auto: prefer direct USB, fall back to PrintNode
-                result = await printViaWebUsb(ref, which, allowRequest).catch((e) => ({
-                    ok: false,
-                    error: e.message,
-                }));
+                // auto: WebUSB -> local agent -> PrintNode
+                result = await tryWebUsb();
+                if (!result.ok && result.error !== "no_zpl") {
+                    result = await tryAgent();
+                }
                 if (!result.ok && result.error !== "no_zpl") {
                     result = await printViaPrintNode(ref, which);
                 }
