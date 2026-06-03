@@ -11,6 +11,11 @@
     "author": "initOS GmbH, Odoo Community Association (OCA)",
     "category": "Vault",
     "depends": ["base_setup", "web"],
+    # Grant pilot users (VAULT_ALLOWED_USERS in __init__.py) the vault group on
+    # a fresh install. Without this hook, the allowlist only runs via the
+    # 19.0.1.1.0 post-migrate (upgrade path), so a first-time -i install would
+    # grant nobody access — even the allow-listed user.
+    "post_init_hook": "_vault_post_init",
     "data": [
         "security/vault_security.xml",
         "security/ir.model.access.csv",
