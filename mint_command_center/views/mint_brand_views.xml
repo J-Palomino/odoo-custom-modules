@@ -8,6 +8,7 @@
             <list string="Brands" editable="bottom">
                 <field name="display_emoji" string="Emoji" optional="show"/>
                 <field name="name"/>
+                <field name="brand_class" string="Class" optional="show"/>
                 <field name="slug" optional="hide"/>
                 <field name="dutchie_brand_id" optional="show"/>
                 <field name="product_count" string="# Products"/>
@@ -36,6 +37,7 @@
                             <field name="logo_url" widget="url"/>
                         </group>
                         <group>
+                            <field name="brand_class"/>
                             <field name="dutchie_brand_id"/>
                             <field name="product_count"/>
                         </group>
@@ -60,6 +62,9 @@
             <search string="Brands">
                 <field name="name"/>
                 <field name="dutchie_brand_id"/>
+                <separator/>
+                <filter name="house_brands" string="House Brands"
+                        domain="[('brand_class', '=', 'house')]"/>
                 <separator/>
                 <filter name="has_emoji" string="Has Emoji"
                         domain="[('display_emoji', '!=', False)]"/>
