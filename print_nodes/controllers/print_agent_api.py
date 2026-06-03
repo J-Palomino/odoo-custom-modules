@@ -99,7 +99,9 @@ class MintPrintAgentApi(http.Controller):
             'job_id': j.id,
             'printer': (j.printer_id.system_name or '') if j.printer_id else '',
             'role': j.role,
-            'zpl': j.zpl,
+            'doc_type': j.doc_type,
+            'zpl': j.zpl or '',
+            'pdf': (j.pdf_data or '').decode() if isinstance(j.pdf_data, bytes) else (j.pdf_data or ''),
         } for j in jobs]
         return request.make_json_response({'jobs': out})
 
