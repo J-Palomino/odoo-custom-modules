@@ -27,11 +27,14 @@ Security: binds 127.0.0.1 only. Set MINT_AGENT_TOKEN to require an
 X-Agent-Token header (the POS sends it). Set MINT_AGENT_ORIGIN to restrict
 which web origin may call it (default '*').
 """
+import base64
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -183,6 +186,66 @@ def print_raw(printer, data):
     return _lp_print_raw(printer, data), printer
 
 
+# ── PDF printing (rendered by the OS driver — works on non-Zebra printers) ──
+def _cups_print_pdf(printer, path):
+    cmd = ['lp']                      # NO -o raw -> CUPS renders the PDF
+    if printer:
+        cmd += ['-d', printer]
+    cmd += [path]
+    p = subprocess.run(cmd, capture_output=True, timeout=120)
+    if p.returncode != 0:
+        raise OSError('lp pdf rc=%s %s' % (p.returncode, p.stderr[:200]))
+
+
+def _win_print_pdf(printer, path):
+    # Windows can't render PDF natively; use GhostScript or SumatraPDF.
+    gs = shutil.which('gswin64c') or shutil.which('gswin32c') or shutil.which('gs')
+    if gs:
+        p = subprocess.run(
+            [gs, '-dPrinted', '-dBATCH', '-dNOPAUSE', '-q', '-dNOSAFER',
+             '-sDEVICE=mswinpr2', '-sOutputFile=%%printer%%%s' % printer, path],
+            capture_output=True, timeout=120)
+        if p.returncode != 0:
+            raise OSError('ghostscript rc=%s %s' % (p.returncode, p.stderr[:200]))
+        return
+    sumatra = shutil.which('SumatraPDF') or shutil.which('SumatraPDF.exe')
+    if sumatra:
+        p = subprocess.run([sumatra, '-print-to', printer, '-silent', path],
+                           capture_output=True, timeout=120)
+        if p.returncode != 0:
+            raise OSError('SumatraPDF rc=%s' % p.returncode)
+        return
+    raise OSError('Windows PDF printing needs GhostScript (gswin64c) or SumatraPDF installed')
+
+
+def print_pdf(printer, pdf_bytes):
+    printer = printer or PRINTER or default_printer()
+    if not printer:
+        raise OSError('no printer specified and no OS default printer')
+    fd, path = tempfile.mkstemp(suffix='.pdf')
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(pdf_bytes)
+        if OSNAME == 'Windows':
+            _win_print_pdf(printer, path)
+        else:
+            _cups_print_pdf(printer, path)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    return len(pdf_bytes), printer
+
+
+def print_doc(job):
+    """Print a poll job by its doc_type. Returns (bytes, printer)."""
+    printer = job.get('printer') or None
+    if job.get('doc_type') == 'pdf':
+        return print_pdf(printer, base64.b64decode(job.get('pdf') or ''))
+    return print_raw(printer, (job.get('zpl') or '').encode('utf-8'))
+
+
 # ── HTTP server ──────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def _cors(self):
@@ -281,12 +344,12 @@ def node_poll_loop():
             for job in res.get('jobs', []):
                 jid = job.get('job_id')
                 try:
-                    written, used = print_raw(job.get('printer') or None,
-                                              (job.get('zpl') or '').encode('utf-8'))
+                    written, used = print_doc(job)
                     _odoo_post('/mint/print/complete',
                                {'token': NODE_TOKEN, 'job_id': jid,
                                 'ok': True, 'bytes': written})
-                    print('printed job %s -> %s (%d bytes)' % (jid, used, written))
+                    print('printed job %s (%s) -> %s (%d bytes)'
+                          % (jid, job.get('doc_type', 'zpl'), used, written))
                 except Exception as exc:
                     _odoo_post('/mint/print/complete',
                                {'token': NODE_TOKEN, 'job_id': jid,
