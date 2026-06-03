@@ -14,6 +14,19 @@ from odoo.http import request
 
 _logger = logging.getLogger(__name__)
 
+# Printer-name hints for auto-classifying a reported printer's role.
+_LABEL_HINTS = ('zd4', 'zd6', 'zd2', 'zebra', 'zpl', 'gk420', 'gx420', 'gc420', 'label')
+_RECEIPT_HINTS = ('receipt', 'tm-', 'tm2', 'tm-t', 'star ', 'tsp', 'citizen', 'epson tm', 'mpop')
+
+
+def _classify_role(name):
+    n = (name or '').lower()
+    if any(k in n for k in _LABEL_HINTS):
+        return 'label'
+    if any(k in n for k in _RECEIPT_HINTS):
+        return 'receipt'
+    return 'other'
+
 
 class MintPrintAgentApi(http.Controller):
 
@@ -43,15 +56,23 @@ class MintPrintAgentApi(http.Controller):
         # upsert printers reported by the agent (by system_name)
         Printer = request.env['mint.print.printer'].sudo()
         existing = {p.system_name: p for p in node.printer_ids}
+        has_label_default = bool(node.printer_ids.filtered(
+            lambda x: x.role == 'label' and x.is_default))
         for p in (data.get('printers') or []):
             sysname = p.get('system_name')
             if not sysname or sysname in existing:
                 continue
+            role = p.get('role') or _classify_role(p.get('name') or sysname)
+            # auto-default the first label printer on the node
+            make_default = role == 'label' and not has_label_default
+            if make_default:
+                has_label_default = True
             Printer.create({
                 'node_id': node.id,
                 'system_name': sysname,
                 'name': p.get('name') or sysname,
-                'role': p.get('role') or 'label',
+                'role': role,
+                'is_default': make_default,
             })
         printers = [{
             'id': p.id, 'system_name': p.system_name, 'name': p.name,
