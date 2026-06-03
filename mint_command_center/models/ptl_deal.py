@@ -796,3 +796,9 @@ class PtlDeal(models.Model):
                 'date_end': deal.date_end.isoformat() if deal.date_end else False,
             })
         return result
+
+    @property
+    def is_expired(self):
+        """Return True if the deal's end date is before today."""
+        today = fields.Date.context_today(self)
+        return self.date_end and self.date_end < today
