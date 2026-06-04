@@ -40,6 +40,28 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+
+def _load_config():
+    """Populate os.environ from a KEY=VALUE config file (env still wins).
+
+    Default path: mint_print_agent.conf next to this script. Override with
+    MINT_AGENT_CONFIG. Lets the install-once service run with no env vars set.
+    """
+    path = os.environ.get('MINT_AGENT_CONFIG') or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'mint_print_agent.conf')
+    try:
+        with open(path) as fh:
+            for line in fh:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+    except OSError:
+        pass
+
+
+_load_config()
+
 PORT = int(os.environ.get('MINT_AGENT_PORT', '17777'))
 TOKEN = os.environ.get('MINT_AGENT_TOKEN', '')
 ORIGIN = os.environ.get('MINT_AGENT_ORIGIN', '*')
