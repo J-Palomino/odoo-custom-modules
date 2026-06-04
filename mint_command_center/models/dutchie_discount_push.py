@@ -24,6 +24,8 @@ import urllib.request
 
 from odoo import api, fields, models
 
+from .deal_mixins import coerce_dutchie_ids
+
 _logger = logging.getLogger(__name__)
 
 # System-parameter knobs
@@ -333,24 +335,6 @@ class PtlDayDutchiePush(models.Model):
 
     # ─── Restriction resolvers (Reward.Restrictions.*) ─────────────────────
 
-    @staticmethod
-    def _coerce_dutchie_ids(records, field):
-        """Coerce Char Dutchie cross-reference IDs on a recordset to ints.
-        Lifted from ptl_day.py:_discount_to_webhook_payload. Records with
-        empty / non-numeric Dutchie IDs are silently dropped — the downstream
-        resolver indexes by Dutchie ID only and would miss them anyway.
-        """
-        out = []
-        for r in records:
-            val = getattr(r, field, None)
-            if not val:
-                continue
-            try:
-                out.append(int(str(val).strip()))
-            except (TypeError, ValueError):
-                continue
-        return out
-
     def _resolve_brand_restriction(self, discount):
         """{IsExclusion, RestrictionIds} for Reward.Restrictions.Brand.
 
@@ -360,11 +344,11 @@ class PtlDayDutchiePush(models.Model):
         Empty default returned when neither is set.
         """
         if discount.brand_ids:
-            ids = self._coerce_dutchie_ids(discount.brand_ids, 'dutchie_brand_id')
+            ids = coerce_dutchie_ids(discount.brand_ids, 'dutchie_brand_id')
             if ids:
                 return {'IsExclusion': False, 'RestrictionIds': ids}
         if discount.exclude_brand_ids:
-            ids = self._coerce_dutchie_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
+            ids = coerce_dutchie_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
             if ids:
                 return {'IsExclusion': True, 'RestrictionIds': ids}
         return {'IsExclusion': False, 'RestrictionIds': []}
@@ -376,11 +360,11 @@ class PtlDayDutchiePush(models.Model):
         already resolved by _deal_to_discount_vals' master-cat expansion.
         """
         if discount.category_ids:
-            ids = self._coerce_dutchie_ids(discount.category_ids, 'dutchie_category_id')
+            ids = coerce_dutchie_ids(discount.category_ids, 'dutchie_category_id')
             if ids:
                 return {'IsExclusion': False, 'RestrictionIds': ids}
         if discount.exclude_category_ids:
-            ids = self._coerce_dutchie_ids(discount.exclude_category_ids, 'dutchie_category_id')
+            ids = coerce_dutchie_ids(discount.exclude_category_ids, 'dutchie_category_id')
             if ids:
                 return {'IsExclusion': True, 'RestrictionIds': ids}
         return {'IsExclusion': False, 'RestrictionIds': []}
@@ -398,7 +382,7 @@ class PtlDayDutchiePush(models.Model):
         upstream via the brand+category scope shouldn't include them anyway).
         """
         if discount.product_ids:
-            ids = self._coerce_dutchie_ids(discount.product_ids, 'dutchie_product_id')
+            ids = coerce_dutchie_ids(discount.product_ids, 'dutchie_product_id')
             if ids:
                 return {'IsExclusion': False, 'RestrictionIds': ids}
         # Excluded SKUs path
@@ -419,7 +403,7 @@ class PtlDayDutchiePush(models.Model):
                 ])
                 # Case-insensitive filter (default_code 'in' is case-sensitive in pg)
                 tmpls = tmpls.filtered(lambda t: (t.default_code or '').strip().lower() in sku_set)
-                ids = self._coerce_dutchie_ids(tmpls, 'dutchie_product_id')
+                ids = coerce_dutchie_ids(tmpls, 'dutchie_product_id')
                 if ids:
                     return {'IsExclusion': True, 'RestrictionIds': ids}
         return {'IsExclusion': False, 'RestrictionIds': []}
