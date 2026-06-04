@@ -22,6 +22,36 @@ WEIGHT_UNIT_SELECTION = [
 ]
 
 
+def coerce_dutchie_ids(records, field):
+    """Map a recordset's Char Dutchie cross-reference IDs to a de-duplicated,
+    order-preserving list of ints.
+
+    Single source of truth for building Reward.Restriction RestrictionIds on
+    both push paths (mint.ptl.day publish -> webhook, and the Dutchie discount
+    push). Records with an empty / non-numeric Dutchie ID are dropped — the
+    downstream resolver indexes by Dutchie ID and would miss them anyway.
+
+    De-dup is required: the category widening (MASTER_CATEGORY_PATTERNS) expands
+    several product.category records that share one dutchie_category_id, which
+    otherwise emits repeated RestrictionIds. A restriction is a set, not a list.
+    """
+    out = []
+    seen = set()
+    for r in records:
+        val = getattr(r, field, None)
+        if not val:
+            continue
+        try:
+            i = int(str(val).strip())
+        except (TypeError, ValueError):
+            continue
+        if i in seen:
+            continue
+        seen.add(i)
+        out.append(i)
+    return out
+
+
 class MintDiscountCoreMixin(models.AbstractModel):
     """Discount type/value + MSRP, shared by every Mint deal model.
 

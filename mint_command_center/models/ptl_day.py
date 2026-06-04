@@ -6,6 +6,8 @@ from datetime import timedelta
 
 from odoo import api, fields, models
 
+from .deal_mixins import coerce_dutchie_ids
+
 _logger = logging.getLogger(__name__)
 
 WEBHOOK_URL_PARAM = 'mint.ptl_sync.webhook_url'
@@ -386,45 +388,25 @@ class PtlDay(models.Model):
         # IDs — Odoo-internal record ids have no meaning downstream. Records
         # without a cross-reference are dropped from the payload so we never
         # emit wrong-namespace IDs the resolver would silently miss.
-        def _coerce_ids(records, field):
-            # De-duplicated, order-preserving — the category widening can map
-            # several product.category records to one dutchie_category_id, which
-            # otherwise emits repeated RestrictionIds (a restriction is a set).
-            out = []
-            seen = set()
-            for r in records:
-                val = getattr(r, field, None)
-                if not val:
-                    continue
-                try:
-                    i = int(str(val).strip())
-                except (TypeError, ValueError):
-                    continue
-                if i in seen:
-                    continue
-                seen.add(i)
-                out.append(i)
-            return out
-
         brands = None
         if discount.brand_ids:
-            dutchie_ids = _coerce_ids(discount.brand_ids, 'dutchie_brand_id')
+            dutchie_ids = coerce_dutchie_ids(discount.brand_ids, 'dutchie_brand_id')
             if dutchie_ids:
                 brands = {'ids': dutchie_ids, 'isExclusion': False}
         elif discount.exclude_brand_ids:
-            dutchie_ids = _coerce_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
+            dutchie_ids = coerce_dutchie_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
             if dutchie_ids:
                 brands = {'ids': dutchie_ids, 'isExclusion': True}
 
         categories = None
         if discount.category_ids:
-            dutchie_ids = _coerce_ids(discount.category_ids, 'dutchie_category_id')
+            dutchie_ids = coerce_dutchie_ids(discount.category_ids, 'dutchie_category_id')
             if dutchie_ids:
                 categories = {'ids': dutchie_ids, 'isExclusion': False}
 
         products = None
         if discount.product_ids:
-            dutchie_ids = _coerce_ids(discount.product_ids, 'dutchie_product_id')
+            dutchie_ids = coerce_dutchie_ids(discount.product_ids, 'dutchie_product_id')
             if dutchie_ids:
                 products = {'ids': dutchie_ids, 'isExclusion': False}
 
