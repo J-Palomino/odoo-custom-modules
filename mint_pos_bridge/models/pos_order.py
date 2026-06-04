@@ -277,6 +277,24 @@ class MintPosOrder(models.Model):
         # NULL lane until their first state write. Mirrors the write()
         # synchronizer's case-3 logic.
         records._sync_lane_from_state()
+        # Live-push new live orders to the per-store kanban so a fresh walk-in
+        # pops into its lane the moment it syncs — write() only pushes lane
+        # *moves*, so without this a new transaction waits for a manual refresh.
+        # Gate on non-terminal state + a company so historical/backfill imports
+        # of completed orders don't spam the board or chime.
+        for order in records:
+            if order.state in self._TERMINAL_STATES or not order.company_id:
+                continue
+            self.env['bus.bus']._sendone(
+                f'mint_pos_{order.company_id.id}',
+                'order_update',
+                {
+                    'id': order.id,
+                    'name': order.name,
+                    'state': order.state,
+                    'event': 'create',
+                },
+            )
         return records
 
     # Terminal states never have a Dutchie lane (Dutchie drops the order from
@@ -389,6 +407,7 @@ class MintPosOrder(models.Model):
                     'id': order.id,
                     'name': order.name,
                     'state': new_state,
+                    'event': 'update',
                 },
             )
 
