@@ -32,3 +32,4 @@ from . import competitor_deal
 from . import ambassador
 from . import ambassador_shift
 from . import project_task_daisy
+from . import deal_submission_window

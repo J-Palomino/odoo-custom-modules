@@ -80,3 +80,6 @@ access_ambassador_vendor_mgr,mint.ambassador.vendor_mgr,model_mint_ambassador,gr
 access_ambassador_shift_viewer,mint.ambassador.shift.viewer,model_mint_ambassador_shift,group_viewer,1,0,0,0
 access_ambassador_shift_operations,mint.ambassador.shift.operations,model_mint_ambassador_shift,group_operations,1,1,1,1
 access_ambassador_shift_vendor_mgr,mint.ambassador.shift.vendor_mgr,model_mint_ambassador_shift,group_vendor_manager,1,1,1,0
+access_deal_submission_window_viewer,mint.deal.submission.window.viewer,model_mint_deal_submission_window,group_viewer,1,0,0,0
+access_deal_submission_window_vendor_mgr,mint.deal.submission.window.vendor_mgr,model_mint_deal_submission_window,group_vendor_manager,1,1,1,1
+access_deal_submission_window_ptl_mgr,mint.deal.submission.window.ptl_mgr,model_mint_deal_submission_window,group_ptl_manager,1,1,1,1

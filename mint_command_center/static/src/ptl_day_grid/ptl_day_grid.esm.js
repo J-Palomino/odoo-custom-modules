@@ -12,11 +12,14 @@ const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 /**
  * PTL day grid — click-to-toggle persistent calendar, bound to
- * mint.deal.submission.plot_date_ids (mint.deal.submission.day: one row per
- * date). The reviewer clicks individual day cells on a month grid; each
- * selected day is a single plot_date_ids row (toggle on = create a day row,
- * toggle off = delete it). No range grouping — staging's model is already
- * one-row-per-day, the natural shape for a calendar grid.
+ * mint.deal.submission.window_ids.
+ *
+ * Replaces the multi-window range picker (#93649 follow-up). The reviewer
+ * clicks individual day cells on a month grid; the widget keeps the set of
+ * selected ISO dates as local state and, on every change, re-groups the
+ * contiguous runs into mint.deal.submission.window rows written back through
+ * the One2many — so the already-verified all_dates() -> action_plot_windows
+ * -> mint.ptl.day backend is untouched (zero schema change).
  *
  * Days already plotted for the submission's market are shaded as context
  * (read-only mint.ptl.day lookup via plotted_dates_for_market).
@@ -27,11 +30,13 @@ export class PtlDayGrid extends Component {
 
     setup() {
         this.orm = useService("orm");
+        // Seed the visible month from the earliest selected day, else today.
         const seed = this._earliestSelected() || DateTime.now();
         this.state = useState({
             year: seed.year,
             month: seed.month, // 1-12
-            plotted: new Set(), // ISO dates already on the PTL for this market
+            selected: this._datesFromWindows(), // Set<isoString>
+            plotted: new Set(), // Set<isoString> already on the PTL for this market
             syncing: false,
         });
         onWillStart(async () => {
@@ -39,34 +44,34 @@ export class PtlDayGrid extends Component {
         });
     }
 
+    // ─── derive selection from the bound One2many ───────────────────────
     get list() {
         return this.props.record.data[this.props.name];
     }
     get records() {
         return this.list.records || [];
     }
-    /** Selected ISO dates = one per plot_date_ids row. Derived live from the
-     * bound One2many so the grid always reflects the record's true state. */
-    get selectedDates() {
+    _datesFromWindows() {
         const out = new Set();
         for (const rec of this.records) {
-            const d = rec.data.date;
-            if (d && d.toFormat) out.add(serializeDate(d));
+            const ds = rec.data.date_start;
+            const de = rec.data.date_end;
+            if (!ds || !de || !ds.toFormat || de < ds) continue;
+            let cur = ds;
+            while (cur <= de) {
+                out.add(serializeDate(cur));
+                cur = cur.plus({ days: 1 });
+            }
         }
         return out;
     }
     _earliestSelected() {
         let min = null;
         for (const rec of this.records) {
-            const d = rec.data.date;
-            if (d && d.toFormat && (!min || d < min)) min = d;
+            const ds = rec.data.date_start;
+            if (ds && ds.toFormat && (!min || ds < min)) min = ds;
         }
         return min;
-    }
-    _recordsForDate(iso) {
-        return this.records.filter(
-            (r) => r.data.date && r.data.date.toFormat && serializeDate(r.data.date) === iso
-        );
     }
 
     get marketId() {
@@ -75,6 +80,7 @@ export class PtlDayGrid extends Component {
         return Array.isArray(m) ? m[0] : m.id || m;
     }
 
+    // ─── market context shading ─────────────────────────────────────────
     async _loadPlotted() {
         const mid = this.marketId;
         if (!mid) {
@@ -91,17 +97,19 @@ export class PtlDayGrid extends Component {
         this.state.plotted = new Set(dates || []);
     }
 
+    // ─── month grid model ───────────────────────────────────────────────
     get monthLabel() {
         return DateTime.local(this.state.year, this.state.month, 1).toFormat("LLLL yyyy");
     }
     get weekdays() {
         return WEEKDAYS;
     }
+    /** 6 rows x 7 cols of cells {iso, day, inMonth, selected, plotted, today}. */
     get weeks() {
         const first = DateTime.local(this.state.year, this.state.month, 1);
         const todayIso = serializeDate(DateTime.now());
-        const selected = this.selectedDates;
-        const lead = first.weekday % 7; // Sun->0 .. Sat->6
+        // luxon weekday: 1=Mon..7=Sun; grid starts Sunday.
+        const lead = first.weekday % 7; // Sun->0, Mon->1, ... Sat->6
         const start = first.minus({ days: lead });
         const weeks = [];
         let cur = start;
@@ -113,7 +121,7 @@ export class PtlDayGrid extends Component {
                     iso,
                     day: cur.day,
                     inMonth: cur.month === this.state.month,
-                    selected: selected.has(iso),
+                    selected: this.state.selected.has(iso),
                     plotted: this.state.plotted.has(iso),
                     today: iso === todayIso,
                 });
@@ -124,9 +132,10 @@ export class PtlDayGrid extends Component {
         return weeks;
     }
     get dayCount() {
-        return this.selectedDates.size;
+        return this.state.selected.size;
     }
 
+    // ─── navigation ─────────────────────────────────────────────────────
     async prevMonth() {
         const d = DateTime.local(this.state.year, this.state.month, 1).minus({ months: 1 });
         this.state.year = d.year;
@@ -140,37 +149,72 @@ export class PtlDayGrid extends Component {
         await this._loadPlotted();
     }
 
-    /** Toggle a single day: delete its plot_date_ids row(s) if selected, else
-     * create one. One row == one date, so no run-grouping. */
+    // ─── toggle + persist ───────────────────────────────────────────────
     async toggleDay(iso) {
         if (this.props.readonly || this.state.syncing) return;
+        if (this.state.selected.has(iso)) {
+            this.state.selected.delete(iso);
+        } else {
+            this.state.selected.add(iso);
+        }
+        await this._syncWindows();
+    }
+    async clearAll() {
+        if (this.props.readonly || this.state.syncing) return;
+        this.state.selected = new Set();
+        await this._syncWindows();
+    }
+
+    /** Collapse the selected ISO dates into contiguous runs and rewrite the
+     * One2many. Delete-all + recreate is simple and correct; window counts are
+     * small (a handful) so the churn is negligible and only commits on save. */
+    async _syncWindows() {
         this.state.syncing = true;
         try {
-            const existing = this._recordsForDate(iso);
-            if (existing.length) {
-                for (const rec of existing) {
-                    await this.list.delete(rec);
-                }
-            } else {
+            const runs = this._computeRuns([...this.state.selected].sort());
+            for (const rec of [...this.records]) {
+                await this.list.delete(rec);
+            }
+            let seq = 10;
+            for (const run of runs) {
                 const rec = await this.list.addNewRecord({ position: "bottom", mode: "edit" });
-                // Mark `date` dirty explicitly with a Luxon DateTime — passing it
-                // via context does not reliably persist on web_save.
-                await rec.update({ date: deserializeDate(iso) });
+                // Mark date_start/date_end dirty explicitly (Luxon DateTime) —
+                // passing them via context does not reliably persist (same
+                // gotcha the range picker hit on web_save).
+                await rec.update({
+                    sequence: seq,
+                    date_start: run.start,
+                    date_end: run.end,
+                });
+                seq += 10;
             }
         } finally {
             this.state.syncing = false;
         }
     }
-    async clearAll() {
-        if (this.props.readonly || this.state.syncing) return;
-        this.state.syncing = true;
-        try {
-            for (const rec of [...this.records]) {
-                await this.list.delete(rec);
+
+    /** sortedIso -> [{start: DateTime, end: DateTime}] contiguous runs. */
+    _computeRuns(sortedIso) {
+        const runs = [];
+        let runStart = null;
+        let prev = null;
+        for (const iso of sortedIso) {
+            const dt = deserializeDate(iso);
+            if (runStart === null) {
+                runStart = dt;
+                prev = dt;
+                continue;
             }
-        } finally {
-            this.state.syncing = false;
+            if (dt.toMillis() === prev.plus({ days: 1 }).toMillis()) {
+                prev = dt;
+            } else {
+                runs.push({ start: runStart, end: prev });
+                runStart = dt;
+                prev = dt;
+            }
         }
+        if (runStart !== null) runs.push({ start: runStart, end: prev });
+        return runs;
     }
 }
 
@@ -180,7 +224,10 @@ export const ptlDayGrid = {
     supportedTypes: ["one2many"],
     relatedFields: [
         { name: "id", type: "integer" },
-        { name: "date", type: "date" },
+        { name: "sequence", type: "integer" },
+        { name: "date_start", type: "date" },
+        { name: "date_end", type: "date" },
+        { name: "day_count", type: "integer" },
     ],
 };
 

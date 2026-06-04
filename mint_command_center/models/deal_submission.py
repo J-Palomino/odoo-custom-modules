@@ -143,9 +143,48 @@ class DealSubmission(models.Model):
         'mint.deal.submission.day',
         'submission_id',
         string='Plot Dates',
-        help='Specific calendar days the vendor wants this deal to run. '
-             'Supports non-contiguous selection.',
+        help='DEPRECATED — superseded by window_ids (mirrors prod). Kept '
+             'defined (hidden in the view) to avoid a destructive migration; '
+             'no longer the source for plotting.',
     )
+
+    # --- Plot windows (prod-mirrored structured day picker) ---
+    window_ids = fields.One2many(
+        'mint.deal.submission.window',
+        'submission_id',
+        string='Plot Windows',
+        help='Non-contiguous date windows. Replayed onto the resulting '
+             'mint.ptl.deal.day_ids when the submission is converted.',
+    )
+    windows_summary = fields.Char(
+        string='Schedule Summary',
+        compute='_compute_windows_summary',
+        store=True,
+    )
+
+    @api.depends('window_ids.date_start', 'window_ids.date_end')
+    def _compute_windows_summary(self):
+        for rec in self:
+            parts = []
+            for w in rec.window_ids:
+                if not w.date_start or not w.date_end:
+                    continue
+                if w.date_start == w.date_end:
+                    parts.append(w.date_start.strftime('%b %-d'))
+                else:
+                    same_year = w.date_start.year == w.date_end.year
+                    same_month = same_year and w.date_start.month == w.date_end.month
+                    if same_month:
+                        parts.append(
+                            f"{w.date_start.strftime('%b %-d')}–"
+                            f"{w.date_end.strftime('%-d')}"
+                        )
+                    else:
+                        parts.append(
+                            f"{w.date_start.strftime('%b %-d')}–"
+                            f"{w.date_end.strftime('%b %-d')}"
+                        )
+            rec.windows_summary = ', '.join(parts) or False
 
     # --- Holiday / Special Event ---
     is_holiday = fields.Boolean(
@@ -356,8 +395,24 @@ class DealSubmission(models.Model):
             'state': 'converted',
             'deal_id': deal.id,
         })
+
+        # Replay the structured plot windows onto the new deal's day_ids
+        # (mirrors prod). No-op when window_ids is empty.
+        plotted_count = 0
+        if self.window_ids and self.market_id:
+            dates = self.window_ids.all_dates()
+            if dates:
+                day_ids = deal.action_plot_windows(dates, market_id=self.market_id.id)
+                plotted_count = len(day_ids)
+
+        body = f"Converted to PTL Deal: {deal.name} (id={deal.id})"
+        if plotted_count:
+            body += (
+                f" — plotted {plotted_count} day(s) across "
+                f"{len(self.window_ids)} window(s)."
+            )
         self.message_post(
-            body=f"Converted to PTL Deal: {deal.name} (id={deal.id})",
+            body=body,
             message_type='comment',
         )
         return {
