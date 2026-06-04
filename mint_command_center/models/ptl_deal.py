@@ -7,6 +7,24 @@ from odoo.exceptions import ValidationError
 from .brand_calendar import _brand_lookup_key, _parse_brand_name, _parse_weight
 
 
+def _strike_price_range_html(text):
+    """Render PTL pricing text as HTML, wrapping a retail price range
+    (e.g. "$50 - $60") in <s> strikethrough so backend views match the
+    public daily-deals page; otherwise returns the escaped text unchanged.
+
+    Reconstructed 2026-06-01: the call in ``_compute_display_text`` (added
+    by 11a3cd4) referenced this helper but its definition was missing from
+    the staging branch, raising NameError on any deal with sales_details.
+    """
+    if not text:
+        return text or ''
+    safe = str(escape(str(text).strip()))
+    out = re.sub(
+        r'\$\s*\d[\d,]*(?:\.\d+)?\s*[-–]\s*\$\s*\d[\d,]*(?:\.\d+)?',
+        r'<s>\g<0></s>', safe)
+    return Markup(out)
+
+
 # Master master-category buckets used in the PTL Calendar sheet,
 # mapped to the product.category name fragments that fall under each.
 # Used by _resolve_master_categories to widen the category search so a
