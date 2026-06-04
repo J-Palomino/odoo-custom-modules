@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from odoo import _, api, fields, models
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, UserError
 
 CollaborationMessage = dict[str, Any]
 
@@ -172,6 +172,91 @@ class SpreadsheetAbstract(models.AbstractModel):
         commands.pop("nextRevisionId", None)
         commands.pop("clientId", None)
         return commands
+
+    def _spreadsheet_revision_head(self):
+        """Return the current head revision id of this spreadsheet.
+
+        This is the optimistic-concurrency token for the live collaborative
+        layer: the ``next_revision_id`` of the most recent revision, or the
+        workbook's own ``revisionId`` when no revisions exist yet. Returns
+        ``False`` when neither is available (XML-RPC safe).
+        """
+        self.ensure_one()
+        last = self.env["spreadsheet.oca.revision"].search(
+            [("model", "=", self._name), ("res_id", "=", self.id)],
+            order="id desc",
+            limit=1,
+        )
+        if last:
+            return last.next_revision_id or False
+        return (self.spreadsheet_raw or {}).get("revisionId") or False
+
+    def mcp_safe_write(
+        self, vals, expected_write_date=None, expected_revision_id=None
+    ):
+        """Guarded full-workbook write for headless / MCP edits.
+
+        A plain ``write({'spreadsheet_raw': ...})`` is a blind overwrite that
+        also unlinks every revision, so it can silently clobber concurrent
+        edits. This method makes the check-and-write atomic by taking a
+        ``FOR UPDATE`` row lock, then refusing the write if either guard fails:
+
+        * Guard 1 (write_date): the record's ``write_date`` no longer matches
+          ``expected_write_date`` — someone wrote since the caller last read.
+        * Guard 2 (revision head): the live revision head no longer matches
+          ``expected_revision_id`` — a collaborative edit landed since.
+
+        Both guards are skipped when their expected value is omitted, so the
+        caller can opt into one, both, or neither (force-overwrite).
+
+        :param dict vals: field values to write (e.g. ``{'spreadsheet_raw': ...}``)
+        :param str expected_write_date: write_date the caller last observed
+            (``'YYYY-MM-DD HH:MM:SS'``), as returned by a prior read.
+        :param str expected_revision_id: revision head the caller last observed.
+        :raises UserError: prefixed ``SMARTSHEET_CONFLICT:`` when a guard fails,
+            so the RPC caller can detect a conflict vs. a genuine error.
+        :return: ``{'id', 'write_date', 'revision_head'}`` fresh tokens to chain
+            the next guarded write.
+        """
+        self.ensure_one()
+        self.check_access("write")
+        # Lock the row so the guard check and the write commit as one unit —
+        # a concurrent writer blocks here instead of racing between check/write.
+        self.env.cr.execute(
+            'SELECT write_date FROM "%s" WHERE id = %%s FOR UPDATE' % self._table,
+            (self.id,),
+        )
+        row = self.env.cr.fetchone()
+        if not row:
+            raise UserError(_("SMARTSHEET_CONFLICT: record no longer exists."))
+        current_write_date = fields.Datetime.to_string(row[0]) if row[0] else False
+        if expected_write_date and current_write_date != expected_write_date:
+            raise UserError(
+                _(
+                    "SMARTSHEET_CONFLICT: this spreadsheet changed since you "
+                    "read it (expected write_date %(exp)s, found %(cur)s). "
+                    "Re-read it and retry."
+                )
+                % {"exp": expected_write_date, "cur": current_write_date}
+            )
+        if expected_revision_id:
+            head = self._spreadsheet_revision_head()
+            if head != expected_revision_id:
+                raise UserError(
+                    _(
+                        "SMARTSHEET_CONFLICT: a live edit landed since you read "
+                        "this spreadsheet (expected revision %(exp)s, found "
+                        "%(cur)s). Re-read it and retry."
+                    )
+                    % {"exp": expected_revision_id, "cur": head}
+                )
+        self.write(vals)
+        self.invalidate_recordset(["write_date"])
+        return {
+            "id": self.id,
+            "write_date": fields.Datetime.to_string(self.write_date) or False,
+            "revision_head": self._spreadsheet_revision_head(),
+        }
 
     def write(self, vals):
         if "spreadsheet_raw" in vals:
