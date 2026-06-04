@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <!--
+      Public flipbook viewer (task #94304, Phase 3).
+      Minimal standalone layout (pattern: onlyoffice_odoo.onlyoffice_layout)
+      so the embedded viewer carries no storefront chrome. noindex,nofollow
+      keeps token URLs out of crawlers. The page renders the merged PDF into a
+      StPageFlip page-flip viewer via self-hosted PDF.js (no external/CDN
+      requests; assets served from /mint_flipbook/static/).
+    -->
+    <template id="flipbook_layout" name="Flipbook Viewer Layout">
+        <html lang="en">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <meta name="robots" content="noindex,nofollow" />
+                <title><t t-esc="flipbook_name" /></title>
+                <link rel="stylesheet" type="text/css"
+                      href="/mint_flipbook/static/src/css/flipbook_viewer.css" />
+                <style>
+                    html, body { margin: 0; height: 100%; background: #222; }
+                    .fb-msg {
+                        color: #eee; font-family: sans-serif; text-align: center;
+                        margin-top: 20vh; font-size: 1.1rem;
+                    }
+                </style>
+            </head>
+            <body>
+                <t t-out="0" />
+            </body>
+        </html>
+    </template>
+
+    <template id="flipbook_viewer" name="Flipbook Viewer">
+        <t t-call="mint_flipbook.flipbook_layout">
+            <t t-if="has_pdf">
+                <div class="fb-stage">
+                    <div id="flipbook"
+                         t-att-data-pdf-url="pdf_url"
+                         data-worker-src="/mint_flipbook/static/lib/pdfjs/pdf.worker.min.js" />
+                </div>
+                <script type="text/javascript"
+                        src="/mint_flipbook/static/lib/pdfjs/pdf.min.js" />
+                <script type="text/javascript"
+                        src="/mint_flipbook/static/lib/stpageflip/page-flip.browser.js" />
+                <script type="text/javascript"
+                        src="/mint_flipbook/static/src/js/flipbook_viewer.js" />
+            </t>
+            <t t-else="">
+                <div class="fb-msg">This flipbook is not ready yet.</div>
+            </t>
+        </t>
+    </template>
+</odoo>

@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_flipbook_marketing,mint.flipbook.marketing,model_mint_flipbook,mint_command_center.group_marketing,1,1,1,1
+access_mint_flipbook_page_marketing,mint.flipbook.page.marketing,model_mint_flipbook_page,mint_command_center.group_marketing,1,1,1,1
+access_mint_flipbook_viewer,mint.flipbook.viewer,model_mint_flipbook,mint_command_center.group_viewer,1,0,0,0
+access_mint_flipbook_page_viewer,mint.flipbook.page.viewer,model_mint_flipbook_page,mint_command_center.group_viewer,1,0,0,0
