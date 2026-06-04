@@ -274,13 +274,14 @@ class DealSubmission(models.Model):
         self.ensure_one()
         dt = self.discount_type
         v = self.discount_value
-        n = (lambda x: f"{x:g}")  # 40.0 -> "40", 22.5 -> "22.5"
+        n = (lambda x: f"{x:g}")              # 40.0 -> "40", 12.5 -> "12.5"
+        money = (lambda x: f"${x:.0f}" if x == int(x) else f"${x:.2f}")  # $20 / $22.50
         if dt == 'percent' and v:
             return f"{n(v)}% Off"
         if dt == 'fixed' and v:
-            return f"${n(v)} Off"
+            return f"{money(v)} Off"
         if dt == 'price' and v:
-            return f"${n(v)}"
+            return money(v)
         if dt == 'bogo':
             return "BOGO"
         if dt == 'clearance':
@@ -289,7 +290,7 @@ class DealSubmission(models.Model):
             return f"{n(v)}x Points"
         return ''  # bundle / no value -> keep free text
 
-    @api.onchange('discount_type', 'discount_value', 'original_price')
+    @api.onchange('discount_type', 'discount_value')
     def _onchange_autofill_sales_details(self):
         """Auto-generate Sales Details from the discount type when it's still
         blank, so submitters stop free-typing inconsistent pricing strings
