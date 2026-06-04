@@ -293,8 +293,13 @@ class DaisyAgentProvisioning(models.Model):
                 project = self.env["project.project"].sudo().create({
                     "name": f"{agent.name} - Email",
                     "alias_name": agent.code,
+                    # The employee owns + can see their own inbox (invited-only).
+                    "user_id": user.id,
+                    "privacy_visibility": "followers",
                 })
                 agent.mail_project_id = project
+                if user.partner_id:
+                    project.message_subscribe(partner_ids=[user.partner_id.id])
             except Exception:
                 _logger.exception("Email project creation failed for agent %s", agent.name)
         agent._mint_mcp_key()
@@ -309,6 +314,28 @@ class DaisyAgentProvisioning(models.Model):
             agent._provision_on_daisy()
         return True
 
+    @api.model
+    def _autocreate_enabled(self):
+        return self.env["ir.config_parameter"].sudo().get_param(
+            "daisy.autocreate_agents", "False"
+        ) in ("True", "true", "1")
+
+    @api.model
+    def _provision_user_if_eligible(self, user):
+        """Auto-provision an agent for a user IFF it is a real employee.
+
+        Eligibility: internal (non-share), active, linked to an hr.employee,
+        and not already backing an agent. Service/integration users (no
+        hr.employee) are skipped so they don't spawn agents/chatflows/keys.
+        """
+        if not user or user.share or not user.active:
+            return False
+        if self.search_count([("user_id", "=", user.id)]):
+            return False
+        if not self.env["hr.employee"].sudo().search_count([("user_id", "=", user.id)]):
+            return False
+        return self._autocreate_for_user(user)
+
 
 class ResUsers(models.Model):
     _inherit = "res.users"
@@ -318,16 +345,52 @@ class ResUsers(models.Model):
         users = super().create(vals_list)
         if self.env.context.get("skip_daisy_agent_autocreate"):
             return users
-        ICP = self.env["ir.config_parameter"].sudo()
-        if ICP.get_param("daisy.autocreate_agents", "False") not in ("True", "true", "1"):
-            return users
         Agent = self.env["daisy.agent"].sudo()
+        if not Agent._autocreate_enabled():
+            return users
         for user in users:
-            if user.share or not user.active:
-                continue
             try:
-                Agent._autocreate_for_user(user)
+                # Only provisions if the user is already linked to an hr.employee;
+                # user-first onboarding is caught later by the hr.employee hook.
+                Agent._provision_user_if_eligible(user)
             except Exception:
                 # Never let provisioning block user creation.
                 _logger.exception("Daisy auto-provision failed for user %s", user.login)
         return users
+
+
+class HrEmployee(models.Model):
+    _inherit = "hr.employee"
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        employees = super().create(vals_list)
+        employees._daisy_autoprovision()
+        return employees
+
+    def write(self, vals):
+        res = super().write(vals)
+        if "user_id" in vals:
+            self._daisy_autoprovision()
+        return res
+
+    def _daisy_autoprovision(self):
+        """Provision agents for employees that have a linked internal user.
+
+        Catches user-first onboarding (where the user existed before the
+        employee link, so the res.users hook skipped it).
+        """
+        if self.env.context.get("skip_daisy_agent_autocreate"):
+            return
+        Agent = self.env["daisy.agent"].sudo()
+        if not Agent._autocreate_enabled():
+            return
+        for emp in self:
+            if not emp.user_id:
+                continue
+            try:
+                Agent._provision_user_if_eligible(emp.user_id)
+            except Exception:
+                _logger.exception(
+                    "Daisy auto-provision (employee link) failed for %s", emp.user_id.login
+                )
