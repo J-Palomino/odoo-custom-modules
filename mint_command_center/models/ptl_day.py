@@ -387,15 +387,23 @@ class PtlDay(models.Model):
         # without a cross-reference are dropped from the payload so we never
         # emit wrong-namespace IDs the resolver would silently miss.
         def _coerce_ids(records, field):
+            # De-duplicated, order-preserving — the category widening can map
+            # several product.category records to one dutchie_category_id, which
+            # otherwise emits repeated RestrictionIds (a restriction is a set).
             out = []
+            seen = set()
             for r in records:
                 val = getattr(r, field, None)
                 if not val:
                     continue
                 try:
-                    out.append(int(str(val).strip()))
+                    i = int(str(val).strip())
                 except (TypeError, ValueError):
                     continue
+                if i in seen:
+                    continue
+                seen.add(i)
+                out.append(i)
             return out
 
         brands = None
