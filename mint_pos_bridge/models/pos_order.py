@@ -91,6 +91,7 @@ class MintPosOrder(models.Model):
         required=True,
         tracking=True,
         index=True,
+        group_expand='_read_group_state',
     )
     lane_id = fields.Many2one(
         'mint.pos.lane',
@@ -243,6 +244,26 @@ class MintPosOrder(models.Model):
         'UNIQUE(company_id, dutchie_checkout_id)',
         'Dutchie checkout ID must be unique per store.',
     )
+
+    @api.model
+    def _read_group_state(self, states=None, domain=None, order=None):
+        """group_expand for the kanban: always render the live swimlanes.
+
+        The Orders kanban groups by ``state``. Odoo only emits a column for a
+        Selection group that already contains a record, so a store with no
+        orders in (say) the Pick-Up lane would see that swimlane vanish — and a
+        store with no active orders would see an empty board with no lanes at
+        all. Expanding to a fixed set keeps every live lane visible per store.
+
+        Scope = the live Dutchie lanes only. ``CATEGORY_TO_STATE`` (pos_lane.py)
+        is the source of truth for the 1:1 lane<->state mapping, so its values,
+        in flow order, ARE the real lane set. Legacy frontend states
+        (placed/confirmed/preparing/ready) fold onto these via STATE_TO_CATEGORY
+        and terminal states (completed/cancelled/picked_up/delivery_completed)
+        are never lanes — both are intentionally excluded so they don't show as
+        empty columns.
+        """
+        return list(CATEGORY_TO_STATE.values())
 
     @api.model_create_multi
     def create(self, vals_list):
