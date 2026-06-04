@@ -870,3 +870,15 @@ class PtlDeal(models.Model):
                 'date_end': deal.date_end.isoformat() if deal.date_end else False,
             })
         return result
+
+    def days_until_end(self):
+        """Calculate the number of days from today until the deal's end date.
+
+        Returns a positive integer if the deal is active, negative if expired,
+        and None if date_end is not set.
+        """
+        today = fields.Date.context_today(self)
+        if not self.date_end:
+            return None
+        delta = (self.date_end - today).days
+        return delta
