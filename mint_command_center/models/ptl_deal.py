@@ -300,6 +300,21 @@ class PtlDeal(models.Model):
     )
 
     # --- Computed fields ---
+    days_until_end = fields.Integer(
+        string='Days Until End',
+        compute='_compute_days_until_end',
+        store=False,
+        help='Number of days from today to the end date. Returns 0 if no end date is set.',
+    )
+
+    @api.depends('date_end')
+    def _compute_days_until_end(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            if rec.date_end:
+                rec.days_until_end = (rec.date_end - today).days
+            else:
+                rec.days_until_end = 0
 
     def _resolve_master_categories(self):
         """Resolve product_category text to a product.category recordset.
