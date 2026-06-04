@@ -127,7 +127,8 @@
                             </group>
                             <group string="Sales Details" col="1">
                                 <field name="sales_details" nolabel="1"
-                                       placeholder="Formatted pricing text — how this deal should be displayed"/>
+                                       placeholder="Auto-fills from Discount Type (e.g. 40% Off, $10, BOGO). Edit for custom wording / bundles."
+                                       help="Auto-generated from the Discount Type + value when left blank. Edit freely for bundles, multi-buy, or any custom wording."/>
                             </group>
                         </page>
                         <page string="Exclusions" name="exclusions">
