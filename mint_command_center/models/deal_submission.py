@@ -70,6 +70,20 @@ class DealSubmission(models.Model):
         string='Details & Exclusions',
         help='Product details, exclusions, and conditions',
     )
+    excluded_brand_ids = fields.Many2many(
+        'mint.brand',
+        'mint_deal_submission_excluded_brand_rel',
+        'submission_id',
+        'brand_id',
+        string='Excluded Brands',
+        help='Brands to exclude from this deal. Forwarded to the PTL deal '
+             '(mint.ptl.deal.excluded_brand_ids) on conversion.',
+    )
+    excluded_skus = fields.Text(
+        string='Excluded SKUs',
+        help='SKUs to exclude (one per line or comma-separated). Forwarded to '
+             'the PTL deal (mint.ptl.deal.excluded_skus) on conversion.',
+    )
 
     # --- Targeting ---
     market_id = fields.Many2one(
@@ -283,6 +297,8 @@ class DealSubmission(models.Model):
             'vendor_funding_percent': self.vendor_funding_percent,
             'campaign_id': self.campaign_id.id if self.campaign_id else False,
             'explicit_product_ids': [(6, 0, explicit_products.ids)] if explicit_products else False,
+            'excluded_brand_ids': [(6, 0, self.excluded_brand_ids.ids)] if self.excluded_brand_ids else False,
+            'excluded_skus': self.excluded_skus or False,
         })
         self.write({
             'state': 'converted',

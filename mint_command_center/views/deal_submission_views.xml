@@ -51,26 +51,14 @@
                             <field name="vendor_email" widget="email"/>
                             <field name="vendor_contact"/>
                             <field name="vendor_phone" widget="phone"/>
-                            <field name="brand_id"/>
                             <field name="crm_lead_id" options="{'no_create': True}"/>
                             <field name="campaign_id" options="{'no_create': True}"/>
                         </group>
                         <group string="Deal Details">
-                            <field name="product_category"/>
                             <field name="discount_type"/>
                             <field name="discount_value"/>
                             <field name="original_price"/>
-                            <field name="sales_details"/>
                         </group>
-                    </group>
-                    <group string="Specific Products (optional — overrides brand-wide matching)">
-                        <field name="product_ids"
-                               nolabel="1"
-                               widget="many2many_tags"
-                               domain="[('brand_id','=',brand_id)]"
-                               options="{'no_create': True, 'no_create_edit': True}"
-                               invisible="not brand_id"
-                               placeholder="Pick specific products to restrict the deal. Leave empty for all of brand+category."/>
                     </group>
                     <group string="Vendor Funding">
                         <group>
@@ -123,15 +111,37 @@
                                 <field name="preferred_days" readonly="1"/>
                             </group>
                         </page>
-                        <page string="Inclusions" name="inclusions" invisible="True">
-                            <!-- Stub: filled in by the sibling rule-tabs ticket. -->
+                        <page string="Inclusions" name="inclusions">
+                            <group>
+                                <field name="brand_id"/>
+                                <field name="product_category"/>
+                            </group>
+                            <group string="Specific Products (optional — overrides brand-wide matching)" col="1">
+                                <field name="product_ids"
+                                       nolabel="1"
+                                       widget="many2many_tags"
+                                       domain="[('brand_id','=',brand_id)]"
+                                       options="{'no_create': True, 'no_create_edit': True}"
+                                       invisible="not brand_id"
+                                       placeholder="Pick specific products to restrict the deal. Leave empty for all of brand+category."/>
+                            </group>
+                            <group string="Sales Details" col="1">
+                                <field name="sales_details" nolabel="1"
+                                       placeholder="Formatted pricing text — how this deal should be displayed"/>
+                            </group>
                         </page>
-                        <page string="Exclusions" name="exclusions" invisible="True">
-                            <!-- Stub: filled in by the sibling rule-tabs ticket. -->
-                        </page>
-                        <page string="Details &amp; Exclusions Notes" name="details_notes">
-                            <field name="details_exclusions" nolabel="1"
-                                   placeholder="Product exclusions and conditions..."/>
+                        <page string="Exclusions" name="exclusions">
+                            <group string="Exclusion Rules">
+                                <field name="excluded_brand_ids" widget="many2many_tags"
+                                       options="{'no_create_edit': True}"
+                                       placeholder="Brands to exclude from this deal"/>
+                                <field name="excluded_skus"
+                                       placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002"/>
+                            </group>
+                            <group string="Details &amp; Exclusions Notes" col="1">
+                                <field name="details_exclusions" nolabel="1"
+                                       placeholder="Product exclusions and conditions..."/>
+                            </group>
                         </page>
                         <page string="Review" name="review" invisible="not reviewed_by">
                             <group>
