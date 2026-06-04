@@ -339,16 +339,26 @@ class PtlDayDutchiePush(models.Model):
         Lifted from ptl_day.py:_discount_to_webhook_payload. Records with
         empty / non-numeric Dutchie IDs are silently dropped — the downstream
         resolver indexes by Dutchie ID only and would miss them anyway.
+
+        De-duplicated, order-preserving: the category widening
+        (MASTER_CATEGORY_PATTERNS) expands several product.category records
+        that can share one dutchie_category_id, which otherwise sent repeated
+        RestrictionIds to Dutchie. A restriction is a set, not a list.
         """
         out = []
+        seen = set()
         for r in records:
             val = getattr(r, field, None)
             if not val:
                 continue
             try:
-                out.append(int(str(val).strip()))
+                i = int(str(val).strip())
             except (TypeError, ValueError):
                 continue
+            if i in seen:
+                continue
+            seen.add(i)
+            out.append(i)
         return out
 
     def _resolve_brand_restriction(self, discount):
