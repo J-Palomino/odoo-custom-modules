@@ -119,6 +119,34 @@ def odoo_type_for_id(cmid):
     return ODOO_TYPE_BY_ID.get(int(cmid)) if cmid else None
 
 
+def parse_raw_restriction(raw):
+    """Parse a *_restriction_ids_raw Char ('include: 62375 | 62376' or
+    'exclude: 54') back to canonical {'ids': [...], 'isExclusion': bool}.
+    Returns None when empty. Dutchie IDs stay int when they parse as int.
+
+    Shared by BOTH the Redis serializer (mint_redis_push) and the Dutchie push
+    (mint_command_center) so source=dutchie rows — whose m2m FKs are empty and
+    whose Dutchie IDs live only in the raw Char field — resolve their targeting
+    on both paths. Lives here because mint_redis_push depends on
+    mint_command_center, so a helper shared by both can't live in either."""
+    if not raw:
+        return None
+    s = raw.strip()
+    is_exclusion = s.lower().startswith('exclude:')
+    if ':' in s:
+        s = s.split(':', 1)[1].strip()
+    parts = [p.strip() for p in s.split('|') if p.strip()]
+    if not parts:
+        return None
+    ids = []
+    for p in parts:
+        try:
+            ids.append(int(p))
+        except ValueError:
+            ids.append(p)
+    return {'ids': ids, 'isExclusion': is_exclusion}
+
+
 def format_dutchie_date(d):
     """Format a date/datetime as Dutchie's update-discount-item expects
     ('M/D/YYYY, h:mm:ss A'). Empty string for falsy input. Mirrors the JS
