@@ -1,0 +1,82 @@
+name: Deploy Staging Odoo to GKE
+
+# Mirrors the Railway "staging" deploy onto the GKE Odoo StatefulSet that backs
+# staging.letsgomint.us. On every push to `staging`, build the Odoo image from
+# this repo's Dockerfile, push it to Artifact Registry, and roll the GKE
+# StatefulSet to the new immutable SHA tag (scaling it up from 0 if needed).
+#
+# Required repo secrets (none exist yet — see PR description):
+#   GKE_SA_KEY     JSON key for a GCP service account with:
+#                    roles/artifactregistry.writer  (push to the AR repo)
+#                    roles/container.developer       (deploy to the GKE cluster)
+#   SUBMODULE_PAT  PAT (or fine-grained token) with read access to the private
+#                  J-Palomino/daisydo submodule used in the build.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+concurrency:
+  group: gke-staging-odoo
+  cancel-in-progress: false
+
+env:
+  AR_IMAGE: us-central1-docker.pkg.dev/letsgomint-us/mintdeals/odoo
+  GKE_CLUSTER: mintdeals-cluster
+  GKE_ZONE: us-central1-a
+  K8S_NAMESPACE: mintdeals
+  STATEFULSET: odoo
+  CONTAINER: odoo
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout (with private submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SUBMODULE_PAT }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GKE_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Build & push image
+        run: |
+          SHA_TAG="staging-${GITHUB_SHA::12}"
+          docker build \
+            --build-arg CACHEBUST="${GITHUB_SHA}" \
+            -t "${AR_IMAGE}:${SHA_TAG}" \
+            -t "${AR_IMAGE}:staging" \
+            .
+          docker push "${AR_IMAGE}:${SHA_TAG}"
+          docker push "${AR_IMAGE}:staging"
+          echo "SHA_TAG=${SHA_TAG}" >> "$GITHUB_ENV"
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_ZONE }}
+
+      - name: Roll out to GKE StatefulSet
+        run: |
+          # Pin to the immutable SHA tag so the rollout actually pulls the new image.
+          kubectl -n "${K8S_NAMESPACE}" set image \
+            "statefulset/${STATEFULSET}" "${CONTAINER}=${AR_IMAGE}:${SHA_TAG}"
+          # The StatefulSet may be scaled to 0 — ensure at least one replica.
+          kubectl -n "${K8S_NAMESPACE}" scale "statefulset/${STATEFULSET}" --replicas=1
+          kubectl -n "${K8S_NAMESPACE}" rollout status \
+            "statefulset/${STATEFULSET}" --timeout=600s
