@@ -67,6 +67,7 @@ COPY --chown=odoo:odoo print_nodes /opt/extra-addons/print_nodes
 COPY --chown=odoo:odoo mint_redis_session /opt/extra-addons/mint_redis_session
 COPY --chown=odoo:odoo mint_inventory_ops /opt/extra-addons/mint_inventory_ops
 COPY --chown=odoo:odoo mint_mail_whitelist /opt/extra-addons/mint_mail_whitelist
+COPY --chown=odoo:odoo mint_chatter_html /opt/extra-addons/mint_chatter_html
 COPY --chown=odoo:odoo mint_posthog /opt/extra-addons/mint_posthog
 COPY --chown=odoo:odoo mint_sw_buster /opt/extra-addons/mint_sw_buster
 COPY --chown=odoo:odoo mint_loki_logger /opt/extra-addons/mint_loki_logger
