@@ -16,6 +16,11 @@ keeps matching functional during the Dutchie-mirror backfill window.
 import logging
 
 from odoo import api, fields, models, _
+from odoo.addons.mint_api_v2.models.discount_canonical import (
+    CALC_METHOD_BY_ID,
+    discount_value_for,
+    parse_raw_restriction,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -30,8 +35,8 @@ REDIS_RELEVANT_FIELDS = frozenset({
     # Validity
     'valid_from', 'valid_until', 'start_time', 'end_time',
     'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-    # Reward config
-    'discount_type', 'discount_amount', 'discount_percent',
+    # Reward config (discount_percent dropped — orphaned, always 0.0, unconsumed)
+    'discount_type', 'discount_amount',
     'calculation_method_id', 'discount_value', 'highest_or_lowest',
     'apply_to_only_one_item', 'item_group_type_id',
     # Thresholds
@@ -50,42 +55,18 @@ REDIS_RELEVANT_FIELDS = frozenset({
     'online_name',
 })
 
-# Dutchie Backoffice `CalculationMethodId` integer → the calculation_method
-# string mintinvsvc expects (see packages/inventory-service/api/server.js
-# calculateDiscountedPrice). Must stay aligned with the inverse in the sync
-# script (CALC_METHOD_TO_DISCOUNT_TYPE). If Dutchie adds new IDs we default to
-# PERCENT_OFF which is safely no-op when discount_amount is 0.
-CALC_METHOD_ID_TO_STRING = {
-    1: 'PERCENT_OFF',
-    2: 'FIXED_AMOUNT_OFF',
-    3: 'PRICE_TO_AMOUNT',
-    5: 'DOLLAR_OFF_TOTAL',
-    6: 'PRICE_PER_UNIT',
-    15: 'PRICE_TO_AMOUNT_TOTAL',
-}
+# CalculationMethodId → canonical calculation_method string, sourced from the
+# shared registry (mint_api_v2/data/discount-canonical.json). The previous
+# inline map here was INVERTED on ids 1/2/15 (1→PERCENT_OFF instead of
+# FLAT_AMOUNT_OFF, 2→FIXED_AMOUNT_OFF instead of PERCENT_OFF, 15→PRICE_TO_AMOUNT_TOTAL
+# instead of LOYALTY), so every Odoo-pushed percent deal emitted the wrong method
+# and silently stopped applying on the storefront. Live-verified 2026-06-05.
+CALC_METHOD_ID_TO_STRING = CALC_METHOD_BY_ID
 
 
-def _parse_raw_restriction(raw):
-    """Parse 'include: 62375 | 62376' or 'exclude: 54' back to
-    {ids: [...], isExclusion: bool}. Returns None if raw is empty.
-    IDs stay numeric when they parse as int (Dutchie brand/category/
-    product IDs); otherwise passed through as str."""
-    if not raw:
-        return None
-    s = raw.strip()
-    is_exclusion = s.lower().startswith('exclude:')
-    if ':' in s:
-        s = s.split(':', 1)[1].strip()
-    parts = [p.strip() for p in s.split('|') if p.strip()]
-    if not parts:
-        return None
-    ids = []
-    for p in parts:
-        try:
-            ids.append(int(p))
-        except ValueError:
-            ids.append(p)
-    return {'ids': ids, 'isExclusion': is_exclusion}
+# Shared parser now lives in mint_api_v2.discount_canonical so the Dutchie push
+# (mint_command_center) can reuse the exact same raw-restriction handling.
+_parse_raw_restriction = parse_raw_restriction
 
 
 class MintDiscount(models.Model):
@@ -248,10 +229,14 @@ class MintDiscount(models.Model):
             'discount_id': discount_id,
             'discount_name': self.name,
             'discount_code': self.code or None,
-            # Reward
+            # Reward. `discount_amount` is what mintinvsvc/server.js reads to
+            # compute the price, but ids 1 (FLAT_AMOUNT_OFF) / 5 (DOLLAR_OFF_TOTAL)
+            # / 15 (LOYALTY) carry their numeric value in discount_value (their
+            # discount_amount is 0). discount_value_for() reads whichever field
+            # holds the value, so those deals stop emitting 0 and start applying.
+            # `discount_percent` was orphaned (always 0.0, never consumed) — dropped.
             'discount_type': self.discount_type or None,
-            'discount_amount': self.discount_amount or 0.0,
-            'discount_percent': self.discount_percent or 0.0,
+            'discount_amount': discount_value_for(self),
             'calculation_method': calc,
             'discount_value': getattr(self, 'discount_value', 0.0) or 0.0,
             # Status
