@@ -49,6 +49,21 @@ class DiscussChannel(models.Model):
         if not agent:
             return result
 
+        # Away-autoresponder gate (1:1 DMs only). The agent shares the human's
+        # user, so auto-answering a DM means replying *as* that human. Only do
+        # so when the human has opted in AND is currently Away/Offline — while
+        # they're Online their DMs are left for them to answer (no hijack).
+        # Livechat (visitor-facing) is intentionally exempt: it should keep
+        # answering regardless of operator presence.
+        if self.channel_type == "chat":
+            human = agent.user_id
+            if not human or not human.daisy_autorespond_when_away:
+                return result
+            # im_status: 'online' / 'leave_online' => present; anything else
+            # ('away', 'offline', 'leave_away', 'leave_offline') => away.
+            if (human.im_status or "offline").endswith("online"):
+                return result
+
         # Build conversation history from recent messages
         recent = self.env["mail.message"].search([
             ("res_id", "=", self.id),

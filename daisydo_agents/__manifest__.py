@@ -1,6 +1,6 @@
 {
     "name": "Daisy Agency",
-    "version": "19.0.5.2.2",
+    "version": "19.0.5.3.0",
     "category": "Productivity",
     "summary": "AI agents as first-class Odoo users with livechat auto-response, error handler, and RTSP camera feeds",
     "author": "DaisyERP",
@@ -17,6 +17,7 @@
         "views/daisy_provisioning_views.xml",
         "views/daisy_agent_menus.xml",
         "views/res_config_settings_views.xml",
+        "views/res_users_views.xml",
         "data/daisy_agent_data.xml",
     ],
     "assets": {
