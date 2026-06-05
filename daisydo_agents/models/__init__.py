@@ -11,3 +11,4 @@ from . import mail_message
 from . import mail_thread
 from . import project_task
 from . import res_config_settings
+from . import res_users
