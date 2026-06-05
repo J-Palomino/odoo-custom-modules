@@ -1,4 +1,6 @@
+import json
 import logging
+import re
 import uuid
 
 import requests
@@ -107,6 +109,7 @@ class DaisyAIServiceAgent(models.AbstractModel):
                 "should_handoff": should_handoff,
                 "suggested_actions": data.get("suggested_actions", []),
                 "conversation_id": data.get("chatId", conversation_id),
+                "images": self._extract_response_images(data),
             }
 
         except requests.exceptions.Timeout:
@@ -119,3 +122,31 @@ class DaisyAIServiceAgent(models.AbstractModel):
         except requests.exceptions.RequestException as e:
             _logger.error("[%s] Daisy+ API error for agent %s: %s", request_id, agent.name, e)
             return {"response": None, "should_handoff": True, "error": str(e)}
+
+    @api.model
+    def _extract_response_images(self, data):
+        """Pull base64 image data-URIs out of a Daisy+ prediction response.
+
+        Image-producing MCP tools (e.g. MeshCentral devices_screenshot) surface
+        their output inside ``agentFlowExecutedData``/artifacts as a
+        ``data:image/<type>;base64,<...>`` URI rather than in ``text``. We scan
+        the serialized response so the worker can attach the image(s) to the
+        posted message. Returns a list of ``{"mime", "b64"}`` dicts.
+        """
+        try:
+            raw = json.dumps(data)
+        except Exception:
+            return []
+        images, seen = [], set()
+        for m in re.finditer(r"data:image/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)", raw):
+            b64 = m.group(2)
+            if len(b64) < 256:  # skip tiny inline icons/spinners
+                continue
+            dedup = b64[:64]
+            if dedup in seen:
+                continue
+            seen.add(dedup)
+            images.append({"mime": "image/" + m.group(1).lower(), "b64": b64})
+            if len(images) >= 5:
+                break
+        return images
