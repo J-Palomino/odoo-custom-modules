@@ -18,6 +18,28 @@
             <field name="groups" eval="[(4, ref('base.group_user'))]"/>
         </record>
 
+        <!--
+            PTL Deal Option / Deal Submission Option: explicit placeholder rules
+            so the option models inherit the parent's policy by reference rather
+            than silently lacking any ir.rule.
+            TODO(#93643): when ptl.deal / deal.submission gain a real
+            multi-market record rule, change these to a parent-domain join:
+            [('ptl_deal_id.market_id', 'in', user_markets)] /
+            [('submission_id.market_id', 'in', user_markets)].
+        -->
+        <record id="rule_ptl_deal_option_company" model="ir.rule">
+            <field name="name">PTL Deal Option: all users (mirrors parent)</field>
+            <field name="model_id" ref="model_mint_ptl_deal_option"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        </record>
+        <record id="rule_deal_submission_option_company" model="ir.rule">
+            <field name="name">Deal Submission Option: all users (mirrors parent)</field>
+            <field name="model_id" ref="model_mint_deal_submission_option"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        </record>
+
         <!-- Hot Box Deal: multi-company isolation -->
         <record id="rule_hotbox_deal_company" model="ir.rule">
             <field name="name">Hot Box Deal: multi-company</field>

@@ -293,7 +293,10 @@ class PtlDay(models.Model):
         deal's mirror fields and the legacy single-discount id.
         """
         src_type = option.discount_type if option else deal.discount_type
-        src_value = option.discount_value if option else deal.discount_value
+        # Coerce False/None → 0.0: a bogo/clearance option may legitimately carry
+        # no value, and Odoo can surface False from a partial-write cache. The
+        # bare `> 1` comparison raises TypeError when src_value is False.
+        src_value = float((option.discount_value if option else deal.discount_value) or 0)
         disc_type = DISCOUNT_TYPE_MAP.get(src_type, 'percent')
 
         # Normalize discount amount
