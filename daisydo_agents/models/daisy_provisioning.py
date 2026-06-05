@@ -27,13 +27,22 @@ substituted with the new agent's MCP credentials at clone time.
 """
 import json
 import logging
+import re
 import secrets
 
 import requests
 from passlib.context import CryptContext
 
 from odoo import api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
+
+# Agent chat-identity naming pattern.  Each agent gets its OWN dedicated Odoo
+# user (separate from the human it mirrors) so it cannot hijack the human's
+# Discuss DMs / livechat identity.  Login = "<firstname>daisy@letsgomint.us",
+# display name = "<First> Daisy".  The "*daisy@letsgomint.us" namespace is
+# RESERVED — a human user can never be created into it (see ResUsers below).
+_AGENT_LOGIN_DOMAIN = "letsgomint.us"
+_AGENT_LOGIN_SUFFIX = "daisy@" + _AGENT_LOGIN_DOMAIN  # reserved tail
 
 _logger = logging.getLogger(__name__)
 
@@ -170,6 +179,15 @@ class DaisyAgentProvisioning(models.Model):
         tracking=True,
     )
     provision_error = fields.Text(string="Provisioning Error", readonly=True)
+    source_user_id = fields.Many2one(
+        "res.users",
+        string="Mirrors User",
+        readonly=True,
+        ondelete="set null",
+        help="Human user whose Odoo permissions this agent mirrors. The agent "
+        "runs as its OWN dedicated user (user_id) whose group/company access is "
+        "snapshot-copied from this user at provisioning time.",
+    )
 
     # ---- helpers ----
 
@@ -270,21 +288,65 @@ class DaisyAgentProvisioning(models.Model):
         return candidate
 
     @api.model
-    def _autocreate_for_user(self, user):
-        """Create + provision an agent for an existing internal user.
+    def _derive_agent_login(self, source_user):
+        """Unique agent login of the form '<firstname>daisy@letsgomint.us'.
 
-        Attaches to the EXISTING user (no new res.users), so it never
-        recurses through res.users.create.
+        Collisions (two people sharing a first name) get a numeric suffix:
+        ashtondaisy@ -> ashtondaisy2@ -> ashtondaisy3@ ...
         """
-        if user.share or not user.active:
+        first = (source_user.name or source_user.login or "agent").strip().split()
+        base = re.sub(r"[^a-z0-9]+", "", (first[0] if first else "agent").lower()) or "agent"
+        Users = self.env["res.users"].sudo().with_context(active_test=False)
+        candidate = f"{base}{_AGENT_LOGIN_SUFFIX}"
+        n = 2
+        while Users.search_count([("login", "=", candidate)]):
+            candidate = f"{base}daisy{n}@{_AGENT_LOGIN_DOMAIN}"
+            n += 1
+        return candidate
+
+    @api.model
+    def _create_agent_user(self, source_user):
+        """Create the agent's OWN internal user, snapshot-copying the source
+        human's group + company access (so the agent mirrors their permissions
+        without sharing their identity)."""
+        first = (source_user.name or "").strip().split()
+        display = f"{(first[0] if first else source_user.login.split('@')[0]).title()} Daisy"
+        login = self._derive_agent_login(source_user)
+        return self.env["res.users"].sudo().with_context(
+            creating_daisy_agent_user=True,   # bypasses the reserved-login guard
+            skip_daisy_agent_autocreate=True,  # no recursive provisioning
+            no_reset_password=True,            # no invite email
+        ).create({
+            "name": display,
+            "login": login,
+            "email": login,
+            "company_id": source_user.company_id.id,
+            "company_ids": [(6, 0, source_user.company_ids.ids)],
+            "group_ids": [(6, 0, source_user.group_ids.ids)],  # snapshot copy
+            "share": False,
+            "active": True,
+        })
+
+    @api.model
+    def _autocreate_for_user(self, source_user):
+        """Create + provision an agent for an existing internal (human) user.
+
+        The agent gets its OWN dedicated res.users (see _create_agent_user) so
+        its Discuss/livechat identity never collides with the human's — no DM
+        hijacking.  ``source_user_id`` records the human it mirrors.
+        """
+        if source_user.share or not source_user.active:
             return False
-        if self.search_count([("user_id", "=", user.id)]):
+        if self.search_count([("source_user_id", "=", source_user.id)]):
             return False
+        agent_user = self._create_agent_user(source_user)
         agent = self.create({
-            "name": user.name or user.login,
-            "code": self._derive_code(user),
+            "name": agent_user.name,                 # "Ashton Daisy"
+            "code": self._derive_code(source_user),  # "abrackens"
             "role": "AI Agent",
-            "user_id": user.id,
+            "user_id": agent_user.id,                # dedicated identity
+            "source_user_id": source_user.id,        # human whose perms are mirrored
+            "manager_id": source_user.id,            # "assists" this human
             "state": "active",
             "hire_date": fields.Datetime.now(),
         })
@@ -293,13 +355,13 @@ class DaisyAgentProvisioning(models.Model):
                 project = self.env["project.project"].sudo().create({
                     "name": f"{agent.name} - Email",
                     "alias_name": agent.code,
-                    # The employee owns + can see their own inbox (invited-only).
-                    "user_id": user.id,
+                    # The HUMAN owns + can see the agent's inbox (invited-only).
+                    "user_id": source_user.id,
                     "privacy_visibility": "followers",
                 })
                 agent.mail_project_id = project
-                if user.partner_id:
-                    project.message_subscribe(partner_ids=[user.partner_id.id])
+                if source_user.partner_id:
+                    project.message_subscribe(partner_ids=[source_user.partner_id.id])
             except Exception:
                 _logger.exception("Email project creation failed for agent %s", agent.name)
         agent._mint_mcp_key()
@@ -313,6 +375,56 @@ class DaisyAgentProvisioning(models.Model):
                 agent._mint_mcp_key()
             agent._provision_on_daisy()
         return True
+
+    def action_migrate_to_dedicated_user(self):
+        """One-shot migration for legacy agents that were bound to the human's
+        OWN user (pre-naming-pattern).  Spins up the dedicated
+        '<firstname>daisy@' user, repoints the agent at it, revokes the old MCP
+        key minted under the human, and re-provisions.
+
+        Idempotent: agents that already have ``source_user_id`` are skipped.
+        """
+        migrated = self.env["daisy.agent"]
+        for agent in self:
+            human = agent.user_id
+            if not human or agent.source_user_id:
+                continue
+            # Revoke the old MCP key that was minted under the human's account,
+            # matched by its public index (first 8 chars of the stored raw key).
+            if agent.mcp_odoo_api_key:
+                self.env.cr.execute(
+                    "DELETE FROM res_users_apikeys WHERE user_id=%s AND index=%s AND scope='rpc'",
+                    [human.id, agent.mcp_odoo_api_key[:8]],
+                )
+            agent_user = self._create_agent_user(human)
+            agent.write({
+                "name": agent_user.name,
+                "user_id": agent_user.id,
+                "source_user_id": human.id,
+                "manager_id": human.id,
+                "mcp_odoo_api_key": False,  # force a fresh mint under the new user
+            })
+            agent._mint_mcp_key()
+            agent._provision_on_daisy()
+            migrated |= agent
+            _logger.info(
+                "Migrated agent %s -> dedicated user %s (mirrors %s)",
+                agent.code, agent_user.login, human.login,
+            )
+        return migrated
+
+    @api.model
+    def provision_for_user_id(self, user_id):
+        """Public RPC entry point: provision (or fetch) the agent for a human
+        user id.  Returns the agent id (or False)."""
+        user = self.env["res.users"].sudo().browse(int(user_id))
+        if not user.exists():
+            return False
+        existing = self.search([("source_user_id", "=", user.id)], limit=1)
+        if existing:
+            return existing.id
+        agent = self._autocreate_for_user(user)
+        return agent.id if agent else False
 
     @api.model
     def _autocreate_enabled(self):
@@ -330,7 +442,7 @@ class DaisyAgentProvisioning(models.Model):
         """
         if not user or user.share or not user.active:
             return False
-        if self.search_count([("user_id", "=", user.id)]):
+        if self.search_count([("source_user_id", "=", user.id)]):
             return False
         if not self.env["hr.employee"].sudo().search_count([("user_id", "=", user.id)]):
             return False
@@ -339,6 +451,24 @@ class DaisyAgentProvisioning(models.Model):
 
 class ResUsers(models.Model):
     _inherit = "res.users"
+
+    @api.constrains("login")
+    def _check_reserved_daisy_login(self):
+        """Reserve the '*daisy@letsgomint.us' namespace for Daisy AI agents so a
+        human can never be created/renamed into an agent's chat identity."""
+        if self.env.context.get("creating_daisy_agent_user"):
+            return
+        Agent = self.env["daisy.agent"].sudo()
+        for user in self:
+            login = (user.login or "").lower()
+            if not login.endswith(_AGENT_LOGIN_SUFFIX):
+                continue
+            # Allow it only if this user already backs a daisy.agent.
+            if not Agent.search_count([("user_id", "=", user.id)]):
+                raise ValidationError(
+                    "The '*%s' login namespace is reserved for Daisy AI agents."
+                    % _AGENT_LOGIN_SUFFIX
+                )
 
     @api.model_create_multi
     def create(self, vals_list):
