@@ -165,6 +165,30 @@ export class PtlDayGrid extends Component {
         await this._syncWindows();
     }
 
+    // ─── quick fill (Phase 3, #93653) ───────────────────────────────────
+    // Each button ADDS to the current selection (non-destructive) so a user
+    // composing across months can stack picks without losing prior work.
+    // Use Clear to reset.
+    async setEdlpMonth() { await this._fillMonth(() => true); }
+    async setWeekdaysMonth() { await this._fillMonth((wd) => wd >= 1 && wd <= 5); }
+    async setWeekendsMonth() { await this._fillMonth((wd) => wd === 6 || wd === 7); }
+
+    /** Add every day in the currently-visible month whose luxon weekday
+     * (1=Mon..7=Sun) matches `predicate(wd)` to the selection. */
+    async _fillMonth(predicate) {
+        if (this.props.readonly || this.state.syncing) return;
+        const first = DateTime.local(this.state.year, this.state.month, 1);
+        const last = first.endOf("month");
+        const sel = new Set(this.state.selected);
+        let cur = first;
+        while (cur <= last) {
+            if (predicate(cur.weekday)) sel.add(serializeDate(cur));
+            cur = cur.plus({ days: 1 });
+        }
+        this.state.selected = sel;
+        await this._syncWindows();
+    }
+
     /** Collapse the selected ISO dates into contiguous runs and rewrite the
      * One2many. Delete-all + recreate is simple and correct; window counts are
      * small (a handful) so the churn is negligible and only commits on save. */

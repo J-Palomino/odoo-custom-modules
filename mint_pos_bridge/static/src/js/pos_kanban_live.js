@@ -77,13 +77,15 @@ class MintPosKanbanController extends KanbanController {
     _onBusMessage(payload) {
         if (!payload) return;
 
-        const { id, name, state } = payload;
+        const { name, event } = payload;
 
-        // Reload the kanban view to reflect the change
+        // Reload the kanban view to reflect the change (new order or lane move)
         this.model.load();
 
-        // Show notification for new orders
-        if (state === "online_orders" || state === "placed" || state === "lobby") {
+        // Chime + toast only for brand-new transactions arriving in this store,
+        // not for every lane move. The model tags create() pushes with
+        // event === "create"; lane moves send event === "update".
+        if (event === "create") {
             this.notification.add(
                 `New order: ${name || "Unknown"}`,
                 { type: "info", sticky: false }

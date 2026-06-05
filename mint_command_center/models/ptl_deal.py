@@ -602,11 +602,7 @@ class PtlDeal(models.Model):
         self.ensure_one()
         if not self.brand_id:
             return False
-        line = ''
-        for prod in self.matching_product_ids:
-            if prod.x_product_line:
-                line = prod.x_product_line.strip()
-                break
+        line = self._resolve_format_line()
         if not line:
             return False
         parts = [(self.brand_id.name or '').strip(), line]
@@ -615,6 +611,45 @@ class PtlDeal(models.Model):
         if self.original_price:
             parts.append(f"${round(self.original_price)}")
         return ' '.join(p for p in parts if p)
+
+    def _resolve_format_line(self):
+        """Cheapest path to the format's product line (Brand + Line + …).
+
+        format_key needs exactly ONE x_product_line, but reading it via
+        matching_product_ids forced a full product.template search per deal
+        (returning every brand+category SKU) just to grab the first line —
+        the operation that saturated Odoo during the A3 format_key backfill.
+        Resolve it directly instead:
+          - explicit set: scan the (small) in-memory recordset;
+          - brand[+category]: a single indexed `limit=1` search for the first
+            product that actually carries a line.
+
+        The product line is a format-level property (shared across a format's
+        SKUs), so this returns the same value as scanning the full matching
+        set. It deliberately skips the excluded_skus post-filter: excluding a
+        specific SKU does not change the format's line. Returns '' when no
+        line is resolvable (deal then falls back to its name on the storefront).
+        """
+        self.ensure_one()
+        if not self.brand_id:
+            return ''
+        if self.explicit_product_ids:
+            for prod in self.explicit_product_ids:
+                if prod.brand_id == self.brand_id and prod.x_product_line:
+                    return prod.x_product_line.strip()
+            return ''
+        domain = [
+            ('brand_id', '=', self.brand_id.id),
+            ('x_product_line', '!=', False),
+            ('x_product_line', '!=', ''),
+        ]
+        if self.product_category:
+            cats = self._resolve_master_categories()
+            if cats:
+                domain.append(('categ_id', 'in', cats.ids))
+        hit = self.env['product.template'].sudo().search_read(
+            domain, ['x_product_line'], limit=1)
+        return (hit[0]['x_product_line'] or '').strip() if hit else ''
 
     @api.model
     def _cron_fill_format_key(self, batch=300):
@@ -653,6 +688,45 @@ class PtlDeal(models.Model):
         _logger.info(
             "fill_format_key: processed %s deal(s) up to id %s",
             len(deals), deals[-1].id)
+
+    @api.model
+    def action_review_recompute_format_keys(self):
+        """Re-arm the batched format_key backfill after curating product lines.
+
+        format_key does NOT auto-recompute when x_product_line changes on a
+        product (see _build_format_key), so marketing runs this after Product
+        Line Review. It does NOT recompute synchronously: a full in-request
+        recompute (a product.template.search per deal over ~62k products) is
+        the operation that previously rolled back a module upgrade (see
+        _cron_fill_format_key). Instead it resets the id watermark and
+        re-enables the one-shot batched cron (batch=300), which re-drains every
+        deal in the background and disables itself when done — perf-safe and
+        re-runnable.
+        """
+        Param = self.env['ir.config_parameter'].sudo()
+        Param.set_param('mint_cc.format_key_fill_last_id', '0')
+        cron = self.env.ref(
+            'mint_command_center.ir_cron_fill_format_key',
+            raise_if_not_found=False)
+        if cron:
+            cron.active = True
+        pending = self.search_count(
+            [('format_key', 'in', [False, '']), ('brand_id', '!=', False)])
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Format-Key Backfill Re-armed',
+                'message': (
+                    'The batched backfill will re-drain all deals in the '
+                    f'background over the next few minutes ({pending} currently '
+                    'have a blank format key). Newly-curated product lines will '
+                    'be picked up as it runs.'
+                ),
+                'type': 'success',
+                'sticky': False,
+            },
+        }
 
     # --- Revoke wizard launcher ---
 

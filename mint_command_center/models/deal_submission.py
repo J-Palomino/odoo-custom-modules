@@ -70,6 +70,20 @@ class DealSubmission(models.Model):
         string='Details & Exclusions',
         help='Product details, exclusions, and conditions',
     )
+    excluded_brand_ids = fields.Many2many(
+        'mint.brand',
+        'mint_deal_submission_excluded_brand_rel',
+        'submission_id',
+        'brand_id',
+        string='Excluded Brands',
+        help='Brands to exclude from this deal. Forwarded to the PTL deal '
+             '(mint.ptl.deal.excluded_brand_ids) on conversion.',
+    )
+    excluded_skus = fields.Text(
+        string='Excluded SKUs',
+        help='SKUs to exclude (one per line or comma-separated). Forwarded to '
+             'the PTL deal (mint.ptl.deal.excluded_skus) on conversion.',
+    )
 
     # --- Targeting ---
     market_id = fields.Many2one(
@@ -247,6 +261,47 @@ class DealSubmission(models.Model):
             'context': {'default_submission_id': self.id},
         }
 
+    def _format_sales_details(self):
+        """Render the public Sales Details string from the structured discount
+        type + value (+ MSRP). Returns '' for types that need extra structure
+        the form doesn't capture yet (Bundle/multi-buy) — those stay free-text.
+
+        Driven by the existing discount_type Selection rather than a redundant
+        new "sales format" field (#94626). discount_type already enumerates the
+        formats: Percentage Off / Fixed Amount Off / Set Price / BOGO /
+        Clearance / Loyalty Points Multiplier / Bundle Deal.
+        """
+        self.ensure_one()
+        dt = self.discount_type
+        v = self.discount_value
+        n = (lambda x: f"{x:g}")              # 40.0 -> "40", 12.5 -> "12.5"
+        money = (lambda x: f"${x:.0f}" if x == int(x) else f"${x:.2f}")  # $20 / $22.50
+        if dt == 'percent' and v:
+            return f"{n(v)}% Off"
+        if dt == 'fixed' and v:
+            return f"{money(v)} Off"
+        if dt == 'price' and v:
+            return money(v)
+        if dt == 'bogo':
+            return "BOGO"
+        if dt == 'clearance':
+            return f"{n(v)}% Off (Clearance)" if v else "Clearance"
+        if dt == 'points_multiplier' and v:
+            return f"{n(v)}x Points"
+        return ''  # bundle / no value -> keep free text
+
+    @api.onchange('discount_type', 'discount_value')
+    def _onchange_autofill_sales_details(self):
+        """Auto-generate Sales Details from the discount type when it's still
+        blank, so submitters stop free-typing inconsistent pricing strings
+        (#94626). Only fills when empty — never clobbers a custom edit, and
+        Bundle/multi-buy wording is left to the user."""
+        if self.sales_details:
+            return
+        generated = self._format_sales_details()
+        if generated:
+            self.sales_details = generated
+
     def action_convert_to_deal(self):
         """Create a mint.ptl.deal from this approved submission."""
         self.ensure_one()
@@ -283,6 +338,8 @@ class DealSubmission(models.Model):
             'vendor_funding_percent': self.vendor_funding_percent,
             'campaign_id': self.campaign_id.id if self.campaign_id else False,
             'explicit_product_ids': [(6, 0, explicit_products.ids)] if explicit_products else False,
+            'excluded_brand_ids': [(6, 0, self.excluded_brand_ids.ids)] if self.excluded_brand_ids else False,
+            'excluded_skus': self.excluded_skus or False,
         })
         self.write({
             'state': 'converted',

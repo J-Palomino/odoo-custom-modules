@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Nest "Flipbooks" under the existing Mint Marketing app tile
+         (mint_command_center.menu_command_center_root). -->
+    <menuitem id="menu_mint_flipbook_root"
+              name="Flipbooks"
+              parent="mint_command_center.menu_command_center_root"
+              action="action_mint_flipbook"
+              sequence="60"
+              groups="mint_command_center.group_marketing,mint_command_center.group_viewer"/>
+
+</odoo>

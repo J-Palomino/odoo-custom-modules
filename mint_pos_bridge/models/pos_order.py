@@ -91,6 +91,7 @@ class MintPosOrder(models.Model):
         required=True,
         tracking=True,
         index=True,
+        group_expand='_read_group_state',
     )
     lane_id = fields.Many2one(
         'mint.pos.lane',
@@ -244,6 +245,26 @@ class MintPosOrder(models.Model):
         'Dutchie checkout ID must be unique per store.',
     )
 
+    @api.model
+    def _read_group_state(self, states=None, domain=None, order=None):
+        """group_expand for the kanban: always render the live swimlanes.
+
+        The Orders kanban groups by ``state``. Odoo only emits a column for a
+        Selection group that already contains a record, so a store with no
+        orders in (say) the Pick-Up lane would see that swimlane vanish — and a
+        store with no active orders would see an empty board with no lanes at
+        all. Expanding to a fixed set keeps every live lane visible per store.
+
+        Scope = the live Dutchie lanes only. ``CATEGORY_TO_STATE`` (pos_lane.py)
+        is the source of truth for the 1:1 lane<->state mapping, so its values,
+        in flow order, ARE the real lane set. Legacy frontend states
+        (placed/confirmed/preparing/ready) fold onto these via STATE_TO_CATEGORY
+        and terminal states (completed/cancelled/picked_up/delivery_completed)
+        are never lanes — both are intentionally excluded so they don't show as
+        empty columns.
+        """
+        return list(CATEGORY_TO_STATE.values())
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -256,6 +277,24 @@ class MintPosOrder(models.Model):
         # NULL lane until their first state write. Mirrors the write()
         # synchronizer's case-3 logic.
         records._sync_lane_from_state()
+        # Live-push new live orders to the per-store kanban so a fresh walk-in
+        # pops into its lane the moment it syncs — write() only pushes lane
+        # *moves*, so without this a new transaction waits for a manual refresh.
+        # Gate on non-terminal state + a company so historical/backfill imports
+        # of completed orders don't spam the board or chime.
+        for order in records:
+            if order.state in self._TERMINAL_STATES or not order.company_id:
+                continue
+            self.env['bus.bus']._sendone(
+                f'mint_pos_{order.company_id.id}',
+                'order_update',
+                {
+                    'id': order.id,
+                    'name': order.name,
+                    'state': order.state,
+                    'event': 'create',
+                },
+            )
         return records
 
     # Terminal states never have a Dutchie lane (Dutchie drops the order from
@@ -353,8 +392,12 @@ class MintPosOrder(models.Model):
             if needs_stamp:
                 super(MintPosOrder, needs_stamp).write({ts_field: now})
 
-        # Push notifications for customer-facing state changes
-        if new_state in self._get_notification_messages():
+        # Push notifications for customer-facing state changes.
+        # Suppressed for system/sync dispositions (mint_pos_silent) — a guest
+        # whose order we're auto-cancelling/-completing after they left should
+        # NOT get a "your order was cancelled" push.
+        if (new_state in self._get_notification_messages()
+                and not self.env.context.get('mint_pos_silent')):
             for order in self:
                 if order.partner_id:
                     self._send_order_notification(order, new_state)
@@ -368,6 +411,7 @@ class MintPosOrder(models.Model):
                     'id': order.id,
                     'name': order.name,
                     'state': new_state,
+                    'event': 'update',
                 },
             )
 
@@ -594,6 +638,45 @@ class MintPosOrder(models.Model):
         'placed', 'confirmed', 'preparing', 'ready',
     )
 
+    # Lanes that mean the guest reached fulfillment — a departure from here is
+    # treated as a completed sale; departures from any other active lane are
+    # treated as abandoned. (Used only by the real-time reconcile path.)
+    FULFILLED_LANE_STATES = ('pickup', 'deli_counter', 'credit_checkout')
+
+    # Context that makes a terminal write SILENT: no customer push, no Dutchie
+    # lane-change webhook (the guest already left), and no chatter tracking
+    # (keeps bulk cleanups from writing thousands of mail rows).
+    _SILENT_DISPOSE_CTX = {
+        'mint_pos_silent': True,
+        'from_dutchie_sync': True,
+        'tracking_disable': True,
+    }
+
+    def _dispose_departed(self):
+        """Terminalize live orders whose guest left Dutchie's checked-in list.
+
+        Heuristic (per product decision): last lane in FULFILLED_LANE_STATES →
+        'completed'; any other active lane → 'cancelled'. Writes silently so no
+        push/webhook fires. Skips rows already terminal. Returns the count moved.
+        Used by the real-time reconcile endpoint; the daily cron is a blunter
+        cancel-all backstop (see _cron_cancel_stale_orders).
+        """
+        live = self.filtered(lambda o: o.state not in self._TERMINAL_STATES)
+        if not live:
+            return 0
+        silent = live.with_context(**self._SILENT_DISPOSE_CTX)
+        fulfilled = silent.filtered(lambda o: o.state in self.FULFILLED_LANE_STATES)
+        abandoned = silent - fulfilled
+        if fulfilled:
+            fulfilled.write({'state': 'completed'})
+        if abandoned:
+            abandoned.write({'state': 'cancelled'})
+        _logger.info(
+            'mint.pos.order: disposed %d departed orders (%d completed, %d cancelled)',
+            len(live), len(fulfilled), len(abandoned),
+        )
+        return len(live)
+
     @api.model
     def _cron_cancel_stale_orders(self, hours_old=24):
         cutoff = fields.Datetime.now() - timedelta(hours=hours_old)
@@ -608,7 +691,10 @@ class MintPosOrder(models.Model):
             )
             return 0
         count = len(stale)
-        stale.write({'state': 'cancelled'})
+        # SILENT: an order stale for >24h is abandoned — cancel it without
+        # spamming the customer a push or relaying a lane change to Dutchie.
+        # (Firing those on a bulk run is what got this cron disabled before.)
+        stale.with_context(**self._SILENT_DISPOSE_CTX).write({'state': 'cancelled'})
         _logger.info(
             'mint.pos.order: cancelled %d stale active-lane orders older than %sh',
             count, hours_old,

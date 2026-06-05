@@ -3,6 +3,7 @@ from . import daisy_agent_feed
 from . import daisy_agent_job
 from . import daisy_agent_metric
 from . import daisy_ai_service
+from . import daisy_provisioning
 from . import daisy_go2rtc_service
 from . import discuss_channel
 from . import im_livechat_channel

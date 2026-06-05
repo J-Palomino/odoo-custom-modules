@@ -1,0 +1,11 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_zebra_label_manager,print.zebra.label.manager,model_print_label,point_of_sale.group_pos_manager,1,1,1,1
+access_zebra_label_user,print.zebra.label.user,model_print_label,point_of_sale.group_pos_user,1,0,0,0
+access_print_node_manager,print.node.manager,model_print_node,point_of_sale.group_pos_manager,1,1,1,1
+access_print_node_user,print.node.user,model_print_node,point_of_sale.group_pos_user,1,0,0,0
+access_print_printer_manager,print.printer.manager,model_print_printer,point_of_sale.group_pos_manager,1,1,1,1
+access_print_printer_user,print.printer.user,model_print_printer,point_of_sale.group_pos_user,1,0,0,0
+access_print_job_manager,print.job.manager,model_print_job,point_of_sale.group_pos_manager,1,1,1,1
+access_print_job_user,print.job.user,model_print_job,point_of_sale.group_pos_user,1,1,1,0
+access_print_doc_wizard_mgr,print.document.wizard.mgr,model_print_document_wizard,point_of_sale.group_pos_manager,1,1,1,1
+access_print_doc_wizard_user,print.document.wizard.user,model_print_document_wizard,point_of_sale.group_pos_user,1,1,1,1

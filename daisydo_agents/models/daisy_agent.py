@@ -199,9 +199,13 @@ class DaisyAgent(models.Model):
         if not result.get("valid"):
             raise UserError(f"Invalid API key: {result.get('error', 'unknown error')}")
 
-        # Create Odoo user for the agent
+        # Create Odoo user for the agent.
+        # skip_daisy_agent_autocreate guards against the res.users.create hook
+        # recursively spawning another agent for this agent's own login.
         if not self.user_id:
-            user = self.env["res.users"].sudo().create({
+            user = self.env["res.users"].sudo().with_context(
+                skip_daisy_agent_autocreate=True
+            ).create({
                 "name": self.name,
                 "login": self.email,
                 "email": self.email,
@@ -224,6 +228,11 @@ class DaisyAgent(models.Model):
                 "alias_name": self.code,
             })
             self.mail_project_id = project
+
+        # Mint the agent's own scoped Odoo MCP key + provision on Daisy+ (best-effort).
+        if not self.mcp_odoo_api_key:
+            self._mint_mcp_key()
+        self._provision_on_daisy()
 
         self.write({
             "state": "active",

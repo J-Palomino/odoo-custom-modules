@@ -16,4 +16,15 @@
         </record>
 
     </data>
+
+    <!-- Applied on every upgrade (NOT noupdate) so it lands on existing
+         installs: the swimlane board now nests under the native Point of
+         Sale app, whose root menu is only visible to point_of_sale.group_pos_user.
+         Budtenders must therefore be POS users to see the app + the board.
+         group_pos_manager implies budtender, so it inherits this. -->
+    <data>
+        <record id="group_pos_budtender" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
+        </record>
+    </data>
 </odoo>
