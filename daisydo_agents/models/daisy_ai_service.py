@@ -94,7 +94,9 @@ class DaisyAIServiceAgent(models.AbstractModel):
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                timeout=30,
+                # Generous: agency runs that capture screenshots / run Playwright
+                # over the MeshCentral relay can take well over a minute.
+                timeout=180,
             )
             response.raise_for_status()
             data = response.json()
