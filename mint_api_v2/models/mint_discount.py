@@ -80,7 +80,13 @@ class MintDiscount(models.Model):
         ('clearance', 'Clearance (Near Expiry)'),
     ], string="Discount Type", required=True, default='percent')
     discount_amount = fields.Float(string="Discount Amount")
-    discount_percent = fields.Float(string="Discount Percentage")
+    discount_percent = fields.Float(
+        string="Discount Percentage",
+        help="DEPRECATED — superseded by discount_amount + calculation_method_id. "
+             "Not emitted to Redis or pushed to Dutchie; live data showed it was "
+             "0.0 on all Dutchie-mirrored rows. Kept (not dropped) for back-compat. "
+             "Storefront percent deals carry their fraction in discount_amount.",
+    )
 
     # Status
     # `is_active` becomes a stored compute in mint_command_center (driven by
