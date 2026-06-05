@@ -12,7 +12,7 @@ Auth: X-Api-Key header (reuses mint_customer_api.checkout_api_key).
 """
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from odoo import http, fields
 from odoo.http import request, Response
@@ -1114,6 +1114,66 @@ class MintPosOrderAPI(http.Controller):
             return _error(type(e).__name__ + ': ' + str(e)[:300], 500)
 
         return _json(result)
+
+    @http.route('/api/v1/pos/orders/reconcile-active', type='http',
+                auth='none', methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def reconcile_active(self, **kw):
+        """Reconcile one store's live board against Dutchie's checked-in set.
+
+        Body: {"company_id": int, "active_shipment_ids": ["177...", ...],
+               "grace_seconds": 120 (optional), "allow_empty": false}.
+
+        Any active-lane order for that company whose dutchie_shipment_id is NOT
+        in active_shipment_ids — and older than grace_seconds (so a just-created
+        stub isn't disposed before its first poll) — is terminalized via
+        mint.pos.order._dispose_departed (fulfillment lane -> completed, else
+        cancelled), silently (no push, no Dutchie webhook).
+        """
+        if not _verify_api_key():
+            return _error('Invalid API key', 401)
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return _error('Invalid JSON body')
+
+        company_id = data.get('company_id')
+        if not company_id:
+            return _error('missing company_id')
+        active_ids = data.get('active_shipment_ids')
+        if not isinstance(active_ids, list):
+            return _error('active_shipment_ids must be a list')
+        # An empty checked-in set would dispose the whole store — require an
+        # explicit opt-in so a transient Dutchie read of [] can't wipe a board.
+        if not active_ids and not data.get('allow_empty'):
+            return _error('refusing to reconcile against an empty checked-in '
+                          'set (pass allow_empty=true to override)')
+
+        active_set = {str(s) for s in active_ids if s}
+        grace = int(data.get('grace_seconds', 120))
+
+        Order = request.env['mint.pos.order'].sudo()
+        cutoff = fields.Datetime.now() - timedelta(seconds=grace)
+        candidates = Order.search([
+            ('company_id', '=', int(company_id)),
+            ('state', 'in', list(Order.ACTIVE_LANE_STATES)),
+            ('create_date', '<', cutoff),
+            ('dutchie_shipment_id', '!=', False),
+        ])
+        departed = candidates.filtered(
+            lambda o: str(o.dutchie_shipment_id) not in active_set
+        )
+        try:
+            disposed = departed._dispose_departed()
+        except Exception as e:
+            _logger.exception('reconcile-active failed for company=%s', company_id)
+            return _error(type(e).__name__ + ': ' + str(e)[:300], 500)
+
+        return _json({
+            'company_id': int(company_id),
+            'checked_in': len(active_set),
+            'candidates': len(candidates),
+            'disposed': disposed,
+        })
 
     # ── Web Order Config API ──────────────────────────────────
 

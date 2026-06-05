@@ -392,8 +392,12 @@ class MintPosOrder(models.Model):
             if needs_stamp:
                 super(MintPosOrder, needs_stamp).write({ts_field: now})
 
-        # Push notifications for customer-facing state changes
-        if new_state in self._get_notification_messages():
+        # Push notifications for customer-facing state changes.
+        # Suppressed for system/sync dispositions (mint_pos_silent) — a guest
+        # whose order we're auto-cancelling/-completing after they left should
+        # NOT get a "your order was cancelled" push.
+        if (new_state in self._get_notification_messages()
+                and not self.env.context.get('mint_pos_silent')):
             for order in self:
                 if order.partner_id:
                     self._send_order_notification(order, new_state)
@@ -634,6 +638,45 @@ class MintPosOrder(models.Model):
         'placed', 'confirmed', 'preparing', 'ready',
     )
 
+    # Lanes that mean the guest reached fulfillment — a departure from here is
+    # treated as a completed sale; departures from any other active lane are
+    # treated as abandoned. (Used only by the real-time reconcile path.)
+    FULFILLED_LANE_STATES = ('pickup', 'deli_counter', 'credit_checkout')
+
+    # Context that makes a terminal write SILENT: no customer push, no Dutchie
+    # lane-change webhook (the guest already left), and no chatter tracking
+    # (keeps bulk cleanups from writing thousands of mail rows).
+    _SILENT_DISPOSE_CTX = {
+        'mint_pos_silent': True,
+        'from_dutchie_sync': True,
+        'tracking_disable': True,
+    }
+
+    def _dispose_departed(self):
+        """Terminalize live orders whose guest left Dutchie's checked-in list.
+
+        Heuristic (per product decision): last lane in FULFILLED_LANE_STATES →
+        'completed'; any other active lane → 'cancelled'. Writes silently so no
+        push/webhook fires. Skips rows already terminal. Returns the count moved.
+        Used by the real-time reconcile endpoint; the daily cron is a blunter
+        cancel-all backstop (see _cron_cancel_stale_orders).
+        """
+        live = self.filtered(lambda o: o.state not in self._TERMINAL_STATES)
+        if not live:
+            return 0
+        silent = live.with_context(**self._SILENT_DISPOSE_CTX)
+        fulfilled = silent.filtered(lambda o: o.state in self.FULFILLED_LANE_STATES)
+        abandoned = silent - fulfilled
+        if fulfilled:
+            fulfilled.write({'state': 'completed'})
+        if abandoned:
+            abandoned.write({'state': 'cancelled'})
+        _logger.info(
+            'mint.pos.order: disposed %d departed orders (%d completed, %d cancelled)',
+            len(live), len(fulfilled), len(abandoned),
+        )
+        return len(live)
+
     @api.model
     def _cron_cancel_stale_orders(self, hours_old=24):
         cutoff = fields.Datetime.now() - timedelta(hours=hours_old)
@@ -648,7 +691,10 @@ class MintPosOrder(models.Model):
             )
             return 0
         count = len(stale)
-        stale.write({'state': 'cancelled'})
+        # SILENT: an order stale for >24h is abandoned — cancel it without
+        # spamming the customer a push or relaying a lane change to Dutchie.
+        # (Firing those on a bulk run is what got this cron disabled before.)
+        stale.with_context(**self._SILENT_DISPOSE_CTX).write({'state': 'cancelled'})
         _logger.info(
             'mint.pos.order: cancelled %d stale active-lane orders older than %sh',
             count, hours_old,
