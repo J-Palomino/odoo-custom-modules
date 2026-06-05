@@ -38,8 +38,12 @@ MASTER_CATEGORY_PATTERNS = {
 class PtlDeal(models.Model):
     _name = 'mint.ptl.deal'
     _description = 'PTL Deal — Reusable deal template referenced by PTL days'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'mint.discount.option.host.mixin']
     _order = 'sequence, id'
+
+    # mint.discount.option.host.mixin hooks
+    _option_model = 'mint.ptl.deal.option'
+    _option_fk_field = 'ptl_deal_id'
 
     name = fields.Char(string='Deal Name', required=True, tracking=True)
     brand_id = fields.Many2one(
@@ -494,59 +498,6 @@ class PtlDeal(models.Model):
                 brand = Brand.create({'name': text})
                 by_norm[key] = brand
             rec.brand_id = brand.id
-
-    def _primary_option(self):
-        # In-cache option_ids isn't guaranteed to be re-sorted by _order after
-        # a same-transaction sequence write (e.g. inline form reorder), so
-        # sort explicitly. Shared by compute, inverse, and the post-migrate.
-        self.ensure_one()
-        return self.option_ids.sorted(lambda o: (o.sequence, o.id))[:1]
-
-    def _primary_option_vals(self, discount_type, discount_value):
-        # Single source of truth for the shape of a primary option row;
-        # called from both the inverse and the post-migrate so they can't
-        # drift when Phase 3 (or later) adds fields on ptl.deal.option.
-        return {
-            'ptl_deal_id': self.id,
-            'sequence': 10,
-            'discount_type': discount_type,
-            'discount_value': discount_value or 0.0,
-        }
-
-    @api.depends('option_ids', 'option_ids.discount_type',
-                 'option_ids.discount_value', 'option_ids.sequence')
-    def _compute_primary_option_fields(self):
-        for rec in self:
-            primary = rec._primary_option()
-            rec.discount_type = primary.discount_type if primary else False
-            rec.discount_value = primary.discount_value if primary else 0.0
-
-    def _inverse_primary_option_fields(self):
-        # Legacy write-path: `deal.write({'discount_type': X, ...})` writes
-        # through to the first option, creating one when none exists. When
-        # discount_type is cleared, drop the primary option so the mirror
-        # actually stays empty on next recompute.
-        #
-        # rec.discount_value is read straight off the record (it's a Float,
-        # so always 0.0 or a real value — never False). If the caller wrote
-        # only discount_type, this cache still holds the previously-mirrored
-        # value, so we don't clobber the option's discount_value with 0.0.
-        Option = self.env['mint.ptl.deal.option']
-        for rec in self:
-            primary = rec._primary_option()
-            if not rec.discount_type:
-                if primary:
-                    primary.unlink()
-                continue
-            if primary:
-                primary.write({
-                    'discount_type': rec.discount_type,
-                    'discount_value': rec.discount_value,
-                })
-            else:
-                Option.create(rec._primary_option_vals(
-                    rec.discount_type, rec.discount_value,
-                ))
 
     @api.depends('discount_type', 'discount_value', 'original_price', 'sales_details')
     def _compute_display_text(self):

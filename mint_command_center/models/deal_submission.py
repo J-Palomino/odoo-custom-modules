@@ -6,8 +6,11 @@ from odoo.exceptions import UserError
 
 class DealSubmission(models.Model):
     _name = 'mint.deal.submission'
+    # mint.discount.option.host.mixin hooks
+    _option_model = 'mint.deal.submission.option'
+    _option_fk_field = 'submission_id'
     _description = 'Vendor Deal Submission'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'mint.discount.option.host.mixin']
     _order = 'create_date desc'
 
     # --- CRM linkage ---
@@ -144,50 +147,7 @@ class DealSubmission(models.Model):
     rejection_reason = fields.Text(string='Rejection Reason')
     reviewer_notes = fields.Text(string='Reviewer Notes')
 
-    # --- Primary-option mirror (same pattern as mint.ptl.deal, Phase 2) ---
-
-    def _primary_option(self):
-        # Sort explicitly: same-transaction sequence writes don't re-sort
-        # the in-cache o2m until flush.
-        self.ensure_one()
-        return self.option_ids.sorted(lambda o: (o.sequence, o.id))[:1]
-
-    def _primary_option_vals(self, discount_type, discount_value):
-        return {
-            'submission_id': self.id,
-            'sequence': 10,
-            'discount_type': discount_type,
-            'discount_value': discount_value or 0.0,
-        }
-
-    @api.depends('option_ids', 'option_ids.discount_type',
-                 'option_ids.discount_value', 'option_ids.sequence')
-    def _compute_primary_option_fields(self):
-        for rec in self:
-            primary = rec._primary_option()
-            rec.discount_type = primary.discount_type if primary else False
-            rec.discount_value = primary.discount_value if primary else 0.0
-
-    def _inverse_primary_option_fields(self):
-        # Legacy write-path: setting discount_type/value on the submission
-        # upserts the first option; clearing discount_type unlinks it so the
-        # mirror doesn't snap back on next recompute.
-        Option = self.env['mint.deal.submission.option']
-        for rec in self:
-            primary = rec._primary_option()
-            if not rec.discount_type:
-                if primary:
-                    primary.unlink()
-                continue
-            if primary:
-                primary.write({
-                    'discount_type': rec.discount_type,
-                    'discount_value': rec.discount_value,
-                })
-            else:
-                Option.create(rec._primary_option_vals(
-                    rec.discount_type, rec.discount_value,
-                ))
+    # Primary-option mirror logic now lives on mint.discount.option.host.mixin.
 
     # --- Actions ---
 

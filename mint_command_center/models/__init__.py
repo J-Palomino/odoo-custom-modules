@@ -1,4 +1,5 @@
 from . import discount_option_mixin
+from . import discount_option_host_mixin
 from . import ptl_day
 from . import ptl_deal
 from . import ptl_deal_option
