@@ -89,10 +89,21 @@ class DaisyAgentJob(models.Model):
                     self.env.cr.commit()
                     continue
 
+                # Label automated DM replies so the recipient knows it isn't the
+                # human personally — the agent posts as the human's own user, and
+                # in a 1:1 DM this is the away-autoresponder answering for them.
+                # Livechat (visitor-facing) is left unlabelled. Configurable via
+                # ir.config_parameter 'daisy.autoreply_prefix' (set empty to disable).
+                autoreply_prefix = ""
+                if job.channel_model == "discuss.channel" and getattr(target, "channel_type", False) == "chat":
+                    autoreply_prefix = self.env["ir.config_parameter"].sudo().get_param(
+                        "daisy.autoreply_prefix", "[Automated Reply]: "
+                    )
+
                 # Handle handoff
                 if ai_result.get("should_handoff"):
                     target.with_user(agent.user_id).message_post(
-                        body="Let me connect you with a team member who can help further.",
+                        body=f"{autoreply_prefix}Let me connect you with a team member who can help further.",
                         message_type="comment",
                         subtype_xmlid="mail.mt_comment",
                     )
@@ -102,7 +113,7 @@ class DaisyAgentJob(models.Model):
 
                 # Post AI response as agent
                 ai_msg = target.with_user(agent.user_id).message_post(
-                    body=ai_result["response"],
+                    body=f"{autoreply_prefix}{ai_result['response']}",
                     message_type="comment",
                     subtype_xmlid="mail.mt_comment",
                 )
