@@ -5,9 +5,21 @@ import urllib.request
 from odoo import api, fields, models
 from markupsafe import Markup
 
+from ..models.brand_calendar import _brand_lookup_key
+from ..models.ptl_deal import MASTER_CATEGORY_PATTERNS
+
 _logger = logging.getLogger(__name__)
 
-STOCK_THRESHOLD = 10  # Minimum units to count as "in stock"
+# A store counts as carrying a deal when the summed quantity_available across
+# matching packages of a product is greater than this floor. Dutchie reports
+# quantity per package (often small, e.g. "2"), so a high per-package floor
+# silently drops in-stock products — aggregate per product and require > 0.
+MIN_UNITS_IN_STOCK = 0
+
+# Location-coverage bands for the per-deal stock_status. A deal is only
+# "out_of_stock" when carried at zero locations; "in_stock" once it is carried
+# at >= IN_STOCK_PCT of the market's stores; "low_stock" in between.
+IN_STOCK_PCT = 50
 
 
 class StockCheckWizard(models.TransientModel):
@@ -84,12 +96,12 @@ class StockCheckWizard(models.TransientModel):
                     locations_in += 1
 
             pct = (locations_in / total_locations * 100) if total_locations else 0
-            if pct >= 75:
-                status = 'in_stock'
-            elif pct >= 50:
-                status = 'low_stock'
-            else:
+            if locations_in == 0:
                 status = 'out_of_stock'
+            elif pct >= IN_STOCK_PCT:
+                status = 'in_stock'
+            else:
+                status = 'low_stock'
 
             # Update deal record
             deal.write({
@@ -114,11 +126,64 @@ class StockCheckWizard(models.TransientModel):
         return self._reopen()
 
     def _deal_in_stock(self, deal, inventory_items):
-        """Check if a deal's product/brand/category is in stock at a location."""
+        """True when this deal's brand + master-category bucket is carried
+        (summed quantity_available > MIN_UNITS_IN_STOCK) at one location.
+
+        Mirrors mint.ptl.deal's master-category resolution: the deal's
+        product_category is a master bucket (e.g. "Vapes", "Pre-Rolls",
+        "Edibles & Tinctures"), so we test the bucket's MASTER_CATEGORY_PATTERNS
+        fragments against the Dutchie item's combined category text
+        (master_category + category + category_path) rather than comparing the
+        bucket label to a single sub-category string — the bucket labels only
+        ever substring-match "Flower" otherwise. Brand is compared via the same
+        normalized key used to dedupe brands, so punctuation/spacing variants
+        ("TRU-Infusion" vs "Tru Infusion") match. Quantities are summed per
+        product so small per-package counts still total in-stock. "Featured
+        Deals" (empty pattern list) is brand-only, no category gate.
+        """
         if not inventory_items:
             return False
 
+        deal_brand_key = _brand_lookup_key(deal.brand_id.name) if deal.brand_id else ''
+        # None  -> legacy/non-master free-text category (exact-ish fallback)
+        # []    -> "Featured Deals": brand-only, no category gate
+        # [...] -> standard master bucket: match any fragment
+        patterns = (MASTER_CATEGORY_PATTERNS.get(deal.product_category)
+                    if deal.product_category else None)
+
+        # Refuse to match every product when the deal has neither a brand nor a
+        # category to constrain on — that would mark unconstrained deals as
+        # in_stock against any inventory at all.
+        if not deal_brand_key and not deal.product_category:
+            return False
+
+        qty_by_product = {}
         for item in inventory_items:
+            if deal_brand_key:
+                item_brand_key = _brand_lookup_key(
+                    item.get('brand_name') or item.get('brandName') or '')
+                if not item_brand_key:
+                    continue
+                if (deal_brand_key not in item_brand_key
+                        and item_brand_key not in deal_brand_key):
+                    continue
+
+            if patterns:
+                combined = ' '.join(
+                    str(item.get(f) or '')
+                    for f in ('master_category', 'category', 'category_path')
+                ).lower()
+                if not any(p.lower() in combined for p in patterns):
+                    continue
+            elif patterns is None and deal.product_category:
+                combined = ' '.join(
+                    str(item.get(f) or '')
+                    for f in ('master_category', 'category', 'category_path')
+                ).lower()
+                cat = deal.product_category.lower()
+                if cat not in combined and combined not in cat:
+                    continue
+
             raw_qty = (
                 item.get('quantity_available')
                 or item.get('quantityAvailable')
@@ -129,33 +194,12 @@ class StockCheckWizard(models.TransientModel):
                 qty = float(raw_qty)
             except (TypeError, ValueError):
                 qty = 0
-            if qty < STOCK_THRESHOLD:
-                continue
+            # Fall back to the item's own identity when no product id is present
+            # so quantities still aggregate per distinct package.
+            pid = item.get('product_id') or item.get('id') or id(item)
+            qty_by_product[pid] = qty_by_product.get(pid, 0) + qty
 
-            item_cat = (
-                item.get('category')
-                or item.get('master_category')
-                or item.get('masterCategory')
-                or ''
-            ).lower()
-
-            # Match by brand name (case-insensitive)
-            if deal.brand_id:
-                item_brand = (item.get('brand_name') or item.get('brandName') or '').lower()
-                if deal.brand_id.name.lower() in item_brand or item_brand in deal.brand_id.name.lower():
-                    # Also check category if specified
-                    if deal.product_category:
-                        if deal.product_category.lower() in item_cat or item_cat in deal.product_category.lower():
-                            return True
-                    else:
-                        return True
-
-            # Match by category only
-            if deal.product_category and not deal.brand_id:
-                if deal.product_category.lower() in item_cat or item_cat in deal.product_category.lower():
-                    return True
-
-        return False
+        return any(q > MIN_UNITS_IN_STOCK for q in qty_by_product.values())
 
     def _build_results_html(self, results):
         """Build HTML table of stock check results."""
