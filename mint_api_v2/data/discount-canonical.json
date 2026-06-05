@@ -1,0 +1,23 @@
+{
+  "_comment": "SINGLE SOURCE OF TRUTH for Dutchie<->Odoo<->Redis discount field mapping. Committed BYTE-IDENTICALLY in both letsgomint-us and odoo-custom-modules (docs/mappings/discount-canonical.json). Code constants in discountCanonical.js (JS) and discount_canonical.py (Odoo) are validated against this file by drift-guard tests. Do NOT hand-edit code maps; edit this file and let both sides re-derive. odooType values reuse the EXISTING mint.discount selection keys. Live-verified against prod Odoo + prod Redis 2026-06-05.",
+  "version": 1,
+  "calcMethods": [
+    { "id": 1,  "canonical": "FLAT_AMOUNT_OFF",      "odooType": "fixed",             "valueField": "discount_value",  "note": "$X off the item. Value lives in discount_value (discount_amount is 0). e.g. '$5 off'. odooType 'fixed' = the existing 'Fixed Amount Off' selection." },
+    { "id": 2,  "canonical": "PERCENT_OFF",           "odooType": "percent",           "valueField": "discount_amount", "note": "X% off. Value is a 0-1 fraction in discount_amount (0.35 = 35%). e.g. '35% Off'." },
+    { "id": 3,  "canonical": "PRICE_TO_AMOUNT",       "odooType": "price_to_amount",   "valueField": "discount_amount", "note": "Set unit price to $X. e.g. 'BOGO $.01', single-item price override." },
+    { "id": 5,  "canonical": "DOLLAR_OFF_TOTAL",      "odooType": "dollar_off_total",  "valueField": "discount_value",  "note": "$X off the ORDER total (threshold_type=order_total). Value in discount_value. e.g. '$20 off $50'." },
+    { "id": 6,  "canonical": "PRICE_TO_AMOUNT_TOTAL", "odooType": "price_per_unit",    "valueField": "discount_amount", "note": "Bundle: 'N for $X'. discount_amount is the bundle TOTAL (43 for '2 For $43'); threshold_min is N." },
+    { "id": 15, "canonical": "LOYALTY",               "odooType": "points_multiplier", "valueField": "discount_value",  "note": "Loyalty point multiplier (NOT a price discount). Multiplier in discount_value. e.g. '4.2X Loyalty'. odooType 'points_multiplier' = existing 'Loyalty Points Multiplier' selection." }
+  ],
+  "thresholdTypes": [
+    { "id": 0, "canonical": "NONE",            "odooType": "none",        "verified": true },
+    { "id": 1, "canonical": "NUMBER_OF_ITEMS", "odooType": "items",       "verified": true,  "note": "Verified 2026-05-04 against sandbox deal 381839." },
+    { "id": 2, "canonical": "ORDER_TOTAL",     "odooType": "order_total", "verified": true,  "note": "Live-confirmed 2026-06-05: 10 prod rows, all calc-5 ($X off $Y) order-level deals." },
+    { "id": 3, "canonical": "SUBTOTAL",        "odooType": "subtotal",    "verified": false, "note": "Conventional Dutchie ordering; 0 live rows as of 2026-06-05. Consumers MUST warn-on-unmapped rather than assume." }
+  ],
+  "appMethods": [
+    { "id": 1, "canonical": "Automatic", "odooType": "automatic" },
+    { "id": 2, "canonical": "Manual",    "odooType": "manual" },
+    { "id": 3, "canonical": "Code",      "odooType": "code" }
+  ]
+}
