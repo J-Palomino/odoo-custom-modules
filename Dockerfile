@@ -105,6 +105,9 @@ COPY --chown=odoo:odoo mint_mail_fk_hardening /opt/extra-addons/mint_mail_fk_har
 # ── Link Tracker QR (QR code generator for /r short links) ───────────
 COPY --chown=odoo:odoo mint_link_tracker_qr /opt/extra-addons/mint_link_tracker_qr
 
+# ── Flipbook (marketing PDF + page-flip viewer of vendor offerings) ─
+COPY --chown=odoo:odoo mint_flipbook /opt/extra-addons/mint_flipbook
+
 # ── DROPPED 2026-05-20: OCA Tier Validation / Knowledge / QMS bundle ──
 # 13 OCA modules (base_tier_validation*, document_knowledge, document_page*,
 # mgmtsystem*) were ported from 18.0→19.0 in commit 3946172 but shipped
