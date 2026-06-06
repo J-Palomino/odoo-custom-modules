@@ -1,4 +1,5 @@
 from . import daisy_agent
+from . import daisy_agent_presence
 from . import daisy_agent_feed
 from . import daisy_agent_job
 from . import daisy_agent_metric
