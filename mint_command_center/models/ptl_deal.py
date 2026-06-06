@@ -1,4 +1,6 @@
+import json
 import logging
+import urllib.request
 
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
@@ -6,6 +8,17 @@ from odoo.exceptions import ValidationError
 from .brand_calendar import _brand_lookup_key, _parse_brand_name
 
 _logger = logging.getLogger(__name__)
+
+# Durable deal→product id resolver (daily-deals storefront links by id, not fuzzy).
+# The heavy matching runs in mintinvsvc (off-request); Odoo only fires the trigger.
+RESOLVER_URL_PARAM = 'mint.deal_resolver.url'
+DEFAULT_RESOLVER_URL = (
+    'https://mintinvsvc-production-6aa5.up.railway.app/api/jobs/resolve-deal-products'
+)
+RESOLVER_API_KEY_PARAM = 'mint.inventory_service.api_key'  # shared mintinvsvc x-api-key
+RESOLVER_MODE_PARAM = 'mint.deal_resolver.mode'            # 'agent' (default) | 'direct'
+RESOLVER_AGENT_PARAM = 'mint.deal_resolver.agent_id'       # daisy.agent id (agent mode)
+RESOLVER_CHANNEL_PARAM = 'mint.deal_resolver.channel_id'   # discuss.channel id (agent mode)
 
 
 # Master master-category buckets used in the PTL Calendar sheet,
@@ -870,3 +883,71 @@ class PtlDeal(models.Model):
                 'date_end': deal.date_end.isoformat() if deal.date_end else False,
             })
         return result
+
+    # ── Durable deal→product id resolver ─────────────────────────────────────
+    @api.model
+    def action_resolve_products(self, days=14):
+        """Fire the durable deal→product-id resolver in mintinvsvc and return its
+        summary, e.g. {'ok': True, 'deals': 316, 'resolved': 153, 'unresolved': 163}.
+
+        The matching runs entirely in mintinvsvc (reads upcoming published deals,
+        matches against its local inventory, writes back x_resolved_product_id /
+        x_resolved_product_at). This method only POSTs the trigger — it never does
+        the per-deal product.template search that took the page down (#93687).
+
+        Designed to be called by the 'Deal Product Resolver' daisy agent via the
+        Odoo MCP (the agent relays the returned summary), or directly by cron.
+        """
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        url = get_param(RESOLVER_URL_PARAM, DEFAULT_RESOLVER_URL)
+        key = get_param(RESOLVER_API_KEY_PARAM, '') or ''
+        payload = json.dumps({'days': int(days or 14)}).encode('utf-8')
+        try:
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={'Content-Type': 'application/json', 'X-API-Key': key},
+            )
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                body = json.loads(resp.read().decode('utf-8'))
+            _logger.info('Deal resolver summary: %s', body)
+            return body
+        except Exception as e:  # noqa: BLE001 — report, don't raise (cron/agent path)
+            _logger.warning('Deal resolver trigger failed: %s', e)
+            return {'ok': False, 'error': str(e)}
+
+    @api.model
+    def _cron_resolve_deal_products(self):
+        """Daily entry point. In 'agent' mode (default) it dispatches the
+        'Deal Product Resolver' daisy agent — which calls action_resolve_products
+        via the Odoo MCP and posts the summary to its channel. Falls back to a
+        direct call when the daisy stack / agent / channel isn't configured, or
+        when mint.deal_resolver.mode is 'direct'. Either way the deals get
+        resolved, so the storefront's id-based links stay fresh.
+        """
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        mode = (get_param(RESOLVER_MODE_PARAM, 'agent') or 'agent').strip().lower()
+        if mode == 'direct':
+            return self.action_resolve_products()
+
+        Job = self.env.get('daisy.agent.job')
+        agent_id = int(get_param(RESOLVER_AGENT_PARAM, 0) or 0)
+        channel_id = int(get_param(RESOLVER_CHANNEL_PARAM, 0) or 0)
+        agent = self.env['daisy.agent'].browse(agent_id) if (Job is not None and agent_id) else None
+        if not (agent and agent.exists() and channel_id):
+            _logger.info('Deal resolver: agent/channel not configured — running directly.')
+            return self.action_resolve_products()
+
+        Job.sudo().create({
+            'agent_id': agent.id,
+            'channel_model': 'discuss.channel',
+            'channel_id': channel_id,
+            'message_text': (
+                'Daily task: resolve daily-deal products. Call the Odoo method '
+                'mint.ptl.deal.action_resolve_products (model-level, no record id) '
+                'and reply with the returned summary (deals / resolved / unresolved).'
+            ),
+            'state': 'pending',
+        })
+        _logger.info('Deal resolver: dispatched daisy agent job (agent %s, channel %s).',
+                     agent.id, channel_id)
+        return True

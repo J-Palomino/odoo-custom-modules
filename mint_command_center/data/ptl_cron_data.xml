@@ -23,4 +23,24 @@
             <field name="active" eval="True"/>
         </record>
     </data>
+
+    <!-- Durable deal→product-id resolver: daily dispatch of the 'Deal Product
+         Resolver' daisy agent (which calls mint.ptl.deal.action_resolve_products
+         via the Odoo MCP and posts the summary). Falls back to a direct call when
+         the agent/channel isn't configured. Runs at 09:00 UTC (~02:00 AZ), after
+         overnight inventory sync. noupdate="1" so admins can retime/disable it
+         without an upgrade reverting their change. -->
+    <data noupdate="1">
+        <record id="ir_cron_resolve_deal_products" model="ir.cron">
+            <field name="name">Daily Deals: resolve deal→product ids (daisy agent)</field>
+            <field name="model_id" ref="model_mint_ptl_deal"/>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_resolve_deal_products()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="nextcall" eval="DateTime.now() + relativedelta(days=1, hour=9, minute=0, second=0, microsecond=0)"/>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>
