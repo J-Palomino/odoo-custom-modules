@@ -42,6 +42,18 @@ class MintFlipbook(models.Model):
     access_token = fields.Char(
         string='Access Token', copy=False, readonly=True,
         default=lambda self: uuid.uuid4().hex)
+    public_url = fields.Char(
+        string='Public Link', compute='_compute_public_url',
+        help='Shareable page-flip viewer link. Only resolves once the flipbook '
+             'is published; send this URL to vendors/customers.')
+
+    @api.depends('access_token', 'state')
+    def _compute_public_url(self):
+        base = (self.env['ir.config_parameter'].sudo().get_param('web.base.url') or '').rstrip('/')
+        for rec in self:
+            rec.public_url = (
+                '%s/flipbook/%s' % (base, rec.access_token)
+                if (rec.state == 'published' and rec.access_token) else False)
 
     @api.depends('page_ids')
     def _compute_page_count(self):
