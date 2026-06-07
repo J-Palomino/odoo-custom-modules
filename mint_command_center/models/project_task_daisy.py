@@ -274,6 +274,14 @@ class ProjectTaskDaisy(models.Model):
                 f'Read the ticket and post your work to the task chatter.'
             )
             try:
+                # The queue worker posts the reply AS the agent's user
+                # (target.with_user(agent.user_id).message_post). A bare bot
+                # user can't create a chatter message on a task it doesn't
+                # follow → subscribe the agent first so the post succeeds
+                # (QA #94837: job errored "security restrictions … Message,
+                # create … User: <agent>"). Verified: follower → post OK.
+                if agent.partner_id:
+                    rec.message_subscribe(partner_ids=agent.partner_id.ids)
                 agent._enqueue_response(
                     'project.task', rec.id, prompt, [], False,
                     session_id=f'task-{rec.id}')
