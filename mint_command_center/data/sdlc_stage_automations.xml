@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+      Autonomous SDLC loop — Phase 1 (task #94837).
+      On entry to a pipeline stage in project 120 ("Agent Workflow"), enqueue
+      that stage's daisy.agent via the queue (project_task_daisy._sdlc_enqueue_for_stage).
+      Pattern mirrors the proven Social Media automations (#57/#58): on_stage_set
+      with a filter_domain scoped to project_id + the single stage_id + parent_id,
+      so it does NOT re-fire on unrelated writes or on subtasks.
+    -->
+    <record id="sdlc_dispatch_server_action" model="ir.actions.server">
+        <field name="name">SDLC: enqueue stage agent</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="state">code</field>
+        <field name="code">records._sdlc_enqueue_for_stage()</field>
+    </record>
+
+    <record id="sdlc_auto_build" model="base.automation">
+        <field name="name">SDLC: dispatch Devid on Build (proj 120)</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="trigger">on_stage_set</field>
+        <field name="filter_domain">[('project_id','=',120),('stage_id','=',944),('parent_id','=',False)]</field>
+        <field name="action_server_ids" eval="[(4, ref('sdlc_dispatch_server_action'))]"/>
+    </record>
+
+    <record id="sdlc_auto_qa" model="base.automation">
+        <field name="name">SDLC: dispatch Eriq on QA (proj 120)</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="trigger">on_stage_set</field>
+        <field name="filter_domain">[('project_id','=',120),('stage_id','=',945),('parent_id','=',False)]</field>
+        <field name="action_server_ids" eval="[(4, ref('sdlc_dispatch_server_action'))]"/>
+    </record>
+
+    <record id="sdlc_auto_deploy" model="base.automation">
+        <field name="name">SDLC: dispatch NiC on Deploy (proj 120)</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="trigger">on_stage_set</field>
+        <field name="filter_domain">[('project_id','=',120),('stage_id','=',946),('parent_id','=',False)]</field>
+        <field name="action_server_ids" eval="[(4, ref('sdlc_dispatch_server_action'))]"/>
+    </record>
+</odoo>
