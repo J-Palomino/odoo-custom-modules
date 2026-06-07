@@ -904,7 +904,9 @@ class PtlDeal(models.Model):
         get_param = self.env['ir.config_parameter'].sudo().get_param
         url = get_param(RESOLVER_URL_PARAM, DEFAULT_RESOLVER_URL)
         key = get_param(RESOLVER_API_KEY_PARAM, '') or ''
-        body_obj = {'deal_ids': list(deal_ids)} if deal_ids else {'days': int(days or 14)}
+        # deal_ids=None → window scan; an explicit list (even empty) resolves
+        # exactly that set (empty = none), matching the mintinvsvc endpoint.
+        body_obj = {'deal_ids': list(deal_ids)} if deal_ids is not None else {'days': int(days or 14)}
         payload = json.dumps(body_obj).encode('utf-8')
         try:
             req = urllib.request.Request(
@@ -921,10 +923,17 @@ class PtlDeal(models.Model):
 
     @api.model
     def _fire_deal_resolver(self, deal_ids):
-        """Fire-and-forget resolve of x_resolved_product_id for specific deals
-        right after publish ("id at entry"), so the storefront links them by id
-        immediately instead of waiting for the daily cron. Runs in a daemon thread
-        that ONLY does HTTP (no ORM — thread-safe); mintinvsvc performs the writes.
+        """Resolve x_resolved_product_id for specific deals right after publish
+        ("id at entry"), so the storefront links them by id immediately instead of
+        waiting for the daily cron.
+
+        Config is read now (in-transaction); the HTTP call fires from a daemon
+        thread started on POST-COMMIT. Firing post-commit is essential: the thread
+        sends only deal_ids and mintinvsvc re-reads those rows over a SEPARATE
+        connection — if it ran before this publish transaction committed it would
+        read stale/pre-commit deal data (resolving nothing or the wrong product)
+        and could block on the txn's row locks. The thread does HTTP only (no ORM).
+        The daily cron is the backstop.
         """
         ids = [i for i in (deal_ids or []) if i]
         if not ids:
@@ -934,20 +943,32 @@ class PtlDeal(models.Model):
         key = get_param(RESOLVER_API_KEY_PARAM, '') or ''
         payload = json.dumps({'deal_ids': list(ids)}).encode('utf-8')
 
-        def _fire(u, data, k):
+        def _fire():
             try:
                 req = urllib.request.Request(
-                    u, data=data,
-                    headers={'Content-Type': 'application/json', 'X-API-Key': k},
+                    url, data=payload,
+                    headers={'Content-Type': 'application/json', 'X-API-Key': key},
                 )
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     _logger.info('Deal resolver (on-publish, %d deals): %s', len(ids), resp.status)
             except Exception as e:  # noqa: BLE001 — best-effort; daily cron is the backstop
                 _logger.warning('Deal resolver (on-publish) failed: %s', e)
 
-        thread = threading.Thread(target=_fire, args=(url, payload, key))
-        thread.daemon = True
-        thread.start()
+        def _spawn():
+            thread = threading.Thread(target=_fire)
+            thread.daemon = True
+            thread.start()
+
+        # Start the thread only after COMMIT so mintinvsvc sees committed deals
+        # and never contends with this transaction's row locks. (A rollback then
+        # simply never fires — correct: unpublished deals shouldn't be resolved.)
+        # Fall back to immediate spawn on the off chance postcommit is unavailable
+        # so a publish never errors out on this best-effort step.
+        postcommit = getattr(self.env.cr, 'postcommit', None)
+        if postcommit is not None:
+            postcommit.add(_spawn)
+        else:
+            _spawn()
 
     @api.model
     def _cron_resolve_deal_products(self):
