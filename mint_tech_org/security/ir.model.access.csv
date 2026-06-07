@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_tech_ir_logging_security,mint.tech.ir.logging.security,base.model_ir_logging,group_security_ops,1,0,0,0
+access_tech_mail_tracking_value_security,mint.tech.mail.tracking.value.security,mail.model_mail_tracking_value,group_security_ops,1,0,0,0
+access_tech_ir_module_module_viewer,mint.tech.ir.module.module.viewer,base.model_ir_module_module,group_tech_viewer,1,0,0,0
