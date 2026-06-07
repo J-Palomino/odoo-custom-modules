@@ -128,6 +128,11 @@ class MintPosOrder(models.Model):
         compute='_compute_line_count',
         store=True,
     )
+    # Live item count straight from Dutchie's checked-in feed (guest.TotalItems).
+    # Distinct from line_count, which counts actual mint.pos.order.line records —
+    # those stay 0 for live walk-ins (Dutchie exposes no in-progress cart) and
+    # only populate at completion. Lets the kanban card show "N items" live.
+    dutchie_item_count = fields.Integer(string='Items (live)', default=0)
 
     placed_at = fields.Datetime(
         string='Placed At',
