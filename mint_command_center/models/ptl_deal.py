@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 import urllib.request
 
 from odoo import api, fields, models
@@ -886,14 +887,16 @@ class PtlDeal(models.Model):
 
     # ── Durable deal→product id resolver ─────────────────────────────────────
     @api.model
-    def action_resolve_products(self, days=14):
+    def action_resolve_products(self, days=14, deal_ids=None):
         """Fire the durable deal→product-id resolver in mintinvsvc and return its
         summary, e.g. {'ok': True, 'deals': 316, 'resolved': 153, 'unresolved': 163}.
 
-        The matching runs entirely in mintinvsvc (reads upcoming published deals,
-        matches against its local inventory, writes back x_resolved_product_id /
-        x_resolved_product_at). This method only POSTs the trigger — it never does
-        the per-deal product.template search that took the page down (#93687).
+        With deal_ids it resolves exactly those deals (on-publish / "id at entry");
+        otherwise it scans the upcoming `days` window (daily cron). The matching
+        runs entirely in mintinvsvc (matches against its local inventory, writes
+        back x_resolved_product_id / x_resolved_product_at). This method only POSTs
+        the trigger — never the per-deal product.template search that took the page
+        down (#93687).
 
         Designed to be called by the 'Deal Product Resolver' daisy agent via the
         Odoo MCP (the agent relays the returned summary), or directly by cron.
@@ -901,7 +904,8 @@ class PtlDeal(models.Model):
         get_param = self.env['ir.config_parameter'].sudo().get_param
         url = get_param(RESOLVER_URL_PARAM, DEFAULT_RESOLVER_URL)
         key = get_param(RESOLVER_API_KEY_PARAM, '') or ''
-        payload = json.dumps({'days': int(days or 14)}).encode('utf-8')
+        body_obj = {'deal_ids': list(deal_ids)} if deal_ids else {'days': int(days or 14)}
+        payload = json.dumps(body_obj).encode('utf-8')
         try:
             req = urllib.request.Request(
                 url, data=payload,
@@ -914,6 +918,36 @@ class PtlDeal(models.Model):
         except Exception as e:  # noqa: BLE001 — report, don't raise (cron/agent path)
             _logger.warning('Deal resolver trigger failed: %s', e)
             return {'ok': False, 'error': str(e)}
+
+    @api.model
+    def _fire_deal_resolver(self, deal_ids):
+        """Fire-and-forget resolve of x_resolved_product_id for specific deals
+        right after publish ("id at entry"), so the storefront links them by id
+        immediately instead of waiting for the daily cron. Runs in a daemon thread
+        that ONLY does HTTP (no ORM — thread-safe); mintinvsvc performs the writes.
+        """
+        ids = [i for i in (deal_ids or []) if i]
+        if not ids:
+            return
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        url = get_param(RESOLVER_URL_PARAM, DEFAULT_RESOLVER_URL)
+        key = get_param(RESOLVER_API_KEY_PARAM, '') or ''
+        payload = json.dumps({'deal_ids': list(ids)}).encode('utf-8')
+
+        def _fire(u, data, k):
+            try:
+                req = urllib.request.Request(
+                    u, data=data,
+                    headers={'Content-Type': 'application/json', 'X-API-Key': k},
+                )
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    _logger.info('Deal resolver (on-publish, %d deals): %s', len(ids), resp.status)
+            except Exception as e:  # noqa: BLE001 — best-effort; daily cron is the backstop
+                _logger.warning('Deal resolver (on-publish) failed: %s', e)
+
+        thread = threading.Thread(target=_fire, args=(url, payload, key))
+        thread.daemon = True
+        thread.start()
 
     @api.model
     def _cron_resolve_deal_products(self):

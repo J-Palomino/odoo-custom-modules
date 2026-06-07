@@ -168,6 +168,11 @@ class PtlDay(models.Model):
             message_type='comment',
         )
 
+        # "id at entry": resolve x_resolved_product_id for this day's deals now,
+        # so the storefront links them by id immediately (the daily cron is the
+        # backstop). Fire-and-forget — never blocks publish.
+        self.env['mint.ptl.deal']._fire_deal_resolver(self.deal_ids.ids)
+
     def action_unpublish(self):
         """Unpublish: drop this day's deals from the FE.
 
