@@ -36,6 +36,9 @@
                         <field name="pdf_file" filename="pdf_filename" readonly="1"/>
                         <field name="pdf_filename" invisible="1"/>
                     </group>
+                    <group string="Share" invisible="state != 'published'">
+                        <field name="public_url" widget="CopyClipboardChar" readonly="1"/>
+                    </group>
                     <notebook>
                         <page string="Pages" name="pages">
                             <field name="page_ids">
