@@ -483,9 +483,14 @@ class PtlDeal(models.Model):
         ID — same domain as the store_ids field on the form. Lets a reviewer
         materialize the full list explicitly when "leave empty for all" isn't
         the workflow they want (task #93657).
+
+        Reads through sudo so the button's "Select All" contract holds for
+        non-admin PTL managers whose res.users.company_ids doesn't cover
+        every dispensary company — without sudo the implicit env.companies
+        filter on res.company would silently return only the user's subset.
         """
         self.ensure_one()
-        Store = self.env['res.company']
+        Store = self.env['res.company'].sudo()
         stores = Store.search([
             ('is_dispensary', '=', True),
             ('dutchie_store_id', '!=', False),
