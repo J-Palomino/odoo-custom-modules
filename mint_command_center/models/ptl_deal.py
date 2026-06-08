@@ -478,6 +478,21 @@ class PtlDeal(models.Model):
             days.write({'deal_ids': [(3, self.id)]})
         return days.ids
 
+    def action_select_all_stores(self):
+        """Populate store_ids with every active dispensary that has a Dutchie
+        ID — same domain as the store_ids field on the form. Lets a reviewer
+        materialize the full list explicitly when "leave empty for all" isn't
+        the workflow they want (task #93657).
+        """
+        self.ensure_one()
+        Store = self.env['res.company']
+        stores = Store.search([
+            ('is_dispensary', '=', True),
+            ('dutchie_store_id', '!=', False),
+        ])
+        self.store_ids = [(6, 0, stores.ids)]
+        return True
+
     def _weight_source(self):
         return (self.name, self.sales_details)
 
