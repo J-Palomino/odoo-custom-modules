@@ -236,10 +236,14 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
         update_vals = {}
         is_terminal = existing.state in existing._TERMINAL_STATES
         new_state = order_data.get('state')
-        # Never resurrect a terminal order into an active lane — reconcile and
-        # the transaction sync own terminal state. Only accept a state change
-        # while the order is still live.
-        if new_state and new_state != existing.state and not is_terminal:
+        # Guard only against resurrecting a terminal order back into an ACTIVE
+        # lane (a lagging sync read shouldn't drag a finished order onto the
+        # board). Terminal→terminal IS allowed — critically, the transaction
+        # sync must be able to flip a stub that was (wrongly) cancelled to
+        # 'completed' once the real Dutchie sale lands. (Heals the reconcile
+        # mis-cancellation incident; previously this blocked the completed-flip.)
+        resurrecting = is_terminal and new_state in existing.ACTIVE_LANE_STATES
+        if new_state and new_state != existing.state and not resurrecting:
             update_vals['state'] = new_state
         if receipt_no and not existing.dutchie_receipt_no:
             update_vals['dutchie_receipt_no'] = receipt_no
