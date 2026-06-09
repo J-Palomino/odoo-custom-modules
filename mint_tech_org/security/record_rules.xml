@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!--
+        No record rules are defined yet.
+
+        This module ships RBAC purely through GROUP COMPOSITION (capability
+        groups composed into role groups, see security_groups.xml) plus a
+        minimal set of read-only ir.model.access entries. Least-privilege is
+        achieved by what we deliberately DO NOT grant — not by row-level
+        domains.
+
+        Per-record (row-level) scoping — e.g. multi-company isolation or
+        restricting a security analyst to their own audit records — will be
+        added here once this module (or a sibling) introduces tech-specific
+        models that warrant it. Until then this file exists solely so the
+        manifest's reference to 'security/record_rules.xml' is valid.
+    -->
+    <data/>
+</odoo>
