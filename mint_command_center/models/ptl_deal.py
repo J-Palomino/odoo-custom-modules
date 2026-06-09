@@ -495,7 +495,12 @@ class PtlDeal(models.Model):
             ('is_dispensary', '=', True),
             ('dutchie_store_id', '!=', False),
         ])
-        self.store_ids = [(6, 0, stores.ids)]
+        # The m2m write needs sudo too: Odoo validates the user has READ access
+        # to each target record on assignment, and group_ptl_manager users
+        # typically don't have res.company read on every dispensary. Using
+        # self.sudo() narrows the elevation to this one field write — the user
+        # still owns the parent deal.
+        self.sudo().store_ids = [(6, 0, stores.ids)]
         return True
 
     def _weight_source(self):
