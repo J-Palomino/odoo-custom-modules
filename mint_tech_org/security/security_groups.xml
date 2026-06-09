@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ============================================================= -->
+    <!-- Privilege category (Odoo 19: res.groups.privilege, NOT        -->
+    <!-- category_id which does not exist). Every group below sets     -->
+    <!-- privilege_id to this record so they group under one heading.  -->
+    <!-- ============================================================= -->
+    <data noupdate="1">
+
+        <record id="priv_mint_technology" model="res.groups.privilege">
+            <field name="name">Mint Technology</field>
+        </record>
+
+        <!-- ========================================================= -->
+        <!-- TIER 1 — CAPABILITY GROUPS                                 -->
+        <!-- These are NEVER hand-assigned to users. They are composed -->
+        <!-- into the role groups (Tier 2). noupdate=1 so the          -->
+        <!-- composition is stable once installed.                     -->
+        <!-- ========================================================= -->
+
+        <!-- Viewer: baseline read access for everyone in Technology -->
+        <record id="group_tech_viewer" model="res.groups">
+            <field name="name">Mint Technology / Viewer</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="comment">Baseline read access for Technology staff. Never hand-assigned; implied by every other capability group.</field>
+        </record>
+
+        <!-- Infrastructure / DevOps -->
+        <record id="group_infra_manager" model="res.groups">
+            <field name="name">Mint Technology / Infrastructure / DevOps</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="comment">Infrastructure and DevOps capability. Never hand-assigned; composed into role groups.</field>
+            <field name="implied_ids" eval="[(4, ref('group_tech_viewer'))]"/>
+        </record>
+
+        <!-- Security Operations -->
+        <record id="group_security_ops" model="res.groups">
+            <field name="name">Mint Technology / Security Operations</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="comment">Security Operations capability. Never hand-assigned; composed into role groups.</field>
+            <field name="implied_ids" eval="[(4, ref('group_tech_viewer'))]"/>
+        </record>
+
+        <!-- Data Engineering -->
+        <record id="group_data_eng" model="res.groups">
+            <field name="name">Mint Technology / Data Engineering</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="comment">Data Engineering capability. Never hand-assigned; composed into role groups.</field>
+            <field name="implied_ids" eval="[(4, ref('group_tech_viewer'))]"/>
+        </record>
+
+        <!-- Software Development -->
+        <record id="group_software_dev" model="res.groups">
+            <field name="name">Mint Technology / Software Development</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="comment">Software Development capability. Never hand-assigned; composed into role groups.</field>
+            <field name="implied_ids" eval="[(4, ref('group_tech_viewer'))]"/>
+        </record>
+
+        <!-- IT Operations -->
+        <record id="group_it_ops" model="res.groups">
+            <field name="name">Mint Technology / IT Operations</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="comment">IT Operations capability. Never hand-assigned; composed into role groups.</field>
+            <field name="implied_ids" eval="[(4, ref('group_tech_viewer'))]"/>
+        </record>
+
+        <!-- Technology Admin: implies all six capability groups above -->
+        <record id="group_tech_admin" model="res.groups">
+            <field name="name">Mint Technology / Technology Admin</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="comment">Top-level Technology capability — implies all six other capability groups. Never hand-assigned; composed into the CTO role.</field>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('group_tech_viewer'),
+                ref('group_infra_manager'),
+                ref('group_security_ops'),
+                ref('group_data_eng'),
+                ref('group_software_dev'),
+                ref('group_it_ops'),
+            ])]"/>
+        </record>
+
+    </data>
+
+    <!-- ========================================================= -->
+    <!-- TIER 2 — ROLE GROUPS                                       -->
+    <!-- These ARE assigned to users. Each implies base.group_user, -->
+    <!-- base.group_allow_export, the relevant capability group(s), -->
+    <!-- and the appropriate Odoo app groups (project, maintenance).-->
+    <!--                                                            -->
+    <!-- LEAST-PRIVILEGE: deliberately NO Accounting/Finance        -->
+    <!-- (account.*), NO HR (hr_*/hr.group_hr_*), and NO            -->
+    <!-- Settings/Administration (base.group_system) groups are     -->
+    <!-- granted to ANY role. That restraint is the whole point of  -->
+    <!-- this module — tech staff get tech tooling, nothing more.   -->
+    <!-- Normal (updatable) data block so role composition can be   -->
+    <!-- refined over time.                                         -->
+    <!-- ========================================================= -->
+    <data>
+
+        <!-- CTO -->
+        <record id="group_role_cto" model="res.groups">
+            <field name="name">Mint Technology Role / CTO</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_tech_admin'),
+                ref('project.group_project_manager'),
+                ref('maintenance.group_equipment_manager'),
+            ])]"/>
+        </record>
+
+        <!-- Engineering Manager -->
+        <record id="group_role_eng_manager" model="res.groups">
+            <field name="name">Mint Technology Role / Engineering Manager</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_infra_manager'),
+                ref('group_software_dev'),
+                ref('group_data_eng'),
+                ref('group_security_ops'),
+                ref('project.group_project_manager'),
+            ])]"/>
+        </record>
+
+        <!-- DevOps Lead -->
+        <record id="group_role_devops_lead" model="res.groups">
+            <field name="name">Mint Technology Role / DevOps Lead</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_infra_manager'),
+                ref('project.group_project_manager'),
+                ref('maintenance.group_equipment_manager'),
+            ])]"/>
+        </record>
+
+        <!-- DevOps Engineer -->
+        <record id="group_role_devops_engineer" model="res.groups">
+            <field name="name">Mint Technology Role / DevOps Engineer</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_infra_manager'),
+                ref('project.group_project_user'),
+            ])]"/>
+        </record>
+
+        <!-- Security Lead -->
+        <record id="group_role_security_lead" model="res.groups">
+            <field name="name">Mint Technology Role / Security Lead</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_security_ops'),
+                ref('project.group_project_manager'),
+            ])]"/>
+        </record>
+
+        <!-- Security Engineer -->
+        <record id="group_role_security_engineer" model="res.groups">
+            <field name="name">Mint Technology Role / Security Engineer</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_security_ops'),
+                ref('project.group_project_user'),
+            ])]"/>
+        </record>
+
+        <!-- Data Lead -->
+        <record id="group_role_data_lead" model="res.groups">
+            <field name="name">Mint Technology Role / Data Lead</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_data_eng'),
+                ref('project.group_project_manager'),
+            ])]"/>
+        </record>
+
+        <!-- Data Engineer -->
+        <record id="group_role_data_engineer" model="res.groups">
+            <field name="name">Mint Technology Role / Data Engineer</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_data_eng'),
+                ref('project.group_project_user'),
+            ])]"/>
+        </record>
+
+        <!-- Software Lead -->
+        <record id="group_role_software_lead" model="res.groups">
+            <field name="name">Mint Technology Role / Software Lead</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_software_dev'),
+                ref('project.group_project_manager'),
+            ])]"/>
+        </record>
+
+        <!-- Full-Stack Dev -->
+        <record id="group_role_full_stack_dev" model="res.groups">
+            <field name="name">Mint Technology Role / Full-Stack Dev</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_software_dev'),
+                ref('project.group_project_user'),
+            ])]"/>
+        </record>
+
+        <!-- IT Lead -->
+        <record id="group_role_it_lead" model="res.groups">
+            <field name="name">Mint Technology Role / IT Lead</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_it_ops'),
+                ref('project.group_project_manager'),
+                ref('maintenance.group_equipment_manager'),
+            ])]"/>
+        </record>
+
+        <!-- IT Specialist -->
+        <record id="group_role_it_specialist" model="res.groups">
+            <field name="name">Mint Technology Role / IT Specialist</field>
+            <field name="privilege_id" ref="priv_mint_technology"/>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('group_it_ops'),
+                ref('project.group_project_user'),
+            ])]"/>
+        </record>
+
+    </data>
+</odoo>
