@@ -90,6 +90,25 @@ def post_init_hook(env):
     elif sub_model:
         _logger.info('Deal-submission lifecycle cron already exists')
 
+    # PTL auto-plot + publish cron (Odoo #95041). Runs daily but no-ops while
+    # the mint.ptl_auto_plot.mode config param is 'off' (the default), so this
+    # is zero-behavior-change on deploy. Ops flips mode -> dry-run/live and
+    # enables markets via mint.region.ptl_auto_plot_enabled once content exists.
+    if not Cron.search([('name', '=', 'PTL: Auto-plot + Publish')], limit=1):
+        Cron.create({
+            'name': 'PTL: Auto-plot + Publish',
+            'model_id': day_model.id,
+            'state': 'code',
+            'code': 'model._cron_auto_plot_publish()',
+            'interval_number': 1,
+            'interval_type': 'days',
+            'active': True,
+            'priority': 56,
+        })
+        _logger.info('PTL auto-plot cron created')
+    else:
+        _logger.info('PTL auto-plot cron already exists')
+
     # Backfill market_id for existing PTL days (migration from unique(date)
     # to unique(date, market_id))
     az_region = env['mint.region'].search([('code', '=', 'AZ')], limit=1)
