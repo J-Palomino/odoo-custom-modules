@@ -41,9 +41,12 @@ export class PtlDayGrid extends Component {
             // Phase 3 full-intent (#93653): a custom range + 7 day-of-week
             // toggles drive a bulk Apply. dowMask is indexed [Sun, Mon, …,
             // Sat] to match the `weekdays` template label array; mapping
-            // from luxon weekday (1=Mon..7=Sun) uses (wd % 7).
-            rangeStart: null, // Luxon DateTime | null
-            rangeEnd: null,   // Luxon DateTime | null
+            // from luxon weekday (1=Mon..7=Sun) uses (wd % 7). Seed the
+            // range to the visible month so the out-of-the-box click is
+            // "Apply → fill this month" — equivalent to the old month-scope
+            // EDLP button this panel replaces.
+            rangeStart: DateTime.local(seed.year, seed.month, 1),
+            rangeEnd: DateTime.local(seed.year, seed.month, 1).endOf("month").startOf("day"),
             dowMask: [true, true, true, true, true, true, true],
         });
         onWillStart(async () => {
@@ -169,30 +172,6 @@ export class PtlDayGrid extends Component {
     async clearAll() {
         if (this.props.readonly || this.state.syncing) return;
         this.state.selected = new Set();
-        await this._syncWindows();
-    }
-
-    // ─── quick fill (Phase 3, #93653) ───────────────────────────────────
-    // Each button ADDS to the current selection (non-destructive) so a user
-    // composing across months can stack picks without losing prior work.
-    // Use Clear to reset.
-    async setEdlpMonth() { await this._fillMonth(() => true); }
-    async setWeekdaysMonth() { await this._fillMonth((wd) => wd >= 1 && wd <= 5); }
-    async setWeekendsMonth() { await this._fillMonth((wd) => wd === 6 || wd === 7); }
-
-    /** Add every day in the currently-visible month whose luxon weekday
-     * (1=Mon..7=Sun) matches `predicate(wd)` to the selection. */
-    async _fillMonth(predicate) {
-        if (this.props.readonly || this.state.syncing) return;
-        const first = DateTime.local(this.state.year, this.state.month, 1);
-        const last = first.endOf("month");
-        const sel = new Set(this.state.selected);
-        let cur = first;
-        while (cur <= last) {
-            if (predicate(cur.weekday)) sel.add(serializeDate(cur));
-            cur = cur.plus({ days: 1 });
-        }
-        this.state.selected = sel;
         await this._syncWindows();
     }
 
