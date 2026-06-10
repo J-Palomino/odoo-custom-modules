@@ -236,3 +236,58 @@ class ProjectTaskDaisy(models.Model):
                 subject='Daisy agent error',
                 message_type='comment',
             )
+
+    # ---------------------------------------------------- SDLC pipeline (#94837)
+    # Autonomous SDLC loop, Phase 1. On entry to a pipeline stage in project 120
+    # ("Agent Workflow"), enqueue that stage's daisy.agent. Dispatch goes through
+    # the daisy.agent.job QUEUE (daisy.agent._enqueue_response), NOT user_ids
+    # assignment, to avoid the synchronous urllib-in-write SerializationFailure.
+    _SDLC_STAGE_AGENT = {
+        944: 'devid',   # Build  → Web Dev
+        945: 'eriq',    # QA     → QA Tester
+        946: 'nic',     # Deploy → Network & Infrastructure Coordinator
+    }
+
+    def _sdlc_enqueue_for_stage(self):
+        """Queue the daisy.agent mapped to each task's current stage.
+
+        Invoked by the per-stage ``base.automation`` server action on
+        ``on_stage_set``. Enqueues a ``daisy.agent.job`` so the agency runs
+        async (cron-processed) and posts its result to the task chatter.
+        Never raises — logs and skips on any problem.
+        """
+        Agent = self.env['daisy.agent'].sudo()
+        for rec in self:
+            code = self._SDLC_STAGE_AGENT.get(rec.stage_id.id)
+            if not code:
+                continue
+            agent = Agent.search(
+                [('code', '=', code), ('active', '=', True)], limit=1)
+            if not agent or not agent.daisy_agency_id:
+                _logger.warning(
+                    'SDLC: no usable daisy.agent %r for task %s stage %s',
+                    code, rec.id, rec.stage_id.id)
+                continue
+            prompt = (
+                f'task_id={rec.id}. You are handling the "{rec.stage_id.name}" '
+                f'stage of Odoo project.task id={rec.id} (title={rec.name!r}). '
+                f'Read the ticket and post your work to the task chatter.'
+            )
+            try:
+                # The queue worker posts the reply AS the agent's user
+                # (target.with_user(agent.user_id).message_post). A bare bot
+                # user can't create a chatter message on a task it doesn't
+                # follow → subscribe the agent first so the post succeeds
+                # (QA #94837: job errored "security restrictions … Message,
+                # create … User: <agent>"). Verified: follower → post OK.
+                if agent.partner_id:
+                    rec.message_subscribe(partner_ids=agent.partner_id.ids)
+                agent._enqueue_response(
+                    'project.task', rec.id, prompt, [], False,
+                    session_id=f'task-{rec.id}')
+                _logger.info(
+                    'SDLC_ENQUEUE task=%s stage=%s agent=%s',
+                    rec.id, rec.stage_id.id, code)
+            except Exception:
+                _logger.exception(
+                    'SDLC enqueue failed task=%s agent=%s', rec.id, code)
