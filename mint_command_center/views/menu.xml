@@ -62,6 +62,13 @@
               action="action_national_promo"
               sequence="28"/>
 
+    <!-- Hide "Promo Campaigns" from the Mint Marketing menu. The action
+         (action_national_promo) and national.promo model are retained and
+         still reachable directly; re-enable by setting active back to True. -->
+    <record id="menu_national_promo" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+
     <menuitem id="menu_hotbox"
               name="Hot Box"
               parent="menu_ptl"
