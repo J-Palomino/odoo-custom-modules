@@ -103,6 +103,9 @@ COPY --chown=odoo:odoo onlyoffice_odoo /opt/extra-addons/onlyoffice_odoo
 # ── Mail FK hardening (idempotent FK repairs for module installs) ────
 COPY --chown=odoo:odoo mint_mail_fk_hardening /opt/extra-addons/mint_mail_fk_hardening
 
+# ── Survey Company Ownership (restrict survey edit to owner company) ──
+COPY --chown=odoo:odoo mint_survey_company /opt/extra-addons/mint_survey_company
+
 # ── Link Tracker QR (QR code generator for /r short links) ───────────
 COPY --chown=odoo:odoo mint_link_tracker_qr /opt/extra-addons/mint_link_tracker_qr
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="survey_survey_view_form_company" model="ir.ui.view">
+        <field name="name">survey.survey.form.company</field>
+        <field name="model">survey.survey</field>
+        <field name="inherit_id" ref="survey.survey_survey_view_form"/>
+        <field name="arch" type="xml">
+            <!--
+                Place "Owner Company" right next to the access settings, where
+                the question of who controls the survey naturally belongs.
+            -->
+            <field name="access_mode" position="after">
+                <field name="company_id"
+                       options="{'no_create': True}"
+                       placeholder="Editable by any survey manager"/>
+            </field>
+        </field>
+    </record>
+
+</odoo>
