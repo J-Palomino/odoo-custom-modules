@@ -1175,6 +1175,15 @@ class MintPosOrderAPI(http.Controller):
         departed = candidates.filtered(
             lambda o: str(o.dutchie_shipment_id) not in active_set
         )
+        # Disposal candidates are ONLY empty no-show stubs. A departed order that
+        # carries a cart (total>0 or item count>0) is a probable completed sale —
+        # never cancel it here; leave it for the transaction sync to finalize.
+        # This is the server-side counterpart to _dispose_departed's empty-only
+        # rule (defense-in-depth) and keeps carted departures out of the
+        # max_dispose count so a busy store can't trip the cap. See task #95531.
+        departed = departed.filtered(
+            lambda o: not o.total and not o.dutchie_item_count
+        )
         # Safety against a partial/garbage Dutchie read disposing a whole store:
         # if a single pass would terminalize an unusually large batch, refuse and
         # let the daily cron handle it instead. Caller passes a sane cap.
