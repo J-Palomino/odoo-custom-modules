@@ -128,6 +128,11 @@ class MintPosOrder(models.Model):
         compute='_compute_line_count',
         store=True,
     )
+    # Live item count straight from Dutchie's checked-in feed (guest.TotalItems).
+    # Distinct from line_count, which counts actual mint.pos.order.line records —
+    # those stay 0 for live walk-ins (Dutchie exposes no in-progress cart) and
+    # only populate at completion. Lets the kanban card show "N items" live.
+    dutchie_item_count = fields.Integer(string='Items (live)', default=0)
 
     placed_at = fields.Datetime(
         string='Placed At',
@@ -638,11 +643,6 @@ class MintPosOrder(models.Model):
         'placed', 'confirmed', 'preparing', 'ready',
     )
 
-    # Lanes that mean the guest reached fulfillment — a departure from here is
-    # treated as a completed sale; departures from any other active lane are
-    # treated as abandoned. (Used only by the real-time reconcile path.)
-    FULFILLED_LANE_STATES = ('pickup', 'deli_counter', 'credit_checkout')
-
     # Context that makes a terminal write SILENT: no customer push, no Dutchie
     # lane-change webhook (the guest already left), and no chatter tracking
     # (keeps bulk cleanups from writing thousands of mail rows).
@@ -653,29 +653,29 @@ class MintPosOrder(models.Model):
     }
 
     def _dispose_departed(self):
-        """Terminalize live orders whose guest left Dutchie's checked-in list.
+        """Cancel ONLY empty no-show stubs whose guest left Dutchie's checked-in set.
 
-        Heuristic (per product decision): last lane in FULFILLED_LANE_STATES →
-        'completed'; any other active lane → 'cancelled'. Writes silently so no
-        push/webhook fires. Skips rows already terminal. Returns the count moved.
-        Used by the real-time reconcile endpoint; the daily cron is a blunter
-        cancel-all backstop (see _cron_cancel_stale_orders).
+        A departed order that carries a cart (``total`` > 0 or
+        ``dutchie_item_count`` > 0) is a probable completed sale — leave it for
+        the transaction sync (orderSync, report 1082) to finalize, and the >24h
+        cron to clean if it genuinely never sold. We NEVER cancel a carted order
+        from the reconcile path: the 2026-06-08 incident cancelled carted
+        departures and mis-recorded 738 real sales (see task #95531). Completion
+        is owned solely by the txn-sync, so this method does not mark anything
+        'completed' either. Writes silently (no push / no webhook / no chatter).
+        Returns the count cancelled.
         """
         live = self.filtered(lambda o: o.state not in self._TERMINAL_STATES)
-        if not live:
+        empty = live.filtered(lambda o: not o.total and not o.dutchie_item_count)
+        if not empty:
             return 0
-        silent = live.with_context(**self._SILENT_DISPOSE_CTX)
-        fulfilled = silent.filtered(lambda o: o.state in self.FULFILLED_LANE_STATES)
-        abandoned = silent - fulfilled
-        if fulfilled:
-            fulfilled.write({'state': 'completed'})
-        if abandoned:
-            abandoned.write({'state': 'cancelled'})
+        empty.with_context(**self._SILENT_DISPOSE_CTX).write({'state': 'cancelled'})
         _logger.info(
-            'mint.pos.order: disposed %d departed orders (%d completed, %d cancelled)',
-            len(live), len(fulfilled), len(abandoned),
+            'mint.pos.order: cancelled %d departed empty stubs '
+            '(left %d carted departures for the txn-sync)',
+            len(empty), len(live) - len(empty),
         )
-        return len(live)
+        return len(empty)
 
     @api.model
     def _cron_cancel_stale_orders(self, hours_old=24):

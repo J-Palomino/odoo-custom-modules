@@ -234,8 +234,16 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
 
     if existing:
         update_vals = {}
+        is_terminal = existing.state in existing._TERMINAL_STATES
         new_state = order_data.get('state')
-        if new_state and new_state != existing.state:
+        # Guard only against resurrecting a terminal order back into an ACTIVE
+        # lane (a lagging sync read shouldn't drag a finished order onto the
+        # board). Terminal→terminal IS allowed — critically, the transaction
+        # sync must be able to flip a stub that was (wrongly) cancelled to
+        # 'completed' once the real Dutchie sale lands. (Heals the reconcile
+        # mis-cancellation incident; previously this blocked the completed-flip.)
+        resurrecting = is_terminal and new_state in existing.ACTIVE_LANE_STATES
+        if new_state and new_state != existing.state and not resurrecting:
             update_vals['state'] = new_state
         if receipt_no and not existing.dutchie_receipt_no:
             update_vals['dutchie_receipt_no'] = receipt_no
@@ -243,13 +251,17 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
             update_vals['dutchie_order_number'] = order_data['dutchie_order_number']
         if shipment_id and not existing.dutchie_shipment_id:
             update_vals['dutchie_shipment_id'] = shipment_id
-        # Order-level totals: only set if currently empty/zero so manual
-        # Odoo edits aren't clobbered, but a stub created by the lane-watcher
-        # (with subtotal/total still 0) gets enriched on the next sync.
+        # Order-level totals + live item count. For a LIVE (non-terminal) order
+        # refresh on every sync so the kanban card shows the running total/count
+        # as the budtender rings items. For a terminal order only fill what's
+        # empty, so the final sale's figures are never clobbered.
         for src in ('subtotal', 'discount_total', 'tax_total', 'total'):
             incoming = order_data.get(src)
-            if incoming is not None and not existing[src]:
+            if incoming is not None and (not is_terminal or not existing[src]):
                 update_vals[src] = incoming
+        live_items = order_data.get('dutchie_item_count')
+        if live_items is not None and (not is_terminal or not existing.dutchie_item_count):
+            update_vals['dutchie_item_count'] = live_items
         # Rich Dutchie fields: only fill what's currently empty so manual
         # Odoo edits aren't clobbered by a later sync.
         rich_vals = _build_rich_order_vals(order_data)
@@ -348,6 +360,7 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
         'discount_total': totals.get('discounts', order_data.get('discount_total', 0)),
         'tax_total': totals.get('taxes', order_data.get('tax_total', 0)),
         'total': totals.get('total', order_data.get('total', 0)),
+        'dutchie_item_count': order_data.get('dutchie_item_count', 0),
         'notes': order_data.get('notes', ''),
         'source': order_data.get('source', 'dutchie_sync'),
     }
@@ -1162,6 +1175,33 @@ class MintPosOrderAPI(http.Controller):
         departed = candidates.filtered(
             lambda o: str(o.dutchie_shipment_id) not in active_set
         )
+        # Disposal candidates are ONLY empty no-show stubs. A departed order that
+        # carries a cart (total>0 or item count>0) is a probable completed sale —
+        # never cancel it here; leave it for the transaction sync to finalize.
+        # This is the server-side counterpart to _dispose_departed's empty-only
+        # rule (defense-in-depth) and keeps carted departures out of the
+        # max_dispose count so a busy store can't trip the cap. See task #95531.
+        departed = departed.filtered(
+            lambda o: not o.total and not o.dutchie_item_count
+        )
+        # Safety against a partial/garbage Dutchie read disposing a whole store:
+        # if a single pass would terminalize an unusually large batch, refuse and
+        # let the daily cron handle it instead. Caller passes a sane cap.
+        max_dispose = data.get('max_dispose')
+        if max_dispose is not None and len(departed) > int(max_dispose):
+            _logger.warning(
+                'reconcile-active: company=%s would dispose %d (>max_dispose %s, '
+                'checked_in=%d) — refusing, likely a partial read',
+                company_id, len(departed), max_dispose, len(active_set),
+            )
+            return _json({
+                'company_id': int(company_id),
+                'checked_in': len(active_set),
+                'candidates': len(candidates),
+                'disposed': 0,
+                'skipped': len(departed),
+                'reason': 'max_dispose exceeded',
+            })
         try:
             disposed = departed._dispose_departed()
         except Exception as e:

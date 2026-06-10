@@ -478,6 +478,31 @@ class PtlDeal(models.Model):
             days.write({'deal_ids': [(3, self.id)]})
         return days.ids
 
+    def action_select_all_stores(self):
+        """Populate store_ids with every active dispensary that has a Dutchie
+        ID — same domain as the store_ids field on the form. Lets a reviewer
+        materialize the full list explicitly when "leave empty for all" isn't
+        the workflow they want (task #93657).
+
+        Reads through sudo so the button's "Select All" contract holds for
+        non-admin PTL managers whose res.users.company_ids doesn't cover
+        every dispensary company — without sudo the implicit env.companies
+        filter on res.company would silently return only the user's subset.
+        """
+        self.ensure_one()
+        Store = self.env['res.company'].sudo()
+        stores = Store.search([
+            ('is_dispensary', '=', True),
+            ('dutchie_store_id', '!=', False),
+        ])
+        # The m2m write needs sudo too: Odoo validates the user has READ access
+        # to each target record on assignment, and group_ptl_manager users
+        # typically don't have res.company read on every dispensary. Using
+        # self.sudo() narrows the elevation to this one field write — the user
+        # still owns the parent deal.
+        self.sudo().store_ids = [(6, 0, stores.ids)]
+        return True
+
     def _weight_source(self):
         return (self.name, self.sales_details)
 

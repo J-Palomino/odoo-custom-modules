@@ -272,6 +272,16 @@
                                domain="[('is_dispensary','=',True),('dutchie_store_id','!=',False)]"
                                options="{'no_create': True}"
                                placeholder="All stores (leave empty for all)"/>
+                        <!-- #93657: literal "Select All Stores" action — materializes
+                             every active dispensary into store_ids for reviewers who
+                             want to see/edit the explicit list rather than rely on
+                             the "empty == all" convention. -->
+                        <button name="action_select_all_stores"
+                                string="Select All Stores"
+                                type="object"
+                                class="btn-link"
+                                data-testid="ptl-deal-select-all-stores"
+                                invisible="not id"/>
                         <field name="day_ids" widget="many2many_tags" readonly="1"/>
                     </group>
                     <group string="Stock Status" invisible="stock_status == 'unchecked'">

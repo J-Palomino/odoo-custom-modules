@@ -38,6 +38,16 @@ export class PtlDayGrid extends Component {
             selected: this._datesFromWindows(), // Set<isoString>
             plotted: new Set(), // Set<isoString> already on the PTL for this market
             syncing: false,
+            // Phase 3 full-intent (#93653): a custom range + 7 day-of-week
+            // toggles drive a bulk Apply. dowMask is indexed [Sun, Mon, …,
+            // Sat] to match the `weekdays` template label array; mapping
+            // from luxon weekday (1=Mon..7=Sun) uses (wd % 7). Seed the
+            // range to the visible month so the out-of-the-box click is
+            // "Apply → fill this month" — equivalent to the old month-scope
+            // EDLP button this panel replaces.
+            rangeStart: DateTime.local(seed.year, seed.month, 1),
+            rangeEnd: DateTime.local(seed.year, seed.month, 1).endOf("month").startOf("day"),
+            dowMask: [true, true, true, true, true, true, true],
         });
         onWillStart(async () => {
             await this._loadPlotted();
@@ -165,24 +175,60 @@ export class PtlDayGrid extends Component {
         await this._syncWindows();
     }
 
-    // ─── quick fill (Phase 3, #93653) ───────────────────────────────────
-    // Each button ADDS to the current selection (non-destructive) so a user
-    // composing across months can stack picks without losing prior work.
-    // Use Clear to reset.
-    async setEdlpMonth() { await this._fillMonth(() => true); }
-    async setWeekdaysMonth() { await this._fillMonth((wd) => wd >= 1 && wd <= 5); }
-    async setWeekendsMonth() { await this._fillMonth((wd) => wd === 6 || wd === 7); }
+    // ─── range + DOW toggles (Phase 3 full-intent, #93653) ──────────────
+    // Inputs render local-zone dates; serialize/deserialize bridges between
+    // the HTML <input type="date"> string and the Luxon DateTime we store.
+    get rangeStartIso() {
+        return this.state.rangeStart ? serializeDate(this.state.rangeStart) : "";
+    }
+    get rangeEndIso() {
+        return this.state.rangeEnd ? serializeDate(this.state.rangeEnd) : "";
+    }
+    onRangeStartChange(ev) {
+        const v = ev.target.value;
+        this.state.rangeStart = v ? deserializeDate(v) : null;
+    }
+    onRangeEndChange(ev) {
+        const v = ev.target.value;
+        this.state.rangeEnd = v ? deserializeDate(v) : null;
+    }
 
-    /** Add every day in the currently-visible month whose luxon weekday
-     * (1=Mon..7=Sun) matches `predicate(wd)` to the selection. */
-    async _fillMonth(predicate) {
+    /** Flip one DOW toggle on/off. idx 0=Sun, 1=Mon, …, 6=Sat. */
+    toggleDow(idx) {
+        if (this.props.readonly) return;
+        this.state.dowMask = this.state.dowMask.map((v, i) => (i === idx ? !v : v));
+    }
+    /** Preset: every day. Activates all 7 toggles — this is the literal
+     * "click Every Day → all 7 day-of-week toggles activate" from the AC. */
+    setEdlpDows() {
+        if (this.props.readonly) return;
+        this.state.dowMask = [true, true, true, true, true, true, true];
+    }
+    setWeekdaysDows() {
+        if (this.props.readonly) return;
+        // [Sun, Mon, Tue, Wed, Thu, Fri, Sat] → only Mon-Fri on
+        this.state.dowMask = [false, true, true, true, true, true, false];
+    }
+    setWeekendsDows() {
+        if (this.props.readonly) return;
+        this.state.dowMask = [true, false, false, false, false, false, true];
+    }
+    get hasValidRange() {
+        return !!(this.state.rangeStart && this.state.rangeEnd
+            && this.state.rangeEnd >= this.state.rangeStart);
+    }
+    /** Bulk-fill: every date in [rangeStart, rangeEnd] whose DOW is active
+     * gets added to the selection. Additive (composes with existing picks);
+     * use Clear to reset. */
+    async applyRange() {
         if (this.props.readonly || this.state.syncing) return;
-        const first = DateTime.local(this.state.year, this.state.month, 1);
-        const last = first.endOf("month");
+        if (!this.hasValidRange) return;
         const sel = new Set(this.state.selected);
-        let cur = first;
-        while (cur <= last) {
-            if (predicate(cur.weekday)) sel.add(serializeDate(cur));
+        let cur = this.state.rangeStart;
+        while (cur <= this.state.rangeEnd) {
+            // luxon: Mon=1..Sun=7 — map to dowMask index Sun=0..Sat=6 via %7
+            const idx = cur.weekday % 7;
+            if (this.state.dowMask[idx]) sel.add(serializeDate(cur));
             cur = cur.plus({ days: 1 });
         }
         this.state.selected = sel;
