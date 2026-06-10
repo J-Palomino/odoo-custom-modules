@@ -1,10 +1,14 @@
+import calendar as _calendar
 import json
 import logging
+from datetime import date, timedelta
 
-from odoo import http
+from odoo import fields, http
 from odoo.http import request
 
 _logger = logging.getLogger(__name__)
+
+_ONE_DAY = timedelta(days=1)
 
 PRODUCT_CATEGORIES = [
     ('flower', 'Flower'),
@@ -33,7 +37,33 @@ DISCOUNT_TYPES = [
 class VendorSubmissionController(http.Controller):
 
     @http.route(
-        ['/promos', '/vendor-deals'],
+        '/promos',
+        type='http',
+        auth='public',
+        website=True,
+        methods=['GET'],
+    )
+    def promos_landing(self, month=None, **kw):
+        """Vendor entry point.
+
+        - Logged-in vendor (partner linked to >=1 brand): show their promo
+          calendar for the selected month.
+        - Everyone else: show the market-selection page so they can pick a
+          market and submit a deal.
+        """
+        brands = self._vendor_brands()
+        if brands:
+            return request.render(
+                'mint_command_center.promos_calendar',
+                self._calendar_context(brands, month=month),
+            )
+        return request.render(
+            'mint_command_center.promos_market_select',
+            self._market_select_context(),
+        )
+
+    @http.route(
+        '/vendor-deals',
         type='http',
         auth='public',
         website=True,
@@ -41,9 +71,13 @@ class VendorSubmissionController(http.Controller):
     )
     def vendor_deal_form(self, **post):
         if request.httprequest.method == 'GET':
+            # Pre-select the market when arriving from a /promos market card.
+            form_values = {}
+            if post.get('market_id'):
+                form_values['market_id'] = str(post['market_id'])
             return request.render(
                 'mint_command_center.vendor_deal_form',
-                self._form_context(),
+                self._form_context(form_values=form_values),
             )
 
         # --- POST: validate and create submission ---
@@ -267,3 +301,89 @@ class VendorSubmissionController(http.Controller):
         }
         ctx.update(extra)
         return ctx
+
+    # ------------------------------------------------------------------
+    # /promos landing helpers
+    # ------------------------------------------------------------------
+
+    def _vendor_brands(self):
+        """Brands the current logged-in user is a vendor contact for.
+
+        Returns an empty recordset for the public user (not logged in) or for
+        any logged-in user whose partner is not linked to a brand.
+        """
+        user = request.env.user
+        if user._is_public():
+            return request.env['mint.brand'].sudo().browse()
+        return request.env['mint.brand'].sudo().search([
+            ('vendor_partner_ids', 'in', user.partner_id.ids),
+        ])
+
+    def _market_select_context(self):
+        markets = request.env['mint.region'].sudo().search([], order='name')
+        return {'markets': markets}
+
+    def _parse_month(self, month):
+        """Parse a 'YYYY-MM' string to the first of that month.
+
+        Falls back to the current month on missing/invalid input.
+        """
+        today = fields.Date.context_today(request.env.user)
+        if month:
+            try:
+                year_s, mon_s = month.split('-')
+                return date(int(year_s), int(mon_s), 1)
+            except (ValueError, AttributeError):
+                pass
+        return today.replace(day=1)
+
+    def _calendar_context(self, brands, month=None):
+        first = self._parse_month(month)
+        today = fields.Date.context_today(request.env.user)
+
+        # Prev / next month anchors for nav.
+        prev_month = (first - _ONE_DAY).replace(day=1)
+        if first.month == 12:
+            next_month = date(first.year + 1, 1, 1)
+        else:
+            next_month = date(first.year, first.month + 1, 1)
+        last_day = _calendar.monthrange(first.year, first.month)[1]
+        month_end = date(first.year, first.month, last_day)
+
+        entries = request.env['mint.brand.calendar.entry'].sudo().search([
+            ('brand_id', 'in', brands.ids),
+            ('date', '>=', first),
+            ('date', '<=', month_end),
+        ], order='date')
+
+        # Bucket entries by day for O(1) lookup in the template.
+        empty = request.env['mint.brand.calendar.entry']
+        by_day = {}
+        for e in entries:
+            by_day[e.date] = by_day.get(e.date, empty) | e
+
+        # Monday-first month grid of weeks -> day cells.
+        cal = _calendar.Calendar(firstweekday=0)
+        weeks = []
+        for week in cal.monthdatescalendar(first.year, first.month):
+            cells = []
+            for day in week:
+                cells.append({
+                    'date': day,
+                    'day': day.day,
+                    'in_month': day.month == first.month,
+                    'is_today': day == today,
+                    'entries': by_day.get(day, empty),
+                })
+            weeks.append(cells)
+
+        return {
+            'brands': brands,
+            'brand_names': ', '.join(brands.mapped('name')),
+            'month_label': first.strftime('%B %Y'),
+            'weekday_labels': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+            'weeks': weeks,
+            'entry_count': len(entries),
+            'prev_month': prev_month.strftime('%Y-%m'),
+            'next_month': next_month.strftime('%Y-%m'),
+        }
