@@ -4,38 +4,64 @@
       Autonomous SDLC loop — Phase 1 (task #94837).
       On entry to a pipeline stage in project 120 ("Agent Workflow"), enqueue
       that stage's daisy.agent via the queue (project_task_daisy._sdlc_enqueue_for_stage).
-      Pattern mirrors the proven Social Media automations (#57/#58): on_stage_set
-      with a filter_domain scoped to project_id + the single stage_id + parent_id,
-      so it does NOT re-fire on unrelated writes or on subtasks.
-    -->
-    <record id="sdlc_dispatch_server_action" model="ir.actions.server">
-        <field name="name">SDLC: enqueue stage agent</field>
-        <field name="model_id" ref="project.model_project_task"/>
-        <field name="state">code</field>
-        <field name="code">records._sdlc_enqueue_for_stage()</field>
-    </record>
 
+      base.automation correctness (learned the hard way, #94837):
+        - action_server_ids is a ONE2MANY (inverse base_automation_id on
+          ir.actions.server) → each automation needs its OWN server action with
+          usage='base_automation'. A single shared action silently fails to link.
+        - on_stage_set requires trg_field_ref = the target stage_id (the stage the
+          automation fires on); filter_domain alone is not enough.
+      Pattern mirrors the proven Social Media automations (#57/#58).
+    -->
+
+    <!-- Build (944) -> Devid -->
     <record id="sdlc_auto_build" model="base.automation">
         <field name="name">SDLC: dispatch Devid on Build (proj 120)</field>
         <field name="model_id" ref="project.model_project_task"/>
         <field name="trigger">on_stage_set</field>
+        <field name="trg_field_ref">944</field>
         <field name="filter_domain">[('project_id','=',120),('stage_id','=',944),('parent_id','=',False)]</field>
-        <field name="action_server_ids" eval="[(4, ref('sdlc_dispatch_server_action'))]"/>
+    </record>
+    <record id="sdlc_dispatch_server_action" model="ir.actions.server">
+        <field name="name">SDLC: enqueue Build agent</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="state">code</field>
+        <field name="usage">base_automation</field>
+        <field name="base_automation_id" ref="sdlc_auto_build"/>
+        <field name="code">records._sdlc_enqueue_for_stage()</field>
     </record>
 
+    <!-- QA (945) -> Eriq -->
     <record id="sdlc_auto_qa" model="base.automation">
         <field name="name">SDLC: dispatch Eriq on QA (proj 120)</field>
         <field name="model_id" ref="project.model_project_task"/>
         <field name="trigger">on_stage_set</field>
+        <field name="trg_field_ref">945</field>
         <field name="filter_domain">[('project_id','=',120),('stage_id','=',945),('parent_id','=',False)]</field>
-        <field name="action_server_ids" eval="[(4, ref('sdlc_dispatch_server_action'))]"/>
+    </record>
+    <record id="sdlc_act_qa" model="ir.actions.server">
+        <field name="name">SDLC: enqueue QA agent</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="state">code</field>
+        <field name="usage">base_automation</field>
+        <field name="base_automation_id" ref="sdlc_auto_qa"/>
+        <field name="code">records._sdlc_enqueue_for_stage()</field>
     </record>
 
+    <!-- Deploy (946) -> NiC -->
     <record id="sdlc_auto_deploy" model="base.automation">
         <field name="name">SDLC: dispatch NiC on Deploy (proj 120)</field>
         <field name="model_id" ref="project.model_project_task"/>
         <field name="trigger">on_stage_set</field>
+        <field name="trg_field_ref">946</field>
         <field name="filter_domain">[('project_id','=',120),('stage_id','=',946),('parent_id','=',False)]</field>
-        <field name="action_server_ids" eval="[(4, ref('sdlc_dispatch_server_action'))]"/>
+    </record>
+    <record id="sdlc_act_deploy" model="ir.actions.server">
+        <field name="name">SDLC: enqueue Deploy agent</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="state">code</field>
+        <field name="usage">base_automation</field>
+        <field name="base_automation_id" ref="sdlc_auto_deploy"/>
+        <field name="code">records._sdlc_enqueue_for_stage()</field>
     </record>
 </odoo>
