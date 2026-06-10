@@ -56,18 +56,17 @@
               action="action_deal_submission"
               sequence="30"/>
 
+    <!-- "Promo Campaigns" scoped to system administrators only
+         (base.group_system). Hidden from the ~165 non-admin Mint Marketing
+         users; the 9 admins still navigate to it normally. NOTE: on prod this
+         menu's ir.model.data is pinned noupdate=True so the live group scope
+         survives -u; this menuitem keeps source/fresh-installs consistent. -->
     <menuitem id="menu_national_promo"
               name="Promo Campaigns"
               parent="menu_ptl"
               action="action_national_promo"
-              sequence="28"/>
-
-    <!-- Hide "Promo Campaigns" from the Mint Marketing menu. The action
-         (action_national_promo) and national.promo model are retained and
-         still reachable directly; re-enable by setting active back to True. -->
-    <record id="menu_national_promo" model="ir.ui.menu">
-        <field name="active" eval="False"/>
-    </record>
+              sequence="28"
+              groups="base.group_system"/>
 
     <menuitem id="menu_hotbox"
               name="Hot Box"
