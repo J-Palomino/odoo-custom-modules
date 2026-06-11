@@ -48,6 +48,7 @@
                     <group>
                         <group string="Vendor Information">
                             <field name="vendor_name"/>
+                            <field name="brand_id" options="{'no_create': True}"/>
                             <field name="vendor_email" widget="email"/>
                             <field name="vendor_contact"/>
                             <field name="vendor_phone" widget="phone"/>
@@ -57,7 +58,7 @@
                         <group string="Deal Details">
                             <field name="discount_type"/>
                             <field name="discount_value"/>
-                            <field name="original_price"/>
+                            <field name="original_price" readonly="1"/>
                         </group>
                     </group>
                     <group string="Vendor Funding">
@@ -113,7 +114,6 @@
                         </page>
                         <page string="Inclusions" name="inclusions">
                             <group>
-                                <field name="brand_id"/>
                                 <field name="product_category"/>
                             </group>
                             <group string="Specific Products (optional — overrides brand-wide matching)" col="1">
