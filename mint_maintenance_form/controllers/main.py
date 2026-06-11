@@ -14,9 +14,20 @@ _logger = logging.getLogger(__name__)
 MAX_UPLOAD_FILES = 5
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB per file
 ALLOWED_MIMETYPES = {
+    # Images
     "image/jpeg", "image/png", "image/gif", "image/webp",
     "image/heic", "image/heif", "image/bmp", "image/tiff",
+    # Documents
     "application/pdf",
+    # Spreadsheets (xlsx / xls / csv) — requesters often attach data exports
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/csv",
+    "application/csv",
+    # Word docs / plain text
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "text/plain",
 }
 
 IT_TEAM_ID = 2
@@ -200,7 +211,8 @@ class MaintenanceFormController(http.Controller):
             if f.mimetype not in ALLOWED_MIMETYPES:
                 ctx["error"] = (
                     f"File '{f.filename}' has an unsupported type. "
-                    "Please upload images or PDFs only."
+                    "Please upload images, PDFs, or Office documents "
+                    "(Excel, Word, CSV, text)."
                 )
                 return None, request.render(template, ctx)
             data = f.read()
