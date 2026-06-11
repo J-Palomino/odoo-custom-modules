@@ -146,18 +146,45 @@ class DealSubmission(models.Model):
             rec.windows_summary = ', '.join(parts) or False
 
     # --- State machine ---
+    # Board lifecycle: New -> Under Review -> [Approved] -> Scheduled ->
+    # Final Review -> Expired, with Rejected off the happy path.
+    #   * Approved stays an internal greenlight (creates the National Promo
+    #     campaign and is the gate the plot-check enforces) before a deal can
+    #     be plotted.
+    #   * Scheduled (formerly "Converted to Deal") = PTL deal created + plotted
+    #     onto the calendar = scheduled to go live.
+    #   * Final Review (formerly "Live") = the run window has ended; awaiting
+    #     human closeout sign-off. The daily cron advances Scheduled here on the
+    #     run's last day.
+    #   * Expired = closed out (manual sign-off from Final Review).
     state = fields.Selection(
         selection=[
             ('new', 'New'),
             ('under_review', 'Under Review'),
             ('approved', 'Approved'),
+            ('scheduled', 'Scheduled'),
+            ('final_review', 'Final Review'),
+            ('expired', 'Expired'),
             ('rejected', 'Rejected'),
-            ('converted', 'Converted to Deal'),
         ],
         string='Status',
         default='new',
         tracking=True,
     )
+
+    # Last day this deal runs — max of the plot windows, falling back to the
+    # legacy preferred end date. Drives the Scheduled -> Final Review cron.
+    run_end_date = fields.Date(
+        string='Run Ends',
+        compute='_compute_run_end_date',
+        store=True,
+    )
+
+    @api.depends('window_ids.date_end', 'preferred_end_date')
+    def _compute_run_end_date(self):
+        for rec in self:
+            ends = [d for d in rec.window_ids.mapped('date_end') if d]
+            rec.run_end_date = max(ends) if ends else rec.preferred_end_date
 
     # --- Linked deal (after conversion) ---
     deal_id = fields.Many2one(
@@ -342,7 +369,7 @@ class DealSubmission(models.Model):
             'excluded_skus': self.excluded_skus or False,
         })
         self.write({
-            'state': 'converted',
+            'state': 'scheduled',
             'deal_id': deal.id,
         })
 
@@ -356,7 +383,7 @@ class DealSubmission(models.Model):
                 day_ids = deal.action_plot_windows(dates, market_id=self.market_id.id)
                 plotted_count = len(day_ids)
 
-        body = f"Converted to PTL Deal: {deal.name} (id={deal.id})"
+        body = f"Scheduled — created PTL Deal: {deal.name} (id={deal.id})"
         if plotted_count:
             body += (
                 f" — plotted {plotted_count} day(s) across "
@@ -369,3 +396,35 @@ class DealSubmission(models.Model):
             'res_id': deal.id,
             'view_mode': 'form',
         }
+
+    # ─── Run-end lifecycle: Scheduled -> Final Review -> Expired ──────────
+
+    def action_to_final_review(self):
+        """Manually move a scheduled deal into Final Review (closeout)."""
+        self.filtered(lambda s: s.state == 'scheduled').write({
+            'state': 'final_review',
+        })
+
+    def action_expire(self):
+        """Sign off a deal after final review (or end a scheduled one early)."""
+        self.filtered(lambda s: s.state in ('scheduled', 'final_review')).write({
+            'state': 'expired',
+        })
+
+    @api.model
+    def _cron_advance_lifecycle(self):
+        """Daily: move Scheduled deals whose run window has ended into Final
+        Review so a human signs off the closeout. Expiry stays manual — Final
+        Review is a deliberate human gate, not an automatic archive."""
+        today = fields.Date.context_today(self)
+        due = self.search([
+            ('state', '=', 'scheduled'),
+            ('run_end_date', '!=', False),
+            ('run_end_date', '<', today),
+        ])
+        for sub in due:
+            sub.state = 'final_review'
+            sub.message_post(
+                body="Run window ended — moved to Final Review for closeout.",
+                message_type='comment',
+            )
