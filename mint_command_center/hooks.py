@@ -69,6 +69,27 @@ def post_init_hook(env):
     elif pt_model:
         _logger.info('Velocity compute cron already exists')
 
+    # Deal-submission lifecycle cron — advances Scheduled -> Final Review once
+    # the run window has ended (#promos board lifecycle).
+    sub_model = env['ir.model'].sudo().search(
+        [('model', '=', 'mint.deal.submission')], limit=1)
+    if sub_model and not Cron.search(
+        [('name', '=', 'Deal Submissions: Daily Lifecycle')], limit=1
+    ):
+        Cron.create({
+            'name': 'Deal Submissions: Daily Lifecycle',
+            'model_id': sub_model.id,
+            'state': 'code',
+            'code': 'model._cron_advance_lifecycle()',
+            'interval_number': 1,
+            'interval_type': 'days',
+            'active': True,
+            'priority': 55,
+        })
+        _logger.info('Deal-submission lifecycle cron created')
+    elif sub_model:
+        _logger.info('Deal-submission lifecycle cron already exists')
+
     # Backfill market_id for existing PTL days (migration from unique(date)
     # to unique(date, market_id))
     az_region = env['mint.region'].search([('code', '=', 'AZ')], limit=1)

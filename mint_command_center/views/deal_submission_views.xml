@@ -19,17 +19,23 @@
                     <button name="action_reject" string="Reject"
                             type="object" class="btn-danger"
                             invisible="state not in ('new', 'under_review')"/>
-                    <button name="action_convert_to_deal" string="Convert to PTL Deal"
+                    <button name="action_convert_to_deal" string="Schedule (Convert to PTL Deal)"
                             type="object" class="btn-success"
                             invisible="state != 'approved'"
-                            confirm="This will create a new PTL Deal from this submission. Continue?"/>
+                            confirm="This will create a PTL Deal from this submission and schedule it to go live. Continue?"/>
                     <button name="action_force_approve_and_plot"
                             string="Force Approve &amp; Plot"
                             type="object" class="btn-warning"
                             invisible="state != 'approved'"
                             groups="mint_command_center.group_ptl_manager"/>
+                    <button name="action_to_final_review" string="Move to Final Review"
+                            type="object" class="btn-primary"
+                            invisible="state != 'scheduled'"/>
+                    <button name="action_expire" string="Mark Expired"
+                            type="object" class="btn-secondary"
+                            invisible="state not in ('scheduled', 'final_review')"/>
                     <field name="state" widget="statusbar"
-                           statusbar_visible="new,under_review,approved,converted"/>
+                           statusbar_visible="new,under_review,approved,scheduled,final_review,expired"/>
                 </header>
                 <sheet>
                     <div class="oe_title">
@@ -41,9 +47,12 @@
                         <field name="rejection_reason" nolabel="1" readonly="1"/>
                     </div>
                     <div class="alert alert-success" role="alert"
-                         invisible="state != 'converted'">
-                        <strong>Converted to Deal:</strong>
+                         invisible="state not in ('scheduled', 'final_review', 'expired')">
+                        <strong>Scheduled — PTL Deal:</strong>
                         <field name="deal_id" nolabel="1" readonly="1"/>
+                        <span> · runs through </span>
+                        <field name="run_end_date" nolabel="1" readonly="1"
+                               placeholder="open-ended"/>
                     </div>
                     <group>
                         <group string="Deal Details">
@@ -206,8 +215,10 @@
         <field name="arch" type="xml">
             <list string="Deal Submissions"
                   decoration-info="state == 'new'"
-                  decoration-warning="state == 'under_review'"
-                  decoration-success="state in ('approved', 'converted')"
+                  decoration-warning="state in ('under_review', 'final_review')"
+                  decoration-primary="state == 'approved'"
+                  decoration-success="state == 'scheduled'"
+                  decoration-muted="state == 'expired'"
                   decoration-danger="state == 'rejected'">
                 <field name="create_date" string="Submitted"/>
                 <field name="vendor_name"/>
@@ -216,11 +227,13 @@
                 <field name="discount_type"/>
                 <field name="discount_value"/>
                 <field name="market_id"/>
-                <field name="preferred_start_date"/>
+                <field name="run_end_date"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'new'"
-                       decoration-warning="state == 'under_review'"
-                       decoration-success="state in ('approved', 'converted')"
+                       decoration-warning="state in ('under_review', 'final_review')"
+                       decoration-primary="state == 'approved'"
+                       decoration-success="state == 'scheduled'"
+                       decoration-muted="state == 'expired'"
                        decoration-danger="state == 'rejected'"/>
             </list>
         </field>
@@ -264,8 +277,10 @@
                 <filter name="new" string="New" domain="[('state', '=', 'new')]"/>
                 <filter name="under_review" string="Under Review" domain="[('state', '=', 'under_review')]"/>
                 <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
+                <filter name="scheduled" string="Scheduled" domain="[('state', '=', 'scheduled')]"/>
+                <filter name="final_review" string="Final Review" domain="[('state', '=', 'final_review')]"/>
+                <filter name="expired" string="Expired" domain="[('state', '=', 'expired')]"/>
                 <filter name="rejected" string="Rejected" domain="[('state', '=', 'rejected')]"/>
-                <filter name="converted" string="Converted" domain="[('state', '=', 'converted')]"/>
                 <separator/>
                 <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
                 <filter name="group_market" string="Market" context="{'group_by': 'market_id'}"/>
