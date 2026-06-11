@@ -236,6 +236,20 @@ class DealSubmission(models.Model):
              '(e.g. "Q4", "until product runs out").',
     )
 
+    def init(self):
+        # Idempotency backstop for the JotForm importer. It does a
+        # check-then-create on (source='jotform', external_id); a partial
+        # unique index makes the DB the source of truth so two concurrent or
+        # retried importer runs can't double-insert one submission. Scoped to
+        # jotform rows so web_form / manual rows (external_id NULL) are
+        # unaffected. Safe to (re)apply: the column starts all-NULL on upgrade.
+        self.env.cr.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                mint_deal_submission_jotform_extid_uniq
+            ON mint_deal_submission (external_id)
+            WHERE source = 'jotform' AND external_id IS NOT NULL
+        """)
+
     # --- Actions ---
 
     def action_start_review(self):

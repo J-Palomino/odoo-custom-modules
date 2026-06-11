@@ -161,7 +161,7 @@
                                 <field name="product_list" nolabel="1"
                                        placeholder="Vendor product list with weights..."/>
                             </group>
-                            <group string="Source" invisible="source == 'web_form'">
+                            <group string="Source" invisible="source != 'jotform'">
                                 <group>
                                     <field name="source"/>
                                     <field name="external_id"/>
