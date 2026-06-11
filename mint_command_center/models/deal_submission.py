@@ -172,6 +172,70 @@ class DealSubmission(models.Model):
     rejection_reason = fields.Text(string='Rejection Reason')
     reviewer_notes = fields.Text(string='Reviewer Notes')
 
+    # --- Source / external intake (JotForm import) ---
+    # Provenance of the submission. The web form (/vendor-deals) leaves the
+    # default 'web_form'; the JotForm importer writes 'jotform'.
+    source = fields.Selection(
+        selection=[
+            ('web_form', 'Web Form'),
+            ('jotform', 'JotForm'),
+            ('manual', 'Manual'),
+        ],
+        string='Source',
+        default='web_form',
+        tracking=True,
+    )
+    external_id = fields.Char(
+        string='External Submission ID',
+        index=True,
+        copy=False,
+        help='Stable ID of the source submission (e.g. JotForm submission id). '
+             'Keeps imports idempotent — re-running the importer never '
+             'duplicates a submission.',
+    )
+    external_form_id = fields.Char(
+        string='External Form ID',
+        help='Source form id (e.g. the JotForm "Promo - Deal submission" form).',
+    )
+    external_created_at = fields.Char(
+        string='External Submitted At',
+        help='Original submission timestamp from the source system, verbatim.',
+    )
+    jotform_payload = fields.Text(
+        string='Raw JotForm Payload',
+        help='Complete, verbatim capture of every field from the source '
+             'submission (JSON). Safety net so no detail is ever lost, even '
+             'for questions that have no dedicated column.',
+    )
+
+    # --- JotForm-specific fields (structured, so they are queryable) ---
+    deal_frequency = fields.Char(
+        string='Deal Frequency',
+        help='Vendor-stated cadence (Weekly, EDLP, 2x/month, Single Day, '
+             'Holiday, Other). Informs PTL scheduling at review time.',
+    )
+    product_list = fields.Text(
+        string='Products (raw, with weights)',
+        help='Vendor-supplied product list, verbatim (incl. weights). The '
+             'reviewer resolves these into the structured product_ids picker.',
+    )
+    promo_units = fields.Char(
+        string='Promo Units Offered?',
+        help='Whether the vendor offers promo/doorbuster units for special '
+             'events (Yes/No).',
+    )
+    promo_units_product = fields.Char(string='Promo Units — Product')
+    promo_units_qty = fields.Integer(string='Promo Units — Quantity')
+    promo_delivery_date = fields.Date(
+        string='Promo Units — Est. Delivery',
+        help='Vendor estimate; actual delivery is coordinated with intake.',
+    )
+    deal_end_note = fields.Char(
+        string='Deal End (free-text)',
+        help='Vendor end-of-deal note when not a structured date '
+             '(e.g. "Q4", "until product runs out").',
+    )
+
     # --- Actions ---
 
     def action_start_review(self):

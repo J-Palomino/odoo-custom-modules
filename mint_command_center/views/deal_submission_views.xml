@@ -144,6 +144,38 @@
                                        placeholder="Product exclusions and conditions..."/>
                             </group>
                         </page>
+                        <page string="Vendor Intake" name="vendor_intake">
+                            <group>
+                                <group string="Cadence">
+                                    <field name="deal_frequency"/>
+                                    <field name="deal_end_note"/>
+                                </group>
+                                <group string="Promo Units">
+                                    <field name="promo_units"/>
+                                    <field name="promo_units_product"/>
+                                    <field name="promo_units_qty"/>
+                                    <field name="promo_delivery_date"/>
+                                </group>
+                            </group>
+                            <group string="Products (raw — resolve into the Inclusions picker)" col="1">
+                                <field name="product_list" nolabel="1"
+                                       placeholder="Vendor product list with weights..."/>
+                            </group>
+                            <group string="Source" invisible="source == 'web_form'">
+                                <group>
+                                    <field name="source"/>
+                                    <field name="external_id"/>
+                                </group>
+                                <group>
+                                    <field name="external_form_id"/>
+                                    <field name="external_created_at"/>
+                                </group>
+                            </group>
+                            <group string="Raw JotForm Payload"
+                                   invisible="not jotform_payload" col="1">
+                                <field name="jotform_payload" nolabel="1" readonly="1"/>
+                            </group>
+                        </page>
                         <page string="Review" name="review" invisible="not reviewed_by">
                             <group>
                                 <group>
