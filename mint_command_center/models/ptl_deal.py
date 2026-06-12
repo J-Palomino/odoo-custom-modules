@@ -61,6 +61,16 @@ class PtlDeal(models.Model):
              'before " - " / " · " / ":" against existing mint.brand records, '
              'creating a new brand only if no match). Manually editable.',
     )
+    brand_ids = fields.Many2many(
+        'mint.brand',
+        'mint_ptl_deal_brand_rel',
+        'deal_id',
+        'brand_id',
+        string='Brands',
+        help='All brands this deal includes (#93635 multi-brand deals). '
+             'When set, product matching and the published discount target '
+             'every listed brand; brand_id stays the primary for display.',
+    )
     product_category = fields.Selection(
         selection=[(k, k) for k in MASTER_CATEGORY_PATTERNS.keys()],
         string='Product Category',
@@ -343,24 +353,25 @@ class PtlDeal(models.Model):
         ]
         return Category.search(domain)
 
-    @api.depends('brand_id', 'product_category', 'excluded_skus', 'explicit_product_ids')
+    @api.depends('brand_id', 'brand_ids', 'product_category', 'excluded_skus', 'explicit_product_ids')
     def _compute_matching_products(self):
         Template = self.env['product.template'].sudo()
         for rec in self:
-            if not rec.brand_id:
+            brands = (rec.brand_ids | rec.brand_id) if rec.brand_id else rec.brand_ids
+            if not brands:
                 rec.matching_product_ids = False
                 rec.matching_product_count = 0
                 continue
-            # Explicit set wins when populated — intersect with brand_id
+            # Explicit set wins when populated — intersect with the brand set
             # so a stale-brand pick doesn't sneak through.
             if rec.explicit_product_ids:
                 explicit = rec.explicit_product_ids.filtered(
-                    lambda p: p.brand_id == rec.brand_id
+                    lambda p: p.brand_id in brands
                 )
                 rec.matching_product_ids = explicit
                 rec.matching_product_count = len(explicit)
                 continue
-            domain = [('brand_id', '=', rec.brand_id.id)]
+            domain = [('brand_id', 'in', brands.ids)]
             if rec.product_category:
                 cats = rec._resolve_master_categories()
                 if cats:

@@ -423,18 +423,43 @@ class DaisyAgent(models.Model):
         }
 
     def _enqueue_response(self, channel_model, channel_id, user_text, history, conversation_id, context_prefix="", session_id=None):
-        """Create a job record and trigger immediate cron processing."""
+        """Create a job record and trigger immediate cron processing.
+
+        Idempotent: if an identical job for the same target+message is still
+        pending (not yet picked up by the cron), reuse it instead of creating
+        a duplicate. This collapses the common sequential double-enqueue — a
+        dispatch firing on both create() and write(), or an un-assign/re-assign
+        churn — into a single AI reply.
+        """
         self.ensure_one()
-        self.env["daisy.agent.job"].sudo().create({
-            "agent_id": self.id,
-            "channel_model": channel_model,
-            "channel_id": channel_id,
-            "message_text": user_text,
-            "conversation_history": json.dumps(history) if history else False,
-            "conversation_id": conversation_id or False,
-            "context_prefix": context_prefix or False,
-            "session_id": session_id or False,
-        })
+        Job = self.env["daisy.agent.job"].sudo()
+        # Match on the full content of the enqueue, not just the text: the
+        # genuine double-fire of one event carries identical session/context,
+        # so this still collapses it, while a distinct same-text message in a
+        # different session/context is NOT dropped.
+        existing = Job.search(
+            [
+                ("agent_id", "=", self.id),
+                ("channel_model", "=", channel_model),
+                ("channel_id", "=", channel_id),
+                ("message_text", "=", user_text),
+                ("context_prefix", "=", context_prefix or False),
+                ("session_id", "=", session_id or False),
+                ("state", "=", "pending"),
+            ],
+            limit=1,
+        )
+        if not existing:
+            Job.create({
+                "agent_id": self.id,
+                "channel_model": channel_model,
+                "channel_id": channel_id,
+                "message_text": user_text,
+                "conversation_history": json.dumps(history) if history else False,
+                "conversation_id": conversation_id or False,
+                "context_prefix": context_prefix or False,
+                "session_id": session_id or False,
+            })
         self.env.ref("daisydo_agents.ir_cron_process_agent_jobs")._trigger()
 
     def get_ai_response(self, message, conversation_history=None, conversation_id=None, override_config=None, session_id=None):

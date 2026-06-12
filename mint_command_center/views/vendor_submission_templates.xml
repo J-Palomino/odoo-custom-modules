@@ -26,7 +26,7 @@
 
                 <!-- Form (hidden after success) -->
                 <t t-if="not success">
-                    <form method="POST" action="/promos" class="needs-validation" novalidate="">
+                    <form method="POST" action="/vendor-deals" class="needs-validation" novalidate="">
                         <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
 
                         <!-- Vendor Info -->
@@ -396,6 +396,136 @@
                         })();
                     </script>
                 </t>
+
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!-- /promos — Market selection (public / not-logged-in vendors)   -->
+    <!-- ============================================================ -->
+    <template id="promos_market_select" name="Promos — Select Market">
+        <t t-call="website.layout">
+            <div class="container py-5">
+
+                <div class="text-center mb-5">
+                    <h1 class="mb-2">Run a Promo with Mint</h1>
+                    <p class="text-muted">
+                        Select your market to submit a deal for review by the Mint marketing team.
+                        Already a partner? <a href="/web/login?redirect=/promos">Log in</a> to view your promo calendar.
+                    </p>
+                </div>
+
+                <t t-if="not markets">
+                    <div class="alert alert-info text-center">
+                        No markets are available yet. Please check back soon.
+                    </div>
+                </t>
+
+                <div class="row g-4">
+                    <t t-foreach="markets" t-as="m">
+                        <div class="col-12 col-sm-6 col-lg-4">
+                            <a t-attf-href="/vendor-deals?market_id=#{m.id}"
+                               class="card h-100 text-decoration-none text-reset shadow-sm border-0 promo-market-card">
+                                <t t-if="m.hero_image_url">
+                                    <img t-att-src="m.hero_image_url" class="card-img-top"
+                                         style="height: 160px; object-fit: cover;"
+                                         t-att-alt="m.name"/>
+                                </t>
+                                <t t-else="">
+                                    <div class="card-img-top d-flex align-items-center justify-content-center bg-light"
+                                         style="height: 160px;">
+                                        <span class="display-6 text-muted"><t t-esc="m.name[:2].upper()"/></span>
+                                    </div>
+                                </t>
+                                <div class="card-body d-flex justify-content-between align-items-center">
+                                    <span class="h5 mb-0"><t t-esc="m.name"/></span>
+                                    <span class="badge text-bg-secondary" t-if="m.store_count">
+                                        <t t-esc="m.store_count"/> stores
+                                    </span>
+                                </div>
+                            </a>
+                        </div>
+                    </t>
+                </div>
+
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!-- /promos — Active promos calendar (logged-in vendors)         -->
+    <!-- ============================================================ -->
+    <template id="promos_calendar" name="Promos — My Calendar">
+        <t t-call="website.layout">
+            <div class="container py-5">
+
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+                    <div>
+                        <h1 class="mb-1">My Promo Calendar</h1>
+                        <p class="text-muted mb-0"><t t-esc="brand_names"/></p>
+                    </div>
+                    <a href="/vendor-deals" class="btn btn-primary">+ Submit a Deal</a>
+                </div>
+
+                <!-- Month nav -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <a t-attf-href="/promos?month=#{prev_month}" class="btn btn-outline-secondary btn-sm">&#8592; Prev</a>
+                    <h4 class="mb-0"><t t-esc="month_label"/></h4>
+                    <a t-attf-href="/promos?month=#{next_month}" class="btn btn-outline-secondary btn-sm">Next &#8594;</a>
+                </div>
+
+                <t t-if="entry_count == 0">
+                    <div class="alert alert-info">
+                        No promos scheduled for <t t-esc="month_label"/>.
+                        <a href="/vendor-deals">Submit a deal</a> to get on the calendar.
+                    </div>
+                </t>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered text-center align-top mb-0" style="table-layout: fixed;">
+                        <thead>
+                            <tr>
+                                <t t-foreach="weekday_labels" t-as="wl">
+                                    <th class="bg-light text-muted small"><t t-esc="wl"/></th>
+                                </t>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="weeks" t-as="week">
+                                <tr>
+                                    <t t-foreach="week" t-as="cell">
+                                        <td t-att-class="'p-1 ' + ('' if cell['in_month'] else 'bg-light text-muted')"
+                                            style="height: 110px; vertical-align: top;">
+                                            <div t-att-class="'small fw-bold mb-1 ' + ('text-success' if cell['is_today'] else '')">
+                                                <t t-esc="cell['day']"/>
+                                            </div>
+                                            <t t-foreach="cell['entries']" t-as="e">
+                                                <div t-att-class="'badge w-100 text-truncate mb-1 ' + {
+                                                        'tentative': 'text-bg-secondary',
+                                                        'confirmed': 'text-bg-info',
+                                                        'approved': 'text-bg-primary',
+                                                        'published': 'text-bg-success',
+                                                     }.get(e.state, 'text-bg-light')"
+                                                     style="display: block; text-align: left;"
+                                                     t-att-title="(e.deal_id.name or e.brand_id.name or '') + ' — ' + (e.market_id.name or '')">
+                                                    <t t-esc="e.deal_id.name or e.brand_id.name or e.slot_type"/>
+                                                </div>
+                                            </t>
+                                        </td>
+                                    </t>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-3 small text-muted d-flex flex-wrap gap-3">
+                    <span><span class="badge text-bg-secondary">&#160;</span> Tentative</span>
+                    <span><span class="badge text-bg-info">&#160;</span> Confirmed</span>
+                    <span><span class="badge text-bg-primary">&#160;</span> Approved</span>
+                    <span><span class="badge text-bg-success">&#160;</span> Published</span>
+                </div>
 
             </div>
         </t>

@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.6.11.0',  # bumped: market_ids/holiday/promo/weight grafted in reconcile
+    'version': '19.0.6.17.0',  # promote: main #124 + staging market_ids/holiday/weight grafts
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -107,6 +107,7 @@
         'reports/ptl_deals_sheet_template.xml',
         'data/spreadsheet_dashboards.xml',
         'views/dutchie_push_log_views.xml',
+        'views/project_task_sdlc_views.xml',
     ],
     'post_init_hook': 'post_init_hook',
     'installable': True,

@@ -1,0 +1,43 @@
+# DeepWork Reviews configuration for odoo-custom-modules
+# (the canonical Odoo 19 modules repo — prod Odoo builds from main).
+#
+# Each rule spawns a parallel reviewer when matching files change on a branch.
+# Instructions live in .deepwork/review/ so they can be edited and reused.
+
+odoo_python_review:
+  description: "Odoo 19 module review — multi-company constraints, 19.0 breaking changes, archive-over-delete, controller auth/CSRF, manifest sanity."
+  match:
+    include:
+      - "*/models/**/*.py"
+      - "*/controllers/**/*.py"
+      - "*/wizard/**/*.py"
+      - "*/wizards/**/*.py"
+      - "*/__manifest__.py"
+    exclude:
+      - "**/tests/**"
+      - "**/migrations/**"
+      - "**/__pycache__/**"
+      - "**/.worktrees/**"
+      - "**/.deepwork/**"
+  review:
+    strategy: individual
+    instructions:
+      file: .deepwork/review/odoo_python_review.md
+
+odoo_view_review:
+  description: "Odoo 19 view/data XML review — no <group> under <search>, valid invisible/attrs expressions, manifest registration of new data files."
+  match:
+    include:
+      - "*/views/**/*.xml"
+      - "*/security/**/*.xml"
+      - "*/data/**/*.xml"
+    exclude:
+      - "**/__pycache__/**"
+      - "**/.worktrees/**"
+      - "**/.deepwork/**"
+  review:
+    strategy: individual
+    additional_context:
+      all_changed_filenames: true
+    instructions:
+      file: .deepwork/review/odoo_python_review.md

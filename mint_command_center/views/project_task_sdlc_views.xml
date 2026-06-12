@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+      SDLC pipeline tabs on the project.task form. Scoped to engineering
+      projects only (157 Eriq / 158 Devid / 159 NiC / 91 Infrastructure &
+      Monitoring) via per-page invisible. Written by the SDLC skills through
+      task_append_section(); see models/project_task_sdlc.py.
+    -->
+    <record id="project_task_form_sdlc_tabs" model="ir.ui.view">
+        <field name="name">project.task.form.sdlc.tabs</field>
+        <field name="model">project.task</field>
+        <field name="inherit_id" ref="project.view_task_form2"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Functional Analysis" name="sdlc_functional_analysis"
+                      invisible="project_id not in [157, 158, 159, 91]">
+                    <field name="x_sdlc_functional_analysis" widget="html" nolabel="1"/>
+                </page>
+                <page string="Research" name="sdlc_research"
+                      invisible="project_id not in [157, 158, 159, 91]">
+                    <field name="x_sdlc_research" widget="html" nolabel="1"/>
+                </page>
+                <page string="Implementation Plan" name="sdlc_implementation_plan"
+                      invisible="project_id not in [157, 158, 159, 91]">
+                    <field name="x_sdlc_implementation_plan" widget="html" nolabel="1"/>
+                </page>
+                <page string="Changelog" name="sdlc_changelog"
+                      invisible="project_id not in [157, 158, 159, 91]">
+                    <field name="x_sdlc_changelog" widget="html" nolabel="1"/>
+                </page>
+                <page string="Test Plan" name="sdlc_test_plan"
+                      invisible="project_id not in [157, 158, 159, 91]">
+                    <field name="x_sdlc_test_plan" widget="html" nolabel="1"/>
+                </page>
+                <page string="QA Report" name="sdlc_qa_report"
+                      invisible="project_id not in [157, 158, 159, 91]">
+                    <field name="x_sdlc_qa_report" widget="html" nolabel="1"/>
+                </page>
+                <page string="PR &amp; Deploy" name="sdlc_pr_deploy"
+                      invisible="project_id not in [157, 158, 159, 91]">
+                    <field name="x_sdlc_pr_deploy" widget="html" nolabel="1"/>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -9,6 +9,8 @@ Admins use this model as the authoring UI. Fields here must map 1:1
 with the Dutchie-shape emitted to Redis; see the Shape Conformance
 mapping table in ARCHITECTURE.md before adding or renaming a field.
 """
+import re
+
 from odoo import api, fields, models
 
 
@@ -193,6 +195,85 @@ class MintBrand(models.Model):
         index=True,
         help="Upstream Dutchie BrandId, used to resolve discount brand restrictions to Odoo brands at sync time.",
     )
+    dutchie_brand_ids = fields.Text(
+        string="Dutchie Brand IDs (per LSP)",
+        help="Per-LSP Dutchie BrandIds, one 'lsp:id' per line (e.g. '575:27901').\n"
+             "Dutchie BrandIds are tenant-scoped — a brand has a DIFFERENT id in\n"
+             "each LSP (575 AZ, 576 MI, 723 MO, 805 IL, 820 NV, 821 FL) — so a\n"
+             "single id cannot target a brand across states. dutchie_brand_id\n"
+             "stays the AZ/legacy value for back-compat; this is the source of\n"
+             "truth for cross-state discount publishing.",
+    )
+
+    aliases = fields.Text(
+        string="Aliases",
+        help="Alternate vendor-facing names for this brand, one per line "
+             "(e.g. 'BackpackBoyz' for 'Backpack Boyz', 'GTI brands' for "
+             "'Green Thumb'). Used by resolve_vendor_string() to match the "
+             "free-text brand names vendors type into deal submissions.",
+    )
+
+    @staticmethod
+    def _norm_brand_name(s):
+        """Normalize a brand string for matching: lowercase, '&'->'and',
+        strip punctuation and filler tokens. Mirrors the JS importer's norm()."""
+        s = (s or '').lower().replace('&', ' and ')
+        s = re.sub(r'[^a-z0-9]+', ' ', s)
+        s = re.sub(r'\b(the|brands?|inc|llc|co|cannabis|edibles|vapes)\b', ' ', s)
+        return re.sub(r'\s+', ' ', s).strip()
+
+    @api.model
+    def resolve_vendor_string(self, vendor_string):
+        """Resolve a vendor-typed brand string to mint.brand records.
+
+        Handles multi-brand strings by splitting on '/', '&', '+', ',', '·'
+        and ' and ', then matching each part against brand names AND alias
+        lines (normalized both sides). Returns a recordset — possibly several
+        brands for 'Alien Labs & Connected', possibly empty.
+        """
+        if not vendor_string:
+            return self.browse()
+        index = {}
+        for b in self.search_read([], ['name', 'aliases']):
+            n = self._norm_brand_name(b['name'])
+            if n and n not in index:
+                index[n] = b['id']
+            for line in (b['aliases'] or '').splitlines():
+                a = self._norm_brand_name(line)
+                if a and a not in index:
+                    index[a] = b['id']
+
+        whole = index.get(self._norm_brand_name(vendor_string))
+        if whole:
+            return self.browse(whole)
+        ids = []
+        for part in re.split(r'[/&+,·]|\band\b', vendor_string, flags=re.I):
+            hit = index.get(self._norm_brand_name(part))
+            if hit and hit not in ids:
+                ids.append(hit)
+        return self.browse(ids)
+
+    def dutchie_brand_id_for_lsp(self, lsp_id):
+        """Return this brand's Dutchie BrandId for the given LSP, or False.
+
+        Reads the 'lsp:id' lines in dutchie_brand_ids; falls back to the legacy
+        dutchie_brand_id only for AZ (LSP 575, which is what it was populated
+        from). Use this when building a Dutchie discount payload so the
+        Brand restriction carries the id for the discount's target tenant.
+        """
+        self.ensure_one()
+        target = str(lsp_id).strip()
+        for line in (self.dutchie_brand_ids or '').splitlines():
+            line = line.strip()
+            if not line or ':' not in line:
+                continue
+            lsp, _, bid = line.partition(':')
+            if lsp.strip() == target and bid.strip():
+                return bid.strip()
+        if target == '575' and self.dutchie_brand_id:
+            return str(self.dutchie_brand_id).strip()
+        return False
+
     # Gate for discount-targeting dropdowns: only brands with actual cannabis
     # products appear in domain-filtered Many2many pickers. Stored because
     # domains can only filter on stored fields. Recomputed on module upgrade

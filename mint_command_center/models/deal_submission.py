@@ -38,7 +38,19 @@ class DealSubmission(models.Model):
     brand_id = fields.Many2one(
         'mint.brand',
         string='Brand',
-        help='Link to the brand record',
+        help='Primary brand. Kept for back-compat (campaign naming, legacy '
+             'reports); when Brands below is used, this is its first entry.',
+    )
+    brand_ids = fields.Many2many(
+        'mint.brand',
+        'mint_deal_submission_brand_rel',
+        'submission_id',
+        'brand_id',
+        string='Brands',
+        help='All brands this deal includes (#93635 multi-brand deals). Two '
+             'or more brands are accepted in one submission; the converted '
+             'PTL deal and the Dutchie discount carry every selected brand. '
+             'Leave empty for single-brand deals (Brand field above).',
     )
     product_ids = fields.Many2many(
         'product.template',
@@ -190,27 +202,9 @@ class DealSubmission(models.Model):
         tracking=True,
         help='Required when is_holiday=True. Surfaces in the PTL Category column downstream.',
     )
-
-    # --- Promo Units (internal-only, only shown when is_holiday=True) ---
-    promo_units_enabled = fields.Boolean(
-        string='Provide Promo Units',
-        default=False,
-        help='Vendor opts in to providing doorbuster giveaway units '
-             '(only applicable for Holiday / Special Event deals). Internal-only — '
-             'never displayed on the public PTL.',
-    )
-    promo_units_product = fields.Char(
-        string='Promo Units — Product',
-        help='Product the vendor will send for doorbuster giveaways.',
-    )
-    promo_units_quantity = fields.Integer(
-        string='Promo Units — Quantity',
-        help='How many promo units the vendor will send.',
-    )
-    promo_units_delivery_date = fields.Date(
-        string='Promo Units — Estimated Delivery',
-        help='Rough delivery target; intake team coordinates the actual drop.',
-    )
+    # NOTE: promo-units fields come from main's #124 JotForm intake schema
+    # (promo_units / promo_units_product / promo_units_qty) further below — the
+    # staging graft's parallel promo block was dropped here to avoid duplicates.
 
     @api.depends('market_ids')
     def _compute_primary_market(self):
@@ -257,6 +251,84 @@ class DealSubmission(models.Model):
     rejection_reason = fields.Text(string='Rejection Reason')
     reviewer_notes = fields.Text(string='Reviewer Notes')
 
+    # --- Source / external intake (JotForm import) ---
+    # Provenance of the submission. The web form (/vendor-deals) leaves the
+    # default 'web_form'; the JotForm importer writes 'jotform'.
+    source = fields.Selection(
+        selection=[
+            ('web_form', 'Web Form'),
+            ('jotform', 'JotForm'),
+            ('manual', 'Manual'),
+        ],
+        string='Source',
+        default='web_form',
+        tracking=True,
+    )
+    external_id = fields.Char(
+        string='External Submission ID',
+        index=True,
+        copy=False,
+        help='Stable ID of the source submission (e.g. JotForm submission id). '
+             'Keeps imports idempotent — re-running the importer never '
+             'duplicates a submission.',
+    )
+    external_form_id = fields.Char(
+        string='External Form ID',
+        help='Source form id (e.g. the JotForm "Promo - Deal submission" form).',
+    )
+    external_created_at = fields.Char(
+        string='External Submitted At',
+        help='Original submission timestamp from the source system, verbatim.',
+    )
+    jotform_payload = fields.Text(
+        string='Raw JotForm Payload',
+        help='Complete, verbatim capture of every field from the source '
+             'submission (JSON). Safety net so no detail is ever lost, even '
+             'for questions that have no dedicated column.',
+    )
+
+    # --- JotForm-specific fields (structured, so they are queryable) ---
+    deal_frequency = fields.Char(
+        string='Deal Frequency',
+        help='Vendor-stated cadence (Weekly, EDLP, 2x/month, Single Day, '
+             'Holiday, Other). Informs PTL scheduling at review time.',
+    )
+    product_list = fields.Text(
+        string='Products (raw, with weights)',
+        help='Vendor-supplied product list, verbatim (incl. weights). The '
+             'reviewer resolves these into the structured product_ids picker.',
+    )
+    promo_units = fields.Char(
+        string='Promo Units Offered?',
+        help='Whether the vendor offers promo/doorbuster units for special '
+             'events (Yes/No).',
+    )
+    promo_units_product = fields.Char(string='Promo Units — Product')
+    promo_units_qty = fields.Integer(string='Promo Units — Quantity')
+    promo_delivery_date = fields.Date(
+        string='Promo Units — Est. Delivery',
+        help='Vendor estimate; actual delivery is coordinated with intake.',
+    )
+    deal_end_note = fields.Char(
+        string='Deal End (free-text)',
+        help='Vendor end-of-deal note when not a structured date '
+             '(e.g. "Q4", "until product runs out").',
+    )
+
+    def init(self):
+        # Idempotency backstop for the JotForm importer. It does a
+        # check-then-create on (source='jotform', external_id); a partial
+        # unique index makes the DB the source of truth so two concurrent or
+        # retried importer runs can't double-insert one submission. Scoped to
+        # jotform rows so web_form / manual rows (external_id NULL) are
+        # unaffected. Safe to (re)apply: the column starts all-NULL on upgrade.
+        self.env.cr.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                mint_deal_submission_jotform_extid_uniq
+            ON mint_deal_submission (external_id)
+            WHERE source = 'jotform' AND external_id IS NOT NULL
+        """)
+
     # --- Actions ---
 
     def action_start_review(self):
@@ -276,11 +348,14 @@ class DealSubmission(models.Model):
         Campaign = self.env['mint.national.promo']
         year = _date.today().year
         for sub in records:
-            if sub.campaign_id or not sub.brand_id or not sub.market_id:
+            # Multi-brand (#93635): the campaign keys on the PRIMARY brand —
+            # first of brand_ids when the single brand_id isn't set.
+            primary = sub.brand_id or sub.brand_ids[:1]
+            if sub.campaign_id or not primary or not sub.market_id:
                 continue
             target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
             campaign = Campaign.get_or_create(
-                brand_id=sub.brand_id.id,
+                brand_id=primary.id,
                 market_id=sub.market_id.id,
                 year=target_year,
                 crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
@@ -387,6 +462,21 @@ class DealSubmission(models.Model):
         if generated:
             self.sales_details = generated
 
+    @api.onchange('market_id')
+    def _onchange_market_fill_stores(self):
+        """Default Requested Stores to every live dispensary in the chosen
+        market (state). Picking a market selects all its stores; clearing it
+        clears the selection. Mirrors mint.region.store_count's live filter
+        (is_dispensary & is_active). The user can still hand-edit afterward —
+        the next market change re-fills."""
+        if not self.market_id:
+            self.store_ids = [(5, 0, 0)]
+            return
+        stores = self.market_id.store_ids.filtered(
+            lambda c: getattr(c, 'is_dispensary', False) and getattr(c, 'is_active', True)
+        )
+        self.store_ids = [(6, 0, stores.ids)]
+
     def action_convert_to_deal(self):
         """Create a mint.ptl.deal from this approved submission."""
         self.ensure_one()
@@ -397,17 +487,22 @@ class DealSubmission(models.Model):
 
         self._check_plot_gate()
 
+        # Multi-brand (#93635): every selected brand rides through. The
+        # union keeps single-brand submissions working unchanged.
+        all_brands = (self.brand_ids | self.brand_id) if self.brand_id else self.brand_ids
+
         # Drop any product picks whose brand no longer matches the
-        # submission's brand_id (e.g. user changed brand after picking).
+        # submission's brands (e.g. user changed brands after picking).
         # Silent drop is fine — the deal-form's explicit picker is also
         # brand-scoped, so a stale pick would be invisible anyway.
         explicit_products = self.product_ids.filtered(
-            lambda p: p.brand_id == self.brand_id
-        ) if self.brand_id else self.product_ids.browse([])
+            lambda p: p.brand_id in all_brands
+        ) if all_brands else self.product_ids.browse([])
 
         deal = self.env['mint.ptl.deal'].create({
             'name': self.name,
-            'brand_id': self.brand_id.id if self.brand_id else False,
+            'brand_id': (self.brand_id or all_brands[:1]).id if all_brands else False,
+            'brand_ids': [(6, 0, all_brands.ids)] if all_brands else False,
             'product_category': self.product_category,
             'discount_type': self.discount_type,
             'discount_value': self.discount_value,
