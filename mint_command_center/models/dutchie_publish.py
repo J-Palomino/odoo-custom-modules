@@ -26,7 +26,7 @@ import json
 import logging
 import re
 import urllib.request
-from datetime import timedelta
+from datetime import date as _date, timedelta
 
 from odoo import api, models
 from odoo.exceptions import UserError
@@ -112,8 +112,10 @@ class DealSubmissionDutchiePublish(models.Model):
         for vals in vals_list:
             if not vals.get('discount_value') and vals.get('sales_details'):
                 parsed = self._parse_discount_from_text(vals['sales_details'])
-                if parsed:
-                    vals.setdefault('discount_type', parsed['discount_type'])
+                # Fill only when the parsed offer kind matches the incoming
+                # type (or none was given) — no cross-type value pollution.
+                if parsed and vals.get('discount_type') in (None, False, '', parsed['discount_type']):
+                    vals['discount_type'] = parsed['discount_type']
                     vals['discount_value'] = parsed['discount_value']
         return super().create(vals_list)
 
@@ -124,9 +126,10 @@ class DealSubmissionDutchiePublish(models.Model):
             if sub.discount_value:
                 continue
             parsed = self._parse_discount_from_text(sub.sales_details)
-            if parsed:
+            if parsed and (not sub.discount_type
+                           or parsed['discount_type'] == sub.discount_type):
                 sub.write({
-                    'discount_type': parsed['discount_type'] if not sub.discount_type else sub.discount_type,
+                    'discount_type': sub.discount_type or parsed['discount_type'],
                     'discount_value': parsed['discount_value'],
                 })
                 filled += 1
@@ -138,28 +141,42 @@ class DealSubmissionDutchiePublish(models.Model):
 
     def action_convert_to_deal(self):
         self.ensure_one()
+        mode = (self.env['ir.config_parameter'].sudo()
+                .get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
         # #2 reviewer gate: a deal can't convert (and thus can't publish) with
-        # no numeric value unless it's a BOGO (which has none by definition).
-        if not self.discount_value and self.discount_type != 'bogo':
+        # no numeric value. Exemptions: bogo/clearance (valid without one) and
+        # mode=off (publishing disabled — don't block legacy conversions).
+        if (mode != 'off' and not self.discount_value
+                and self.discount_type not in ('bogo', 'clearance')):
             parsed = self._parse_discount_from_text(self.sales_details)
-            if parsed:
+            # Only trust the parse when its offer kind matches the chosen
+            # type (or no type was chosen) — never turn "$10 off" prose into
+            # a 10% discount because discount_type said percent.
+            if parsed and (not self.discount_type
+                           or parsed['discount_type'] == self.discount_type):
                 self.write({'discount_value': parsed['discount_value'],
                             'discount_type': self.discount_type or parsed['discount_type']})
             else:
                 raise UserError(
                     "Discount Value is not set and the Sales Details text is "
-                    "ambiguous (multiple offers). Enter the value/type for "
-                    "the deal being approved, then convert again."
+                    "ambiguous (multiple offers, or its offer kind doesn't "
+                    "match the chosen Discount Type). Enter the value/type "
+                    "for the deal being approved, then convert again."
                 )
         res = super().action_convert_to_deal()
         try:
             self._dutchie_publish_after_convert()
         except Exception as exc:  # never break conversion on publish issues
             _logger.exception("Dutchie publish failed for submission %s", self.id)
-            self.message_post(
-                body=f"Dutchie publish FAILED (conversion unaffected): {exc}",
-                message_type='comment',
-            )
+            try:
+                self.message_post(
+                    body=f"Dutchie publish FAILED (conversion unaffected): {exc}",
+                    message_type='comment',
+                )
+            except Exception:
+                # Chatter itself can crash (rogue automation on message_post);
+                # the log line above is the fallback record.
+                _logger.exception("…and the failure chatter post also failed (submission %s)", self.id)
         return res
 
     # ------------------------------------------------------------------
@@ -262,7 +279,9 @@ class DealSubmissionDutchiePublish(models.Model):
                 cat_id = int(cat.dutchie_category_id)
 
         # Active window + day-of-week from the structured plot windows.
-        dates = self.window_ids.all_dates() if self.window_ids else []
+        # all_dates() returns ISO strings — coerce to date objects.
+        dates = [_date.fromisoformat(d) if isinstance(d, str) else d
+                 for d in (self.window_ids.all_dates() if self.window_ids else [])]
         if not dates and self.preferred_start_date:
             cur = self.preferred_start_date
             end = self.preferred_end_date or cur
@@ -289,7 +308,10 @@ class DealSubmissionDutchiePublish(models.Model):
         value = float(self.discount_value or 0)
         threshold_min = None
         if calc == 2:
-            value = value / 100.0 if value > 1 else value
+            # Model convention is WHOLE percents (50 = 50% — see
+            # _format_sales_details). Divide unconditionally: a stored 1
+            # means 1% (0.01), never 100%.
+            value = value / 100.0
         elif calc == 6:
             m = RE_NFOR.search(self.sales_details or '')
             threshold_min = int(m.group(1)) if m else 2
@@ -312,6 +334,7 @@ class DealSubmissionDutchiePublish(models.Model):
 
         label = (f"{value * 100:g}% Off" if calc == 2
                  else f"{threshold_min} for ${value:g}" if calc == 6
+                 else f"${value:g} Off" if calc == 1
                  else f"${value:g}")
         discount = {
             'Id': 0,
@@ -398,16 +421,24 @@ class DealSubmissionDutchiePublish(models.Model):
             raise UserError("dutchie.publish.api_key is not configured for live mode.")
         if not loc_ids:
             raise UserError(f"dutchie.publish.loc_ids has no LocIds for LSP {lsp}.")
-        results = []
+        # Per-LocId isolation: one store failing must not hide which stores
+        # DID publish — accumulate every outcome and report them all.
+        results, failures = [], 0
         for loc_id in loc_ids:
             payload = json.dumps({'locId': loc_id, 'lspId': lsp, 'discount': discount}).encode()
             req = urllib.request.Request(
                 f"{url}/api/admin/discounts", data=payload,
                 headers={'Content-Type': 'application/json', 'x-api-key': api_key},
                 method='POST')
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                results.append(f"LocId {loc_id}: HTTP {resp.status} {resp.read()[:200].decode(errors='replace')}")
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    results.append(f"LocId {loc_id}: HTTP {resp.status} "
+                                   f"{resp.read()[:200].decode(errors='replace')}")
+            except Exception as exc:
+                failures += 1
+                results.append(f"LocId {loc_id}: FAILED — {exc}")
         self.message_post(
-            body="[Dutchie publish — LIVE]\n" + "\n".join(results)
+            body=f"[Dutchie publish — LIVE{' — PARTIAL FAILURE' if failures else ''}]\n"
+                 + "\n".join(results)
                  + ("\nWarnings: " + "; ".join(warnings) if warnings else ''),
             message_type='comment')
