@@ -61,16 +61,6 @@
                             <field name="original_price" invisible="1"/>
                         </group>
                     </group>
-                    <group string="Vendor Funding">
-                        <group>
-                            <field name="vendor_funding_amount" widget="monetary"/>
-                            <field name="currency_id" column_invisible="True"/>
-                            <field name="vendor_funding_percent"/>
-                        </group>
-                        <group>
-                            <field name="vendor_funding_terms" placeholder="Payment terms, MOQ, etc."/>
-                        </group>
-                    </group>
                     <group string="Targeting">
                         <group>
                             <field name="market_id" options="{'no_create': True}"/>
@@ -90,6 +80,16 @@
                                 <field name="vendor_phone" widget="phone"/>
                                 <field name="crm_lead_id" options="{'no_create': True}"/>
                                 <field name="campaign_id" options="{'no_create': True}"/>
+                            </group>
+                            <group string="Vendor Funding">
+                                <group>
+                                    <field name="vendor_funding_amount" widget="monetary"/>
+                                    <field name="currency_id" column_invisible="True"/>
+                                    <field name="vendor_funding_percent"/>
+                                </group>
+                                <group>
+                                    <field name="vendor_funding_terms" placeholder="Payment terms, MOQ, etc."/>
+                                </group>
                             </group>
                         </page>
                         <page string="Schedule" name="schedule">
