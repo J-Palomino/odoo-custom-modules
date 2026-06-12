@@ -35,19 +35,19 @@
         <field name="view_mode">list,form</field>
     </record>
 
-    <!-- ── Root menu ───────────────────────────────────────────────── -->
+    <!-- ── Nested under the native Point of Sale app ───────────────────
+         No standalone "POS Bridge" app: the swimlane board lives inside
+         Odoo's Point of Sale app so there is a single POS app. The old
+         root menu (menu_pos_bridge_root) is intentionally removed — being
+         dropped from this file deletes it on upgrade.
+         ──────────────────────────────────────────────────────────────── -->
 
-    <menuitem id="menu_pos_bridge_root"
-              name="POS Bridge"
-              sequence="45"
-              web_icon="mint_pos_bridge,static/description/icon.png"
-              groups="group_pos_budtender"/>
-
-    <!-- Orders submenu -->
+    <!-- Live Orders: the Dutchie swimlane board, under Point of Sale -->
     <menuitem id="menu_pos_orders"
-              name="Orders"
-              parent="menu_pos_bridge_root"
-              sequence="10"/>
+              name="Live Orders"
+              parent="point_of_sale.menu_point_root"
+              groups="group_pos_budtender"
+              sequence="6"/>
 
     <menuitem id="menu_pos_orders_active"
               name="Active Orders"
@@ -61,11 +61,11 @@
               action="action_pos_orders_all"
               sequence="20"/>
 
-    <!-- Settings submenu (managers only) -->
+    <!-- POS Settings (managers only), under Point of Sale -->
     <menuitem id="menu_pos_settings"
-              name="Settings"
-              parent="menu_pos_bridge_root"
-              sequence="90"
+              name="POS Settings"
+              parent="point_of_sale.menu_point_root"
+              sequence="95"
               groups="group_pos_manager"/>
 
     <menuitem id="menu_pos_credentials"

@@ -1,7 +1,8 @@
+from . import deal_mixins
 from . import ptl_day
 from . import ptl_deal
 from . import deal_submission
-from . import deal_submission_day
+from . import deal_submission_window
 from . import brand_calendar
 from . import national_promo
 from . import crm_lead_ext
@@ -32,4 +33,3 @@ from . import competitor_deal
 from . import ambassador
 from . import ambassador_shift
 from . import project_task_daisy
-from . import deal_submission_window

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="daisy_agent_view_form_provisioning" model="ir.ui.view">
+        <field name="name">daisy.agent.form.provisioning</field>
+        <field name="model">daisy.agent</field>
+        <field name="inherit_id" ref="daisydo_agents.daisy_agent_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header/button[@name='action_hire']" position="after">
+                <button name="action_reprovision" string="Re-provision on Daisy+"
+                        type="object" class="btn-secondary"
+                        invisible="state == 'draft'"/>
+            </xpath>
+            <xpath expr="//field[@name='daisy_agency_id']" position="after">
+                <field name="provision_state"/>
+                <field name="provision_error" readonly="1"
+                       invisible="provision_state != 'error'"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

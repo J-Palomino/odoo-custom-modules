@@ -51,24 +51,18 @@
                             <field name="vendor_email" widget="email"/>
                             <field name="vendor_contact"/>
                             <field name="vendor_phone" widget="phone"/>
-                            <field name="brand_id"/>
                             <field name="crm_lead_id" options="{'no_create': True}"/>
                             <field name="campaign_id" options="{'no_create': True}"/>
                         </group>
                         <group string="Deal Details">
-                            <field name="product_category"/>
-                            <field name="product_ids" widget="many2many_tags"
-                                   options="{'no_create': True}"
-                                   domain="[('brand_id', '=', brand_id)]"/>
+                            <field name="discount_type"/>
+                            <field name="discount_value"/>
+                            <field name="original_price"/>
                             <label for="weight_value"/>
                             <div class="o_row">
                                 <field name="weight_value"/>
                                 <field name="weight_unit"/>
                             </div>
-                            <field name="discount_type"/>
-                            <field name="discount_value"/>
-                            <field name="original_price"/>
-                            <field name="sales_details"/>
                         </group>
                     </group>
                     <group string="Vendor Funding">
@@ -81,24 +75,37 @@
                             <field name="vendor_funding_terms" placeholder="Payment terms, MOQ, etc."/>
                         </group>
                     </group>
-                    <group>
-                        <group string="Targeting">
+                    <group string="Targeting">
+                        <group>
                             <field name="market_ids" widget="many2many_tags"
                                    options="{'no_create': True}"/>
                             <field name="market_id" options="{'no_create': True}"
                                    readonly="1"
                                    help="Primary market — auto-derived from Markets."/>
+                        </group>
+                        <group>
                             <field name="store_ids" widget="many2many_tags"
                                    options="{'no_create': True}"/>
                         </group>
-                        <group string="Schedule">
-                            <field name="windows_summary" readonly="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Schedule" name="schedule">
+                            <group>
+                                <field name="windows_summary" readonly="1"/>
+                            </group>
                             <!-- The inner <list> is NOT rendered (the
-                                 ptl_day_grid widget owns the DOM); it keeps the
-                                 child date_start/date_end/sequence fields ACTIVE
-                                 so record.update() tracks them into _changes and
-                                 web_save persists the new window rows. -->
-                            <field name="window_ids" widget="ptl_day_grid" nolabel="1">
+                                 ptl_day_grid widget owns the DOM);
+                                 it exists so date_start/date_end/sequence are
+                                 ACTIVE fields. Without it the children load via
+                                 the widget's relatedFields for display only,
+                                 record.update() never tracks them into
+                                 _changes, and web_save emits empty create
+                                 commands ([0, virtual, {}]) → the server
+                                 rejects with "Missing required value for
+                                 'Start Date'". -->
+                            <field name="window_ids"
+                                   widget="ptl_day_grid"
+                                   nolabel="1">
                                 <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
                                     <field name="date_start"/>
@@ -106,62 +113,86 @@
                                     <field name="day_count" readonly="1"/>
                                 </list>
                             </field>
-                            <!-- Legacy fields (deprecated, mirrors prod's keep-legacy pattern) -->
-                            <field name="plot_date_ids" invisible="1"/>
-                            <field name="preferred_start_date" readonly="1"
-                                   invisible="window_ids"/>
-                            <field name="preferred_end_date" readonly="1"
-                                   invisible="window_ids"/>
-                            <field name="preferred_days" readonly="1"
-                                   invisible="window_ids"
-                                   help="Deprecated — use the Schedule grid above."/>
-                        </group>
-                    </group>
-                    <group>
-                        <group string="Inclusions">
-                            <field name="inclusions" nolabel="1"
-                                   placeholder="What this deal applies to..."/>
-                        </group>
-                        <group string="Exclusions">
-                            <field name="details_exclusions" nolabel="1"
-                                   placeholder="What this deal does NOT apply to..."/>
-                        </group>
-                    </group>
-                    <group string="Special Event / Holiday">
-                        <group>
-                            <field name="is_holiday"/>
-                            <field name="event_name"
-                                   invisible="not is_holiday"
-                                   required="is_holiday"/>
-                        </group>
-                    </group>
-                    <group string="Promo Units (Internal-Only)"
-                           invisible="not is_holiday">
-                        <group>
-                            <field name="promo_units_enabled"/>
-                            <field name="promo_units_product"
-                                   invisible="not promo_units_enabled"/>
-                            <field name="promo_units_quantity"
-                                   invisible="not promo_units_enabled"/>
-                            <field name="promo_units_delivery_date"
-                                   invisible="not promo_units_enabled"/>
-                        </group>
-                        <group>
-                            <div class="alert alert-info" role="alert"
-                                 invisible="not promo_units_enabled">
-                                Promo Units are internal-only — they never display on the public PTL.
-                            </div>
-                        </group>
-                    </group>
-                    <group string="Review" invisible="not reviewed_by">
-                        <group>
-                            <field name="reviewed_by"/>
-                            <field name="reviewed_at"/>
-                        </group>
-                        <group>
-                            <field name="reviewer_notes"/>
-                        </group>
-                    </group>
+                            <group string="Legacy vendor preferences (read-only)"
+                                   class="o_mdcc_legacy_prefs">
+                                <field name="preferred_start_date" readonly="1"/>
+                                <field name="preferred_end_date" readonly="1"/>
+                                <field name="preferred_days" readonly="1"/>
+                            </group>
+                        </page>
+                        <page string="Inclusions" name="inclusions">
+                            <group>
+                                <field name="brand_id"/>
+                                <field name="product_category"/>
+                            </group>
+                            <group string="Specific Products (optional — overrides brand-wide matching)" col="1">
+                                <field name="product_ids"
+                                       nolabel="1"
+                                       widget="many2many_tags"
+                                       domain="[('brand_id','=',brand_id)]"
+                                       options="{'no_create': True, 'no_create_edit': True}"
+                                       invisible="not brand_id"
+                                       placeholder="Pick specific products to restrict the deal. Leave empty for all of brand+category."/>
+                            </group>
+                            <group string="Sales Details" col="1">
+                                <field name="sales_details" nolabel="1"
+                                       placeholder="Auto-fills from Discount Type (e.g. 40% Off, $10, BOGO). Edit for custom wording / bundles."
+                                       help="Auto-generated from the Discount Type + value when left blank. Edit freely for bundles, multi-buy, or any custom wording."/>
+                            </group>
+                        </page>
+                        <page string="Exclusions" name="exclusions">
+                            <group string="Exclusion Rules">
+                                <field name="excluded_brand_ids" widget="many2many_tags"
+                                       options="{'no_create_edit': True}"
+                                       placeholder="Brands to exclude from this deal"/>
+                                <field name="excluded_skus"
+                                       placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002"/>
+                            </group>
+                            <group string="Details &amp; Exclusions Notes" col="1">
+                                <field name="details_exclusions" nolabel="1"
+                                       placeholder="Product exclusions and conditions..."/>
+                            </group>
+                        </page>
+                        <page string="Special Event" name="special_event">
+                            <group string="Special Event / Holiday">
+                                <group>
+                                    <field name="is_holiday"/>
+                                    <field name="event_name"
+                                           invisible="not is_holiday"
+                                           required="is_holiday"/>
+                                </group>
+                            </group>
+                            <group string="Promo Units (Internal-Only)"
+                                   invisible="not is_holiday">
+                                <group>
+                                    <field name="promo_units_enabled"/>
+                                    <field name="promo_units_product"
+                                           invisible="not promo_units_enabled"/>
+                                    <field name="promo_units_quantity"
+                                           invisible="not promo_units_enabled"/>
+                                    <field name="promo_units_delivery_date"
+                                           invisible="not promo_units_enabled"/>
+                                </group>
+                                <group>
+                                    <div class="alert alert-info" role="alert"
+                                         invisible="not promo_units_enabled">
+                                        Promo Units are internal-only — they never display on the public PTL.
+                                    </div>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Review" name="review" invisible="not reviewed_by">
+                            <group>
+                                <group>
+                                    <field name="reviewed_by"/>
+                                    <field name="reviewed_at"/>
+                                </group>
+                                <group>
+                                    <field name="reviewer_notes"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
                 </sheet>
                 <chatter/>
             </form>
@@ -185,8 +216,6 @@
                 <field name="discount_type"/>
                 <field name="discount_value"/>
                 <field name="market_id"/>
-                <field name="is_holiday" widget="boolean_toggle" optional="show"/>
-                <field name="event_name" optional="show"/>
                 <field name="preferred_start_date"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'new'"
@@ -237,8 +266,6 @@
                 <filter name="approved" string="Approved" domain="[('state', '=', 'approved')]"/>
                 <filter name="rejected" string="Rejected" domain="[('state', '=', 'rejected')]"/>
                 <filter name="converted" string="Converted" domain="[('state', '=', 'converted')]"/>
-                <separator/>
-                <filter name="holiday" string="Holiday / Special Event" domain="[('is_holiday', '=', True)]"/>
                 <separator/>
                 <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
                 <filter name="group_market" string="Market" context="{'group_by': 'market_id'}"/>

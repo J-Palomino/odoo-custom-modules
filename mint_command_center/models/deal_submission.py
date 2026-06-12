@@ -7,7 +7,10 @@ from odoo.exceptions import UserError, ValidationError
 class DealSubmission(models.Model):
     _name = 'mint.deal.submission'
     _description = 'Vendor Deal Submission'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = [
+        'mail.thread', 'mail.activity.mixin',
+        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
+    ]
     _order = 'create_date desc'
 
     # --- CRM linkage ---
@@ -37,32 +40,27 @@ class DealSubmission(models.Model):
         string='Brand',
         help='Link to the brand record',
     )
-
-    # --- Vendor funding terms ---
-    vendor_funding_amount = fields.Monetary(
-        string='Vendor Funding Amount',
-        currency_field='currency_id',
-        tracking=True,
-    )
-    vendor_funding_percent = fields.Float(string='Vendor Funding %', tracking=True)
-    vendor_funding_terms = fields.Text(string='Funding Terms')
-    currency_id = fields.Many2one(
-        'res.currency',
-        string='Currency',
-        default=lambda self: self.env.company.currency_id,
-    )
-
-    # --- Deal details ---
-    name = fields.Char(string='Deal Name', required=True, tracking=True)
-    product_category = fields.Char(string='Product Category')
     product_ids = fields.Many2many(
         'product.template',
         'mint_deal_submission_product_rel',
         'submission_id',
         'product_id',
-        string='Products',
-        help='Specific products this deal applies to (filtered by brand × category).',
+        string='Specific Products',
+        help='When populated, the resulting PTL deal targets ONLY these '
+             'products and ignores the implicit brand+category widening. '
+             'Leave empty to keep today\'s "all-of-brand-and-category" '
+             'fallback. Picker is brand-scoped via the view domain.',
     )
+
+    # --- Vendor funding terms ---
+    # vendor_funding_amount / vendor_funding_percent / currency_id come from
+    # mint.vendor.funding.mixin.
+    vendor_funding_terms = fields.Text(string='Funding Terms')
+
+    # --- Deal details ---
+    name = fields.Char(string='Deal Name', required=True, tracking=True)
+    product_category = fields.Char(string='Product Category')
+    # weight_value / weight_unit — grafted from staging (reconcile 2026-06).
     weight_value = fields.Float(
         string='Weight',
         help='Numeric weight/count of the product (e.g. 3.5 for an eighth).',
@@ -76,34 +74,36 @@ class DealSubmission(models.Model):
         ],
         string='Unit',
     )
-    discount_type = fields.Selection(
-        selection=[
-            ('percent', 'Percentage Off'),
-            ('fixed', 'Fixed Amount Off'),
-            ('bogo', 'BOGO'),
-            ('bundle', 'Bundle Deal'),
-            ('price', 'Set Price'),
-            ('points_multiplier', 'Loyalty Points Multiplier'),
-            ('clearance', 'Clearance (Near Expiry)'),
-        ],
-        string='Discount Type',
-    )
-    discount_value = fields.Float(string='Discount Value')
-    original_price = fields.Float(string='Original / MSRP Price')
+    # discount_type / discount_value / original_price come from
+    # mint.discount.core.mixin.
     sales_details = fields.Text(
         string='Sales Details',
         help='Formatted pricing text — how this deal should be displayed',
     )
-    inclusions = fields.Text(
-        string='Inclusions',
-        help='What this deal applies to (SKUs, strains, sizes, etc.).',
-    )
     details_exclusions = fields.Text(
-        string='Exclusions',
-        help='What this deal does NOT apply to (limits, conditions, exclusions).',
+        string='Details & Exclusions',
+        help='Product details, exclusions, and conditions',
+    )
+    excluded_brand_ids = fields.Many2many(
+        'mint.brand',
+        'mint_deal_submission_excluded_brand_rel',
+        'submission_id',
+        'brand_id',
+        string='Excluded Brands',
+        help='Brands to exclude from this deal. Forwarded to the PTL deal '
+             '(mint.ptl.deal.excluded_brand_ids) on conversion.',
+    )
+    excluded_skus = fields.Text(
+        string='Excluded SKUs',
+        help='SKUs to exclude (one per line or comma-separated). Forwarded to '
+             'the PTL deal (mint.ptl.deal.excluded_skus) on conversion.',
     )
 
     # --- Targeting ---
+    # market_ids multi-market (#93723, grafted from staging). market_id is
+    # kept as the computed "primary" (first of market_ids) so all downstream
+    # main code using market_id (action_approve, plot-gate,
+    # national_promo.get_or_create, convert_to_deal) keeps working unchanged.
     market_ids = fields.Many2many(
         'mint.region',
         'mint_deal_submission_market_rel',
@@ -136,19 +136,10 @@ class DealSubmission(models.Model):
     preferred_end_date = fields.Date(string='Preferred End Date')
     preferred_days = fields.Char(
         string='Preferred Days of Week',
-        help='Deprecated free-text field. Use plot_date_ids for structured day picks; '
-             'kept for one release to avoid breaking existing submissions.',
-    )
-    plot_date_ids = fields.One2many(
-        'mint.deal.submission.day',
-        'submission_id',
-        string='Plot Dates',
-        help='DEPRECATED — superseded by window_ids (mirrors prod). Kept '
-             'defined (hidden in the view) to avoid a destructive migration; '
-             'no longer the source for plotting.',
+        help='e.g. Mon, Wed, Fri',
     )
 
-    # --- Plot windows (prod-mirrored structured day picker) ---
+    # --- Plot windows (structured replacement for preferred_start/end) ---
     window_ids = fields.One2many(
         'mint.deal.submission.window',
         'submission_id',
@@ -186,7 +177,7 @@ class DealSubmission(models.Model):
                         )
             rec.windows_summary = ', '.join(parts) or False
 
-    # --- Holiday / Special Event ---
+    # --- Holiday / Special Event (grafted from staging, reconcile 2026-06) ---
     is_holiday = fields.Boolean(
         string='Special Event / Holiday',
         default=False,
@@ -221,6 +212,24 @@ class DealSubmission(models.Model):
         help='Rough delivery target; intake team coordinates the actual drop.',
     )
 
+    @api.depends('market_ids')
+    def _compute_primary_market(self):
+        for rec in self:
+            # Fall back to the existing market_id value if market_ids is empty —
+            # protects legacy rows during the additive migration window.
+            if rec.market_ids:
+                rec.market_id = rec.market_ids[:1]
+            elif not rec.market_id:
+                rec.market_id = False
+
+    @api.constrains('is_holiday', 'event_name')
+    def _check_event_name_when_holiday(self):
+        for rec in self:
+            if rec.is_holiday and not (rec.event_name and rec.event_name.strip()):
+                raise ValidationError(
+                    "Event Name is required when Special Event / Holiday is enabled."
+                )
+
     # --- State machine ---
     state = fields.Selection(
         selection=[
@@ -247,26 +256,6 @@ class DealSubmission(models.Model):
     reviewed_at = fields.Datetime(string='Reviewed At', readonly=True)
     rejection_reason = fields.Text(string='Rejection Reason')
     reviewer_notes = fields.Text(string='Reviewer Notes')
-
-    # --- Computes & constraints ---
-
-    @api.depends('market_ids')
-    def _compute_primary_market(self):
-        for rec in self:
-            # Fall back to the existing market_id value if market_ids is empty —
-            # protects legacy rows during the additive migration window.
-            if rec.market_ids:
-                rec.market_id = rec.market_ids[:1]
-            elif not rec.market_id:
-                rec.market_id = False
-
-    @api.constrains('is_holiday', 'event_name')
-    def _check_event_name_when_holiday(self):
-        for rec in self:
-            if rec.is_holiday and not (rec.event_name and rec.event_name.strip()):
-                raise ValidationError(
-                    "Event Name is required when Special Event / Holiday is enabled."
-                )
 
     # --- Actions ---
 
@@ -357,6 +346,47 @@ class DealSubmission(models.Model):
             'context': {'default_submission_id': self.id},
         }
 
+    def _format_sales_details(self):
+        """Render the public Sales Details string from the structured discount
+        type + value (+ MSRP). Returns '' for types that need extra structure
+        the form doesn't capture yet (Bundle/multi-buy) — those stay free-text.
+
+        Driven by the existing discount_type Selection rather than a redundant
+        new "sales format" field (#94626). discount_type already enumerates the
+        formats: Percentage Off / Fixed Amount Off / Set Price / BOGO /
+        Clearance / Loyalty Points Multiplier / Bundle Deal.
+        """
+        self.ensure_one()
+        dt = self.discount_type
+        v = self.discount_value
+        n = (lambda x: f"{x:g}")              # 40.0 -> "40", 12.5 -> "12.5"
+        money = (lambda x: f"${x:.0f}" if x == int(x) else f"${x:.2f}")  # $20 / $22.50
+        if dt == 'percent' and v:
+            return f"{n(v)}% Off"
+        if dt == 'fixed' and v:
+            return f"{money(v)} Off"
+        if dt == 'price' and v:
+            return money(v)
+        if dt == 'bogo':
+            return "BOGO"
+        if dt == 'clearance':
+            return f"{n(v)}% Off (Clearance)" if v else "Clearance"
+        if dt == 'points_multiplier' and v:
+            return f"{n(v)}x Points"
+        return ''  # bundle / no value -> keep free text
+
+    @api.onchange('discount_type', 'discount_value')
+    def _onchange_autofill_sales_details(self):
+        """Auto-generate Sales Details from the discount type when it's still
+        blank, so submitters stop free-typing inconsistent pricing strings
+        (#94626). Only fills when empty — never clobbers a custom edit, and
+        Bundle/multi-buy wording is left to the user."""
+        if self.sales_details:
+            return
+        generated = self._format_sales_details()
+        if generated:
+            self.sales_details = generated
+
     def action_convert_to_deal(self):
         """Create a mint.ptl.deal from this approved submission."""
         self.ensure_one()
@@ -367,37 +397,46 @@ class DealSubmission(models.Model):
 
         self._check_plot_gate()
 
+        # Drop any product picks whose brand no longer matches the
+        # submission's brand_id (e.g. user changed brand after picking).
+        # Silent drop is fine — the deal-form's explicit picker is also
+        # brand-scoped, so a stale pick would be invisible anyway.
+        explicit_products = self.product_ids.filtered(
+            lambda p: p.brand_id == self.brand_id
+        ) if self.brand_id else self.product_ids.browse([])
+
         deal = self.env['mint.ptl.deal'].create({
             'name': self.name,
             'brand_id': self.brand_id.id if self.brand_id else False,
             'product_category': self.product_category,
-            'product_ids': [(6, 0, self.product_ids.ids)] if self.product_ids else False,
-            'weight_value': self.weight_value or 0.0,
-            'weight_unit': self.weight_unit or False,
             'discount_type': self.discount_type,
             'discount_value': self.discount_value,
             'original_price': self.original_price,
             'sales_details': self.sales_details,
-            'inclusions': self.inclusions,
             'details_exclusions': self.details_exclusions,
             'store_ids': [(6, 0, self.store_ids.ids)] if self.store_ids else False,
             'market_id': self.market_id.id if self.market_id else False,
-            'is_holiday': self.is_holiday,
-            'event_name': self.event_name,
             'state': 'approved',
             'submitted_by': self.create_uid.id,
             'submitted_at': self.create_date,
             'vendor_funding_amount': self.vendor_funding_amount,
             'vendor_funding_percent': self.vendor_funding_percent,
             'campaign_id': self.campaign_id.id if self.campaign_id else False,
+            'explicit_product_ids': [(6, 0, explicit_products.ids)] if explicit_products else False,
+            'excluded_brand_ids': [(6, 0, self.excluded_brand_ids.ids)] if self.excluded_brand_ids else False,
+            'excluded_skus': self.excluded_skus or False,
+            # Holiday/event info forwarded to the PTL deal (grafted, reconcile 2026-06).
+            'is_holiday': self.is_holiday,
+            'event_name': self.event_name,
         })
         self.write({
             'state': 'converted',
             'deal_id': deal.id,
         })
 
-        # Replay the structured plot windows onto the new deal's day_ids
-        # (mirrors prod). No-op when window_ids is empty.
+        # Replay any structured plot windows onto the new deal's day_ids.
+        # Falls back to no-op when window_ids is empty (legacy submissions
+        # that only set preferred_start/end use the old free-text path).
         plotted_count = 0
         if self.window_ids and self.market_id:
             dates = self.window_ids.all_dates()
@@ -411,10 +450,7 @@ class DealSubmission(models.Model):
                 f" — plotted {plotted_count} day(s) across "
                 f"{len(self.window_ids)} window(s)."
             )
-        self.message_post(
-            body=body,
-            message_type='comment',
-        )
+        self.message_post(body=body, message_type='comment')
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'mint.ptl.deal',

@@ -23,6 +23,14 @@ import threading
 import urllib.request
 
 from odoo import api, fields, models
+from odoo.addons.mint_api_v2.models.discount_canonical import (
+    THRESHOLD_TYPE_ID_BY_ODOO,
+    calc_method_id_for,
+    discount_value_for,
+    parse_raw_restriction,
+)
+
+from .deal_mixins import coerce_dutchie_ids
 
 _logger = logging.getLogger(__name__)
 
@@ -119,35 +127,18 @@ class PtlDayDutchiePush(models.Model):
 
     # ─── Payload translator (Odoo discount → Dutchie discount JSON) ───────
 
-    # Observed (mint.discount.discount_type → Dutchie CalculationMethodId)
-    # from prod Dutchie-sourced rows on this instance (2026-05-19 audit):
-    #   percent          → 1   (10 prod rows)
-    #   fixed            → 2   (313 rows) — "X% off" stored as 'fixed' in our schema
-    #   price_to_amount  → 3   (149 rows) — single set price
-    #   price_per_unit   → 6   ("N for $X" bundle pricing)
-    #   dollar_off_total → 5   (1 row)
-    #   bundle           → 15  (1 row — loyalty-style?)
-    # The Dutchie/v1 doc map in inv-svc (services/discountSync.js) says
-    # {2: Percent, 3: PriceToAmount, 6: PriceToAmount, 15: Loyalty}.
-    # For PTL deals (no calculation_method_id stored yet) we use this fallback:
-    CALC_METHOD_ID_FALLBACK = {
-        'percent': 1,
-        'fixed': 2,
-        'price_to_amount': 3,
-        'bogo': 1,          # treat as 100% off the second item — DiscountValue=100, ThresholdMin=2
-        'points_multiplier': 15,
-        'clearance': 1,
-    }
-
     # ItemGroupTypeId fallback. Per fixture 6 = "Any product matching restrictions
     # within an item-count threshold" (bundle deal). 5 = generic single-item
     # discount. Stored value used if present.
     ITEM_GROUP_TYPE_ID_FALLBACK = 5
 
     def _resolve_calc_method_id(self, discount):
-        if discount.calculation_method_id:
-            return int(discount.calculation_method_id)
-        return self.CALC_METHOD_ID_FALLBACK.get(discount.discount_type, 1)
+        # Authoritative: stored calculation_method_id, else map the odoo
+        # discount_type via the canonical registry. Default 2 (PERCENT_OFF) —
+        # the same safe default the Redis serializer uses; bogo/clearance (not
+        # in the registry) fall here, matching the old "treat as percent" intent
+        # now that percent is id 2 (it was the inverted id 1 before 2026-06-05).
+        return calc_method_id_for(discount) or 2
 
     def _resolve_item_group_type_id(self, discount):
         if getattr(discount, 'item_group_type_id', 0):
@@ -196,7 +187,7 @@ class PtlDayDutchiePush(models.Model):
         threshold_max = float(discount.threshold_max or 0) if discount.threshold_max else None
         if not threshold_min and discount.discount_type in ('bogo', 'price_to_amount'):
             threshold_min = 2.0
-        threshold_type_id = {'none': 0, 'items': 1, 'order_total': 2, 'subtotal': 3}.get(
+        threshold_type_id = THRESHOLD_TYPE_ID_BY_ODOO.get(
             discount.threshold_type, 0
         ) or (1 if threshold_min else 0)
         has_threshold = bool(threshold_min)
@@ -231,7 +222,10 @@ class PtlDayDutchiePush(models.Model):
             ),
             'Constraints': [],
             'DiscountDescription': (discount.description or name)[:500],
-            'ExternalId': f'odoo_{discount.id}',
+            # Standing rule (feedback-dutchie-record-prefix-lgm): records we
+            # create in Dutchie are prefixed 'lgm', never 'odoo'. This is also
+            # the canonical Dutchie<->Odoo join key: lgm_<mint.discount.id>.
+            'ExternalId': f'lgm_{discount.id}',
             'FirstTimeCustomerOnly': 1 if discount.first_time_customer_only else 0,
             'IgnoreNetTax': False,
             'IsAvailableOnline': bool(discount.is_available_online),
@@ -334,22 +328,22 @@ class PtlDayDutchiePush(models.Model):
     # ─── Restriction resolvers (Reward.Restrictions.*) ─────────────────────
 
     @staticmethod
-    def _coerce_dutchie_ids(records, field):
-        """Coerce Char Dutchie cross-reference IDs on a recordset to ints.
-        Lifted from ptl_day.py:_discount_to_webhook_payload. Records with
-        empty / non-numeric Dutchie IDs are silently dropped — the downstream
-        resolver indexes by Dutchie ID only and would miss them anyway.
+    def _restriction_from_raw(raw):
+        """Fallback to the *_restriction_ids_raw Char when the m2m FK is empty.
+
+        source=dutchie rows store their targeting as raw Dutchie IDs in the
+        Char field and leave the m2m FKs empty (only PTL rows populate the
+        FKs). Without this the push dropped ALL brand/category/product scoping
+        for Dutchie-sourced discounts. Mirrors the Redis serializer's
+        _from_m2m_or_raw fallback. Maps canonical {ids,isExclusion} → Dutchie's
+        {RestrictionIds,IsExclusion}; non-numeric ids are dropped (Dutchie needs ints).
         """
-        out = []
-        for r in records:
-            val = getattr(r, field, None)
-            if not val:
-                continue
-            try:
-                out.append(int(str(val).strip()))
-            except (TypeError, ValueError):
-                continue
-        return out
+        parsed = parse_raw_restriction(raw)
+        if parsed and parsed['ids']:
+            ids = [int(i) for i in parsed['ids'] if str(i).lstrip('-').isdigit()]
+            if ids:
+                return {'IsExclusion': parsed['isExclusion'], 'RestrictionIds': ids}
+        return {'IsExclusion': False, 'RestrictionIds': []}
 
     def _resolve_brand_restriction(self, discount):
         """{IsExclusion, RestrictionIds} for Reward.Restrictions.Brand.
@@ -360,14 +354,14 @@ class PtlDayDutchiePush(models.Model):
         Empty default returned when neither is set.
         """
         if discount.brand_ids:
-            ids = self._coerce_dutchie_ids(discount.brand_ids, 'dutchie_brand_id')
+            ids = coerce_dutchie_ids(discount.brand_ids, 'dutchie_brand_id')
             if ids:
                 return {'IsExclusion': False, 'RestrictionIds': ids}
         if discount.exclude_brand_ids:
-            ids = self._coerce_dutchie_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
+            ids = coerce_dutchie_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
             if ids:
                 return {'IsExclusion': True, 'RestrictionIds': ids}
-        return {'IsExclusion': False, 'RestrictionIds': []}
+        return self._restriction_from_raw(discount.brand_restriction_ids_raw)
 
     def _resolve_category_restriction(self, discount):
         """{IsExclusion, RestrictionIds} for Reward.Restrictions.Category.
@@ -376,14 +370,14 @@ class PtlDayDutchiePush(models.Model):
         already resolved by _deal_to_discount_vals' master-cat expansion.
         """
         if discount.category_ids:
-            ids = self._coerce_dutchie_ids(discount.category_ids, 'dutchie_category_id')
+            ids = coerce_dutchie_ids(discount.category_ids, 'dutchie_category_id')
             if ids:
                 return {'IsExclusion': False, 'RestrictionIds': ids}
         if discount.exclude_category_ids:
-            ids = self._coerce_dutchie_ids(discount.exclude_category_ids, 'dutchie_category_id')
+            ids = coerce_dutchie_ids(discount.exclude_category_ids, 'dutchie_category_id')
             if ids:
                 return {'IsExclusion': True, 'RestrictionIds': ids}
-        return {'IsExclusion': False, 'RestrictionIds': []}
+        return self._restriction_from_raw(discount.category_restriction_ids_raw)
 
     def _resolve_product_restriction(self, discount):
         """{IsExclusion, RestrictionIds} for Reward.Restrictions.Product.
@@ -398,7 +392,7 @@ class PtlDayDutchiePush(models.Model):
         upstream via the brand+category scope shouldn't include them anyway).
         """
         if discount.product_ids:
-            ids = self._coerce_dutchie_ids(discount.product_ids, 'dutchie_product_id')
+            ids = coerce_dutchie_ids(discount.product_ids, 'dutchie_product_id')
             if ids:
                 return {'IsExclusion': False, 'RestrictionIds': ids}
         # Excluded SKUs path
@@ -419,10 +413,10 @@ class PtlDayDutchiePush(models.Model):
                 ])
                 # Case-insensitive filter (default_code 'in' is case-sensitive in pg)
                 tmpls = tmpls.filtered(lambda t: (t.default_code or '').strip().lower() in sku_set)
-                ids = self._coerce_dutchie_ids(tmpls, 'dutchie_product_id')
+                ids = coerce_dutchie_ids(tmpls, 'dutchie_product_id')
                 if ids:
                     return {'IsExclusion': True, 'RestrictionIds': ids}
-        return {'IsExclusion': False, 'RestrictionIds': []}
+        return self._restriction_from_raw(discount.product_restriction_ids_raw)
 
     # Conversion factors to grams (Dutchie Reward.Restrictions.Weight.RestrictionIds
     # expects gram floats, per __tests__/fixtures/discount-381839.json + test at
@@ -456,22 +450,21 @@ class PtlDayDutchiePush(models.Model):
         return {'IsExclusion': False, 'RestrictionIds': [round(grams, 4)]}
 
     def _resolve_dutchie_amount(self, discount):
-        """Compute the integer/float Amount Dutchie expects for this discount.
+        """Compute the Amount Dutchie expects for this discount's Reward.
 
-        mint.discount.discount_amount is 0–1 normalized for percent types
-        (set by _deal_to_discount_vals: amount = deal.discount_value / 100
-        when discount_value > 1). Dutchie wants an integer percent (50 for
-        50% off), not 0.5, so multiply back when the value is in the 0–1 range.
-
-        For non-percent types (fixed, price_to_amount), the raw value is
-        passed through unchanged. For BOGO/bundle/clearance/points_multiplier
-        the Amount field is informational — Dutchie reads other fields.
+        Reads the value off whichever mint.discount field actually holds it
+        (discount_value_for): discount_amount for percent/price types, but
+        discount_value for FLAT_AMOUNT_OFF (1) / DOLLAR_OFF_TOTAL (5) /
+        LOYALTY (15), whose discount_amount is 0. Keys the percent conversion
+        off the canonical CalculationMethodId — NOT the (historically mislabeled)
+        discount_type — so a real percent deal converts 0.35 → 35 and a $-off
+        deal passes its dollar value through unchanged.
         """
-        amt = float(discount.discount_amount or 0.0)
-        if discount.discount_type == 'percent':
-            # 0.5 → 50 ; 50 → 50 (defensive, in case someone stored raw pct)
-            return amt * 100.0 if amt <= 1.0 else amt
-        return amt
+        val = float(discount_value_for(discount) or 0.0)
+        if calc_method_id_for(discount) == 2:  # PERCENT_OFF
+            # 0.35 → 35 ; 35 → 35 (defensive if someone stored raw percent)
+            return val * 100.0 if val <= 1.0 else val
+        return val
 
     def _resolve_pos_loc_id(self, store):
         """Integer POS LocId for this store.

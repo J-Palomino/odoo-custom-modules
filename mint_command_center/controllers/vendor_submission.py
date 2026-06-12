@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime
 
@@ -201,7 +202,12 @@ class VendorSubmissionController(http.Controller):
         )
         product_ids = _parse_id_list(product_ids_raw)
         if product_ids:
-            valid = request.env['product.template'].sudo().browse(product_ids).exists().ids
+            # Security (#93642): a public form must not let a vendor restrict a
+            # deal to another brand's SKUs — scope to the chosen brand.
+            domain = [('id', 'in', product_ids)]
+            if vals.get('brand_id'):
+                domain.append(('brand_id', '=', vals['brand_id']))
+            valid = request.env['product.template'].sudo().search(domain).ids
             if valid:
                 vals['product_ids'] = [(6, 0, valid)]
 
@@ -289,6 +295,61 @@ class VendorSubmissionController(http.Controller):
             ctx['error'] = 'An error occurred while submitting your deal. Please try again.'
 
         return request.render('mint_command_center.vendor_deal_form', ctx)
+
+    @http.route(
+        '/promos/brand-products',
+        type='http',
+        auth='public',
+        website=True,
+        methods=['GET'],
+        sitemap=False,
+    )
+    def vendor_brand_products(self, brand_id=None, q=None, **kw):
+        """Public JSON list of a brand's products, for the deal-form picker.
+
+        Returns only id / name / code (no pricing or internal data). Used by the
+        inline script on /promos to populate the optional "Specific Products"
+        multi-select once a vendor selects their brand (#93642 phase 5).
+
+        #94167: optional `q` filters by name OR SKU within the brand so brands
+        with >500 products are reachable via search instead of silent
+        truncation. The body stays a JSON array (back-compat with the existing
+        picker JS); the brand-wide total is returned in the X-Total-Count
+        header so the UI can show a "showing N of M" hint.
+        """
+        products = []
+        total = 0
+        try:
+            bid = int(brand_id)
+        except (ValueError, TypeError):
+            bid = 0
+        if bid:
+            Product = request.env['product.template'].sudo()
+            domain = [('brand_id', '=', bid)]
+            term = (q or '').strip()
+            if term:
+                domain += ['|', ('name', 'ilike', term), ('default_code', 'ilike', term)]
+            total = Product.search_count(domain)
+            # Bounded payload: a search returns a small page; the no-search
+            # initial load keeps the legacy 500 so the picker isn't empty.
+            limit = 50 if term else 500
+            recs = Product.search_read(
+                domain,
+                ['id', 'name', 'default_code'],
+                order='name',
+                limit=limit,
+            )
+            products = [
+                {'id': r['id'], 'name': r['name'], 'code': r['default_code'] or ''}
+                for r in recs
+            ]
+        return request.make_response(
+            json.dumps(products),
+            headers=[
+                ('Content-Type', 'application/json'),
+                ('X-Total-Count', str(total)),
+            ],
+        )
 
     def _form_context(self, **extra):
         markets = request.env['mint.region'].sudo().search([], order='name')

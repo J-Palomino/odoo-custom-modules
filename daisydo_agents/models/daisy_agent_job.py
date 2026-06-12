@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 
@@ -100,11 +101,26 @@ class DaisyAgentJob(models.Model):
                     self.env.cr.commit()
                     continue
 
+                # Build image attachments (e.g. MeshCentral screenshots the
+                # agency captured) so they render inline in Discuss/chatter.
+                attachments = []
+                for idx, img in enumerate(ai_result.get("images") or []):
+                    ext = (img.get("mime") or "image/png").split("/")[-1].split("+")[0]
+                    if ext == "jpeg":
+                        ext = "jpg"
+                    try:
+                        attachments.append(
+                            (f"screenshot-{idx + 1}.{ext}", base64.b64decode(img["b64"]))
+                        )
+                    except Exception:
+                        _logger.warning("Job %s: could not decode agent image", job.id)
+
                 # Post AI response as agent
                 ai_msg = target.with_user(agent.user_id).message_post(
                     body=ai_result["response"],
                     message_type="comment",
                     subtype_xmlid="mail.mt_comment",
+                    attachments=attachments or None,
                 )
                 ai_msg.sudo().write({
                     "daisy_ai_generated": True,

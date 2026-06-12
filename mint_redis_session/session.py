@@ -71,7 +71,20 @@ class RedisSessionStore(SessionStore):
         except (json.JSONDecodeError, TypeError):
             _logger.warning("Corrupt session data for %s…", sid[:8])
             return self.new()
-        return self.session_class(data, sid, False)
+        session = self.session_class(data, sid, False)
+        # Sliding expiration: refresh the TTL on every read so an actively-used
+        # session never hard-expires mid-use. Without this the TTL is only set
+        # on save()/rotate(), so a logged-in user whose session data doesn't
+        # change counts down from login and gets logged out ~SESSION_LIFETIME
+        # later regardless of activity. Don't refresh sessions mid-rotation
+        # (a ``next_sid`` pointer is short-lived by design).
+        if 'next_sid' not in data:
+            try:
+                ttl = self.expiration if session.uid else ANON_EXPIRATION
+                self.redis.expire(self._key(sid), ttl)
+            except Exception:
+                pass
+        return session
 
     def save(self, session):
         """Persist session to Redis with appropriate TTL."""
@@ -110,6 +123,11 @@ class RedisSessionStore(SessionStore):
             # Check if a concurrent request already rotated
             recent_session = self.get(session.sid)
             if 'next_sid' in recent_session:
+                # Match stock FilesystemSessionStore exactly: adopt the sid the
+                # concurrent request already persisted and let _save_session set
+                # the new cookie. The next request reloads that record (which
+                # already carries the correct token), so we deliberately do NOT
+                # recompute the token here.
                 session.sid = recent_session['next_sid']
                 return
 

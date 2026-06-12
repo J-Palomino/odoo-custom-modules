@@ -6,8 +6,8 @@
 Mint Agent Provisioner
 ======================
 
-Makes Daisy agents *dynamic*: when a ``daisy.agent`` record is created, this
-module automatically
+Makes Daisy agents *dynamic*: when a ``daisy.agent`` record is created (and
+again, as a safety net, on hire) this module automatically
 
 1. creates a dedicated ``res.users`` for the agent (optionally mirroring the
    groups + companies of its ``manager_id`` so the agent "inherits their
@@ -16,12 +16,13 @@ module automatically
    the agent's ``mcp_odoo_api_key`` so the Daisy+/FastAPI-MCP stack can call
    Odoo *as that agent* immediately.
 
-It reuses ``daisydo_agents``' own ``_mint_odoo_api_key()`` helper, so the key
-shape matches the manual hire / create-agent-for-user wizard paths exactly.
+Self-contained: the key is minted with a direct SQL insert (Odoo only persists
+a pbkdf2 hash of API keys), so this works on any ``daisydo_agents`` version,
+including prod builds that predate the in-module mint helper.
 
-Idempotent: if the agent already has an MCP key (e.g. created via the wizard),
-provisioning is skipped. A failure never blocks agent creation — it is logged
-and noted in the chatter instead.
+Idempotent: if the agent already has an MCP key (e.g. created via the
+create-agent-for-user wizard) provisioning is skipped. A failure never blocks
+agent creation or hire — it is logged and noted in the chatter instead.
 
 System parameters
 -----------------
@@ -30,7 +31,7 @@ System parameters
   agent has a ``manager_id``, copy that user's groups/companies to the agent
   user.
 """,
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.1.0",
     "category": "Productivity/Daisy",
     "author": "Mint Cannabis",
     "website": "https://letsgomint.us",

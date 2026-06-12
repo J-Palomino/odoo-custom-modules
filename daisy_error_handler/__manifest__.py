@@ -1,8 +1,8 @@
 {
     "name": "Daisy Error Handler",
-    "version": "19.0.2.0.0",
+    "version": "19.0.3.0.0",
     "category": "Technical",
-    "summary": "Route all errors through Daisy+ AI for user-friendly responses",
+    "summary": "Non-blocking Daisy+ AI analysis (toast) for unexpected errors",
     "depends": ["web"],
     "assets": {
         "web.assets_backend": [
