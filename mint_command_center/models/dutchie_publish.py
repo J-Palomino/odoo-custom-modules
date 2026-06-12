@@ -1,7 +1,7 @@
 """Dutchie discount publishing for vendor deal submissions.
 
 Trigger: the existing final-approval transition — ``action_convert_to_deal``
-on ``mint.deal.submission`` (state -> converted, which already sits behind
+on ``mint.deal.submission`` (state -> scheduled, which already sits behind
 submission approval AND the national-promo plot gate). After the PTL deal is
 built, the submission's structured targeting is transformed into a Dutchie
 Backoffice discount payload and handed to the inventory service:

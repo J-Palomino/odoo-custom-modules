@@ -1,7 +1,10 @@
+import logging
 from datetime import date as _date
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
 
 
 class DealSubmission(models.Model):
@@ -535,9 +538,18 @@ class DealSubmission(models.Model):
             ('run_end_date', '!=', False),
             ('run_end_date', '<', today),
         ])
+        if not due:
+            return
+        # Advance state first so the closeout still happens even if chatter
+        # crashes — message_post can blow up on a rogue automation
+        # (TypeError: unhashable list), same guard dutchie_publish uses.
+        due.write({'state': 'final_review'})
         for sub in due:
-            sub.state = 'final_review'
-            sub.message_post(
-                body="Run window ended — moved to Final Review for closeout.",
-                message_type='comment',
-            )
+            try:
+                sub.message_post(
+                    body="Run window ended — moved to Final Review for closeout.",
+                    message_type='comment',
+                )
+            except Exception:
+                _logger.exception(
+                    "Lifecycle chatter post failed for submission %s", sub.id)
