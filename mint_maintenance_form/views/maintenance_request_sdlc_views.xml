@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+      SDLC pipeline tabs on the maintenance.request form, scoped to the
+      Engineering maintenance team (maintenance_team_id = 4 on this instance)
+      via per-page invisible. Mirrors the project.task SDLC tabs. Written by the
+      SDLC skills through task_append_section(..., model='maintenance.request').
+    -->
+    <record id="maintenance_request_form_sdlc_tabs" model="ir.ui.view">
+        <field name="name">maintenance.request.form.sdlc.tabs</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_request_view_form"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Functional Analysis" name="sdlc_functional_analysis"
+                      invisible="maintenance_team_id != 4">
+                    <field name="x_sdlc_functional_analysis" widget="html" nolabel="1"/>
+                </page>
+                <page string="Research" name="sdlc_research"
+                      invisible="maintenance_team_id != 4">
+                    <field name="x_sdlc_research" widget="html" nolabel="1"/>
+                </page>
+                <page string="Implementation Plan" name="sdlc_implementation_plan"
+                      invisible="maintenance_team_id != 4">
+                    <field name="x_sdlc_implementation_plan" widget="html" nolabel="1"/>
+                </page>
+                <page string="Changelog" name="sdlc_changelog"
+                      invisible="maintenance_team_id != 4">
+                    <field name="x_sdlc_changelog" widget="html" nolabel="1"/>
+                </page>
+                <page string="Test Plan" name="sdlc_test_plan"
+                      invisible="maintenance_team_id != 4">
+                    <field name="x_sdlc_test_plan" widget="html" nolabel="1"/>
+                </page>
+                <page string="QA Report" name="sdlc_qa_report"
+                      invisible="maintenance_team_id != 4">
+                    <field name="x_sdlc_qa_report" widget="html" nolabel="1"/>
+                </page>
+                <page string="PR &amp; Deploy" name="sdlc_pr_deploy"
+                      invisible="maintenance_team_id != 4">
+                    <field name="x_sdlc_pr_deploy" widget="html" nolabel="1"/>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>
