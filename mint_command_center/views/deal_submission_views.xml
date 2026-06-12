@@ -55,15 +55,6 @@
                                placeholder="open-ended"/>
                     </div>
                     <group>
-                        <group string="Vendor Information">
-                            <field name="vendor_name"/>
-                            <field name="brand_id" options="{'no_create': True}"/>
-                            <field name="vendor_email" widget="email"/>
-                            <field name="vendor_contact"/>
-                            <field name="vendor_phone" widget="phone"/>
-                            <field name="crm_lead_id" options="{'no_create': True}"/>
-                            <field name="campaign_id" options="{'no_create': True}"/>
-                        </group>
                         <group string="Deal Details">
                             <field name="discount_type"/>
                             <field name="discount_value"/>
@@ -90,6 +81,17 @@
                         </group>
                     </group>
                     <notebook>
+                        <page string="Vendor Details" name="vendor_details">
+                            <group>
+                                <field name="vendor_name"/>
+                                <field name="brand_id" options="{'no_create': True}"/>
+                                <field name="vendor_email" widget="email"/>
+                                <field name="vendor_contact"/>
+                                <field name="vendor_phone" widget="phone"/>
+                                <field name="crm_lead_id" options="{'no_create': True}"/>
+                                <field name="campaign_id" options="{'no_create': True}"/>
+                            </group>
+                        </page>
                         <page string="Schedule" name="schedule">
                             <group>
                                 <field name="windows_summary" readonly="1"/>
