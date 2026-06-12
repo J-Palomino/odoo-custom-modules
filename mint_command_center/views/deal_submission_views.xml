@@ -23,11 +23,6 @@
                             type="object" class="btn-success"
                             invisible="state != 'approved'"
                             confirm="This will create a PTL Deal from this submission and schedule it to go live. Continue?"/>
-                    <button name="action_force_approve_and_plot"
-                            string="Force Approve &amp; Plot"
-                            type="object" class="btn-warning"
-                            invisible="state != 'approved'"
-                            groups="mint_command_center.group_ptl_manager"/>
                     <button name="action_to_final_review" string="Move to Final Review"
                             type="object" class="btn-primary"
                             invisible="state != 'scheduled'"/>

@@ -189,7 +189,13 @@ class NationalPromo(models.Model):
 
     @api.model
     def get_or_create(self, brand_id, market_id, year, **defaults):
-        """Idempotent find-or-create for brand × market × year campaigns."""
+        """Idempotent find-or-create for brand × market × year campaigns.
+
+        Campaigns are background bookkeeping — auto-created, never
+        staff-entered, never a blocker — so they are born 'approved'
+        (the 'planning' default would trip nothing today, but every
+        consumer would have to remember to flip it).
+        """
         if not brand_id or not market_id or not year:
             return self.browse()
         existing = self.search([
@@ -199,6 +205,7 @@ class NationalPromo(models.Model):
         ], limit=1)
         if existing:
             return existing
-        vals = {'brand_id': brand_id, 'market_id': market_id, 'year': year}
+        vals = {'brand_id': brand_id, 'market_id': market_id, 'year': year,
+                'state': 'approved'}
         vals.update(defaults)
         return self.create(vals)
