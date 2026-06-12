@@ -40,19 +40,53 @@ class DaisyAgentJob(models.Model):
 
     @api.model
     def _cron_process_jobs(self):
-        """Called by ir.cron — process pending AI response jobs."""
-        jobs = self.sudo().search(
-            [("state", "=", "pending")],
-            order="create_date ASC",
-            limit=10,
-        )
-        for job in jobs:
+        """Called by ir.cron — process pending AI response jobs.
+
+        Each pending row is claimed with ``SELECT ... FOR UPDATE SKIP LOCKED``
+        so overlapping cron runs (every ``_enqueue_response`` fires
+        ``_trigger()``) never claim the same row — a claimed job is processed
+        by exactly one worker. Within a single run a job is touched at most
+        once (see ``seen`` below): a job that fails and is re-pended waits for
+        the next tick rather than retrying immediately and starving newer jobs.
+
+        Note: this guarantees single *claiming* of a row, not single
+        *enqueuing*. Dedup of duplicate enqueues is best-effort in
+        ``_enqueue_response`` — a truly simultaneous double-enqueue can still
+        create two rows (a partial unique index would be needed to prevent it).
+        """
+        # ids touched this run — don't re-pick a re-pended failure. Seeded with
+        # a sentinel 0 (no real job has id 0) so the array passed to ALL() is
+        # never empty, which would otherwise be an untyped-array SQL error.
+        seen = [0]
+        for _ in range(10):
+            # Atomically claim the oldest unlocked pending job not yet touched
+            # this run. SKIP LOCKED makes a parallel worker skip a row another
+            # worker is holding rather than block on it or double-process it.
+            self.env.cr.execute(
+                """
+                SELECT id FROM daisy_agent_job
+                WHERE state = 'pending' AND id <> ALL(%s)
+                ORDER BY create_date ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """,
+                (seen,),
+            )
+            row = self.env.cr.fetchone()
+            if not row:
+                break
+            seen.append(row[0])
+            job = self.sudo().browse(row[0])
+
             if job.attempts >= job.max_attempts:
                 job.write({"state": "error", "error_message": "Max attempts exceeded"})
                 self.env.cr.commit()
                 continue
 
             try:
+                # Flip to 'processing' while the row lock from the SELECT is
+                # still held, then commit to durably claim it and release the
+                # lock before the slow Daisy+ API call.
                 job.write({"state": "processing", "attempts": job.attempts + 1})
                 self.env.cr.commit()
 
