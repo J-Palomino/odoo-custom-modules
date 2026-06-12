@@ -193,6 +193,37 @@ class MintBrand(models.Model):
         index=True,
         help="Upstream Dutchie BrandId, used to resolve discount brand restrictions to Odoo brands at sync time.",
     )
+    dutchie_brand_ids = fields.Text(
+        string="Dutchie Brand IDs (per LSP)",
+        help="Per-LSP Dutchie BrandIds, one 'lsp:id' per line (e.g. '575:27901').\n"
+             "Dutchie BrandIds are tenant-scoped — a brand has a DIFFERENT id in\n"
+             "each LSP (575 AZ, 576 MI, 723 MO, 805 IL, 820 NV, 821 FL) — so a\n"
+             "single id cannot target a brand across states. dutchie_brand_id\n"
+             "stays the AZ/legacy value for back-compat; this is the source of\n"
+             "truth for cross-state discount publishing.",
+    )
+
+    def dutchie_brand_id_for_lsp(self, lsp_id):
+        """Return this brand's Dutchie BrandId for the given LSP, or False.
+
+        Reads the 'lsp:id' lines in dutchie_brand_ids; falls back to the legacy
+        dutchie_brand_id only for AZ (LSP 575, which is what it was populated
+        from). Use this when building a Dutchie discount payload so the
+        Brand restriction carries the id for the discount's target tenant.
+        """
+        self.ensure_one()
+        target = str(lsp_id).strip()
+        for line in (self.dutchie_brand_ids or '').splitlines():
+            line = line.strip()
+            if not line or ':' not in line:
+                continue
+            lsp, _, bid = line.partition(':')
+            if lsp.strip() == target and bid.strip():
+                return bid.strip()
+        if target == '575' and self.dutchie_brand_id:
+            return str(self.dutchie_brand_id).strip()
+        return False
+
     # Gate for discount-targeting dropdowns: only brands with actual cannabis
     # products appear in domain-filtered Many2many pickers. Stored because
     # domains can only filter on stored fields. Recomputed on module upgrade
