@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Survey Company Ownership',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.1.0',
     'category': 'Marketing/Surveys',
     'summary': 'Restrict editing of a survey to users of an owner company',
     'description': """MintDeals Survey Company Ownership
@@ -32,6 +32,11 @@
         'security/survey_company_security.xml',
         'views/survey_survey_views.xml',
     ],
+    'assets': {
+        'web.assets_frontend': [
+            'mint_survey_company/static/src/css/survey_contrast.css',
+        ],
+    },
     'installable': True,
     'application': False,
     'auto_install': False,
