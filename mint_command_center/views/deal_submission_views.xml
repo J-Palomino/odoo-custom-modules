@@ -125,7 +125,14 @@
                                 <field name="brand_ids" widget="many2many_tags"
                                        options="{'no_create': True}"
                                        placeholder="Add every brand this deal includes (multi-brand deals)"/>
-                                <field name="product_category"/>
+                                <field name="available_category_ids" invisible="1"/>
+                                <field name="product_category_id"
+                                       options="{'no_create': True, 'no_open': True}"
+                                       domain="[('id', 'in', available_category_ids)]"
+                                       invisible="not brand_id and not brand_ids"
+                                       placeholder="Categories the selected brand(s) have in stock"/>
+                                <field name="product_category"
+                                       placeholder="Free text — auto-fills from the In-Stock Category pick"/>
                             </group>
                             <group string="Specific Products (optional — overrides brand-wide matching)" col="1">
                                 <field name="product_ids"

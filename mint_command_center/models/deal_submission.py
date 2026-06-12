@@ -75,6 +75,22 @@ class DealSubmission(models.Model):
     # --- Deal details ---
     name = fields.Char(string='Deal Name', required=True, tracking=True)
     product_category = fields.Char(string='Product Category')
+    product_category_id = fields.Many2one(
+        'product.category',
+        string='In-Stock Category',
+        help='Dropdown of categories the selected brand(s) currently have in '
+             'stock. Picking one fills the plain-text Product Category with '
+             'the Dutchie category name; downstream (PTL conversion, stock '
+             'check) keeps reading the text field.',
+    )
+    available_category_ids = fields.Many2many(
+        'product.category',
+        compute='_compute_available_category_ids',
+        string='Available In-Stock Categories',
+        help='Distinct Dutchie categories with on-hand stock '
+             '(x_quantity_available > 0) across the selected brand(s). '
+             'Drives the In-Stock Category dropdown domain.',
+    )
     # discount_type / discount_value / original_price come from
     # mint.discount.core.mixin.
     sales_details = fields.Text(
@@ -408,6 +424,70 @@ class DealSubmission(models.Model):
         generated = self._format_sales_details()
         if generated:
             self.sales_details = generated
+
+    @api.depends('brand_id', 'brand_ids')
+    def _compute_available_category_ids(self):
+        """Distinct categories the selected brand(s) have in stock right now.
+
+        x_quantity_available on product.template is the Dutchie-synced
+        on-hand quantity (refreshed continuously by the inventory sync), so
+        a plain aggregate here is cheap and always current — no inventory-
+        service HTTP round-trip needed. sudo: submitters reviewing deals
+        don't necessarily hold product read rights, and this exposes only
+        category names.
+        """
+        Product = self.env['product.template'].sudo()
+        for sub in self:
+            brands = sub.brand_ids | sub.brand_id
+            if not brands:
+                sub.available_category_ids = False
+                continue
+            groups = Product._read_group(
+                [('brand_id', 'in', brands.ids),
+                 ('x_quantity_available', '>', 0),
+                 ('categ_id', '!=', False)],
+                groupby=['categ_id'],
+                aggregates=[],
+            )
+            sub.available_category_ids = [(6, 0, [g[0].id for g in groups])]
+
+    @api.onchange('product_category_id')
+    def _onchange_product_category_fill_text(self):
+        """Mirror the dropdown pick into the legacy free-text field that all
+        downstream consumers (PTL conversion, stock-check wizard, Dutchie
+        publish) read. Leaf name only ('Infused Prerolls'), not the
+        'Cannabis / ...' path — that's what Dutchie item categories match."""
+        if self.product_category_id:
+            self.product_category = self.product_category_id.name
+
+    @api.onchange('brand_id', 'brand_ids')
+    def _onchange_brands_reset_category(self):
+        """Clear a stale category pick when the brand set changes and the
+        new brand(s) no longer stock it. The free-text field is left alone —
+        it may carry an intentional manual value."""
+        current = self.product_category_id._origin.id
+        if current and current not in self.available_category_ids._origin.ids:
+            self.product_category_id = False
+
+    @api.model
+    def _mirror_category_text(self, vals):
+        """Non-form writes (RPC, imports, server actions) that set the
+        dropdown without the text get the same mirroring the onchange does
+        in the form view."""
+        if vals.get('product_category_id') and not vals.get('product_category'):
+            cat = self.env['product.category'].browse(vals['product_category_id'])
+            if cat.exists():
+                vals['product_category'] = cat.name
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            self._mirror_category_text(vals)
+        return super().create(vals_list)
+
+    def write(self, vals):
+        self._mirror_category_text(vals)
+        return super().write(vals)
 
     @api.onchange('market_id')
     def _onchange_market_fill_stores(self):
