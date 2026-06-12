@@ -313,16 +313,24 @@ class DealSubmissionDutchiePublish(models.Model):
             py = (idx - 1) % 7                # Sunday -> 6, Monday -> 0 ...
             day_flags[key] = py in dows
 
-        calc = CALC_BY_TYPE.get(self.discount_type)
+        # BOGO: Dutchie has no native BOGO type. The live-verified encoding
+        # (discounts 379870 "BOGO 50%" / 379191 "BOGO" at Tempe, read raw
+        # 2026-06-12) is PERCENT_OFF + NUMBER_OF_ITEMS threshold 2 +
+        # ApplyToOnlyOneItem=True: buy two, the discount hits ONE of them.
+        # discount_value carries the percent (50 = "BOGO 50% off");
+        # empty/0 means the second item is free (100%).
+        is_bogo = self.discount_type == 'bogo'
+        calc = 2 if is_bogo else CALC_BY_TYPE.get(self.discount_type)
         if not calc:
-            if self.discount_type == 'bogo':
-                # BOGO publishes as 100% off with item threshold 2 by Dutchie
-                # convention (percent-100); keep manual until verified.
-                raise UserError("BOGO auto-publish is not enabled yet — build it in Backoffice.")
             raise UserError(f"Unsupported discount type {self.discount_type!r} for Dutchie publish.")
         value = float(self.discount_value or 0)
         threshold_min = None
-        if calc == 2:
+        apply_to_one = False
+        if is_bogo:
+            value = (value / 100.0) if value else 1.0
+            threshold_min = 2
+            apply_to_one = True
+        elif calc == 2:
             # Model convention is WHOLE percents (50 = 50% — see
             # _format_sales_details). Divide unconditionally: a stored 1
             # means 1% (0.01), never 100%.
@@ -358,7 +366,8 @@ class DealSubmissionDutchiePublish(models.Model):
                 + ("; ".join(warnings) or "")
             )
 
-        label = (f"{value * 100:g}% Off" if calc == 2
+        label = (("BOGO" if value >= 1.0 else f"BOGO {value * 100:g}% Off") if is_bogo
+                 else f"{value * 100:g}% Off" if calc == 2
                  else f"{threshold_min} for ${value:g}" if calc == 6
                  else f"${value:g} Off" if calc == 1
                  else f"${value:g}")
@@ -384,8 +393,8 @@ class DealSubmissionDutchiePublish(models.Model):
             'OrderTypeRestrictions': [],
             'Reward': {
                 'DiscountRewardId': None,
-                'HasThreshold': calc in (5, 6),
-                'ApplyToOnlyOneItem': False,
+                'HasThreshold': bool(threshold_min) or calc in (5, 6),
+                'ApplyToOnlyOneItem': apply_to_one,
                 'CalculationMethodId': calc,
                 'DiscountValue': value,
                 'IncludeNonCannabis': False,
@@ -394,7 +403,7 @@ class DealSubmissionDutchiePublish(models.Model):
                 'Restrictions': restrictions,
                 'ThresholdMax': None,
                 'ThresholdMin': threshold_min,
-                'ThresholdTypeId': 1 if calc == 6 else 2 if calc == 5 else 0,
+                'ThresholdTypeId': 1 if threshold_min else 2 if calc == 5 else 0,
             },
             'SavedWithAdvancedOptions': False,
             'ValidDateFrom': self._dutchie_date(dates[0]),
