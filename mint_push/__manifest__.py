@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Push Notifications',
-    'version': '19.0.1.6.0',
+    'version': '19.0.1.6.1',
     'category': 'Website',
     'summary': 'Web Push notification support for MintDeals PWA',
     'description': """MintDeals Push Notifications
@@ -13,9 +13,14 @@
     'data': [
         'security/ir.model.access.csv',
         'data/push_site_data.xml',
-        'views/push_site_views.xml',
+        # Fresh-install load order (mirrors #74; unrelated to the main↔staging
+        # reconcile). Dependency chain across files:
+        #   wizard defines action_push_send_wizard
+        #   → push_subscription_views defines menu_push_root (+ uses that action)
+        #   → push_site_views uses menu_push_root
         'wizard/push_send_wizard_views.xml',
         'views/push_subscription_views.xml',
+        'views/push_site_views.xml',
     ],
     'external_dependencies': {'python': ['pywebpush', 'py_vapid']},
     'installable': True,
