@@ -36,12 +36,15 @@ class RecruitmentPortal(CustomerPortal):
     # ------------------------------------------------------------------
 
     def _is_recruitment_user(self):
-        """Check if the current user is an employee in the Human Resources department."""
-        employee = request.env["hr.employee"].sudo().search(
-            [("user_id", "=", request.env.uid), ("department_id.name", "=", "Human Resources")],
-            limit=1,
-        )
-        return bool(employee)
+        """Recruitment Officer group only.
+
+        Tightened 2026-05-26: prior gate (HR department membership) granted
+        portal access to anyone in the Human Resources department, including
+        Pablo and Mack who had unrelated HR-dept duties. Now requires the
+        explicit hr_recruitment.group_hr_recruitment_user group — Juan +
+        Marissa only.
+        """
+        return request.env.user.has_group("hr_recruitment.group_hr_recruitment_user")
 
     def _check_recruitment_access(self):
         if not self._is_recruitment_user():

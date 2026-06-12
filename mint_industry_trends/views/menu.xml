@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_industry_trends_root"
+              name="Industry Trends"
+              parent="mint_command_center.menu_command_center_root"
+              sequence="80"/>
+
+    <menuitem id="menu_industry_trends_terms"
+              name="Trend Terms"
+              parent="menu_industry_trends_root"
+              action="action_trend_term"
+              sequence="10"/>
+
+    <menuitem id="menu_industry_trends_observations"
+              name="Observations"
+              parent="menu_industry_trends_root"
+              action="action_trend_observation"
+              sequence="20"/>
+
+    <menuitem id="menu_industry_trends_sources"
+              name="Sources (Apify)"
+              parent="menu_industry_trends_root"
+              action="action_trend_source"
+              sequence="30"/>
+</odoo>

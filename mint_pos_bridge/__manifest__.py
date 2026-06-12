@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint POS Bridge',
-    'version': '19.0.5.0.0',
+    'version': '19.0.5.2.3',
     'category': 'Operations',
     'summary': 'Dutchie POS ↔ Odoo order bridge — unified dispensary operations',
     'description': """
@@ -26,6 +26,7 @@
         'mail',
         'bus',
         'hr',
+        'point_of_sale',
         'mint_push',
         'mint_dutchie_sync',
         'mint_command_center',
@@ -38,8 +39,8 @@
         'data/sequence.xml',
         'data/cron.xml',
         'views/pos_order_views.xml',
-        'views/web_order_config_views.xml',
         'views/pos_order_menus.xml',
+        'views/web_order_config_views.xml',
     ],
     'assets': {
         'web.assets_backend': [
@@ -49,5 +50,7 @@
     },
     'installable': True,
     'auto_install': False,
-    'application': True,
+    # Nested under the native Point of Sale app (no standalone "POS Bridge"
+    # app icon) — see views/pos_order_menus.xml. Not its own application.
+    'application': False,
 }

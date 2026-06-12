@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Portal home: add an Applications card -->
+    <template id="portal_my_home_applications"
+              name="My Applications"
+              inherit_id="portal.portal_my_home"
+              priority="40">
+        <xpath expr="//div[hasclass('o_portal_docs')]" position="inside">
+            <t t-call="portal.portal_docs_entry">
+                <t t-set="title">My Applications</t>
+                <t t-set="url" t-value="'/my/applications'"/>
+                <t t-set="text">View your job applications and chat with the recruiting team.</t>
+                <t t-set="placeholder_count" t-value="'application_count'"/>
+            </t>
+        </xpath>
+    </template>
+
+    <!-- Breadcrumb: My ... Applications -->
+    <template id="portal_breadcrumbs_applications"
+              name="Portal layout: applications breadcrumb"
+              inherit_id="portal.portal_breadcrumbs"
+              priority="50">
+        <xpath expr="//ol[hasclass('o_portal_submenu')]" position="inside">
+            <li t-if="page_name == 'candidate_applications'" class="breadcrumb-item active">
+                <span>Applications</span>
+            </li>
+            <li t-if="page_name == 'candidate_application_detail'" class="breadcrumb-item">
+                <a t-attf-href="/my/applications">Applications</a>
+            </li>
+            <li t-if="page_name == 'candidate_application_detail'" class="breadcrumb-item active">
+                <span t-esc="applicant.job_id.name or 'Application'"/>
+            </li>
+        </xpath>
+    </template>
+
+    <!-- List page -->
+    <template id="portal_my_applications" name="My Applications">
+        <t t-call="portal.portal_layout">
+            <t t-set="breadcrumbs_searchbar" t-value="True"/>
+            <t t-call="portal.portal_searchbar">
+                <t t-set="title">My Applications</t>
+            </t>
+
+            <t t-if="not applications">
+                <div class="alert alert-info mt-3">
+                    You have no applications yet.
+                    <a href="/jobs" class="alert-link">Browse open positions</a> to apply.
+                </div>
+            </t>
+
+            <t t-if="applications" t-call="portal.portal_table">
+                <thead>
+                    <tr class="active">
+                        <th>Submitted</th>
+                        <th>Position</th>
+                        <th>Stage</th>
+                        <th/>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr t-foreach="applications" t-as="app">
+                        <td>
+                            <span t-field="app.create_date" t-options='{"format": "MMM d, yyyy"}'/>
+                        </td>
+                        <td>
+                            <a t-attf-href="/my/applications/#{app.id}">
+                                <t t-esc="app.job_id.name or 'Open Application'"/>
+                            </a>
+                            <small t-if="app.job_id.address_id" class="d-block text-muted">
+                                <t t-esc="app.job_id.address_id.name"/>
+                            </small>
+                        </td>
+                        <td>
+                            <span class="badge text-bg-secondary" t-esc="app.stage_id.name or 'New'"/>
+                        </td>
+                        <td class="text-end">
+                            <a t-attf-href="/my/applications/#{app.id}" class="btn btn-sm btn-outline-primary">
+                                View
+                            </a>
+                        </td>
+                    </tr>
+                </tbody>
+            </t>
+        </t>
+    </template>
+
+    <!-- Detail page -->
+    <template id="portal_application_detail" name="Application Detail">
+        <t t-call="portal.portal_layout">
+            <div class="row mt16 o_portal_my_doc_table o_portal_my_home">
+                <div class="col-12">
+                    <h2 t-esc="applicant.job_id.name or 'Your Application'"/>
+                    <p t-if="applicant.job_id.address_id" class="text-muted">
+                        <t t-esc="applicant.job_id.address_id.name"/>
+                    </p>
+
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5>Status</h5>
+                            <p>
+                                Current stage:
+                                <strong t-esc="applicant.stage_id.name or 'New'"/>
+                            </p>
+                            <ul class="list-inline mb-0">
+                                <t t-foreach="stages" t-as="s">
+                                    <li class="list-inline-item">
+                                        <span t-attf-class="badge #{ 'text-bg-success' if applicant.stage_id and applicant.stage_id.sequence >= s.sequence else 'text-bg-light' }"
+                                              t-esc="s.name"/>
+                                    </li>
+                                </t>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5>Messages</h5>
+                            <div class="o_portal_chatter">
+                                <t t-call="portal.message_thread">
+                                    <t t-set="object" t-value="applicant"/>
+                                    <t t-set="token" t-value="applicant.access_token"/>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+
+</odoo>

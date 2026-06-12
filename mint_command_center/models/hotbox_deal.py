@@ -4,7 +4,7 @@ from odoo import api, fields, models
 class HotboxDeal(models.Model):
     _name = 'mint.hotbox.deal'
     _description = 'Hot Box Deal — Quick promotional deal'
-    _inherit = ['mail.thread']
+    _inherit = ['mail.thread', 'mint.discount.core.mixin']
     _order = 'date desc, sequence'
 
     name = fields.Char(string='Deal Name', required=True, tracking=True)
@@ -27,21 +27,10 @@ class HotboxDeal(models.Model):
     )
     product_name = fields.Char(string='Product Name')
     product_category = fields.Char(string='Product Category')
+    # discount_type / discount_value come from mint.discount.core.mixin.
+    # original_price keeps hotbox's own label; deal_price is hotbox-specific.
     original_price = fields.Float(string='Original Price')
     deal_price = fields.Float(string='Deal Price')
-    discount_type = fields.Selection(
-        selection=[
-            ('percent', 'Percentage Off'),
-            ('fixed', 'Fixed Amount Off'),
-            ('bogo', 'BOGO'),
-            ('bundle', 'Bundle Deal'),
-            ('price', 'Set Price'),
-            ('points_multiplier', 'Loyalty Points Multiplier'),
-            ('clearance', 'Clearance (Near Expiry)'),
-        ],
-        string='Discount Type',
-    )
-    discount_value = fields.Float(string='Discount Value')
     quantity_limit = fields.Integer(string='Quantity Limit')
     sequence = fields.Integer(string='Sequence', default=10)
     state = fields.Selection(

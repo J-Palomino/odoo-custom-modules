@@ -1,13 +1,20 @@
 import logging
+import secrets
 
-from odoo import api, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
 PARAM_AUTO = "mint_agent_provisioner.auto_provision"
 PARAM_MIRROR = "mint_agent_provisioner.mirror_manager_groups"
+PARAM_MCP = "daisy.mcp_server_url"
+DEFAULT_MCP = "https://fastapi-mcp-production.up.railway.app"
 _FALSEY = ("False", "false", "0", "no", "off", "")
+
+# Match daisydo_agents' own key naming so the two mint paths address the same
+# row (rotation/cleanup stay consistent across module versions).
+KEY_NAME_TMPL = "Daisy Agent: %s"
 
 
 def _truthy(icp, param, default="True"):
@@ -18,7 +25,7 @@ class DaisyAgent(models.Model):
     _inherit = "daisy.agent"
 
     # ------------------------------------------------------------------
-    # Auto-provision on create
+    # Hooks: provision on create AND ensure on hire
     # ------------------------------------------------------------------
     @api.model_create_multi
     def create(self, vals_list):
@@ -27,12 +34,8 @@ class DaisyAgent(models.Model):
         if not _truthy(icp, PARAM_AUTO):
             return agents
         for agent in agents:
-            # Provisioning must never block agent creation: a bad login,
-            # missing Daisy service, etc. should leave a usable draft agent
-            # plus a chatter note, not raise out of create().
-            #
-            # Each attempt runs in its own savepoint. _mint_odoo_api_key() uses
-            # raw cr.execute(), so a failure would otherwise abort the whole
+            # Each attempt runs in its own savepoint. _mint_mcp_key() uses raw
+            # cr.execute(), so a failure would otherwise abort the whole
             # transaction and make the recovery message_post() fail too. The
             # savepoint rolls the failed attempt back (no orphan user/key) while
             # keeping the cursor usable for the note and the next agent.
@@ -53,27 +56,47 @@ class DaisyAgent(models.Model):
                     )
         return agents
 
-    def _auto_provision_identity(self):
-        """Give a freshly-created agent its own Odoo user + minted API key so it
-        can call Odoo/MCP immediately, with no manual hire step.
+    def action_hire(self):
+        """Run the standard hire, then guarantee the agent has an MCP key.
 
-        Reuses ``daisydo_agents._mint_odoo_api_key()`` for the key so the shape
-        matches the hire / wizard paths. Idempotent: if the agent already has an
-        MCP key (e.g. created through the create-agent-for-user wizard) nothing
-        happens.
+        This is a safety net for agents created before this module existed, or
+        with auto-provision disabled. It never changes hire's own outcome: if
+        super() raises, that behaviour is unchanged; if a key already exists,
+        provisioning is skipped.
         """
+        res = super().action_hire()
+        icp = self.env["ir.config_parameter"].sudo()
+        if not _truthy(icp, PARAM_AUTO):
+            return res
+        for agent in self:
+            if agent.mcp_odoo_api_key:
+                continue
+            try:
+                with self.env.cr.savepoint():
+                    agent._auto_provision_identity()
+            except Exception as exc:  # noqa: BLE001
+                _logger.warning(
+                    "mint_agent_provisioner: hire-time provision failed for "
+                    "agent %s (id=%s): %s", agent.name, agent.id, exc,
+                )
+        return res
+
+    # ------------------------------------------------------------------
+    # Provisioning
+    # ------------------------------------------------------------------
+    def _auto_provision_identity(self):
+        """Give the agent its own Odoo user + minted MCP API key. Idempotent:
+        if an MCP key already exists (wizard / prior run) nothing happens."""
         self.ensure_one()
         if self.mcp_odoo_api_key:
-            return  # already provisioned elsewhere
+            return
         if not self.code:
             raise UserError("Agent has no code; cannot derive a login/email.")
 
         if not self.user_id:
             self.user_id = self._provision_agent_user()
 
-        # Direct-SQL insert in _mint_odoo_api_key() leaves expiration_date NULL,
-        # so the key never expires and is not subject to the per-user 90-day cap.
-        raw_key = self._mint_odoo_api_key()
+        raw_key = self._mint_mcp_key()
         self._post_provision_note(raw_key=raw_key)
 
     def _provision_agent_user(self):
@@ -108,6 +131,54 @@ class DaisyAgent(models.Model):
 
         return self.env["res.users"].sudo().create(vals)
 
+    def _mint_mcp_key(self):
+        """Mint a never-expiring, unrestricted (scope ``rpc``) Odoo API key on
+        the agent's user and store the raw value on the agent so the Daisy+/MCP
+        stack can call Odoo as this agent.
+
+        Self-contained on purpose: Odoo only persists a pbkdf2 hash of an API
+        key, so the row must be inserted directly. Doing it here (rather than
+        delegating to daisydo_agents) keeps this module working on any
+        daisydo_agents version, including prod builds that predate the mint
+        helper. Any prior key minted for this agent (matched by name) is rotated
+        out first.
+        """
+        self.ensure_one()
+        if not self.user_id:
+            raise UserError("Agent has no linked Odoo user to mint a key for.")
+
+        from passlib.context import CryptContext
+
+        key_name = KEY_NAME_TMPL % self.name
+        raw_key = secrets.token_hex(30)
+        key_ctx = CryptContext(["pbkdf2_sha512"], pbkdf2_sha512__rounds=6000)
+        key_hash = key_ctx.hash(raw_key)
+
+        self.env.cr.execute(
+            "DELETE FROM res_users_apikeys WHERE user_id = %s AND name = %s",
+            [self.user_id.id, key_name],
+        )
+        self.env.cr.execute(
+            """
+            INSERT INTO res_users_apikeys (name, user_id, scope, index, key, create_date)
+            VALUES (%s, %s, 'rpc', %s, %s, NOW() AT TIME ZONE 'utc')
+            """,
+            [key_name, self.user_id.id, raw_key[:8], key_hash],
+        )
+
+        icp = self.env["ir.config_parameter"].sudo()
+        self.write({
+            "mcp_odoo_url": self.mcp_odoo_url or icp.get_param("web.base.url", ""),
+            "mcp_odoo_username": self.user_id.login,
+            "mcp_odoo_api_key": raw_key,
+            "mcp_server_url": self.mcp_server_url or icp.get_param(PARAM_MCP, DEFAULT_MCP),
+        })
+        _logger.info(
+            "mint_agent_provisioner: minted MCP key for agent %s (user %s)",
+            self.name, self.user_id.login,
+        )
+        return raw_key
+
     def _post_provision_note(self, raw_key=None, error=None):
         """Post a one-time chatter note. The raw key is unrecoverable after this
         (Odoo only stores a pbkdf2 hash), so it is surfaced here once."""
@@ -118,8 +189,7 @@ class DaisyAgent(models.Model):
             body = Markup(
                 "<b>⚠️ Agent auto-provision failed</b><br/>"
                 "<code>%s</code><br/>"
-                "<i>Fix the cause, then use the <b>Generate Odoo API Key</b> "
-                "button (or re-hire) to finish provisioning.</i>"
+                "<i>Fix the cause, then re-hire to finish provisioning.</i>"
             ) % error
         else:
             body = Markup(

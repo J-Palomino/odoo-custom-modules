@@ -20,6 +20,7 @@
                 <field name="company_id"/>
                 <field name="total"/>
                 <field name="line_count"/>
+                <field name="dutchie_item_count"/>
                 <field name="wait_minutes"/>
                 <field name="placed_at"/>
                 <field name="order_type"/>
@@ -59,7 +60,7 @@
 
                             <!-- Items + type -->
                             <div class="d-flex justify-content-between align-items-center mt-2 text-muted small">
-                                <span><field name="line_count"/> items</span>
+                                <span><t t-esc="record.dutchie_item_count.raw_value or record.line_count.raw_value"/> items</span>
                                 <span class="badge text-bg-light">
                                     <field name="order_type"/>
                                 </span>

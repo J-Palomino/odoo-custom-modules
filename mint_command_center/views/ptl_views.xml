@@ -236,10 +236,6 @@
                     </div>
                     <group>
                         <group>
-                            <field name="brand_id"
-                                   domain="[('product_count','&gt;',0)]"
-                                   options="{'no_create': True}"/>
-                            <field name="product_category"/>
                             <field name="market_id" options="{'no_create': True}"/>
                             <field name="pricing_tier"
                                    invisible="not market_id"/>
@@ -250,6 +246,8 @@
                             <field name="discount_value"/>
                             <field name="original_price"/>
                             <field name="display_text" readonly="1"/>
+                            <field name="format_key" readonly="1"
+                                   help="Blank until the matching product has a Product Line set"/>
                             <label for="weight_value" string="Weight"/>
                             <div class="o_row">
                                 <field name="weight_value" nolabel="1"/>
@@ -258,39 +256,6 @@
                             <field name="is_featured"/>
                             <field name="sequence"/>
                         </group>
-                    </group>
-                    <group>
-                        <group string="Sales Details">
-                            <field name="sales_details" nolabel="1"
-                                   placeholder="Formatted pricing (e.g. $45 $22.50 Each When you buy 2)"/>
-                        </group>
-                        <group string="Inclusions / Exclusions">
-                            <field name="inclusions" nolabel="1"
-                                   placeholder="What this deal applies to..."/>
-                            <field name="details_exclusions" nolabel="1"
-                                   placeholder="What this deal does NOT apply to..."/>
-                        </group>
-                    </group>
-                    <group string="Special Event / Holiday">
-                        <group>
-                            <field name="is_holiday"/>
-                            <field name="event_name"
-                                   invisible="not is_holiday"
-                                   required="is_holiday"/>
-                        </group>
-                        <group>
-                            <field name="product_ids" widget="many2many_tags"
-                                   options="{'no_create': True}"
-                                   domain="[('brand_id', '=', brand_id)]"/>
-                        </group>
-                    </group>
-                    <group string="Exclusion Rules">
-                        <field name="excluded_skus" nolabel="1"
-                               placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002&#10;CRT-PINEAPPLE"/>
-                        <field name="excluded_brand_ids" widget="many2many_tags"
-                               domain="[('product_count','&gt;',0)]"
-                               options="{'no_create_edit': True}"
-                               placeholder="Brands to exclude from this deal"/>
                     </group>
                     <group string="Validity">
                         <group>
@@ -307,21 +272,17 @@
                                domain="[('is_dispensary','=',True),('dutchie_store_id','!=',False)]"
                                options="{'no_create': True}"
                                placeholder="All stores (leave empty for all)"/>
+                        <!-- #93657: literal "Select All Stores" action — materializes
+                             every active dispensary into store_ids for reviewers who
+                             want to see/edit the explicit list rather than rely on
+                             the "empty == all" convention. -->
+                        <button name="action_select_all_stores"
+                                string="Select All Stores"
+                                type="object"
+                                class="btn-link"
+                                data-testid="ptl-deal-select-all-stores"
+                                invisible="not id"/>
                         <field name="day_ids" widget="many2many_tags" readonly="1"/>
-                    </group>
-                    <group string="Matching SKUs (resolved from brand + category)" col="1">
-                        <field name="matching_product_count" readonly="1"/>
-                        <field name="matching_product_ids" nolabel="1" readonly="1">
-                            <list>
-                                <field name="default_code" string="SKU"/>
-                                <field name="name"/>
-                                <field name="x_display_label_override"
-                                       string="Budtender Label"
-                                       optional="show"/>
-                                <field name="categ_id"/>
-                                <field name="list_price"/>
-                            </list>
-                        </field>
                     </group>
                     <group string="Stock Status" invisible="stock_status == 'unchecked'">
                         <group>
@@ -345,6 +306,63 @@
                     <group string="Description" invisible="not description">
                         <field name="description" nolabel="1"/>
                     </group>
+                    <notebook>
+                        <page string="Included" name="included">
+                            <group>
+                                <field name="brand_id"
+                                       domain="[('product_count','&gt;',0)]"
+                                       options="{'no_create': True}"/>
+                                <field name="product_category"/>
+                            </group>
+                            <group string="Sales Details" col="1">
+                                <field name="sales_details" nolabel="1"
+                                       placeholder="Formatted pricing (e.g. $45 $22.50 Each When you buy 2)"/>
+                            </group>
+                            <group string="Explicit Products (overrides brand-wide matching when populated)" col="1">
+                                <field name="explicit_product_ids"
+                                       nolabel="1"
+                                       readonly="1"
+                                       widget="many2many_tags"/>
+                            </group>
+                            <group string="Matching SKUs (resolved from brand + category, or explicit set above)" col="1">
+                                <field name="matching_product_count" readonly="1"/>
+                                <field name="matching_product_ids" nolabel="1" readonly="1">
+                                    <list>
+                                        <field name="default_code" string="SKU"/>
+                                        <field name="name"/>
+                                        <field name="x_display_label_override"
+                                               string="Budtender Label"
+                                               optional="show"/>
+                                        <field name="categ_id"/>
+                                        <field name="list_price"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
+                        <page string="Excluded" name="excluded">
+                            <group string="Exclusion Rules">
+                                <field name="excluded_brand_ids" widget="many2many_tags"
+                                       domain="[('product_count','&gt;',0)]"
+                                       options="{'no_create_edit': True}"
+                                       placeholder="Brands to exclude from this deal"/>
+                                <field name="excluded_skus"
+                                       placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002&#10;CRT-PINEAPPLE"/>
+                            </group>
+                            <group string="Details &amp; Exclusions" col="1">
+                                <field name="details_exclusions" nolabel="1"
+                                       placeholder="Product exclusions and conditions..."/>
+                            </group>
+                            <!-- Holiday/event carried from the vendor submission
+                                 (grafted, reconcile 2026-06). Surfaces in the PTL
+                                 Category column on the Daily Deals Sheet. -->
+                            <group string="Special Event / Holiday">
+                                <field name="is_holiday"/>
+                                <field name="event_name"
+                                       invisible="not is_holiday"
+                                       required="is_holiday"/>
+                            </group>
+                        </page>
+                    </notebook>
                 </sheet>
                 <chatter/>
             </form>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Product Line Review (Odoo #93687, phase A3)
+        The whitelist backfill (migration 19.0.6.0.0) only auto-fills
+        x_product_line from a vetted vocabulary. The long tail is curated here:
+        an editable list of branded, active products that still have no Product
+        Line. Setting x_product_line feeds format_key (the PTL rollup key) once
+        marketing runs "Recompute Format Keys" (format_key does not auto-update
+        on x_product_line change — see mint.ptl.deal._build_format_key).
+    -->
+
+    <record id="view_product_line_review_list" model="ir.ui.view">
+        <field name="name">product.template.product.line.review.list</field>
+        <field name="model">product.template</field>
+        <field name="arch" type="xml">
+            <list string="Product Line Review" editable="bottom"
+                  default_order="brand_id, name">
+                <field name="default_code" string="SKU" readonly="1"/>
+                <field name="name" readonly="1"/>
+                <field name="brand_id" readonly="1" optional="show"/>
+                <field name="categ_id" readonly="1" optional="show"/>
+                <field name="x_product_line"
+                       string="Product Line"
+                       placeholder="e.g. 2pk Preroll, Live Resin, Gummies..."/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_product_line_review_search" model="ir.ui.view">
+        <field name="name">product.template.product.line.review.search</field>
+        <field name="model">product.template</field>
+        <field name="arch" type="xml">
+            <search string="Product Line Review">
+                <field name="name" string="Product"
+                       filter_domain="['|', ('name', 'ilike', self), ('default_code', 'ilike', self)]"/>
+                <field name="brand_id"/>
+                <field name="categ_id"/>
+                <filter name="group_brand" string="Brand"
+                        context="{'group_by': 'brand_id'}"/>
+                <filter name="group_categ" string="Category"
+                        context="{'group_by': 'categ_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_product_line_review" model="ir.actions.act_window">
+        <field name="name">Product Line Review</field>
+        <field name="res_model">product.template</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="view_product_line_review_list"/>
+        <field name="search_view_id" ref="view_product_line_review_search"/>
+        <field name="domain">[('x_product_line', '=', False), ('active', '=', True), ('brand_id', '!=', False)]</field>
+        <field name="context">{'search_default_group_brand': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Every branded product has a Product Line.</p>
+            <p>
+                Products listed here have a brand but no Product Line yet, so deals
+                on them fall back to the deal name on the storefront instead of
+                rolling up by format. Set the Product Line inline (e.g.
+                "2pk Preroll", "Live Resin"), then run
+                <b>Recompute Format Keys</b> so existing deals pick it up.
+            </p>
+        </field>
+    </record>
+
+    <record id="action_recompute_format_keys" model="ir.actions.server">
+        <field name="name">Recompute Format Keys</field>
+        <field name="model_id" ref="model_mint_ptl_deal"/>
+        <field name="state">code</field>
+        <field name="code">action = env['mint.ptl.deal'].action_review_recompute_format_keys()</field>
+    </record>
+
+    <menuitem id="menu_product_line_review"
+              name="Product Line Review"
+              parent="menu_ptl"
+              action="action_product_line_review"
+              sequence="45"/>
+
+    <menuitem id="menu_recompute_format_keys"
+              name="Recompute Format Keys"
+              parent="menu_ptl"
+              action="action_recompute_format_keys"
+              sequence="46"/>
+
+</odoo>

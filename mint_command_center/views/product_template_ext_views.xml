@@ -10,6 +10,8 @@
                 <group string="Mint PTL Display" name="mint_ptl_display">
                     <field name="x_display_label_override"
                            placeholder="Override budtender label (leave empty to use product name)"/>
+                    <field name="x_product_line"
+                           placeholder="e.g. Live Resin, Solventless — used by PTL format rollup"/>
                 </group>
             </xpath>
         </field>

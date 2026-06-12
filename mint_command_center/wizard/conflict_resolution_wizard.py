@@ -10,6 +10,11 @@ bulk apply.
 REPLACE — existing deal is unlinked from the day; new entry plots in its
           place. Existing deal's mint.discount is NOT deactivated (other
           days may still reference it); only the day-link is severed.
+REPLACE_ARCHIVE — same as REPLACE, and additionally retires the superseded
+          deal by setting mint.ptl.deal.state='expired'. Use when the
+          dealmaker wants the old deal gone, not just unlinked from this
+          day. (mint.ptl.deal has no 'active' field; 'expired' is the
+          retire state in its lifecycle.)
 SKIP    — new entry is NOT plotted on that date. Its state is bumped to
           'confirmed' so it stops sitting in 'tentative' but no deal_ids
           row is created.
@@ -27,6 +32,7 @@ from odoo.exceptions import UserError
 
 RESOLUTION_SELECTION = [
     ('replace', 'Replace (unlink existing, plot new)'),
+    ('replace_archive', 'Replace & Archive (unlink + expire existing)'),
     ('skip', 'Skip (do not plot)'),
     ('keep_both', 'Keep Both (coexist on this day)'),
 ]
@@ -51,6 +57,7 @@ class ConflictResolutionWizard(models.TransientModel):
         selection=[
             ('none', '— per-row choice —'),
             ('replace_all', 'Replace All'),
+            ('replace_archive_all', 'Replace & Archive All'),
             ('skip_all', 'Skip All'),
             ('keep_both_all', 'Keep Both (All)'),
         ],
@@ -67,6 +74,7 @@ class ConflictResolutionWizard(models.TransientModel):
     def _onchange_bulk_apply(self):
         mapping = {
             'replace_all': 'replace',
+            'replace_archive_all': 'replace_archive',
             'skip_all': 'skip',
             'keep_both_all': 'keep_both',
         }
@@ -119,11 +127,15 @@ class ConflictResolutionWizard(models.TransientModel):
                     'market_id': entry.market_id.id,
                 })
 
-            if decision == 'replace' and existing:
+            if decision in ('replace', 'replace_archive') and existing:
                 # Unlink the existing deal from this day, then plot ours.
                 day.write({
                     'deal_ids': [(3, existing.id), (4, entry.deal_id.id)],
                 })
+                if decision == 'replace_archive' and existing.state != 'expired':
+                    # Retire the superseded deal. mint.ptl.deal has no
+                    # 'active' field; 'expired' is its retire state.
+                    existing.write({'state': 'expired'})
             else:
                 # keep_both, or no-conflict path
                 day.write({'deal_ids': [(4, entry.deal_id.id)]})
@@ -139,12 +151,22 @@ class ConflictResolutionWizard(models.TransientModel):
         ))
         for day_id in affected_day_ids:
             day = Day.browse(day_id)
+            day_lines = self.conflict_line_ids.filtered(
+                lambda l, d=day_id: l.day_id.id == d
+            )
+            archived = day_lines.filtered(
+                lambda l: l.resolution == 'replace_archive'
+            )
+            archive_note = (
+                f" {len(archived)} existing deal(s) archived (expired)."
+                if archived else ""
+            )
             day.message_post(
                 body=(
                     f"Conflict resolution applied by "
                     f"<b>{self.env.user.name}</b>: "
-                    f"{len(self.conflict_line_ids.filtered(lambda l: l.day_id.id == day_id))} "
-                    f"overlap(s) on this day."
+                    f"{len(day_lines)} overlap(s) on this day."
+                    f"{archive_note}"
                 ),
                 message_type='comment',
             )

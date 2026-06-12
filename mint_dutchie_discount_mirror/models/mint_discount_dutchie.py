@@ -1,4 +1,5 @@
-from odoo import fields, models
+from odoo import api, fields, models
+from odoo.addons.mint_api_v2.models.discount_canonical import odoo_type_for_id
 
 
 class MintDiscountDutchie(models.Model):
@@ -30,8 +31,10 @@ class MintDiscountDutchie(models.Model):
     )
     calculation_method_id = fields.Integer(
         string="Dutchie Calc Method ID",
-        help="Raw Dutchie CalculationMethodId (1=percent, 2=$ off, 3=price, "
-             "5=$ off total, 6=price per unit, 15=bundle)",
+        help="Raw Dutchie CalculationMethodId (live-verified 2026-06-05): "
+             "1=$ off (FLAT_AMOUNT_OFF), 2=percent, 3=price-to-amount, "
+             "5=$ off order total, 6=price-per-unit bundle, 15=loyalty multiplier. "
+             "This is the AUTHORITATIVE field — discount_type is derived from it.",
     )
     discount_value = fields.Float(
         string="Raw Reward Value",
@@ -108,3 +111,36 @@ class MintDiscountDutchie(models.Model):
     )
     brand_funded_amount = fields.Float(string="Brand Funded Amount")
     brand_funded_percent = fields.Float(string="Brand Funded Percent")
+
+    # ---- De-mislabel: discount_type follows the authoritative calc id ----
+    # Historically discount_type was set INVERTED relative to calculation_method_id
+    # (live-verified 2026-06-05: id1 rows labeled 'percent' should be 'fixed',
+    # id2 'fixed' should be 'percent', id15 'bundle' should be 'points_multiplier').
+    # Normalizing at the model converges EVERY writer — the mintinvsvc RPC sync,
+    # the Dutchie mirror worker, manual edits — onto the correct value, so the
+    # bug can't reappear regardless of which path writes the row.
+
+    @staticmethod
+    def _normalize_discount_type_vals(vals):
+        """If a calc id is being set, force discount_type to its canonical
+        Odoo selection key. Rows without a calc id (hand-authored PTL/manual
+        deals — bogo, clearance, loyalty_redemption) are left untouched."""
+        cmid = vals.get('calculation_method_id')
+        if not cmid:
+            return
+        odoo_type = odoo_type_for_id(cmid)
+        if odoo_type:
+            vals['discount_type'] = odoo_type
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            self._normalize_discount_type_vals(vals)
+        return super().create(vals_list)
+
+    def write(self, vals):
+        # Only re-derive when the calc id is part of this write, so a deliberate
+        # manual discount_type edit that doesn't touch the calc id is preserved.
+        if 'calculation_method_id' in vals:
+            self._normalize_discount_type_vals(vals)
+        return super().write(vals)

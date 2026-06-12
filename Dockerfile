@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=128
+ARG CACHEBUST=127
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -34,7 +34,7 @@ COPY --chown=odoo:odoo fs_storage /opt/extra-addons/fs_storage
 COPY --chown=odoo:odoo fs_attachment /opt/extra-addons/fs_attachment
 COPY --chown=odoo:odoo fs_attachment_s3 /opt/extra-addons/fs_attachment_s3
 
-# ── Mint custom modules (CACHEBUST=106) ─────────────────────────────
+# ── Mint custom modules (CACHEBUST=103) ─────────────────────────────
 COPY --chown=odoo:odoo avancir_inventory /opt/extra-addons/avancir_inventory
 COPY --chown=odoo:odoo mint_api_v2 /opt/extra-addons/mint_api_v2
 COPY --chown=odoo:odoo mint_theme /opt/extra-addons/mint_theme
@@ -44,7 +44,7 @@ COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
 COPY --chown=odoo:odoo mint_tech_org /opt/extra-addons/mint_tech_org
-COPY --chown=odoo:odoo mint_flipbook /opt/extra-addons/mint_flipbook
+COPY --chown=odoo:odoo mint_industry_trends /opt/extra-addons/mint_industry_trends
 COPY --chown=odoo:odoo mint_dutchie_discount_mirror /opt/extra-addons/mint_dutchie_discount_mirror
 COPY --chown=odoo:odoo mint_redis_push /opt/extra-addons/mint_redis_push
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
@@ -68,11 +68,16 @@ COPY --chown=odoo:odoo print_nodes /opt/extra-addons/print_nodes
 COPY --chown=odoo:odoo mint_redis_session /opt/extra-addons/mint_redis_session
 COPY --chown=odoo:odoo mint_inventory_ops /opt/extra-addons/mint_inventory_ops
 COPY --chown=odoo:odoo mint_mail_whitelist /opt/extra-addons/mint_mail_whitelist
+COPY --chown=odoo:odoo mint_chatter_html /opt/extra-addons/mint_chatter_html
 COPY --chown=odoo:odoo mint_posthog /opt/extra-addons/mint_posthog
+COPY --chown=odoo:odoo mint_messaging_menu_jump /opt/extra-addons/mint_messaging_menu_jump
 COPY --chown=odoo:odoo mint_sw_buster /opt/extra-addons/mint_sw_buster
 COPY --chown=odoo:odoo mint_loki_logger /opt/extra-addons/mint_loki_logger
 COPY --chown=odoo:odoo mint_sms_telnyx /opt/extra-addons/mint_sms_telnyx
-COPY --chown=odoo:odoo mint_messaging_menu_jump /opt/extra-addons/mint_messaging_menu_jump
+
+# ── themintcannabis.com careers site (2026-05-26) ────────────────────
+COPY --chown=odoo:odoo mint_career /opt/extra-addons/mint_career
+COPY --chown=odoo:odoo mint_candidate_portal /opt/extra-addons/mint_candidate_portal
 
 # ── DaisyDo modules ─────────────────────────────────────────────────
 COPY --chown=odoo:odoo daisy_bot /opt/extra-addons/daisy_bot
@@ -101,6 +106,12 @@ COPY --chown=odoo:odoo mint_mail_fk_hardening /opt/extra-addons/mint_mail_fk_har
 
 # ── Survey Company Ownership (restrict survey edit to owner company) ──
 COPY --chown=odoo:odoo mint_survey_company /opt/extra-addons/mint_survey_company
+
+# ── Link Tracker QR (QR code generator for /r short links) ───────────
+COPY --chown=odoo:odoo mint_link_tracker_qr /opt/extra-addons/mint_link_tracker_qr
+
+# ── Flipbook (marketing PDF + page-flip viewer of vendor offerings) ─
+COPY --chown=odoo:odoo mint_flipbook /opt/extra-addons/mint_flipbook
 
 # ── DROPPED 2026-05-20: OCA Tier Validation / Knowledge / QMS bundle ──
 # 13 OCA modules (base_tier_validation*, document_knowledge, document_page*,
@@ -169,16 +180,13 @@ RUN test -f /opt/extra-addons/mint_pos_bridge/__manifest__.py && echo "MINT_POS_
 RUN test -f /opt/extra-addons/mint_redis_session/__manifest__.py && echo "MINT_REDIS_SESSION VERIFIED" || (echo "MINT_REDIS_SESSION MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_inventory_ops/__manifest__.py && echo "MINT_INVENTORY_OPS VERIFIED" || (echo "MINT_INVENTORY_OPS MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_sms_telnyx/__manifest__.py && echo "MINT_SMS_TELNYX VERIFIED" || (echo "MINT_SMS_TELNYX MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_career/__manifest__.py && echo "MINT_CAREER VERIFIED" || (echo "MINT_CAREER MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_candidate_portal/__manifest__.py && echo "MINT_CANDIDATE_PORTAL VERIFIED" || (echo "MINT_CANDIDATE_PORTAL MISSING" && exit 1)
 RUN python3 -c "compile(open('/opt/extra-addons/mint_sms_telnyx/models/sms_sms.py').read(), 'sms_sms.py', 'exec')" && echo "SMS_SMS SYNTAX OK" || (echo "SMS_SMS SYNTAX ERROR" && head -60 /opt/extra-addons/mint_sms_telnyx/models/sms_sms.py && exit 1)
 RUN python3 -c "compile(open('/opt/extra-addons/mint_pos_bridge/models/pos_order.py').read(), 'pos_order.py', 'exec')" && echo "POS_ORDER SYNTAX OK" || (echo "POS_ORDER SYNTAX ERROR" && head -60 /opt/extra-addons/mint_pos_bridge/models/pos_order.py && exit 1)
 RUN test -f /opt/extra-addons/daisy_bot/__manifest__.py && echo "DAISY_BOT MODULE VERIFIED" || (echo "DAISY_BOT MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/daisy_error_handler/__manifest__.py && echo "DAISY_ERROR_HANDLER MODULE VERIFIED" || (echo "DAISY_ERROR_HANDLER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/vault/__manifest__.py && echo "VAULT MODULE VERIFIED" || (echo "VAULT MODULE MISSING" && exit 1)
-
-# Verify mint_posthog module
-RUN test -f /opt/extra-addons/mint_posthog/__manifest__.py && echo "MINT_POSTHOG MODULE VERIFIED" || (echo "MINT_POSTHOG MODULE MISSING" && exit 1)
-RUN python3 -c "import ast; ast.literal_eval(open('/opt/extra-addons/mint_posthog/__manifest__.py').read())" && echo "MINT_POSTHOG MANIFEST PARSE OK" || (echo "MINT_POSTHOG MANIFEST PARSE FAILED" && exit 1)
-RUN test -f /opt/extra-addons/mint_posthog/static/src/posthog_boot.js && echo "MINT_POSTHOG JS ASSET VERIFIED" || (echo "MINT_POSTHOG JS ASSET MISSING" && exit 1)
 
 # Verify DaisyDo modules
 RUN for mod in daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook; do \
@@ -202,12 +210,6 @@ RUN for mod in spreadsheet_oca spreadsheet_dashboard_oca \
       account_statement_base account_financial_risk; do \
       test -f /opt/extra-addons/$mod/__manifest__.py && echo "$mod VERIFIED" || (echo "$mod MISSING" && exit 1); \
     done
-
-# OCA Tier Validation / Knowledge / QMS bundle verification — REMOVED 2026-05-27.
-# These 13 modules were intentionally dropped from the image on 2026-05-20
-# (see the "DROPPED" comment block at the top of this Dockerfile). The verify
-# block that previously lived here was orphaned by that change and caused
-# every PR preview build to fail with "$mod MISSING".
 
 # Verify OCA storage modules
 RUN for mod in fs_storage fs_attachment fs_attachment_s3; do \

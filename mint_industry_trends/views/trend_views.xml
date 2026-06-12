@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ Trend Term ============ -->
+    <record id="view_trend_term_list" model="ir.ui.view">
+        <field name="name">mint.trend.term.list</field>
+        <field name="model">mint.trend.term</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="term_type"/>
+                <field name="market_id"/>
+                <field name="trend_score"/>
+                <field name="observation_count"/>
+                <field name="last_observed_on"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_trend_term_form" model="ir.ui.view">
+        <field name="name">mint.trend.term.form</field>
+        <field name="model">mint.trend.term</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_observations" type="object"
+                                class="oe_stat_button" icon="fa-line-chart">
+                            <field name="observation_count" widget="statinfo" string="Observations"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="e.g. Live Resin"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="term_type"/>
+                            <field name="market_id"/>
+                            <field name="keywords"/>
+                        </group>
+                        <group>
+                            <field name="trend_score" readonly="1"/>
+                            <field name="last_observed_on" readonly="1"/>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                    <field name="source_ids" widget="many2many_tags"/>
+                    <field name="notes" placeholder="Notes…"/>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_trend_term_kanban" model="ir.ui.view">
+        <field name="name">mint.trend.term.kanban</field>
+        <field name="model">mint.trend.term</field>
+        <field name="arch" type="xml">
+            <kanban>
+                <field name="name"/>
+                <field name="term_type"/>
+                <field name="trend_score"/>
+                <field name="market_id"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="oe_kanban_global_click">
+                            <strong><field name="name"/></strong>
+                            <div class="text-muted">
+                                <field name="term_type"/>
+                                <t t-if="record.market_id.value"> · <field name="market_id"/></t>
+                            </div>
+                            <div>Score: <field name="trend_score"/></div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_trend_term_search" model="ir.ui.view">
+        <field name="name">mint.trend.term.search</field>
+        <field name="model">mint.trend.term</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="keywords"/>
+                <filter name="brand" string="Brands" domain="[('term_type','=','brand')]"/>
+                <filter name="strain" string="Strains" domain="[('term_type','=','strain')]"/>
+                <filter name="category" string="Categories" domain="[('term_type','=','category')]"/>
+                <separator/>
+                <filter name="active" string="Active" domain="[('active','=',True)]"/>
+                <filter name="archived" string="Archived" domain="[('active','=',False)]"/>
+                <filter name="group_type" string="Type" context="{'group_by':'term_type'}"/>
+                <filter name="group_market" string="Market" context="{'group_by':'market_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_trend_term" model="ir.actions.act_window">
+        <field name="name">Trend Terms</field>
+        <field name="res_model">mint.trend.term</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+    <!-- ============ Trend Observation ============ -->
+    <record id="view_trend_observation_list" model="ir.ui.view">
+        <field name="name">mint.trend.observation.list</field>
+        <field name="model">mint.trend.observation</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="observed_on"/>
+                <field name="signal_type"/>
+                <field name="term_id"/>
+                <field name="title"/>
+                <field name="value"/>
+                <field name="value_unit"/>
+                <field name="market_id"/>
+                <field name="source_id"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_trend_observation_form" model="ir.ui.view">
+        <field name="name">mint.trend.observation.form</field>
+        <field name="model">mint.trend.observation</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="term_id"/>
+                            <field name="term_text"/>
+                            <field name="source_id"/>
+                            <field name="signal_type"/>
+                            <field name="market_id"/>
+                        </group>
+                        <group>
+                            <field name="observed_on"/>
+                            <field name="captured_at"/>
+                            <field name="value"/>
+                            <field name="value_unit"/>
+                            <field name="sentiment"/>
+                        </group>
+                    </group>
+                    <field name="title"/>
+                    <field name="url" widget="url"/>
+                    <field name="external_id"/>
+                    <field name="raw_json"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_trend_observation_graph" model="ir.ui.view">
+        <field name="name">mint.trend.observation.graph</field>
+        <field name="model">mint.trend.observation</field>
+        <field name="arch" type="xml">
+            <graph type="line">
+                <field name="observed_on" interval="week"/>
+                <field name="value" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_trend_observation_pivot" model="ir.ui.view">
+        <field name="name">mint.trend.observation.pivot</field>
+        <field name="model">mint.trend.observation</field>
+        <field name="arch" type="xml">
+            <pivot>
+                <field name="term_id" type="row"/>
+                <field name="observed_on" interval="week" type="col"/>
+                <field name="value" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_trend_observation_search" model="ir.ui.view">
+        <field name="name">mint.trend.observation.search</field>
+        <field name="model">mint.trend.observation</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="term_id"/>
+                <field name="title"/>
+                <field name="term_text"/>
+                <filter name="search_trend" string="Search Trends" domain="[('signal_type','=','search_trend')]"/>
+                <filter name="social" string="Social" domain="[('signal_type','=','social_mention')]"/>
+                <filter name="news" string="News" domain="[('signal_type','=','news')]"/>
+                <filter name="launch" string="Launches" domain="[('signal_type','=','product_launch')]"/>
+                <separator/>
+                <filter name="last_30" string="Last 30 Days"
+                        domain="[('observed_on','&gt;=', (context_today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d'))]"/>
+                <filter name="group_signal" string="Signal Type" context="{'group_by':'signal_type'}"/>
+                <filter name="group_term" string="Term" context="{'group_by':'term_id'}"/>
+                <filter name="group_market" string="Market" context="{'group_by':'market_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_trend_observation" model="ir.actions.act_window">
+        <field name="name">Observations</field>
+        <field name="res_model">mint.trend.observation</field>
+        <field name="view_mode">graph,pivot,list,form</field>
+        <field name="context">{'search_default_last_30': 1}</field>
+    </record>
+
+    <!-- ============ Trend Source ============ -->
+    <record id="view_trend_source_list" model="ir.ui.view">
+        <field name="name">mint.trend.source.list</field>
+        <field name="model">mint.trend.source</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="signal_type"/>
+                <field name="apify_actor"/>
+                <field name="market_id"/>
+                <field name="last_run_at"/>
+                <field name="last_status" widget="badge"
+                       decoration-success="last_status == 'ok'"
+                       decoration-warning="last_status == 'partial'"
+                       decoration-danger="last_status == 'error'"/>
+                <field name="last_item_count"/>
+                <field name="observation_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_trend_source_form" model="ir.ui.view">
+        <field name="name">mint.trend.source.form</field>
+        <field name="model">mint.trend.source</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_observations" type="object"
+                                class="oe_stat_button" icon="fa-list">
+                            <field name="observation_count" widget="statinfo" string="Observations"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="signal_type"/>
+                            <field name="apify_actor"/>
+                            <field name="market_id"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="last_run_at" readonly="1"/>
+                            <field name="last_status" readonly="1"/>
+                            <field name="last_item_count" readonly="1"/>
+                        </group>
+                    </group>
+                    <field name="apify_input" placeholder="Actor run input (JSON)…"/>
+                    <field name="last_error" readonly="1"
+                           invisible="last_status != 'error'"/>
+                    <field name="notes" placeholder="Notes…"/>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_trend_source" model="ir.actions.act_window">
+        <field name="name">Trend Sources</field>
+        <field name="res_model">mint.trend.source</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

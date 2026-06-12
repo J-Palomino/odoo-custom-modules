@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Housekeeping only. The actual Apify scraping runs in the external
+         k8s CronJob (k8s/monitoring/industry-trends), which writes
+         observations via XML-RPC. This cron just keeps rolling trend
+         scores fresh for kanban/list ordering. -->
+    <record id="cron_trend_refresh_scores" model="ir.cron">
+        <field name="name">Industry Trends: Refresh Scores</field>
+        <field name="model_id" ref="model_mint_trend_term"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_refresh_scores()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">60</field>
+    </record>
+</odoo>

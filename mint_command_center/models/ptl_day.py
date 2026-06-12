@@ -6,6 +6,8 @@ from datetime import timedelta
 
 from odoo import api, fields, models
 
+from .deal_mixins import coerce_dutchie_ids
+
 _logger = logging.getLogger(__name__)
 
 WEBHOOK_URL_PARAM = 'mint.ptl_sync.webhook_url'
@@ -167,6 +169,14 @@ class PtlDay(models.Model):
         Discount = self.env['mint.discount'].sudo()
         discount_ids = []
 
+        # Mark this day published BEFORE recomputing day-of-week booleans.
+        # _recompute_day_booleans only counts days in state='published', so if
+        # this write ran afterward the day being published would be excluded
+        # from its own recompute — dropping its weekday from the discount and
+        # hiding that day (e.g. the last window of a non-contiguous deal) from
+        # the Daily Deals page. (Odoo #93649 AC05.)
+        self.write({'state': 'published'})
+
         for deal in self.deal_ids:
             discount = self._ensure_discount(deal)
             Discount._recompute_day_booleans(discount)
@@ -180,7 +190,6 @@ class PtlDay(models.Model):
         # the default until ops flips it).
         self._push_discounts_to_dutchie(discount_ids)
 
-        self.write({'state': 'published'})
         self.message_post(
             body=f"Published {len(discount_ids)} deal(s) to frontend.",
             message_type='comment',
@@ -325,6 +334,13 @@ class PtlDay(models.Model):
             if cats:
                 vals['category_ids'] = [(6, 0, cats.ids)]
 
+        # Explicit per-product restriction. mint.discount._match_product
+        # already intersects: `if self.product_ids and product.id not in
+        # self.product_ids.ids: return False`, so passing product_ids
+        # narrows the discount without widening anything else.
+        if deal.explicit_product_ids:
+            vals['product_ids'] = [(6, 0, deal.explicit_product_ids.ids)]
+
         return vals
 
     # ─── Webhook Push to Inventory Service ───────────────────────────────
@@ -399,37 +415,25 @@ class PtlDay(models.Model):
         # IDs — Odoo-internal record ids have no meaning downstream. Records
         # without a cross-reference are dropped from the payload so we never
         # emit wrong-namespace IDs the resolver would silently miss.
-        def _coerce_ids(records, field):
-            out = []
-            for r in records:
-                val = getattr(r, field, None)
-                if not val:
-                    continue
-                try:
-                    out.append(int(str(val).strip()))
-                except (TypeError, ValueError):
-                    continue
-            return out
-
         brands = None
         if discount.brand_ids:
-            dutchie_ids = _coerce_ids(discount.brand_ids, 'dutchie_brand_id')
+            dutchie_ids = coerce_dutchie_ids(discount.brand_ids, 'dutchie_brand_id')
             if dutchie_ids:
                 brands = {'ids': dutchie_ids, 'isExclusion': False}
         elif discount.exclude_brand_ids:
-            dutchie_ids = _coerce_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
+            dutchie_ids = coerce_dutchie_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
             if dutchie_ids:
                 brands = {'ids': dutchie_ids, 'isExclusion': True}
 
         categories = None
         if discount.category_ids:
-            dutchie_ids = _coerce_ids(discount.category_ids, 'dutchie_category_id')
+            dutchie_ids = coerce_dutchie_ids(discount.category_ids, 'dutchie_category_id')
             if dutchie_ids:
                 categories = {'ids': dutchie_ids, 'isExclusion': False}
 
         products = None
         if discount.product_ids:
-            dutchie_ids = _coerce_ids(discount.product_ids, 'dutchie_product_id')
+            dutchie_ids = coerce_dutchie_ids(discount.product_ids, 'dutchie_product_id')
             if dutchie_ids:
                 products = {'ids': dutchie_ids, 'isExclusion': False}
 
@@ -507,9 +511,9 @@ class PtlDay(models.Model):
         """Return the ISO dates (YYYY-MM-DD) that already have a mint.ptl.day
         for the given market within [date_from, date_to] inclusive.
 
-        Read-only helper for the ptl_day_grid widget — shades days already on
-        the PTL for this market while the reviewer clicks days for a new deal.
-        Returns [] when no market is set.
+        Read-only helper for the ptl_day_grid widget — it shades days that are
+        already on the PTL for this market so the reviewer sees existing load
+        while clicking days for a new deal. Returns [] when no market is set.
         """
         if not market_id:
             return []

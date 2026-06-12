@@ -88,6 +88,12 @@
                                 <field name="ai_system_prompt" nolabel="1"
                                        placeholder="Custom instructions for this agent..."/>
                             </group>
+                            <group string="Presence &amp; Availability">
+                                <field name="force_online"/>
+                                <field name="resource_calendar_id"
+                                       invisible="force_online"
+                                       help="Hours during which this agent shows online in Discuss. Empty = online whenever Active."/>
+                            </group>
                         </page>
                         <page string="Livechat Channels" name="channels">
                             <group>

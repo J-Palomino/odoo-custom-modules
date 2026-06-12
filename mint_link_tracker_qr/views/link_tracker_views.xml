@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Add a scannable QR code + download button to the Link Tracker form -->
+    <record id="link_tracker_view_form_qr" model="ir.ui.view">
+        <field name="name">link.tracker.view.form.qr</field>
+        <field name="model">link.tracker</field>
+        <field name="inherit_id" ref="link_tracker.link_tracker_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet/group" position="after">
+                <group name="qr" string="QR Code" invisible="not short_url">
+                    <field name="qr_code_filename" invisible="1"/>
+                    <field name="qr_code" widget="image" nolabel="1"
+                           options="{'size': [200, 200]}"/>
+                    <button name="action_download_qr" type="object"
+                            string="Download QR (PNG)" icon="fa-download"
+                            class="btn-secondary"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -15,6 +15,61 @@
                 </button>
             </div>
 
+            <!-- Range + DOW toggle panel (#93653 full-intent). Lets a reviewer
+                 set a Start/End range, flip which days of week are active (or
+                 use the EDLP/Weekdays/Weekends presets — these set the toggle
+                 mask, satisfying the AC "click Every Day → all 7 toggles
+                 activate"), then click Apply to bulk-fill the calendar. -->
+            <div class="o_pdg_range_panel border rounded p-2 mb-2"
+                 t-if="!props.readonly" data-testid="pdg-range-panel">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="small fw-bold">Range:</span>
+                    <input type="date" class="form-control form-control-sm"
+                           style="width: auto;"
+                           t-att-value="rangeStartIso"
+                           t-on-change="onRangeStartChange"
+                           data-testid="pdg-range-start"/>
+                    <span class="text-muted">–</span>
+                    <input type="date" class="form-control form-control-sm"
+                           style="width: auto;"
+                           t-att-value="rangeEndIso"
+                           t-on-change="onRangeEndChange"
+                           data-testid="pdg-range-end"/>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-1 mb-2"
+                     data-testid="pdg-dow-toggles">
+                    <span class="small fw-bold me-1">Days:</span>
+                    <button t-foreach="weekdays" t-as="wd" t-key="wd_index"
+                            type="button"
+                            class="btn btn-sm"
+                            t-att-class="state.dowMask[wd_index] ? 'btn-primary' : 'btn-outline-secondary'"
+                            t-att-data-testid="'pdg-dow-' + wd_index"
+                            t-on-click="() => this.toggleDow(wd_index)">
+                        <t t-esc="wd"/>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-link ms-2"
+                            data-testid="pdg-dow-edlp"
+                            t-on-click="setEdlpDows"
+                            title="Activate all 7 days">Every Day</button>
+                    <button type="button" class="btn btn-sm btn-link"
+                            data-testid="pdg-dow-weekdays"
+                            t-on-click="setWeekdaysDows"
+                            title="Activate Mon–Fri only">Weekdays</button>
+                    <button type="button" class="btn btn-sm btn-link"
+                            data-testid="pdg-dow-weekends"
+                            t-on-click="setWeekendsDows"
+                            title="Activate Sat+Sun only">Weekends</button>
+                </div>
+                <div class="d-flex justify-content-end">
+                    <button type="button" class="btn btn-sm btn-primary"
+                            data-testid="pdg-apply"
+                            t-on-click="applyRange"
+                            t-att-disabled="!hasValidRange">
+                        Apply range
+                    </button>
+                </div>
+            </div>
+
             <table class="o_pdg_table">
                 <thead>
                     <tr>

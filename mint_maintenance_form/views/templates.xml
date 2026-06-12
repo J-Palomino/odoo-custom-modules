@@ -300,9 +300,9 @@
                                         </label>
                                         <input type="file" class="form-control" id="photos"
                                                name="photos" multiple="multiple"
-                                               accept="image/*,.pdf"/>
+                                               accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt"/>
                                         <div class="form-text">
-                                            Optional — attach photos or screenshots of the issue (max 5 files, 10 MB each).
+                                            Optional — attach photos, screenshots, PDFs, or Office documents (Excel, Word, CSV, text). Max 5 files, 10 MB each.
                                         </div>
                                     </div>
 
@@ -578,9 +578,9 @@
                                         </label>
                                         <input type="file" class="form-control" id="photos"
                                                name="photos" multiple="multiple"
-                                               accept="image/*,.pdf"/>
+                                               accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt"/>
                                         <div class="form-text">
-                                            Optional — attach photos or screenshots of the issue (max 5 files, 10 MB each).
+                                            Optional — attach photos, screenshots, PDFs, or Office documents (Excel, Word, CSV, text). Max 5 files, 10 MB each.
                                         </div>
                                     </div>
 
@@ -906,7 +906,7 @@
                                     <label class="form-label">Attach files (optional)</label>
                                     <input type="file" class="form-control"
                                            name="attachments" multiple="multiple"
-                                           accept="image/*,.pdf"/>
+                                           accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt"/>
                                 </div>
                                 <button type="submit" class="btn btn-primary">
                                     Send Reply
