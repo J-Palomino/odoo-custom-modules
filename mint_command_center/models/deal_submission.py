@@ -380,6 +380,21 @@ class DealSubmission(models.Model):
         if generated:
             self.sales_details = generated
 
+    @api.onchange('market_id')
+    def _onchange_market_fill_stores(self):
+        """Default Requested Stores to every live dispensary in the chosen
+        market (state). Picking a market selects all its stores; clearing it
+        clears the selection. Mirrors mint.region.store_count's live filter
+        (is_dispensary & is_active). The user can still hand-edit afterward —
+        the next market change re-fills."""
+        if not self.market_id:
+            self.store_ids = [(5, 0, 0)]
+            return
+        stores = self.market_id.store_ids.filtered(
+            lambda c: getattr(c, 'is_dispensary', False) and getattr(c, 'is_active', True)
+        )
+        self.store_ids = [(6, 0, stores.ids)]
+
     def action_convert_to_deal(self):
         """Create a mint.ptl.deal from this approved submission."""
         self.ensure_one()
