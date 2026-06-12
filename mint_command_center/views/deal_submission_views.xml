@@ -57,8 +57,37 @@
                     <group>
                         <group string="Deal Details">
                             <field name="discount_type"/>
-                            <field name="discount_value"/>
+                            <field name="discount_value"
+                                   invisible="discount_type in ('bogo', 'bundle')"/>
                             <field name="original_price" invisible="1"/>
+                            <field name="sales_details_autogen" invisible="1"/>
+                            <!-- Structured BOGO spec (#93677) -->
+                            <field name="bogo_variant"
+                                   invisible="discount_type != 'bogo'"
+                                   required="discount_type == 'bogo'"/>
+                            <label for="bogo_buy_qty" string="Buy / Get"
+                                   invisible="discount_type != 'bogo'"/>
+                            <div class="o_row" invisible="discount_type != 'bogo'">
+                                <field name="bogo_buy_qty" nolabel="1"
+                                       readonly="bogo_variant != 'custom'"/>
+                                <span>buy,</span>
+                                <field name="bogo_get_qty" nolabel="1"
+                                       readonly="bogo_variant != 'custom'"/>
+                                <span>get</span>
+                            </div>
+                            <field name="bogo_get_pct" widget="percentage"
+                                   invisible="discount_type != 'bogo'"/>
+                        </group>
+                        <group string="Bundle Tiers (e.g. 2 for $18 or 3 for $25)"
+                               invisible="discount_type != 'bundle'">
+                            <field name="bundle_tier_ids" nolabel="1" colspan="2">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="qty"/>
+                                    <field name="price"/>
+                                    <field name="display_text"/>
+                                </list>
+                            </field>
                         </group>
                     </group>
                     <group string="Targeting">

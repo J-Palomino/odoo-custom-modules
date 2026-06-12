@@ -6,6 +6,8 @@ from datetime import date, timedelta
 from odoo import fields, http
 from odoo.http import request
 
+from ..models.deal_mixins import BOGO_VARIANT_QTYS
+
 _logger = logging.getLogger(__name__)
 
 _ONE_DAY = timedelta(days=1)
@@ -116,6 +118,44 @@ class VendorSubmissionController(http.Controller):
         except (ValueError, TypeError):
             vals['discount_value'] = 0.0
 
+        # Structured BOGO spec (#93677): the public dropdown posts a variant
+        # (b1g1/b2g1/b3g1) + a fractional get-discount; map the variant to the
+        # canonical buy/get quantities.
+        if vals['discount_type'] == 'bogo':
+            variant = post.get('bogo_variant') or 'b1g1'
+            if variant not in BOGO_VARIANT_QTYS:
+                variant = 'b1g1'
+            buy, get = BOGO_VARIANT_QTYS[variant]
+            try:
+                get_pct = float(post.get('bogo_get_pct') or 1.0)
+            except (ValueError, TypeError):
+                get_pct = 1.0
+            get_pct = min(max(get_pct, 0.0), 1.0) or 1.0
+            vals.update({
+                'bogo_variant': variant,
+                'bogo_buy_qty': buy,
+                'bogo_get_qty': get,
+                'bogo_get_pct': get_pct,
+            })
+
+        # Structured bundle tiers (#93677): up to 3 qty/price rows posted as
+        # bundle_qty_N / bundle_price_N. Rows missing either half are skipped.
+        if vals['discount_type'] == 'bundle':
+            tiers = []
+            for i in (1, 2, 3):
+                try:
+                    qty = int(float(post.get(f'bundle_qty_{i}') or 0))
+                    price = float(post.get(f'bundle_price_{i}') or 0)
+                except (ValueError, TypeError):
+                    continue
+                if qty > 0 and price > 0:
+                    tiers.append((0, 0, {'sequence': i * 10, 'qty': qty, 'price': price}))
+            if not tiers:
+                ctx['error'] = ('Bundle deals need at least one pricing tier — '
+                                'fill in a quantity and price (e.g. 2 for $24).')
+                return request.render('mint_command_center.vendor_deal_form', ctx)
+            vals['bundle_tier_ids'] = tiers
+
         try:
             vals['original_price'] = float(post.get('original_price') or 0)
         except (ValueError, TypeError):
@@ -190,6 +230,17 @@ class VendorSubmissionController(http.Controller):
         try:
             env = request.env
             submission = env['mint.deal.submission'].sudo().create(vals)
+
+            # Onchange auto-fill doesn't run on RPC create — generate the
+            # Sales Details text from the structured spec when the vendor
+            # left it blank ("B1G1 50% Off" / "2 for $24 or 3 for $30").
+            if not submission.sales_details:
+                generated = submission._format_sales_details()
+                if generated:
+                    submission.write({
+                        'sales_details': generated,
+                        'sales_details_autogen': generated,
+                    })
 
             # Mirror the submission as a CRM opportunity on the Vendor Promos
             # pipeline so the marketing lead can work it from CRM (replies from

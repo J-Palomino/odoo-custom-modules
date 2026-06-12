@@ -1,4 +1,4 @@
-from odoo import fields, models
+from odoo import api, fields, models
 
 # Single source of truth for selections that were previously copy-pasted across
 # the deal models (mint.ptl.deal, mint.deal.submission, mint.hotbox.deal,
@@ -13,6 +13,53 @@ DISCOUNT_TYPE_SELECTION = [
     ('points_multiplier', 'Loyalty Points Multiplier'),
     ('clearance', 'Clearance (Near Expiry)'),
 ]
+
+# BOGO structured variants (#93677 Cluster C / tickets #93673-#93676). The
+# variant dropdown is UI sugar over the canonical buy/get/pct triple — picking
+# a preset fills the quantities; 'custom' leaves them editable.
+BOGO_VARIANT_SELECTION = [
+    ('b1g1', 'B1G1 — Buy 1 Get 1'),
+    ('b2g1', 'B2G1 — Buy 2 Get 1'),
+    ('b3g1', 'B3G1 — Buy 3 Get 1'),
+    ('custom', 'Custom quantities'),
+]
+
+BOGO_VARIANT_QTYS = {
+    'b1g1': (1, 1),
+    'b2g1': (2, 1),
+    'b3g1': (3, 1),
+}
+
+
+def format_bogo_text(buy_qty, get_qty, get_pct):
+    """Customer-facing text for a structured BOGO spec.
+
+    (1, 1, 1.0) -> 'B1G1 Free'; (1, 1, 0.5) -> 'B1G1 50% Off';
+    (2, 2, 1.0) -> 'B2G2 Free'. Falls back to '' when the triple is unset
+    so callers keep their legacy 'BOGO' literal for un-migrated rows.
+    """
+    if not buy_qty or not get_qty:
+        return ''
+    pct = get_pct or 0.0
+    if pct > 1:                      # tolerate 50 meaning 50%
+        pct = pct / 100.0
+    label = f"B{int(buy_qty)}G{int(get_qty)}"
+    if pct >= 1.0 or pct <= 0:
+        return f"{label} Free"
+    return f"{label} {pct * 100:g}% Off"
+
+
+def format_bundle_tiers_text(tiers):
+    """Render bundle tiers literally, joined with ' or ' (#93677): tiers
+    [(2, 18.0), (3, 25.0)] -> '2 for $18 or 3 for $25'. No per-unit math."""
+    parts = []
+    for qty, price in tiers:
+        if not qty or not price:
+            continue
+        p = f"${price:.0f}" if price == int(price) else f"${price:.2f}"
+        parts.append(f"{int(qty)} for {p}")
+    return ' or '.join(parts)
+
 
 WEIGHT_UNIT_SELECTION = [
     ('g', 'g'),
@@ -69,6 +116,50 @@ class MintDiscountCoreMixin(models.AbstractModel):
     )
     discount_value = fields.Float(string='Discount Value')
     original_price = fields.Float(string='Original / MSRP Price')
+
+    # ── Structured BOGO spec (#93677 Cluster C) ──────────────────────────
+    # Canonical storage is the buy/get/pct triple; bogo_variant is the
+    # dropdown operators/vendors actually pick. Visible only when
+    # discount_type == 'bogo' (view-level), inert for every other type.
+    bogo_variant = fields.Selection(
+        selection=BOGO_VARIANT_SELECTION,
+        string='BOGO Variant',
+    )
+    bogo_buy_qty = fields.Integer(
+        string='Buy Qty',
+        default=0,
+        help='Units the customer must buy at full price.',
+    )
+    bogo_get_qty = fields.Integer(
+        string='Get Qty',
+        default=0,
+        help='Units discounted once the buy quantity is met.',
+    )
+    bogo_get_pct = fields.Float(
+        string='Get Discount',
+        default=1.0,
+        help='0–1 fractional discount on the get quantity; 1.0 = free, '
+             '0.5 = 50% off the second item.',
+    )
+
+    @api.onchange('bogo_variant')
+    def _onchange_bogo_variant(self):
+        for rec in self:
+            qtys = BOGO_VARIANT_QTYS.get(rec.bogo_variant)
+            if qtys:
+                rec.bogo_buy_qty, rec.bogo_get_qty = qtys
+
+    @api.onchange('discount_type')
+    def _onchange_discount_type_bogo_default(self):
+        for rec in self:
+            if rec.discount_type == 'bogo' and not rec.bogo_variant:
+                rec.bogo_variant = 'b1g1'
+                rec.bogo_buy_qty, rec.bogo_get_qty = BOGO_VARIANT_QTYS['b1g1']
+
+    def _bogo_sales_text(self):
+        self.ensure_one()
+        return format_bogo_text(
+            self.bogo_buy_qty, self.bogo_get_qty, self.bogo_get_pct)
 
 
 class MintVendorFundingMixin(models.AbstractModel):

@@ -280,6 +280,20 @@ class PtlDay(models.Model):
             'excluded_skus': deal.excluded_skus or False,
         }
 
+        # Structured BOGO/bundle mirror (#93677 Cluster C, per #94040 Path B):
+        # the Dutchie push reads mint.discount.threshold_min/discount_amount,
+        # so the new structured fields must land there. BOGO → item threshold
+        # = buy+get, amount = fractional get-discount; bundle → first tier's
+        # qty/price. Un-backfilled deals (zero qtys / no tiers) keep the
+        # legacy mapping above.
+        if deal.discount_type == 'bogo' and deal.bogo_buy_qty and deal.bogo_get_qty:
+            vals['threshold_min'] = deal.bogo_buy_qty + deal.bogo_get_qty
+            vals['discount_amount'] = deal.bogo_get_pct or 1.0
+        elif deal.discount_type == 'bundle' and deal.bundle_tier_ids:
+            first = deal.bundle_tier_ids.sorted('sequence')[0]
+            vals['threshold_min'] = first.qty
+            vals['discount_amount'] = first.price
+
         # Date range from linked PTL days
         day_dates = deal.day_ids.mapped('date')
         if day_dates:

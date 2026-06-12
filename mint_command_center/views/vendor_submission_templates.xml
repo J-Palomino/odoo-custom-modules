@@ -135,12 +135,54 @@
                                 <!-- MSRP input removed (Odoo #93683): MSRP is sourced from the
                                      product master / Dutchie, never vendor-entered. The controller
                                      defaults original_price to 0.0 when absent. -->
-                                <div class="col-md-4">
+                                <div class="col-md-4" id="discount_value_wrap">
                                     <label class="form-label" for="discount_value">Discount Value</label>
                                     <input type="number" class="form-control" id="discount_value"
                                            name="discount_value" step="0.01" min="0"
                                            placeholder="e.g. 30 for 30%"
                                            t-att-value="form_values.get('discount_value', '')"/>
+                                </div>
+                                <!-- Structured BOGO spec (#93677) — shown only for discount_type=bogo -->
+                                <div class="col-12 d-none" id="bogo_fields">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label" for="bogo_variant">BOGO Type</label>
+                                            <select class="form-select" id="bogo_variant" name="bogo_variant">
+                                                <option value="b1g1" t-att-selected="form_values.get('bogo_variant', 'b1g1') == 'b1g1'">Buy 1 Get 1</option>
+                                                <option value="b2g1" t-att-selected="form_values.get('bogo_variant') == 'b2g1'">Buy 2 Get 1</option>
+                                                <option value="b3g1" t-att-selected="form_values.get('bogo_variant') == 'b3g1'">Buy 3 Get 1</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label" for="bogo_get_pct">Discount on the "Get" Item</label>
+                                            <select class="form-select" id="bogo_get_pct" name="bogo_get_pct">
+                                                <option value="1.0" t-att-selected="form_values.get('bogo_get_pct', '1.0') == '1.0'">Free (100% off)</option>
+                                                <option value="0.5" t-att-selected="form_values.get('bogo_get_pct') == '0.5'">50% off</option>
+                                                <option value="0.25" t-att-selected="form_values.get('bogo_get_pct') == '0.25'">25% off</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Structured bundle tiers (#93677) — shown only for discount_type=bundle -->
+                                <div class="col-12 d-none" id="bundle_fields">
+                                    <label class="form-label">Bundle Pricing — e.g. "2 for $24"; add a second row for "or 3 for $30"</label>
+                                    <t t-foreach="[1, 2, 3]" t-as="tier">
+                                        <div class="row g-2 mb-1 align-items-center">
+                                            <div class="col-md-3">
+                                                <input type="number" class="form-control" min="1" step="1"
+                                                       t-attf-name="bundle_qty_#{tier}"
+                                                       placeholder="Qty"
+                                                       t-att-value="form_values.get('bundle_qty_%s' % tier, '')"/>
+                                            </div>
+                                            <div class="col-auto">for $</div>
+                                            <div class="col-md-3">
+                                                <input type="number" class="form-control" min="0" step="0.01"
+                                                       t-attf-name="bundle_price_#{tier}"
+                                                       placeholder="Price"
+                                                       t-att-value="form_values.get('bundle_price_%s' % tier, '')"/>
+                                            </div>
+                                        </div>
+                                    </t>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label" for="market_id">Market</label>
@@ -246,6 +288,26 @@
                     <!-- Resolve brand_lookup text → brand_id, then load that brand's
                          products into the optional "Specific Products" picker (#93642). -->
                     <script>
+                        (function() {
+                            // Structured BOGO / bundle inputs (#93677): swap the flat
+                            // Discount Value for the structured controls when the
+                            // matching discount type is selected.
+                            var dtSel = document.getElementById('discount_type');
+                            var valWrap = document.getElementById('discount_value_wrap');
+                            var bogoBox = document.getElementById('bogo_fields');
+                            var bundleBox = document.getElementById('bundle_fields');
+                            function syncDiscountFields() {
+                                if (!dtSel) return;
+                                var dt = dtSel.value;
+                                if (bogoBox) bogoBox.classList.toggle('d-none', dt !== 'bogo');
+                                if (bundleBox) bundleBox.classList.toggle('d-none', dt !== 'bundle');
+                                if (valWrap) valWrap.classList.toggle('d-none', dt === 'bogo' || dt === 'bundle');
+                            }
+                            if (dtSel) {
+                                dtSel.addEventListener('change', syncDiscountFields);
+                                syncDiscountFields();
+                            }
+                        })();
                         (function() {
                             var input = document.getElementById('brand_lookup');
                             var hidden = document.getElementById('brand_id');
