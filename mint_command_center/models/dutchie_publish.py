@@ -195,8 +195,9 @@ class DealSubmissionDutchiePublish(models.Model):
         """Brand records this deal targets: brand_id, else alias resolution
         of the vendor string (#3 — may return several for multi-brand)."""
         self.ensure_one()
-        if self.brand_id:
-            return self.brand_id
+        brands = (self.brand_ids | self.brand_id) if self.brand_id else self.brand_ids
+        if brands:
+            return brands
         return self.env['mint.brand'].resolve_vendor_string(self.vendor_name)
 
     def _exclusion_terms(self):

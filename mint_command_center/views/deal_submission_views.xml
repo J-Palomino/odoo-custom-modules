@@ -114,15 +114,18 @@
                         <page string="Inclusions" name="inclusions">
                             <group>
                                 <field name="brand_id"/>
+                                <field name="brand_ids" widget="many2many_tags"
+                                       options="{'no_create': True}"
+                                       placeholder="Add every brand this deal includes (multi-brand deals)"/>
                                 <field name="product_category"/>
                             </group>
                             <group string="Specific Products (optional — overrides brand-wide matching)" col="1">
                                 <field name="product_ids"
                                        nolabel="1"
                                        widget="many2many_tags"
-                                       domain="[('brand_id','=',brand_id)]"
+                                       domain="['|',('brand_id','=',brand_id),('brand_id','in',brand_ids)]"
                                        options="{'no_create': True, 'no_create_edit': True}"
-                                       invisible="not brand_id"
+                                       invisible="not brand_id and not brand_ids"
                                        placeholder="Pick specific products to restrict the deal. Leave empty for all of brand+category."/>
                             </group>
                             <group string="Sales Details" col="1">
