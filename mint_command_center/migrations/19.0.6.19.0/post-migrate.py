@@ -9,8 +9,8 @@ New states: new / under_review / approved / scheduled / final_review /
                            live; the daily cron later advances it to Final
                            Review once the run window ends)
 
-Re-tagged from 19.0.6.6.0 so it runs on the prod 6.16 -> 6.17 upgrade — prod
-never installed 6.6.0, so a 6.6.0-tagged migration would be skipped. The new
+Re-tagged from 19.0.6.6.0 so it runs on the prod -> 6.19.0 upgrade — prod
+never installed 6.6.0, so a 6.6.0-tagged migration would be skipped (prod is well past 6.6.0). The new
 stored run_end_date is populated automatically by Odoo when the field is
 initialised during the upgrade. post_init_hook only fires on a fresh INSTALL,
 so the lifecycle cron is created here (idempotently) for the UPGRADE path.
