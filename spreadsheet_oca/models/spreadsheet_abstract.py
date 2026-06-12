@@ -2,7 +2,9 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import base64
+import copy
 import json
+import re
 from typing import Any
 
 from odoo import _, api, fields, models
@@ -257,6 +259,161 @@ class SpreadsheetAbstract(models.AbstractModel):
             "write_date": fields.Datetime.to_string(self.write_date) or False,
             "revision_head": self._spreadsheet_revision_head(),
         }
+
+    # ------------------------------------------------------------------
+    # Cell-level helpers for headless / MCP edits (Smartsheets MCP, phase 1)
+    #
+    # The workbook lives in ``spreadsheet_raw`` (o-spreadsheet JSON). In the
+    # current format a cell is keyed by its A1 address and its value is the
+    # plain content string (a literal, or a formula starting with ``=``):
+    #     spreadsheet_raw["sheets"][i]["cells"]["A1"] == "=SUM(B1:B5)"
+    # These helpers let a caller read/patch individual cells without shipping
+    # the whole workbook, while still routing every WRITE through
+    # ``mcp_safe_write`` so the concurrency guards are preserved.
+    # ------------------------------------------------------------------
+
+    _CELL_RE = re.compile(r"^([A-Z]+)([0-9]+)$")
+
+    @api.model
+    def _mcp_find_sheet(self, raw, sheet=None):
+        """Resolve a sheet dict in ``raw`` by id or name (default: first sheet)."""
+        sheets = (raw or {}).get("sheets") or []
+        if not sheets:
+            raise UserError(_("SMARTSHEET_ERROR: workbook has no sheets."))
+        if sheet in (None, "", False):
+            return sheets[0]
+        for sh in sheets:
+            if sheet in (sh.get("id"), sh.get("name")):
+                return sh
+        raise UserError(
+            _("SMARTSHEET_ERROR: sheet %s not found (have: %s).")
+            % (sheet, ", ".join(s.get("name") or s.get("id") for s in sheets))
+        )
+
+    @api.model
+    def _mcp_cell_content(self, value):
+        """Normalize a stored cell value to its content string (or None)."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):  # tolerate the {"content": ...} variant
+            return value.get("content")
+        return str(value)
+
+    @api.model
+    def _mcp_col_to_num(self, col):
+        num = 0
+        for ch in col:
+            num = num * 26 + (ord(ch) - 64)
+        return num
+
+    @api.model
+    def _mcp_num_to_col(self, num):
+        out = ""
+        while num > 0:
+            num, rem = divmod(num - 1, 26)
+            out = chr(65 + rem) + out
+        return out
+
+    @api.model
+    def _mcp_expand_range(self, ref):
+        """Expand ``A1`` -> ['A1'] and ``A1:B3`` -> all enclosed A1 addresses."""
+        ref = (ref or "").strip().upper()
+        if ":" not in ref:
+            if not self._CELL_RE.match(ref):
+                raise UserError(_("SMARTSHEET_ERROR: bad cell ref %s.") % ref)
+            return [ref]
+        a, b = ref.split(":", 1)
+        ma, mb = self._CELL_RE.match(a.strip()), self._CELL_RE.match(b.strip())
+        if not ma or not mb:
+            raise UserError(_("SMARTSHEET_ERROR: bad range %s.") % ref)
+        c1, r1 = self._mcp_col_to_num(ma.group(1)), int(ma.group(2))
+        c2, r2 = self._mcp_col_to_num(mb.group(1)), int(mb.group(2))
+        if (abs(c2 - c1) + 1) * (abs(r2 - r1) + 1) > 10000:
+            raise UserError(
+                _("SMARTSHEET_ERROR: range %s is too large (max 10000 cells).") % ref
+            )
+        return [
+            "%s%d" % (self._mcp_num_to_col(c), r)
+            for c in range(min(c1, c2), max(c1, c2) + 1)
+            for r in range(min(r1, r2), max(r1, r2) + 1)
+        ]
+
+    def mcp_read_cells(self, cells=None, sheet=None):
+        """Read cell contents from a Smartsheet (headless / MCP).
+
+        :param cells: an A1 ref, an ``'A1:B3'`` range, or a list of those.
+            ``None`` returns every non-empty cell on the sheet.
+        :param sheet: sheet id or name; defaults to the first sheet.
+        :return: dict with ``cells`` ({A1: content}) plus the concurrency
+            tokens (``write_date``, ``revision_head``) to feed a later write.
+        """
+        self.ensure_one()
+        self.check_access("read")
+        raw = self.spreadsheet_raw or {}
+        sh = self._mcp_find_sheet(raw, sheet)
+        stored = sh.get("cells") or {}
+        if cells in (None, "", False):
+            out = {a: self._mcp_cell_content(v) for a, v in stored.items()}
+        else:
+            refs = cells if isinstance(cells, (list, tuple)) else [cells]
+            addrs = [a for ref in refs for a in self._mcp_expand_range(ref)]
+            out = {a: self._mcp_cell_content(stored.get(a)) for a in addrs}
+        return {
+            "id": self.id,
+            "sheet": sh.get("name"),
+            "sheet_id": sh.get("id"),
+            "cells": out,
+            "write_date": fields.Datetime.to_string(self.write_date) or False,
+            "revision_head": self._spreadsheet_revision_head(),
+        }
+
+    def mcp_set_cells(
+        self, edits, sheet=None, expected_write_date=None, expected_revision_id=None
+    ):
+        """Set cell contents / formulas on a Smartsheet, guarded.
+
+        :param edits: list of ``{'cell': 'A1', 'content': '=SUM(B1:B5)'}``. A
+            formula is just a ``content`` string starting with ``=``; an empty
+            or null ``content`` clears the cell. ``'formula'`` is accepted as an
+            alias for ``'content'``.
+        :param sheet: sheet id or name; defaults to the first sheet.
+        :param expected_write_date / expected_revision_id: optimistic-concurrency
+            guards from a prior ``mcp_read_cells`` — the write is refused with a
+            ``SMARTSHEET_CONFLICT:`` error if either no longer matches.
+        :return: fresh ``{id, write_date, revision_head, cells_written}`` tokens.
+        """
+        self.ensure_one()
+        self.check_access("write")
+        if not edits:
+            raise UserError(_("SMARTSHEET_ERROR: no edits provided."))
+        raw = copy.deepcopy(self.spreadsheet_raw or {})
+        sh = self._mcp_find_sheet(raw, sheet)
+        sh.setdefault("cells", {})
+        written = []
+        for edit in edits:
+            if not isinstance(edit, dict) or not edit.get("cell"):
+                raise UserError(_("SMARTSHEET_ERROR: each edit needs a 'cell'."))
+            addr = str(edit["cell"]).strip().upper()
+            if not self._CELL_RE.match(addr):
+                raise UserError(
+                    _("SMARTSHEET_ERROR: %s is not a single cell ref.") % addr
+                )
+            content = edit.get("content", edit.get("formula"))
+            # XML-RPC has no null: a missing value arrives as False -> treat as clear.
+            if content in (None, "", False):
+                sh["cells"].pop(addr, None)
+            else:
+                sh["cells"][addr] = str(content)
+            written.append(addr)
+        result = self.mcp_safe_write(
+            {"spreadsheet_raw": raw},
+            expected_write_date=expected_write_date,
+            expected_revision_id=expected_revision_id,
+        )
+        result["cells_written"] = written
+        return result
 
     def write(self, vals):
         if "spreadsheet_raw" in vals:
