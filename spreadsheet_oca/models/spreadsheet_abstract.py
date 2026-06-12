@@ -354,12 +354,14 @@ class SpreadsheetAbstract(models.AbstractModel):
         raw = self.spreadsheet_raw or {}
         sh = self._mcp_find_sheet(raw, sheet)
         stored = sh.get("cells") or {}
+        # Empty/missing cells are reported as "" — Odoo's XML-RPC marshaller
+        # rejects None (allow_none=False), and "" is unambiguous "no content".
         if cells in (None, "", False):
-            out = {a: self._mcp_cell_content(v) for a, v in stored.items()}
+            out = {a: (self._mcp_cell_content(v) or "") for a, v in stored.items()}
         else:
             refs = cells if isinstance(cells, (list, tuple)) else [cells]
             addrs = [a for ref in refs for a in self._mcp_expand_range(ref)]
-            out = {a: self._mcp_cell_content(stored.get(a)) for a in addrs}
+            out = {a: (self._mcp_cell_content(stored.get(a)) or "") for a in addrs}
         return {
             "id": self.id,
             "sheet": sh.get("name"),
