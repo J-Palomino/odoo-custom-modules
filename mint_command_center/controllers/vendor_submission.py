@@ -160,13 +160,24 @@ class VendorSubmissionController(http.Controller):
             if valid:
                 vals['product_ids'] = [(6, 0, valid.ids)]
 
-        # Market
+        # Market — and default Requested Stores to that market's live
+        # dispensaries. The public form has no store picker, so mirror the
+        # backend onchange (mint.deal.submission._onchange_market_fill_stores):
+        # is_dispensary & is_active, matching mint.region.store_count.
         market_id = post.get('market_id')
         if market_id:
             try:
-                vals['market_id'] = int(market_id)
+                region = request.env['mint.region'].sudo().browse(int(market_id))
             except (ValueError, TypeError):
-                pass
+                region = None
+            if region and region.exists():
+                vals['market_id'] = region.id
+                stores = region.store_ids.filtered(
+                    lambda c: getattr(c, 'is_dispensary', False)
+                    and getattr(c, 'is_active', True)
+                )
+                if stores:
+                    vals['store_ids'] = [(6, 0, stores.ids)]
 
         # Dates
         if post.get('preferred_start_date'):
