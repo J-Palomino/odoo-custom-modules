@@ -84,4 +84,12 @@
               action="action_recompute_format_keys"
               sequence="46"/>
 
+    <!-- Hide "Recompute Format Keys" from the Mint Marketing menu. The
+         server action (action_recompute_format_keys) is retained and still
+         runnable directly; re-enable by setting active back to True (prod
+         xmlid row is pinned noupdate, so flip it live too). -->
+    <record id="menu_recompute_format_keys" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+
 </odoo>
