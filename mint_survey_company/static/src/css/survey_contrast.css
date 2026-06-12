@@ -1,0 +1,16 @@
+/*
+ * Survey answer-choice readability fix.
+ *
+ * The Mint survey theme renders .o_survey_choice_btn as gold text
+ * (rgb(247,203,116)) on a 10%-opacity gold background, which is very low
+ * contrast ("orange on orange"). Force the choice text to black so the
+ * answer options are legible. The pale-gold background and border are kept.
+ *
+ * Scope: only the live answering view (.o_survey_form). The print/results
+ * view (.o_survey_print) uses white-on-grey and is intentionally left alone.
+ */
+.o_survey_form .o_survey_choice_btn,
+.o_survey_form .o_survey_choice_btn span,
+.o_survey_form .o_survey_choice_btn label {
+    color: #000 !important;
+}
