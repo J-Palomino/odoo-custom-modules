@@ -813,7 +813,10 @@ class MaintenanceFormController(http.Controller):
             message_type="comment",
             subtype_xmlid="mail.mt_comment",
             author_id=user.partner_id.id,
-            attachment_ids=[(4, aid) for aid in attachment_ids],
+            # message_post expects a plain list of attachment IDs, NOT write-command
+            # tuples. Passing [(4, aid), ...] raises "unhashable type: 'list'" /
+            # "should receive attachments records as a list of IDs" (see MR #505).
+            attachment_ids=attachment_ids,
         )
 
         return request.redirect(f"/tickets/{request_id}")
