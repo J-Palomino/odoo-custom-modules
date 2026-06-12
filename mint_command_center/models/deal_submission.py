@@ -314,17 +314,21 @@ class DealSubmission(models.Model):
             # Multi-brand (#93635): the campaign keys on the PRIMARY brand —
             # first of brand_ids when the single brand_id isn't set.
             primary = sub.brand_id or sub.brand_ids[:1]
-            if sub.campaign_id or not primary or not sub.market_id:
-                continue
-            target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
-            campaign = Campaign.get_or_create(
-                brand_id=primary.id,
-                market_id=sub.market_id.id,
-                year=target_year,
-                crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
-            )
-            if campaign:
-                sub.campaign_id = campaign.id
+            if not sub.campaign_id and primary and sub.market_id:
+                target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
+                campaign = Campaign.get_or_create(
+                    brand_id=primary.id,
+                    market_id=sub.market_id.id,
+                    year=target_year,
+                    crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
+                )
+                if campaign:
+                    sub.campaign_id = campaign.id
+            # Campaigns are background bookkeeping — never staff-entered and
+            # never a blocker (their menu is hidden). Auto-approve so the
+            # default 'planning' state can't trip the plot gate.
+            if sub.campaign_id and sub.campaign_id.state == 'planning':
+                sub.campaign_id.action_approve()
 
     def action_reject(self):
         return {
@@ -339,38 +343,21 @@ class DealSubmission(models.Model):
             },
         }
 
-    # ─── Plot gate ───────────────────────────────────────────────────────
+    # ─── Plot gate (self-healing, never blocks) ─────────────────────────
     #
-    # Conversion to a mint.ptl.deal requires the parent campaign
-    # (mint.national.promo for this brand × market × year) to be approved
-    # — i.e. the brand × market is "blessed to plot" per Famous's approved-
-    # offers concept. The gate is bypassable via the Force-Approve wizard,
-    # which sets `force_override=True` in context and writes a reason to
-    # chatter on both the submission and the campaign.
-
-    PLOTTABLE_CAMPAIGN_STATES = ('approved', 'active')
+    # Campaigns (mint.national.promo) are background bookkeeping: they are
+    # auto-created on submission approval, never entered by staff, and
+    # their menu is hidden. Per the 2026-06-12 directive they must never
+    # block plotting — so instead of raising, this gate self-heals: a
+    # 'planning' campaign is auto-approved in place, and a missing campaign
+    # is simply not a problem (the rollup link is best-effort).
 
     def _check_plot_gate(self):
-        """Raise UserError if the submission's campaign isn't approved,
-        unless force_override is set in context."""
+        """Self-heal the campaign state instead of blocking the plot."""
         self.ensure_one()
-        if self.env.context.get('force_override'):
-            return
         campaign = self.campaign_id
-        if not campaign:
-            raise UserError(
-                "No National Promo Campaign linked to this submission yet. "
-                "Approve the submission first (creates the campaign), then "
-                "approve the campaign — or use Force Approve & Plot."
-            )
-        if campaign.state not in self.PLOTTABLE_CAMPAIGN_STATES:
-            raise UserError(
-                f"Campaign \"{campaign.name}\" is in state "
-                f"\"{campaign.state}\" — only "
-                f"{', '.join(self.PLOTTABLE_CAMPAIGN_STATES)} campaigns can "
-                f"be plotted. Approve the campaign first, or use Force "
-                f"Approve & Plot to do both with an audit-logged reason."
-            )
+        if campaign and campaign.state == 'planning':
+            campaign.action_approve()
 
     def action_force_approve_and_plot(self):
         """Open the Force Approve & Plot wizard for this submission."""
