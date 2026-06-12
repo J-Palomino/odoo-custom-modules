@@ -144,7 +144,11 @@ class StockCheckWizard(models.TransientModel):
         if not inventory_items:
             return False
 
-        deal_brand_key = _brand_lookup_key(deal.brand_id.name) if deal.brand_id else ''
+        # Multi-brand (#93635): match inventory against ANY of the deal's
+        # brands, not just the primary.
+        deal_brands = (deal.brand_ids | deal.brand_id) if deal.brand_id else deal.brand_ids
+        deal_brand_keys = {_brand_lookup_key(b.name) for b in deal_brands if b.name}
+        deal_brand_keys.discard('')
         # None  -> legacy/non-master free-text category (exact-ish fallback)
         # []    -> "Featured Deals": brand-only, no category gate
         # [...] -> standard master bucket: match any fragment
@@ -154,18 +158,18 @@ class StockCheckWizard(models.TransientModel):
         # Refuse to match every product when the deal has neither a brand nor a
         # category to constrain on — that would mark unconstrained deals as
         # in_stock against any inventory at all.
-        if not deal_brand_key and not deal.product_category:
+        if not deal_brand_keys and not deal.product_category:
             return False
 
         qty_by_product = {}
         for item in inventory_items:
-            if deal_brand_key:
+            if deal_brand_keys:
                 item_brand_key = _brand_lookup_key(
                     item.get('brand_name') or item.get('brandName') or '')
                 if not item_brand_key:
                     continue
-                if (deal_brand_key not in item_brand_key
-                        and item_brand_key not in deal_brand_key):
+                if not any(k in item_brand_key or item_brand_key in k
+                           for k in deal_brand_keys):
                     continue
 
             if patterns:

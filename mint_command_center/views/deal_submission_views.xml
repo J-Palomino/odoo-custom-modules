@@ -123,7 +123,7 @@
                                 <field name="product_ids"
                                        nolabel="1"
                                        widget="many2many_tags"
-                                       domain="['|',('brand_id','=',brand_id),('brand_id','in',brand_ids)]"
+                                       domain="['|',('brand_id','=',brand_id or 0),('brand_id','in',brand_ids)]"
                                        options="{'no_create': True, 'no_create_edit': True}"
                                        invisible="not brand_id and not brand_ids"
                                        placeholder="Pick specific products to restrict the deal. Leave empty for all of brand+category."/>

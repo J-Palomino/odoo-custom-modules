@@ -333,6 +333,17 @@ class DealSubmissionDutchiePublish(models.Model):
         if cat_id:
             restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': [cat_id]}
 
+        # Refuse a discount with NO restrictions at all — that would apply
+        # store-wide (every product, every brand). Reachable when none of the
+        # deal's brands resolve to a per-LSP Dutchie id and there are no
+        # product/category restrictions either.
+        if not any(r['RestrictionIds'] for r in restrictions.values()):
+            raise UserError(
+                "Refusing to publish: no Brand/Product/Category restriction "
+                "resolved — the discount would apply store-wide. "
+                + ("; ".join(warnings) or "")
+            )
+
         label = (f"{value * 100:g}% Off" if calc == 2
                  else f"{threshold_min} for ${value:g}" if calc == 6
                  else f"${value:g} Off" if calc == 1
