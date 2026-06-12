@@ -9,6 +9,8 @@ Admins use this model as the authoring UI. Fields here must map 1:1
 with the Dutchie-shape emitted to Redis; see the Shape Conformance
 mapping table in ARCHITECTURE.md before adding or renaming a field.
 """
+import re
+
 from odoo import api, fields, models
 
 
@@ -202,6 +204,54 @@ class MintBrand(models.Model):
              "stays the AZ/legacy value for back-compat; this is the source of\n"
              "truth for cross-state discount publishing.",
     )
+
+    aliases = fields.Text(
+        string="Aliases",
+        help="Alternate vendor-facing names for this brand, one per line "
+             "(e.g. 'BackpackBoyz' for 'Backpack Boyz', 'GTI brands' for "
+             "'Green Thumb'). Used by resolve_vendor_string() to match the "
+             "free-text brand names vendors type into deal submissions.",
+    )
+
+    @staticmethod
+    def _norm_brand_name(s):
+        """Normalize a brand string for matching: lowercase, '&'->'and',
+        strip punctuation and filler tokens. Mirrors the JS importer's norm()."""
+        s = (s or '').lower().replace('&', ' and ')
+        s = re.sub(r'[^a-z0-9]+', ' ', s)
+        s = re.sub(r'\b(the|brands?|inc|llc|co|cannabis|edibles|vapes)\b', ' ', s)
+        return re.sub(r'\s+', ' ', s).strip()
+
+    @api.model
+    def resolve_vendor_string(self, vendor_string):
+        """Resolve a vendor-typed brand string to mint.brand records.
+
+        Handles multi-brand strings by splitting on '/', '&', '+', ',', '·'
+        and ' and ', then matching each part against brand names AND alias
+        lines (normalized both sides). Returns a recordset — possibly several
+        brands for 'Alien Labs & Connected', possibly empty.
+        """
+        if not vendor_string:
+            return self.browse()
+        index = {}
+        for b in self.search_read([], ['name', 'aliases']):
+            n = self._norm_brand_name(b['name'])
+            if n and n not in index:
+                index[n] = b['id']
+            for line in (b['aliases'] or '').splitlines():
+                a = self._norm_brand_name(line)
+                if a and a not in index:
+                    index[a] = b['id']
+
+        whole = index.get(self._norm_brand_name(vendor_string))
+        if whole:
+            return self.browse(whole)
+        ids = []
+        for part in re.split(r'[/&+,·]|\band\b', vendor_string, flags=re.I):
+            hit = index.get(self._norm_brand_name(part))
+            if hit and hit not in ids:
+                ids.append(hit)
+        return self.browse(ids)
 
     def dutchie_brand_id_for_lsp(self, lsp_id):
         """Return this brand's Dutchie BrandId for the given LSP, or False.
