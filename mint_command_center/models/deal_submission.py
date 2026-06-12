@@ -38,7 +38,19 @@ class DealSubmission(models.Model):
     brand_id = fields.Many2one(
         'mint.brand',
         string='Brand',
-        help='Link to the brand record',
+        help='Primary brand. Kept for back-compat (campaign naming, legacy '
+             'reports); when Brands below is used, this is its first entry.',
+    )
+    brand_ids = fields.Many2many(
+        'mint.brand',
+        'mint_deal_submission_brand_rel',
+        'submission_id',
+        'brand_id',
+        string='Brands',
+        help='All brands this deal includes (#93635 multi-brand deals). Two '
+             'or more brands are accepted in one submission; the converted '
+             'PTL deal and the Dutchie discount carry every selected brand. '
+             'Leave empty for single-brand deals (Brand field above).',
     )
     product_ids = fields.Many2many(
         'product.template',
@@ -269,11 +281,14 @@ class DealSubmission(models.Model):
         Campaign = self.env['mint.national.promo']
         year = _date.today().year
         for sub in records:
-            if sub.campaign_id or not sub.brand_id or not sub.market_id:
+            # Multi-brand (#93635): the campaign keys on the PRIMARY brand —
+            # first of brand_ids when the single brand_id isn't set.
+            primary = sub.brand_id or sub.brand_ids[:1]
+            if sub.campaign_id or not primary or not sub.market_id:
                 continue
             target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
             campaign = Campaign.get_or_create(
-                brand_id=sub.brand_id.id,
+                brand_id=primary.id,
                 market_id=sub.market_id.id,
                 year=target_year,
                 crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
@@ -405,17 +420,22 @@ class DealSubmission(models.Model):
 
         self._check_plot_gate()
 
+        # Multi-brand (#93635): every selected brand rides through. The
+        # union keeps single-brand submissions working unchanged.
+        all_brands = (self.brand_ids | self.brand_id) if self.brand_id else self.brand_ids
+
         # Drop any product picks whose brand no longer matches the
-        # submission's brand_id (e.g. user changed brand after picking).
+        # submission's brands (e.g. user changed brands after picking).
         # Silent drop is fine — the deal-form's explicit picker is also
         # brand-scoped, so a stale pick would be invisible anyway.
         explicit_products = self.product_ids.filtered(
-            lambda p: p.brand_id == self.brand_id
-        ) if self.brand_id else self.product_ids.browse([])
+            lambda p: p.brand_id in all_brands
+        ) if all_brands else self.product_ids.browse([])
 
         deal = self.env['mint.ptl.deal'].create({
             'name': self.name,
-            'brand_id': self.brand_id.id if self.brand_id else False,
+            'brand_id': (self.brand_id or all_brands[:1]).id if all_brands else False,
+            'brand_ids': [(6, 0, all_brands.ids)] if all_brands else False,
             'product_category': self.product_category,
             'discount_type': self.discount_type,
             'discount_value': self.discount_value,

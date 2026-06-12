@@ -195,8 +195,9 @@ class DealSubmissionDutchiePublish(models.Model):
         """Brand records this deal targets: brand_id, else alias resolution
         of the vendor string (#3 — may return several for multi-brand)."""
         self.ensure_one()
-        if self.brand_id:
-            return self.brand_id
+        brands = (self.brand_ids | self.brand_id) if self.brand_id else self.brand_ids
+        if brands:
+            return brands
         return self.env['mint.brand'].resolve_vendor_string(self.vendor_name)
 
     def _exclusion_terms(self):
@@ -331,6 +332,17 @@ class DealSubmissionDutchiePublish(models.Model):
             restrictions['Product'] = {'IsExclusion': True, 'RestrictionIds': prod_exc}
         if cat_id:
             restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': [cat_id]}
+
+        # Refuse a discount with NO restrictions at all — that would apply
+        # store-wide (every product, every brand). Reachable when none of the
+        # deal's brands resolve to a per-LSP Dutchie id and there are no
+        # product/category restrictions either.
+        if not any(r['RestrictionIds'] for r in restrictions.values()):
+            raise UserError(
+                "Refusing to publish: no Brand/Product/Category restriction "
+                "resolved — the discount would apply store-wide. "
+                + ("; ".join(warnings) or "")
+            )
 
         label = (f"{value * 100:g}% Off" if calc == 2
                  else f"{threshold_min} for ${value:g}" if calc == 6

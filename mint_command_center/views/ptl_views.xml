@@ -312,6 +312,10 @@
                                 <field name="brand_id"
                                        domain="[('product_count','&gt;',0)]"
                                        options="{'no_create': True}"/>
+                                <field name="brand_ids" widget="many2many_tags"
+                                       domain="[('product_count','&gt;',0)]"
+                                       options="{'no_create': True}"
+                                       placeholder="All brands this deal includes (multi-brand deals)"/>
                                 <field name="product_category"/>
                             </group>
                             <group string="Sales Details" col="1">
