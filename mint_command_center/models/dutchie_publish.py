@@ -313,20 +313,41 @@ class DealSubmissionDutchiePublish(models.Model):
             py = (idx - 1) % 7                # Sunday -> 6, Monday -> 0 ...
             day_flags[key] = py in dows
 
-        calc = CALC_BY_TYPE.get(self.discount_type)
+        # BOGO: Dutchie has no native BOGO type. The live-verified encoding
+        # (discounts 379870 "BOGO 50%" / 379191 "BOGO" at Tempe, read raw
+        # 2026-06-12) is PERCENT_OFF + NUMBER_OF_ITEMS threshold 2 +
+        # ApplyToOnlyOneItem=True: buy two, the discount hits ONE of them.
+        # discount_value carries the percent (50 = "BOGO 50% off");
+        # empty/0 means the second item is free (100%).
+        is_bogo = self.discount_type == 'bogo'
+        calc = 2 if is_bogo else CALC_BY_TYPE.get(self.discount_type)
         if not calc:
-            if self.discount_type == 'bogo':
-                # BOGO publishes as 100% off with item threshold 2 by Dutchie
-                # convention (percent-100); keep manual until verified.
-                raise UserError("BOGO auto-publish is not enabled yet — build it in Backoffice.")
             raise UserError(f"Unsupported discount type {self.discount_type!r} for Dutchie publish.")
         value = float(self.discount_value or 0)
         threshold_min = None
-        if calc == 2:
+        apply_to_one = False
+        if is_bogo:
+            # Guard: type=bogo with a blank value but percent prose ("BOGO
+            # 50% off ...") would silently publish a FREE item. Make the
+            # reviewer set the value explicitly.
+            if not value and RE_PCT.search(self.sales_details or ''):
+                raise UserError(
+                    "This BOGO's Sales Details mention a percentage but "
+                    "Discount Value is empty — set it (e.g. 50 for 'BOGO "
+                    "50% off') or it would publish as a FREE item."
+                )
+            value = (value / 100.0) if value else 1.0
+            threshold_min = 2
+            apply_to_one = True
+        elif calc == 2:
             # Model convention is WHOLE percents (50 = 50% — see
             # _format_sales_details). Divide unconditionally: a stored 1
             # means 1% (0.01), never 100%.
             value = value / 100.0
+        if calc == 2 and value > 1.0:
+            raise UserError(
+                f"Discount value {value * 100:g}% exceeds 100% — refusing to publish."
+            )
         elif calc == 6:
             m = RE_NFOR.search(self.sales_details or '')
             threshold_min = int(m.group(1)) if m else 2
@@ -358,7 +379,8 @@ class DealSubmissionDutchiePublish(models.Model):
                 + ("; ".join(warnings) or "")
             )
 
-        label = (f"{value * 100:g}% Off" if calc == 2
+        label = (("BOGO" if value >= 1.0 else f"BOGO {value * 100:g}% Off") if is_bogo
+                 else f"{value * 100:g}% Off" if calc == 2
                  else f"{threshold_min} for ${value:g}" if calc == 6
                  else f"${value:g} Off" if calc == 1
                  else f"${value:g}")
@@ -384,17 +406,19 @@ class DealSubmissionDutchiePublish(models.Model):
             'OrderTypeRestrictions': [],
             'Reward': {
                 'DiscountRewardId': None,
-                'HasThreshold': calc in (5, 6),
-                'ApplyToOnlyOneItem': False,
+                'HasThreshold': bool(threshold_min) or calc in (5, 6),
+                'ApplyToOnlyOneItem': apply_to_one,
                 'CalculationMethodId': calc,
                 'DiscountValue': value,
                 'IncludeNonCannabis': False,
-                'ItemGroupTypeId': 6,
+                # 5 = single-item discount, 6 = bundle grouping (see
+                # dutchie_discount_push.py docs). Live BOGO records use 5.
+                'ItemGroupTypeId': 5 if is_bogo else 6,
                 'ManualDefaultApplyTo': 1,
                 'Restrictions': restrictions,
                 'ThresholdMax': None,
                 'ThresholdMin': threshold_min,
-                'ThresholdTypeId': 1 if calc == 6 else 2 if calc == 5 else 0,
+                'ThresholdTypeId': 1 if threshold_min else 2 if calc == 5 else 0,
             },
             'SavedWithAdvancedOptions': False,
             'ValidDateFrom': self._dutchie_date(dates[0]),
