@@ -324,11 +324,11 @@ class DealSubmission(models.Model):
                 )
                 if campaign:
                     sub.campaign_id = campaign.id
-            # Campaigns are background bookkeeping — never staff-entered and
-            # never a blocker (their menu is hidden). Auto-approve so the
-            # default 'planning' state can't trip the plot gate.
-            if sub.campaign_id and sub.campaign_id.state == 'planning':
-                sub.campaign_id.action_approve()
+        # Campaigns are background bookkeeping — never staff-entered and
+        # never a blocker. get_or_create births them 'approved'; this batched
+        # call heals any pre-existing 'planning' rows (action_approve filters
+        # to planning internally, so it's a no-op for the rest).
+        records.campaign_id.action_approve()
 
     def action_reject(self):
         return {
@@ -343,33 +343,30 @@ class DealSubmission(models.Model):
             },
         }
 
-    # ─── Plot gate (self-healing, never blocks) ─────────────────────────
+    # ─── Campaign self-heal (replaces the old blocking plot gate) ────────
     #
     # Campaigns (mint.national.promo) are background bookkeeping: they are
-    # auto-created on submission approval, never entered by staff, and
-    # their menu is hidden. Per the 2026-06-12 directive they must never
-    # block plotting — so instead of raising, this gate self-heals: a
-    # 'planning' campaign is auto-approved in place, and a missing campaign
-    # is simply not a problem (the rollup link is best-effort).
+    # auto-created on submission approval (born 'approved'), never entered
+    # by staff, and their menu is hidden. Per the 2026-06-12 directive they
+    # must never block plotting — a leftover 'planning' campaign is
+    # auto-approved in place, and a missing campaign is simply not a
+    # problem (the rollup link is best-effort).
 
-    def _check_plot_gate(self):
-        """Self-heal the campaign state instead of blocking the plot."""
+    def _autoapprove_campaign(self):
+        """Heal a legacy 'planning' campaign; never blocks, never raises.
+
+        NOTE: this mutates campaign state (mail-tracked) — do not call
+        from read-only contexts (computes, constraints, reports).
+        """
         self.ensure_one()
         campaign = self.campaign_id
-        if campaign and campaign.state == 'planning':
-            campaign.action_approve()
-
-    def action_force_approve_and_plot(self):
-        """Open the Force Approve & Plot wizard for this submission."""
-        self.ensure_one()
-        return {
-            'name': 'Force Approve & Plot',
-            'type': 'ir.actions.act_window',
-            'res_model': 'mint.deal.force.approve.wizard',
-            'view_mode': 'form',
-            'target': 'new',
-            'context': {'default_submission_id': self.id},
-        }
+        if campaign.state == 'closed':
+            _logger.warning(
+                'Deal submission %s plots under CLOSED campaign %s (%s) — '
+                'allowed per never-block policy, but the campaign rollup '
+                'will keep accruing.', self.id, campaign.id, campaign.name)
+            return
+        campaign.action_approve()  # filters to 'planning' internally
 
     def _format_sales_details(self):
         """Render the public Sales Details string from the structured discount
@@ -435,7 +432,7 @@ class DealSubmission(models.Model):
         if self.state not in ('approved',):
             raise UserError("Only approved submissions can be converted to deals.")
 
-        self._check_plot_gate()
+        self._autoapprove_campaign()
 
         # Multi-brand (#93635): every selected brand rides through. The
         # union keeps single-brand submissions working unchanged.

@@ -11,7 +11,7 @@
                         <strong>Revoke unlinks this deal from PTL days</strong>
                         and rescopes (or deactivates) its mint.discount so the
                         live site stops serving it. Permanent + audit-logged.
-                        Use Force-Approve &amp; Plot to re-introduce later.
+                        Re-approve and re-schedule the submission to re-introduce later.
                     </div>
                     <group>
                         <group>
