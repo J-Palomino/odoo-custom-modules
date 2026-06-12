@@ -132,12 +132,9 @@
                                         </t>
                                     </select>
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label" for="original_price">MSRP ($)</label>
-                                    <input type="number" class="form-control" id="original_price"
-                                           name="original_price" step="0.01" min="0"
-                                           t-att-value="form_values.get('original_price', '')"/>
-                                </div>
+                                <!-- MSRP input removed (Odoo #93683): MSRP is sourced from the
+                                     product master / Dutchie, never vendor-entered. The controller
+                                     defaults original_price to 0.0 when absent. -->
                                 <div class="col-md-4">
                                     <label class="form-label" for="discount_value">Discount Value</label>
                                     <input type="number" class="form-control" id="discount_value"

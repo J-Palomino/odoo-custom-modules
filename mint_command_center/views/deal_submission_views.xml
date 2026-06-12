@@ -46,28 +46,10 @@
                         <field name="deal_id" nolabel="1" readonly="1"/>
                     </div>
                     <group>
-                        <group string="Vendor Information">
-                            <field name="vendor_name"/>
-                            <field name="vendor_email" widget="email"/>
-                            <field name="vendor_contact"/>
-                            <field name="vendor_phone" widget="phone"/>
-                            <field name="crm_lead_id" options="{'no_create': True}"/>
-                            <field name="campaign_id" options="{'no_create': True}"/>
-                        </group>
                         <group string="Deal Details">
                             <field name="discount_type"/>
                             <field name="discount_value"/>
-                            <field name="original_price"/>
-                        </group>
-                    </group>
-                    <group string="Vendor Funding">
-                        <group>
-                            <field name="vendor_funding_amount" widget="monetary"/>
-                            <field name="currency_id" column_invisible="True"/>
-                            <field name="vendor_funding_percent"/>
-                        </group>
-                        <group>
-                            <field name="vendor_funding_terms" placeholder="Payment terms, MOQ, etc."/>
+                            <field name="original_price" invisible="1"/>
                         </group>
                     </group>
                     <group string="Targeting">
@@ -80,6 +62,27 @@
                         </group>
                     </group>
                     <notebook>
+                        <page string="Vendor Details" name="vendor_details">
+                            <group>
+                                <field name="vendor_name"/>
+                                <field name="brand_id" options="{'no_create': True}"/>
+                                <field name="vendor_email" widget="email"/>
+                                <field name="vendor_contact"/>
+                                <field name="vendor_phone" widget="phone"/>
+                                <field name="crm_lead_id" options="{'no_create': True}"/>
+                                <field name="campaign_id" options="{'no_create': True}"/>
+                            </group>
+                            <group string="Vendor Funding">
+                                <group>
+                                    <field name="vendor_funding_amount" widget="monetary"/>
+                                    <field name="currency_id" column_invisible="True"/>
+                                    <field name="vendor_funding_percent"/>
+                                </group>
+                                <group>
+                                    <field name="vendor_funding_terms" placeholder="Payment terms, MOQ, etc."/>
+                                </group>
+                            </group>
+                        </page>
                         <page string="Schedule" name="schedule">
                             <group>
                                 <field name="windows_summary" readonly="1"/>
@@ -113,7 +116,6 @@
                         </page>
                         <page string="Inclusions" name="inclusions">
                             <group>
-                                <field name="brand_id"/>
                                 <field name="brand_ids" widget="many2many_tags"
                                        options="{'no_create': True}"
                                        placeholder="Add every brand this deal includes (multi-brand deals)"/>
