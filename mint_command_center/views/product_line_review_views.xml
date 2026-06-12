@@ -78,6 +78,12 @@
               action="action_product_line_review"
               sequence="45"/>
 
+    <!-- Temporarily hide "Product Line Review". Re-enable by setting active
+         back to True (prod xmlid row is pinned noupdate, so flip it live too). -->
+    <record id="menu_product_line_review" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+
     <menuitem id="menu_recompute_format_keys"
               name="Recompute Format Keys"
               parent="menu_ptl"
