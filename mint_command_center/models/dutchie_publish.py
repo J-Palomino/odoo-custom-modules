@@ -272,12 +272,26 @@ class DealSubmissionDutchiePublish(models.Model):
             if bid and str(bid).isdigit():
                 exc_brand_ids.append(int(bid))
 
-        cat_id = None
+        # Category: product_category is a MASTER bucket ('Edibles &
+        # Tinctures', 'Flower', ...). Resolve it through the bucket's pattern
+        # list to every matching product.category, then emit ALL their Dutchie
+        # ids. A literal ilike of the bucket name matches nothing — buckets
+        # are not Dutchie category names.
+        cat_ids = []
         if self.product_category and self.product_category.strip().lower() not in NOISE:
-            cat = self.env['product.category'].search(
-                [('name', 'ilike', self.product_category.strip())], limit=1)
-            if cat and str(cat.dutchie_category_id or '').strip().isdigit():
-                cat_id = int(cat.dutchie_category_id)
+            from .ptl_deal import MASTER_CATEGORY_PATTERNS
+            Categ = self.env['product.category']
+            patterns = MASTER_CATEGORY_PATTERNS.get(self.product_category.strip())
+            if patterns:
+                domain = ['|'] * (len(patterns) - 1) + [('name', 'ilike', p) for p in patterns]
+                cats = Categ.search(domain)
+            else:
+                cats = Categ.search([('name', 'ilike', self.product_category.strip())])
+            cat_ids = sorted({int(c.dutchie_category_id) for c in cats
+                              if str(c.dutchie_category_id or '').strip().isdigit()})
+            if not cat_ids:
+                warnings.append(
+                    f"category {self.product_category!r} resolved to no Dutchie category ids")
 
         # Active window + day-of-week from the structured plot windows.
         # all_dates() returns ISO strings — coerce to date objects.
@@ -330,8 +344,8 @@ class DealSubmissionDutchiePublish(models.Model):
                 warnings.append("product exclusions dropped (Product slot used by includes)")
         elif prod_exc:
             restrictions['Product'] = {'IsExclusion': True, 'RestrictionIds': prod_exc}
-        if cat_id:
-            restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': [cat_id]}
+        if cat_ids:
+            restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': cat_ids}
 
         # Refuse a discount with NO restrictions at all — that would apply
         # store-wide (every product, every brand). Reachable when none of the
