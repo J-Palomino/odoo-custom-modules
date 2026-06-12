@@ -327,6 +327,15 @@ class DealSubmissionDutchiePublish(models.Model):
         threshold_min = None
         apply_to_one = False
         if is_bogo:
+            # Guard: type=bogo with a blank value but percent prose ("BOGO
+            # 50% off ...") would silently publish a FREE item. Make the
+            # reviewer set the value explicitly.
+            if not value and RE_PCT.search(self.sales_details or ''):
+                raise UserError(
+                    "This BOGO's Sales Details mention a percentage but "
+                    "Discount Value is empty — set it (e.g. 50 for 'BOGO "
+                    "50% off') or it would publish as a FREE item."
+                )
             value = (value / 100.0) if value else 1.0
             threshold_min = 2
             apply_to_one = True
@@ -335,6 +344,10 @@ class DealSubmissionDutchiePublish(models.Model):
             # _format_sales_details). Divide unconditionally: a stored 1
             # means 1% (0.01), never 100%.
             value = value / 100.0
+        if calc == 2 and value > 1.0:
+            raise UserError(
+                f"Discount value {value * 100:g}% exceeds 100% — refusing to publish."
+            )
         elif calc == 6:
             m = RE_NFOR.search(self.sales_details or '')
             threshold_min = int(m.group(1)) if m else 2
@@ -398,7 +411,9 @@ class DealSubmissionDutchiePublish(models.Model):
                 'CalculationMethodId': calc,
                 'DiscountValue': value,
                 'IncludeNonCannabis': False,
-                'ItemGroupTypeId': 6,
+                # 5 = single-item discount, 6 = bundle grouping (see
+                # dutchie_discount_push.py docs). Live BOGO records use 5.
+                'ItemGroupTypeId': 5 if is_bogo else 6,
                 'ManualDefaultApplyTo': 1,
                 'Restrictions': restrictions,
                 'ThresholdMax': None,
