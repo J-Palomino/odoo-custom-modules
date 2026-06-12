@@ -79,7 +79,9 @@
                                 <field name="vendor_contact"/>
                                 <field name="vendor_phone" widget="phone"/>
                                 <field name="crm_lead_id" options="{'no_create': True}"/>
-                                <field name="campaign_id" options="{'no_create': True}"/>
+                                <!-- campaign_id intentionally not shown: it is
+                                     optional and auto-filled on approval
+                                     (get_or_create brand x market x year). -->
                             </group>
                             <group string="Vendor Funding">
                                 <group>
