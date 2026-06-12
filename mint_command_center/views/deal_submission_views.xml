@@ -281,7 +281,7 @@
                 No deal submissions yet
             </p>
             <p>
-                Vendors submit deals via the /promos form.
+                Vendors land on /promos (market picker or, when logged in, their promo calendar) and submit deals via the /vendor-deals form.
                 Review, approve, and convert submissions into PTL Deals.
             </p>
         </field>
