@@ -23,6 +23,7 @@
                        decoration-success="mode == 'live'"/>
                 <field name="success" widget="boolean_toggle" readonly="1"/>
                 <field name="elapsed_ms"/>
+                <field name="dutchie_discount_id" optional="show"/>
                 <field name="backoffice_url" widget="url" optional="show"/>
                 <field name="error_message" optional="hide"/>
             </list>

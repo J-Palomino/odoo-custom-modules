@@ -110,6 +110,14 @@ class DutchieDiscountPushLog(models.Model):
     success = fields.Boolean(string='Success', index=True)
     error_message = fields.Text(string='Error')
     elapsed_ms = fields.Integer(string='Elapsed (ms)')
+    dutchie_discount_id = fields.Integer(
+        string='Dutchie Discount Id',
+        index=True,
+        help='The PER-STORE Dutchie discount id returned by a successful live '
+             'push. Each store has its own Dutchie discount (distinct id per '
+             'loc), so update-vs-create on re-publish is resolved from this '
+             'log per (discount, store) — NOT from a single id on mint.discount.',
+    )
     backoffice_url = fields.Char(
         string='Backoffice URL',
         help='Deep link to review this discount in the Dutchie backoffice. '
@@ -201,12 +209,21 @@ class PtlDayDutchiePush(models.Model):
         (Monday..Sunday). If all 7 flags are False (the default), Dutchie
         treats the discount as active every day.
         """
-        # dutchie_discount_id is a Char (defined in mint_api_v2). For Dutchie's
-        # update-discount-item we need an integer Id (0 = create new). PTL-derived
-        # rows carry a synthetic 'ptl_<n>' value here that's NOT a Dutchie id;
-        # treat those as 0 (create) and let the live response give us the real id.
-        existing = (discount.dutchie_discount_id or '').strip()
-        existing_int = int(existing) if existing.isdigit() else 0
+        # Dutchie's update-discount-item needs an integer Id (0 = create new,
+        # a real id = update THAT record). Each store gets its OWN Dutchie
+        # discount (distinct id per loc), so the id must be resolved PER
+        # (discount, store) — reusing a single id across stores would make
+        # store N update store 1's discount. Look it up from the most recent
+        # successful live push log for this exact (discount, store); absent →
+        # 0 (create) and the live response records the new id on its own log.
+        prior = self.env['mint.dutchie.discount.push.log'].sudo().search([
+            ('discount_id', '=', discount.id),
+            ('company_id', '=', store.id),
+            ('mode', '=', 'live'),
+            ('success', '=', True),
+            ('dutchie_discount_id', '!=', 0),
+        ], order='id desc', limit=1)
+        existing_int = prior.dutchie_discount_id or 0
 
         name = (discount.name or '')[:120]
         calc_method_id = self._resolve_calc_method_id(discount)
@@ -599,14 +616,16 @@ class PtlDayDutchiePush(models.Model):
                     # checked dutchie_raw.Data, which success responses omit).
                     new_id = parsed.get('discount_id') or (parsed.get('dutchie_raw') or {}).get('Data')
                     if isinstance(new_id, int) and new_id > 0:
+                        # Record the Dutchie id on THIS (discount, store) log row.
+                        # _deal_to_dutchie_payload reads it back per-store to do
+                        # update-vs-create on re-publish. Deliberately NOT cached
+                        # onto mint.discount.dutchie_discount_id — that single
+                        # field can't represent N per-store ids and previously
+                        # made store N target store 1's discount.
+                        log_vals['dutchie_discount_id'] = new_id
                         # Backoffice review link for this push (live id only).
                         log_vals['backoffice_url'] = self._build_backoffice_url(
                             new_id, loc_id, lsp_id)
-                        # Field is Char (from mint_api_v2) — store as string. Only
-                        # overwrite if currently empty or a synthetic 'ptl_*' marker.
-                        cur = (discount.dutchie_discount_id or '').strip()
-                        if cur.startswith('ptl_') or not cur:
-                            discount.sudo().write({'dutchie_discount_id': str(new_id)})
                 except Exception:
                     pass
         except urllib.error.HTTPError as e:
@@ -626,7 +645,7 @@ class PtlDayDutchiePush(models.Model):
             'action': 'ptl_push' if log_vals.get('success') else 'ptl_push_failed',
             'discount_odoo_id': discount.id,
             'discount_name': discount.name,
-            'dutchie_discount_id': discount.dutchie_discount_id or None,
+            'dutchie_discount_id': log_vals.get('dutchie_discount_id') or None,
             'store': store.name,
             'loc_id': loc_id,
             'lsp_id': lsp_id,
