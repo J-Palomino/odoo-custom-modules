@@ -104,6 +104,17 @@ class DealSubmission(models.Model):
              '(x_quantity_available > 0) across the selected brand(s). '
              'Drives the In-Stock Category dropdown domain.',
     )
+    available_product_ids = fields.Many2many(
+        'product.template',
+        compute='_compute_available_product_ids',
+        string='Available Products',
+        help='Products matching every selected facet — brand(s), in-stock '
+             'categor(ies), and market/stores. A product qualifies when one '
+             'of its variants has on-hand stock at one of the requested '
+             'stores (variant x_dutchie_location_id + x_quantity_available '
+             'from the Dutchie sync). Drives the Specific Products picker '
+             'domain.',
+    )
     # discount_type / discount_value / original_price come from
     # mint.discount.core.mixin.
     sales_details = fields.Text(
@@ -469,6 +480,47 @@ class DealSubmission(models.Model):
         Mirrors the brand_ids|brand_id union used everywhere for brands."""
         self.ensure_one()
         return self.product_category_ids | self.product_category_id
+
+    @api.depends('brand_id', 'brand_ids', 'product_category_id',
+                 'product_category_ids', 'market_id', 'store_ids')
+    def _compute_available_product_ids(self):
+        """Products matching every facet, for the Specific Products domain.
+
+        Searched on product.product (not dotted template domains) so the
+        SAME variant must carry both the store location and the stock —
+        dotted m2o-path conditions each match against any variant
+        independently, which would pass a product stocked only outside the
+        market. Store scope = requested store_ids when set, else the
+        market's stores; no stores resolved -> stock anywhere. sudo for the
+        same reason as _compute_available_category_ids.
+        """
+        Variant = self.env['product.product'].sudo()
+        for sub in self:
+            brands = sub.brand_ids | sub.brand_id
+            if not brands:
+                sub.available_product_ids = False
+                continue
+            domain = [
+                ('product_tmpl_id.brand_id', 'in', brands.ids),
+                ('x_quantity_available', '>', 0),
+            ]
+            cats = sub._all_picked_categories()
+            if cats:
+                domain.append(('product_tmpl_id.categ_id', 'in', cats.ids))
+            stores = sub.store_ids or (
+                sub.market_id and sub.market_id.store_ids
+                or self.env['res.company'].browse([])
+            )
+            uuids = [
+                s.dutchie_store_id for s in stores
+                if getattr(s, 'dutchie_store_id', False)
+            ]
+            if uuids:
+                domain.append(('x_dutchie_location_id', 'in', uuids))
+            variants = Variant.search(domain)
+            sub.available_product_ids = [
+                (6, 0, variants.product_tmpl_id.ids)
+            ]
 
     def _ptl_category_bucket(self):
         """Map this submission's category picks / free text onto the master
