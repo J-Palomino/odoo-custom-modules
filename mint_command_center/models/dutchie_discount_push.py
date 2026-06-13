@@ -274,6 +274,19 @@ class PtlDayDutchiePush(models.Model):
             'Friday': bool(discount.friday),
             'Saturday': bool(discount.saturday),
             'MenuDisplayRank': 0,
+            # Customer-facing menu card name. Without DiscountMenuDisplayDetails
+            # /MenuDisplayName, Dutchie's online menu falls back to
+            # DiscountDescription (internal "lgm ..." text) and mintinvsvc warns
+            # "SOP §7: MenuDisplayName is missing". Mirror OnlineName so the
+            # storefront card shows the deal name. Shape per the canonical
+            # fixture / scripts/dutchie/publish-deal.mjs.
+            'DiscountMenuDisplayDetails': {
+                'DiscountId': existing_int,
+                'MenuDisplayImageUrl': '',
+                'MenuDisplayName': name,
+                'MenuDisplayDescription': '',
+                'DiscountMenuDisplayId': None,
+            },
         }
 
     # ─── Push entry point — call AFTER _push_discounts_to_redis ──────────
