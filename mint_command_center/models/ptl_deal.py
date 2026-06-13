@@ -1,5 +1,7 @@
 import logging
 
+from markupsafe import Markup
+
 from odoo import api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
@@ -887,10 +889,14 @@ class PtlDeal(models.Model):
                 " (LIVE Dutchie write)" if mode == 'live'
                 else " (Dutchie simulated — payload logged, not sent)"
             )
-            body = (
+            # Build as Markup so the chatter renders HTML (bold + the link);
+            # message_post escapes a plain str body in Odoo 19. The `%` operator
+            # on Markup auto-escapes the substituted values (mode/note/store
+            # name/url), so no injection from those.
+            body = Markup(
                 "Published to storefront + Dutchie across %d day(s). "
-                "Push mode: <b>%s</b>%s." % (len(deal.day_ids), mode, note)
-            )
+                "Push mode: <b>%s</b>%s."
+            ) % (len(deal.day_ids), mode, note)
             # Append Dutchie backoffice review link(s). Only present after a
             # successful live push — the URL needs the Dutchie discount id, so
             # dry-run / failed pushes contribute nothing here. Scoped to logs
@@ -905,12 +911,11 @@ class PtlDeal(models.Model):
                 if lg.backoffice_url in seen:
                     continue
                 seen.add(lg.backoffice_url)
-                links.append(
+                links.append(Markup(
                     '<a href="%s" target="_blank">Review in Dutchie backoffice — %s</a>'
-                    % (lg.backoffice_url, lg.company_id.name or 'store')
-                )
+                ) % (lg.backoffice_url, lg.company_id.name or 'store'))
             if links:
-                body += '<br/>' + '<br/>'.join(links)
+                body += Markup('<br/>') + Markup('<br/>').join(links)
             deal.message_post(body=body, message_type='comment')
 
     # Backward-compat alias: the old button name / any automations that still
