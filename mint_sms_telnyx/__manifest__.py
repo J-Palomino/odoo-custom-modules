@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint SMS — Telnyx Gateway (Transactional Only)',
-    'version': '19.0.1.1.0',
+    'version': '19.0.1.2.0',
     'category': 'Tools',
     'summary': 'Transactional SMS via Telnyx — order/pickup/OTP only, with cannabis-content guardrail',
     'description': """
