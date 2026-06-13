@@ -876,7 +876,13 @@ class PtlDeal(models.Model):
             # can be plotted into days of more than one market. Push once per
             # distinct market, using a representative day from each, so no
             # market's stores are silently skipped.
-            push_started = fields.Datetime.now()
+            Log = self.env['mint.dutchie.discount.push.log'].sudo()
+            # Watermark the log id BEFORE the push so the backoffice links below
+            # can be scoped to rows created by THIS publish. Use the monotonic,
+            # transaction-visible id rather than create_date — create_date is
+            # DB-clocked while a wall-clock cutoff would be app-clocked, and the
+            # skew between the two servers intermittently dropped the link.
+            last_log_id = Log.search([], order='id desc', limit=1).id or 0
             for market in deal.day_ids.mapped('market_id'):
                 mday = deal.day_ids.filtered(lambda d: d.market_id == market)[:1]
                 mday._push_discounts_to_redis(discount.ids)
@@ -900,10 +906,10 @@ class PtlDeal(models.Model):
             # Append Dutchie backoffice review link(s). Only present after a
             # successful live push — the URL needs the Dutchie discount id, so
             # dry-run / failed pushes contribute nothing here. Scoped to logs
-            # created by THIS publish via push_started.
-            logs = self.env['mint.dutchie.discount.push.log'].sudo().search([
+            # created by THIS publish via the id watermark above.
+            logs = Log.search([
+                ('id', '>', last_log_id),
                 ('discount_id', '=', discount.id),
-                ('create_date', '>=', push_started),
                 ('backoffice_url', '!=', False),
             ], order='id desc')
             seen, links = set(), []
