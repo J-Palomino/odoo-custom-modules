@@ -5,6 +5,7 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from .deal_mixins import format_bundle_tiers_text
+from .ptl_deal import MASTER_CATEGORY_PATTERNS
 
 _logger = logging.getLogger(__name__)
 
@@ -78,6 +79,44 @@ class DealSubmission(models.Model):
     # --- Deal details ---
     name = fields.Char(string='Deal Name', required=True, tracking=True)
     product_category = fields.Char(string='Product Category')
+    product_category_id = fields.Many2one(
+        'product.category',
+        string='In-Stock Category',
+        help='Primary in-stock category. Kept for back-compat (mirrors the '
+             'brand_id/brand_ids pattern); when In-Stock Categories below is '
+             'used, this is its first entry.',
+    )
+    product_category_ids = fields.Many2many(
+        'product.category',
+        'mint_deal_submission_categ_rel',
+        'submission_id',
+        'categ_id',
+        string='In-Stock Categories',
+        help='All categories this deal includes — limited to categories the '
+             'selected brand(s) currently have in stock, same multi-select '
+             'pattern as Brands. Picks fill the plain-text Product Category '
+             '(comma-separated Dutchie names); downstream (PTL conversion, '
+             'stock check, Dutchie publish) keeps reading the text field.',
+    )
+    available_category_ids = fields.Many2many(
+        'product.category',
+        compute='_compute_available_category_ids',
+        string='Available In-Stock Categories',
+        help='Distinct Dutchie categories with on-hand stock '
+             '(x_quantity_available > 0) across the selected brand(s). '
+             'Drives the In-Stock Category dropdown domain.',
+    )
+    available_product_ids = fields.Many2many(
+        'product.template',
+        compute='_compute_available_product_ids',
+        string='Available Products',
+        help='Products matching every selected facet — brand(s), in-stock '
+             'categor(ies), and market/stores. A product qualifies when one '
+             'of its variants has on-hand stock at one of the requested '
+             'stores (variant x_dutchie_location_id + x_quantity_available '
+             'from the Dutchie sync). Drives the Specific Products picker '
+             'domain.',
+    )
     # discount_type / discount_value / original_price come from
     # mint.discount.core.mixin.
     sales_details = fields.Text(
@@ -325,17 +364,21 @@ class DealSubmission(models.Model):
             # Multi-brand (#93635): the campaign keys on the PRIMARY brand —
             # first of brand_ids when the single brand_id isn't set.
             primary = sub.brand_id or sub.brand_ids[:1]
-            if sub.campaign_id or not primary or not sub.market_id:
-                continue
-            target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
-            campaign = Campaign.get_or_create(
-                brand_id=primary.id,
-                market_id=sub.market_id.id,
-                year=target_year,
-                crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
-            )
-            if campaign:
-                sub.campaign_id = campaign.id
+            if not sub.campaign_id and primary and sub.market_id:
+                target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
+                campaign = Campaign.get_or_create(
+                    brand_id=primary.id,
+                    market_id=sub.market_id.id,
+                    year=target_year,
+                    crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
+                )
+                if campaign:
+                    sub.campaign_id = campaign.id
+        # Campaigns are background bookkeeping — never staff-entered and
+        # never a blocker. get_or_create births them 'approved'; this batched
+        # call heals any pre-existing 'planning' rows (action_approve filters
+        # to planning internally, so it's a no-op for the rest).
+        records.campaign_id.action_approve()
 
     def action_reject(self):
         return {
@@ -350,50 +393,30 @@ class DealSubmission(models.Model):
             },
         }
 
-    # ─── Plot gate ───────────────────────────────────────────────────────
+    # ─── Campaign self-heal (replaces the old blocking plot gate) ────────
     #
-    # Conversion to a mint.ptl.deal requires the parent campaign
-    # (mint.national.promo for this brand × market × year) to be approved
-    # — i.e. the brand × market is "blessed to plot" per Famous's approved-
-    # offers concept. The gate is bypassable via the Force-Approve wizard,
-    # which sets `force_override=True` in context and writes a reason to
-    # chatter on both the submission and the campaign.
+    # Campaigns (mint.national.promo) are background bookkeeping: they are
+    # auto-created on submission approval (born 'approved'), never entered
+    # by staff, and their menu is hidden. Per the 2026-06-12 directive they
+    # must never block plotting — a leftover 'planning' campaign is
+    # auto-approved in place, and a missing campaign is simply not a
+    # problem (the rollup link is best-effort).
 
-    PLOTTABLE_CAMPAIGN_STATES = ('approved', 'active')
+    def _autoapprove_campaign(self):
+        """Heal a legacy 'planning' campaign; never blocks, never raises.
 
-    def _check_plot_gate(self):
-        """Raise UserError if the submission's campaign isn't approved,
-        unless force_override is set in context."""
+        NOTE: this mutates campaign state (mail-tracked) — do not call
+        from read-only contexts (computes, constraints, reports).
+        """
         self.ensure_one()
-        if self.env.context.get('force_override'):
-            return
         campaign = self.campaign_id
-        if not campaign:
-            raise UserError(
-                "No National Promo Campaign linked to this submission yet. "
-                "Approve the submission first (creates the campaign), then "
-                "approve the campaign — or use Force Approve & Plot."
-            )
-        if campaign.state not in self.PLOTTABLE_CAMPAIGN_STATES:
-            raise UserError(
-                f"Campaign \"{campaign.name}\" is in state "
-                f"\"{campaign.state}\" — only "
-                f"{', '.join(self.PLOTTABLE_CAMPAIGN_STATES)} campaigns can "
-                f"be plotted. Approve the campaign first, or use Force "
-                f"Approve & Plot to do both with an audit-logged reason."
-            )
-
-    def action_force_approve_and_plot(self):
-        """Open the Force Approve & Plot wizard for this submission."""
-        self.ensure_one()
-        return {
-            'name': 'Force Approve & Plot',
-            'type': 'ir.actions.act_window',
-            'res_model': 'mint.deal.force.approve.wizard',
-            'view_mode': 'form',
-            'target': 'new',
-            'context': {'default_submission_id': self.id},
-        }
+        if campaign.state == 'closed':
+            _logger.warning(
+                'Deal submission %s plots under CLOSED campaign %s (%s) — '
+                'allowed per never-block policy, but the campaign rollup '
+                'will keep accruing.', self.id, campaign.id, campaign.name)
+            return
+        campaign.action_approve()  # filters to 'planning' internally
 
     def _format_sales_details(self):
         """Render the public Sales Details string from the structured discount
@@ -449,6 +472,172 @@ class DealSubmission(models.Model):
             self.sales_details = generated
             self.sales_details_autogen = generated
 
+    @api.depends('brand_id', 'brand_ids')
+    def _compute_available_category_ids(self):
+        """Distinct categories the selected brand(s) have in stock right now.
+
+        x_quantity_available on product.template is the Dutchie-synced
+        on-hand quantity (refreshed continuously by the inventory sync), so
+        a plain aggregate here is cheap and always current — no inventory-
+        service HTTP round-trip needed. sudo: submitters reviewing deals
+        don't necessarily hold product read rights, and this exposes only
+        category names.
+        """
+        Product = self.env['product.template'].sudo()
+        for sub in self:
+            brands = sub.brand_ids | sub.brand_id
+            if not brands:
+                sub.available_category_ids = False
+                continue
+            groups = Product._read_group(
+                [('brand_id', 'in', brands.ids),
+                 ('x_quantity_available', '>', 0),
+                 ('categ_id', '!=', False)],
+                groupby=['categ_id'],
+                aggregates=[],
+            )
+            sub.available_category_ids = [(6, 0, [g[0].id for g in groups])]
+
+    def _all_picked_categories(self):
+        """Union of the multi-select and the legacy single pick, multi first.
+        Mirrors the brand_ids|brand_id union used everywhere for brands."""
+        self.ensure_one()
+        return self.product_category_ids | self.product_category_id
+
+    @api.depends('brand_id', 'brand_ids', 'product_category_id',
+                 'product_category_ids', 'market_id', 'store_ids')
+    def _compute_available_product_ids(self):
+        """Products matching every facet, for the Specific Products domain.
+
+        Searched on product.product (not dotted template domains) so the
+        SAME variant must carry both the store location and the stock —
+        dotted m2o-path conditions each match against any variant
+        independently, which would pass a product stocked only outside the
+        market. Store scope = requested store_ids when set, else the
+        market's stores; no stores resolved -> stock anywhere. sudo for the
+        same reason as _compute_available_category_ids.
+        """
+        Variant = self.env['product.product'].sudo()
+        for sub in self:
+            brands = sub.brand_ids | sub.brand_id
+            if not brands:
+                sub.available_product_ids = False
+                continue
+            domain = [
+                ('product_tmpl_id.brand_id', 'in', brands.ids),
+                ('x_quantity_available', '>', 0),
+            ]
+            cats = sub._all_picked_categories()
+            if cats:
+                domain.append(('product_tmpl_id.categ_id', 'in', cats.ids))
+            stores = sub.store_ids or (
+                sub.market_id and sub.market_id.store_ids
+                or self.env['res.company'].browse([])
+            )
+            uuids = [
+                s.dutchie_store_id for s in stores
+                if getattr(s, 'dutchie_store_id', False)
+            ]
+            if uuids:
+                domain.append(('x_dutchie_location_id', 'in', uuids))
+            variants = Variant.search(domain)
+            sub.available_product_ids = [
+                (6, 0, variants.product_tmpl_id.ids)
+            ]
+
+    def _ptl_category_bucket(self):
+        """Map this submission's category picks / free text onto the master
+        bucket Selection that mint.ptl.deal.product_category accepts.
+
+        The PTL field is a Selection (Flower / Pre-Rolls / Vapes / ...), so
+        raw Dutchie leaf names ('Infused Prerolls') or comma-joined text
+        would raise ValueError on conversion. Exact bucket text passes
+        through; otherwise each picked name is reverse-matched against
+        MASTER_CATEGORY_PATTERNS fragments and the first bucket wins
+        (multi-category nuance is preserved in product_category_legacy and
+        the published Dutchie restriction, not the PTL display bucket).
+        Returns False when nothing matches."""
+        self.ensure_one()
+        text = (self.product_category or '').strip()
+        if text in MASTER_CATEGORY_PATTERNS:
+            return text
+        names = [c.name for c in self._all_picked_categories()]
+        if not names and text:
+            names = [t.strip() for t in text.split(',') if t.strip()]
+        for name in names:
+            low = name.lower()
+            for bucket, patterns in MASTER_CATEGORY_PATTERNS.items():
+                if any(p.lower() in low for p in patterns):
+                    return bucket
+        return False
+
+    @api.onchange('product_category_id', 'product_category_ids')
+    def _onchange_product_category_fill_text(self):
+        """Mirror the dropdown picks into the legacy free-text field that all
+        downstream consumers (PTL conversion, stock-check wizard, Dutchie
+        publish) read. Leaf names only ('Infused Prerolls'), not the
+        'Cannabis / ...' path — that's what Dutchie item categories match.
+        Multiple picks join comma-separated. Also keeps the back-compat
+        single product_category_id aligned to the first multi pick."""
+        cats = self._all_picked_categories()
+        if cats:
+            self.product_category = ', '.join(cats.mapped('name'))
+        if self.product_category_ids and (
+                not self.product_category_id
+                or self.product_category_id not in self.product_category_ids):
+            self.product_category_id = self.product_category_ids[:1]
+
+    @api.onchange('brand_id', 'brand_ids')
+    def _onchange_brands_reset_category(self):
+        """Drop stale category picks when the brand set changes and the
+        new brand(s) no longer stock them. The free-text field is left
+        alone — it may carry an intentional manual value."""
+        avail = set(self.available_category_ids._origin.ids)
+        kept = self.product_category_ids._origin.filtered(lambda c: c.id in avail)
+        if len(kept) != len(self.product_category_ids):
+            self.product_category_ids = [(6, 0, kept.ids)]
+        current = self.product_category_id._origin.id
+        if current and current not in avail:
+            self.product_category_id = kept[:1] if kept else False
+
+    @api.model
+    def _mirror_category_text(self, vals):
+        """Non-form writes (RPC, imports, server actions) that set the
+        dropdowns without the text get the same mirroring the onchange does
+        in the form view."""
+        if vals.get('product_category'):
+            return
+        Category = self.env['product.category']
+        names = []
+        if vals.get('product_category_ids'):
+            # Resolve ids out of standard m2m command tuples ((6,0,ids)/(4,id))
+            ids = []
+            for cmd in vals['product_category_ids']:
+                if isinstance(cmd, (list, tuple)):
+                    if cmd[0] == 6:
+                        ids.extend(cmd[2])
+                    elif cmd[0] == 4:
+                        ids.append(cmd[1])
+                elif isinstance(cmd, int):
+                    ids.append(cmd)
+            names = Category.browse(ids).exists().mapped('name')
+        elif vals.get('product_category_id'):
+            cat = Category.browse(vals['product_category_id'])
+            if cat.exists():
+                names = [cat.name]
+        if names:
+            vals['product_category'] = ', '.join(names)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            self._mirror_category_text(vals)
+        return super().create(vals_list)
+
+    def write(self, vals):
+        self._mirror_category_text(vals)
+        return super().write(vals)
+
     @api.onchange('market_id')
     def _onchange_market_fill_stores(self):
         """Default Requested Stores to every live dispensary in the chosen
@@ -472,7 +661,7 @@ class DealSubmission(models.Model):
         if self.state not in ('approved',):
             raise UserError("Only approved submissions can be converted to deals.")
 
-        self._check_plot_gate()
+        self._autoapprove_campaign()
 
         # Multi-brand (#93635): every selected brand rides through. The
         # union keeps single-brand submissions working unchanged.
@@ -490,7 +679,8 @@ class DealSubmission(models.Model):
             'name': self.name,
             'brand_id': (self.brand_id or all_brands[:1]).id if all_brands else False,
             'brand_ids': [(6, 0, all_brands.ids)] if all_brands else False,
-            'product_category': self.product_category,
+            'product_category': self._ptl_category_bucket(),
+            'product_category_legacy': self.product_category or False,
             'discount_type': self.discount_type,
             'discount_value': self.discount_value,
             'original_price': self.original_price,

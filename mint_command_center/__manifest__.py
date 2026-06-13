@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.6.21.0',
+    'version': '19.0.6.26.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -88,7 +88,6 @@
         'views/deal_reject_wizard_views.xml',
         'views/stock_check_wizard_views.xml',
         'views/text_deals_wizard_views.xml',
-        'views/force_approve_wizard_views.xml',
         'views/revoke_wizard_views.xml',
         'views/bulk_revoke_wizard_views.xml',
         'views/conflict_resolution_wizard_views.xml',
