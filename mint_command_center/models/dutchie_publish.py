@@ -614,7 +614,7 @@ class DealSubmissionDutchiePublish(models.Model):
                     # this loc's discount in place (idempotent, no duplicates).
                     try:
                         rid = json.loads(raw).get('discount_id')
-                        if isinstance(rid, int) and rid > 0:
+                        if isinstance(rid, int) and not isinstance(rid, bool) and rid > 0:
                             updated[str(loc_id)] = rid
                     except (ValueError, TypeError):
                         pass
