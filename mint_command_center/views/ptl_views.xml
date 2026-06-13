@@ -243,7 +243,8 @@
                         <group>
                             <field name="sale_type"/>
                             <field name="discount_type"/>
-                            <field name="discount_value"/>
+                            <field name="discount_value"
+                                   invisible="discount_type in ('bogo', 'bundle') and not discount_value"/>
                             <field name="original_price"/>
                             <!-- Structured BOGO spec (#93677) -->
                             <field name="bogo_variant"
