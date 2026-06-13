@@ -31,6 +31,8 @@ from datetime import date as _date, timedelta
 from odoo import api, models
 from odoo.exceptions import UserError
 
+from .deal_mixins import format_bundle_tiers_text
+
 _logger = logging.getLogger(__name__)
 
 # mint.region name -> Dutchie LSP (tenant). BrandIds/ProductIds are LSP-scoped.
@@ -144,10 +146,13 @@ class DealSubmissionDutchiePublish(models.Model):
         mode = (self.env['ir.config_parameter'].sudo()
                 .get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
         # #2 reviewer gate: a deal can't convert (and thus can't publish) with
-        # no numeric value. Exemptions: bogo/clearance (valid without one) and
+        # no numeric value. Exemptions: bogo/clearance (valid without one),
+        # structured bundles (#93677 — pricing lives in bundle_tier_ids, and
+        # the auto-generated multi-tier text defeats the RE_NFOR parse), and
         # mode=off (publishing disabled — don't block legacy conversions).
         if (mode != 'off' and not self.discount_value
-                and self.discount_type not in ('bogo', 'clearance')):
+                and self.discount_type not in ('bogo', 'clearance')
+                and not (self.discount_type == 'bundle' and self.bundle_tier_ids)):
             parsed = self._parse_discount_from_text(self.sales_details)
             # Only trust the parse when its offer kind matches the chosen
             # type (or no type was chosen) — never turn "$10 off" prose into
@@ -349,8 +354,24 @@ class DealSubmissionDutchiePublish(models.Model):
                 f"Discount value {value * 100:g}% exceeds 100% — refusing to publish."
             )
         elif calc == 6:
-            m = RE_NFOR.search(self.sales_details or '')
-            threshold_min = int(m.group(1)) if m else 2
+            if self.bundle_tier_ids:
+                # Structured tiers (#93677) are the source of truth: first
+                # tier's qty/price. Dutchie's calc-6 reward holds a single
+                # (threshold, total) pair, so extra tiers need their own
+                # Backoffice discount — surface that instead of dropping
+                # them silently.
+                first = self.bundle_tier_ids[0]
+                threshold_min = first.qty
+                value = float(first.price)
+                if len(self.bundle_tier_ids) > 1:
+                    extra = format_bundle_tiers_text(
+                        [(t.qty, t.price) for t in self.bundle_tier_ids[1:]])
+                    warnings.append(
+                        f"only the first bundle tier was published; build the "
+                        f"remaining tier(s) ({extra}) manually in Backoffice")
+            else:
+                m = RE_NFOR.search(self.sales_details or '')
+                threshold_min = int(m.group(1)) if m else 2
 
         restrictions = {k: {'IsExclusion': False, 'RestrictionIds': []}
                         for k in ('Strain', 'Weight', 'Category', 'Tag', 'InventoryTag',

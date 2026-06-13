@@ -1,4 +1,5 @@
 from . import deal_mixins
+from . import bundle_tier
 from . import ptl_day
 from . import ptl_deal
 from . import deal_submission

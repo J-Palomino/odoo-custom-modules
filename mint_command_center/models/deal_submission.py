@@ -4,6 +4,7 @@ from datetime import date as _date
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
+from .deal_mixins import format_bundle_tiers_text
 from .ptl_deal import MASTER_CATEGORY_PATTERNS
 
 _logger = logging.getLogger(__name__)
@@ -14,7 +15,8 @@ class DealSubmission(models.Model):
     _description = 'Vendor Deal Submission'
     _inherit = [
         'mail.thread', 'mail.activity.mixin',
-        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
+        'mint.discount.core.mixin', 'mint.bogo.spec.mixin',
+        'mint.vendor.funding.mixin',
     ]
     _order = 'create_date desc'
 
@@ -120,6 +122,14 @@ class DealSubmission(models.Model):
     sales_details = fields.Text(
         string='Sales Details',
         help='Formatted pricing text — how this deal should be displayed',
+    )
+    # Structured bundle tiers (#93677): "2 for $18 or 3 for $25" as
+    # (qty, price) rows. Forwarded to the PTL deal on conversion. The
+    # structured BOGO triple comes from mint.bogo.spec.mixin.
+    bundle_tier_ids = fields.One2many(
+        'mint.deal.submission.bundle.tier',
+        'submission_id',
+        string='Bundle Tiers',
     )
     details_exclusions = fields.Text(
         string='Details & Exclusions',
@@ -410,8 +420,8 @@ class DealSubmission(models.Model):
 
     def _format_sales_details(self):
         """Render the public Sales Details string from the structured discount
-        type + value (+ MSRP). Returns '' for types that need extra structure
-        the form doesn't capture yet (Bundle/multi-buy) — those stay free-text.
+        type + value (+ MSRP). BOGO and Bundle now read their structured spec
+        (#93677): the bogo buy/get/pct triple and the bundle_tier_ids table.
 
         Driven by the existing discount_type Selection rather than a redundant
         new "sales format" field (#94626). discount_type already enumerates the
@@ -430,24 +440,37 @@ class DealSubmission(models.Model):
         if dt == 'price' and v:
             return money(v)
         if dt == 'bogo':
-            return "BOGO"
+            return self._bogo_sales_text() or "BOGO"
+        if dt == 'bundle':
+            return format_bundle_tiers_text(
+                [(t.qty, t.price) for t in self.bundle_tier_ids])
         if dt == 'clearance':
             return f"{n(v)}% Off (Clearance)" if v else "Clearance"
         if dt == 'points_multiplier' and v:
             return f"{n(v)}x Points"
-        return ''  # bundle / no value -> keep free text
+        return ''  # no value -> keep free text
 
-    @api.onchange('discount_type', 'discount_value')
+    sales_details_autogen = fields.Char(
+        string='Last Auto-generated Sales Details',
+        help='Internal: last value _onchange_autofill_sales_details wrote, so '
+             'structured-field edits can refresh the text without clobbering '
+             'a manual override.',
+    )
+
+    @api.onchange('discount_type', 'discount_value', 'bogo_variant',
+                  'bogo_buy_qty', 'bogo_get_qty', 'bogo_get_pct',
+                  'bundle_tier_ids')
     def _onchange_autofill_sales_details(self):
         """Auto-generate Sales Details from the discount type when it's still
-        blank, so submitters stop free-typing inconsistent pricing strings
-        (#94626). Only fills when empty — never clobbers a custom edit, and
-        Bundle/multi-buy wording is left to the user."""
-        if self.sales_details:
-            return
+        blank OR still equal to the previous auto-fill, so submitters stop
+        free-typing inconsistent pricing strings (#94626 / #93677). Never
+        clobbers a custom edit."""
         generated = self._format_sales_details()
-        if generated:
+        if not generated:
+            return
+        if not self.sales_details or self.sales_details == self.sales_details_autogen:
             self.sales_details = generated
+            self.sales_details_autogen = generated
 
     @api.depends('brand_id', 'brand_ids')
     def _compute_available_category_ids(self):
@@ -661,6 +684,14 @@ class DealSubmission(models.Model):
             'discount_type': self.discount_type,
             'discount_value': self.discount_value,
             'original_price': self.original_price,
+            'bogo_variant': self.bogo_variant,
+            'bogo_buy_qty': self.bogo_buy_qty,
+            'bogo_get_qty': self.bogo_get_qty,
+            'bogo_get_pct': self.bogo_get_pct,
+            'bundle_tier_ids': [
+                (0, 0, {'sequence': t.sequence, 'qty': t.qty, 'price': t.price})
+                for t in self.bundle_tier_ids
+            ],
             'sales_details': self.sales_details,
             'details_exclusions': self.details_exclusions,
             'store_ids': [(6, 0, self.store_ids.ids)] if self.store_ids else False,
