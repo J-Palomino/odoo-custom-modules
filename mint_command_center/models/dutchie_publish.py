@@ -28,7 +28,7 @@ import re
 import urllib.request
 from datetime import date as _date, timedelta
 
-from odoo import api, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from .deal_mixins import format_bundle_tiers_text
@@ -68,6 +68,16 @@ RE_BOGO = re.compile(r'\bbogo\b|\bb1g1\b|buy\s+one,?\s+get\s+one', re.I)
 
 class DealSubmissionDutchiePublish(models.Model):
     _inherit = 'mint.deal.submission'
+
+    dutchie_publish_loc_ids = fields.Text(
+        string='Dutchie Published LocId→DiscountId (JSON)',
+        copy=False,
+        help='Per-LocId Dutchie discount id from the last successful live '
+             'publish — JSON {"<locId>": <dutchieDiscountId>}. Each loc has '
+             'its OWN Dutchie discount, so re-publish UPDATES the recorded id '
+             'in place instead of creating a duplicate (the discount payload '
+             'otherwise hardcodes Id=0 = always-create).',
+    )
 
     # ------------------------------------------------------------------
     # #2 — discount value parsing (regex + reviewer gate)
@@ -574,10 +584,24 @@ class DealSubmissionDutchiePublish(models.Model):
             raise UserError("dutchie.publish.api_key is not configured for live mode.")
         if not loc_ids:
             raise UserError(f"dutchie.publish.loc_ids has no LocIds for LSP {lsp}.")
+        # Resolve update-vs-create PER LocId. Each loc has its OWN Dutchie
+        # discount, so reuse the id recorded from the last successful publish
+        # — a re-publish (or a re-click of the manual button) then UPDATES that
+        # discount in place instead of creating a duplicate. Without this the
+        # payload's hardcoded Id=0 makes every publish a fresh create.
+        try:
+            published = json.loads(self.dutchie_publish_loc_ids or '{}')
+        except (ValueError, TypeError):
+            published = {}
+        updated = dict(published)
         # Per-LocId isolation: one store failing must not hide which stores
         # DID publish — accumulate every outcome and report them all.
         results, failures = [], 0
         for loc_id in loc_ids:
+            existing = int(published.get(str(loc_id)) or 0)
+            discount['Id'] = existing
+            if isinstance(discount.get('DiscountMenuDisplayDetails'), dict):
+                discount['DiscountMenuDisplayDetails']['DiscountId'] = existing
             payload = json.dumps({'locId': loc_id, 'lspId': lsp, 'discount': discount}).encode()
             req = urllib.request.Request(
                 f"{url}/api/admin/discounts", data=payload,
@@ -585,17 +609,27 @@ class DealSubmissionDutchiePublish(models.Model):
                 method='POST')
             try:
                 with urllib.request.urlopen(req, timeout=60) as resp:
-                    body_bytes = resp.read()[:200]
-                    results.append(f"LocId {loc_id}: HTTP {resp.status} "
-                                   f"{body_bytes.decode(errors='replace')}")
+                    raw = resp.read().decode(errors='replace')
+                    # Record the returned Dutchie id so the NEXT publish updates
+                    # this loc's discount in place (idempotent, no duplicates).
+                    try:
+                        rid = json.loads(raw).get('discount_id')
+                        if isinstance(rid, int) and rid > 0:
+                            updated[str(loc_id)] = rid
+                    except (ValueError, TypeError):
+                        pass
+                    results.append(f"LocId {loc_id}: HTTP {resp.status} {raw[:200]}")
                     self._deal_audit_log('publish', lsp, loc_id, discount,
                                          http_status=resp.status,
-                                         response=body_bytes.decode(errors='replace'))
+                                         response=raw[:200])
             except Exception as exc:
                 failures += 1
                 results.append(f"LocId {loc_id}: FAILED — {exc}")
                 self._deal_audit_log('publish_failed', lsp, loc_id, discount,
                                      error=str(exc))
+        # Persist the loc->id map for idempotent re-publish.
+        if updated != published:
+            self.sudo().write({'dutchie_publish_loc_ids': json.dumps(updated)})
         self.message_post(
             body=f"[Dutchie publish — LIVE{' — PARTIAL FAILURE' if failures else ''}]\n"
                  + "\n".join(results)
