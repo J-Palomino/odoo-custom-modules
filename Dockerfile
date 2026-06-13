@@ -17,8 +17,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/nginx /etc/cloudflared
 
-# Install Python dependencies for base_accounting_kit + push notifications + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl cssselect
+# Install Python dependencies for base_accounting_kit + push notifications + S3 storage.
+# cryptography is PINNED to Odoo 19's version (==42.0.8, paired with the base
+# image's pyopenssl==24.1.0). pywebpush -> http-ece -> cryptography otherwise
+# pulls the LATEST cryptography at build time; >=44 dropped the legacy OpenSSL
+# bindings (lib.GEN_EMAIL) that pyopenssl 24.1.0 needs, which makes Odoo's
+# `base` module fail to import on a fresh build (prod outage 2026-06-13).
+# Keeping the pin makes rebuilds deterministic regardless of build date.
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed "cryptography==42.0.8" openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl cssselect
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
