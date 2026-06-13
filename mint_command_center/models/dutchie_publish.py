@@ -277,26 +277,44 @@ class DealSubmissionDutchiePublish(models.Model):
             if bid and str(bid).isdigit():
                 exc_brand_ids.append(int(bid))
 
-        # Category: product_category is a MASTER bucket ('Edibles &
-        # Tinctures', 'Flower', ...). Resolve it through the bucket's pattern
-        # list to every matching product.category, then emit ALL their Dutchie
-        # ids. A literal ilike of the bucket name matches nothing — buckets
-        # are not Dutchie category names.
+        # Category restriction. Structured picks first: the In-Stock
+        # Categories dropdown stores the exact product.category records the
+        # submitter chose — emit their Dutchie ids directly, no name
+        # matching. Legacy free-text fallback: the field may carry a MASTER
+        # bucket ('Edibles & Tinctures', ...), one Dutchie category name, or
+        # a comma-joined list of names (the dropdown mirror writes 'A, B, C'
+        # — treating that as ONE name matched nothing and silently published
+        # the deal with no category restriction at all).
         cat_ids = []
-        if self.product_category and self.product_category.strip().lower() not in NOISE:
+        picked = self._all_picked_categories()
+        if picked:
+            cat_ids = sorted({int(c.dutchie_category_id) for c in picked
+                              if str(c.dutchie_category_id or '').strip().isdigit()})
+            unres = [c.name for c in picked
+                     if not str(c.dutchie_category_id or '').strip().isdigit()]
+            if unres:
+                warnings.append(
+                    "categories without Dutchie id skipped: " + ", ".join(unres))
+        elif self.product_category and self.product_category.strip().lower() not in NOISE:
             from .ptl_deal import MASTER_CATEGORY_PATTERNS
             Categ = self.env['product.category']
-            patterns = MASTER_CATEGORY_PATTERNS.get(self.product_category.strip())
-            if patterns:
-                domain = ['|'] * (len(patterns) - 1) + [('name', 'ilike', p) for p in patterns]
-                cats = Categ.search(domain)
-            else:
-                cats = Categ.search([('name', 'ilike', self.product_category.strip())])
+            cats = Categ.browse([])
+            for token in (t.strip() for t in self.product_category.split(',')):
+                if not token or token.lower() in NOISE:
+                    continue
+                patterns = MASTER_CATEGORY_PATTERNS.get(token)
+                if patterns:
+                    domain = ['|'] * (len(patterns) - 1) + [('name', 'ilike', p) for p in patterns]
+                    cats |= Categ.search(domain)
+                else:
+                    cats |= Categ.search([('name', 'ilike', token)])
             cat_ids = sorted({int(c.dutchie_category_id) for c in cats
                               if str(c.dutchie_category_id or '').strip().isdigit()})
-            if not cat_ids:
-                warnings.append(
-                    f"category {self.product_category!r} resolved to no Dutchie category ids")
+        if (picked or (self.product_category
+                       and self.product_category.strip().lower() not in NOISE)) \
+                and not cat_ids:
+            warnings.append(
+                f"category {self.product_category!r} resolved to no Dutchie category ids")
 
         # Active window + day-of-week from the structured plot windows.
         # all_dates() returns ISO strings — coerce to date objects.
