@@ -4,6 +4,8 @@ from datetime import date as _date
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
+from .ptl_deal import MASTER_CATEGORY_PATTERNS
+
 _logger = logging.getLogger(__name__)
 
 
@@ -78,10 +80,21 @@ class DealSubmission(models.Model):
     product_category_id = fields.Many2one(
         'product.category',
         string='In-Stock Category',
-        help='Dropdown of categories the selected brand(s) currently have in '
-             'stock. Picking one fills the plain-text Product Category with '
-             'the Dutchie category name; downstream (PTL conversion, stock '
-             'check) keeps reading the text field.',
+        help='Primary in-stock category. Kept for back-compat (mirrors the '
+             'brand_id/brand_ids pattern); when In-Stock Categories below is '
+             'used, this is its first entry.',
+    )
+    product_category_ids = fields.Many2many(
+        'product.category',
+        'mint_deal_submission_categ_rel',
+        'submission_id',
+        'categ_id',
+        string='In-Stock Categories',
+        help='All categories this deal includes — limited to categories the '
+             'selected brand(s) currently have in stock, same multi-select '
+             'pattern as Brands. Picks fill the plain-text Product Category '
+             '(comma-separated Dutchie names); downstream (PTL conversion, '
+             'stock check, Dutchie publish) keeps reading the text field.',
     )
     available_category_ids = fields.Many2many(
         'product.category',
@@ -451,33 +464,94 @@ class DealSubmission(models.Model):
             )
             sub.available_category_ids = [(6, 0, [g[0].id for g in groups])]
 
-    @api.onchange('product_category_id')
+    def _all_picked_categories(self):
+        """Union of the multi-select and the legacy single pick, multi first.
+        Mirrors the brand_ids|brand_id union used everywhere for brands."""
+        self.ensure_one()
+        return self.product_category_ids | self.product_category_id
+
+    def _ptl_category_bucket(self):
+        """Map this submission's category picks / free text onto the master
+        bucket Selection that mint.ptl.deal.product_category accepts.
+
+        The PTL field is a Selection (Flower / Pre-Rolls / Vapes / ...), so
+        raw Dutchie leaf names ('Infused Prerolls') or comma-joined text
+        would raise ValueError on conversion. Exact bucket text passes
+        through; otherwise each picked name is reverse-matched against
+        MASTER_CATEGORY_PATTERNS fragments and the first bucket wins
+        (multi-category nuance is preserved in product_category_legacy and
+        the published Dutchie restriction, not the PTL display bucket).
+        Returns False when nothing matches."""
+        self.ensure_one()
+        text = (self.product_category or '').strip()
+        if text in MASTER_CATEGORY_PATTERNS:
+            return text
+        names = [c.name for c in self._all_picked_categories()]
+        if not names and text:
+            names = [t.strip() for t in text.split(',') if t.strip()]
+        for name in names:
+            low = name.lower()
+            for bucket, patterns in MASTER_CATEGORY_PATTERNS.items():
+                if any(p.lower() in low for p in patterns):
+                    return bucket
+        return False
+
+    @api.onchange('product_category_id', 'product_category_ids')
     def _onchange_product_category_fill_text(self):
-        """Mirror the dropdown pick into the legacy free-text field that all
+        """Mirror the dropdown picks into the legacy free-text field that all
         downstream consumers (PTL conversion, stock-check wizard, Dutchie
-        publish) read. Leaf name only ('Infused Prerolls'), not the
-        'Cannabis / ...' path — that's what Dutchie item categories match."""
-        if self.product_category_id:
-            self.product_category = self.product_category_id.name
+        publish) read. Leaf names only ('Infused Prerolls'), not the
+        'Cannabis / ...' path — that's what Dutchie item categories match.
+        Multiple picks join comma-separated. Also keeps the back-compat
+        single product_category_id aligned to the first multi pick."""
+        cats = self._all_picked_categories()
+        if cats:
+            self.product_category = ', '.join(cats.mapped('name'))
+        if self.product_category_ids and (
+                not self.product_category_id
+                or self.product_category_id not in self.product_category_ids):
+            self.product_category_id = self.product_category_ids[:1]
 
     @api.onchange('brand_id', 'brand_ids')
     def _onchange_brands_reset_category(self):
-        """Clear a stale category pick when the brand set changes and the
-        new brand(s) no longer stock it. The free-text field is left alone —
-        it may carry an intentional manual value."""
+        """Drop stale category picks when the brand set changes and the
+        new brand(s) no longer stock them. The free-text field is left
+        alone — it may carry an intentional manual value."""
+        avail = set(self.available_category_ids._origin.ids)
+        kept = self.product_category_ids._origin.filtered(lambda c: c.id in avail)
+        if len(kept) != len(self.product_category_ids):
+            self.product_category_ids = [(6, 0, kept.ids)]
         current = self.product_category_id._origin.id
-        if current and current not in self.available_category_ids._origin.ids:
-            self.product_category_id = False
+        if current and current not in avail:
+            self.product_category_id = kept[:1] if kept else False
 
     @api.model
     def _mirror_category_text(self, vals):
         """Non-form writes (RPC, imports, server actions) that set the
-        dropdown without the text get the same mirroring the onchange does
+        dropdowns without the text get the same mirroring the onchange does
         in the form view."""
-        if vals.get('product_category_id') and not vals.get('product_category'):
-            cat = self.env['product.category'].browse(vals['product_category_id'])
+        if vals.get('product_category'):
+            return
+        Category = self.env['product.category']
+        names = []
+        if vals.get('product_category_ids'):
+            # Resolve ids out of standard m2m command tuples ((6,0,ids)/(4,id))
+            ids = []
+            for cmd in vals['product_category_ids']:
+                if isinstance(cmd, (list, tuple)):
+                    if cmd[0] == 6:
+                        ids.extend(cmd[2])
+                    elif cmd[0] == 4:
+                        ids.append(cmd[1])
+                elif isinstance(cmd, int):
+                    ids.append(cmd)
+            names = Category.browse(ids).exists().mapped('name')
+        elif vals.get('product_category_id'):
+            cat = Category.browse(vals['product_category_id'])
             if cat.exists():
-                vals['product_category'] = cat.name
+                names = [cat.name]
+        if names:
+            vals['product_category'] = ', '.join(names)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -530,7 +604,8 @@ class DealSubmission(models.Model):
             'name': self.name,
             'brand_id': (self.brand_id or all_brands[:1]).id if all_brands else False,
             'brand_ids': [(6, 0, all_brands.ids)] if all_brands else False,
-            'product_category': self.product_category,
+            'product_category': self._ptl_category_bucket(),
+            'product_category_legacy': self.product_category or False,
             'discount_type': self.discount_type,
             'discount_value': self.discount_value,
             'original_price': self.original_price,
