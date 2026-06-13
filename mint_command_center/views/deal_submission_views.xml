@@ -169,6 +169,7 @@
                                 <label for="publish_match_count" string="In-Stock Products Matched"/>
                                 <div>
                                     <field name="publish_match_count" class="oe_inline"
+                                           widget="badge"
                                            decoration-danger="publish_match_count == 0"
                                            decoration-success="publish_match_count &gt; 0"/>
                                     <span class="text-danger ms-2" invisible="publish_match_count != 0">
