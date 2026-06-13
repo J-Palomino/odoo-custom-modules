@@ -874,6 +874,7 @@ class PtlDeal(models.Model):
             # can be plotted into days of more than one market. Push once per
             # distinct market, using a representative day from each, so no
             # market's stores are silently skipped.
+            push_started = fields.Datetime.now()
             for market in deal.day_ids.mapped('market_id'):
                 mday = deal.day_ids.filtered(lambda d: d.market_id == market)[:1]
                 mday._push_discounts_to_redis(discount.ids)
@@ -886,13 +887,31 @@ class PtlDeal(models.Model):
                 " (LIVE Dutchie write)" if mode == 'live'
                 else " (Dutchie simulated — payload logged, not sent)"
             )
-            deal.message_post(
-                body=(
-                    "Published to storefront + Dutchie across %d day(s). "
-                    "Push mode: <b>%s</b>%s." % (len(deal.day_ids), mode, note)
-                ),
-                message_type='comment',
+            body = (
+                "Published to storefront + Dutchie across %d day(s). "
+                "Push mode: <b>%s</b>%s." % (len(deal.day_ids), mode, note)
             )
+            # Append Dutchie backoffice review link(s). Only present after a
+            # successful live push — the URL needs the Dutchie discount id, so
+            # dry-run / failed pushes contribute nothing here. Scoped to logs
+            # created by THIS publish via push_started.
+            logs = self.env['mint.dutchie.discount.push.log'].sudo().search([
+                ('discount_id', '=', discount.id),
+                ('create_date', '>=', push_started),
+                ('backoffice_url', '!=', False),
+            ], order='id desc')
+            seen, links = set(), []
+            for lg in logs:
+                if lg.backoffice_url in seen:
+                    continue
+                seen.add(lg.backoffice_url)
+                links.append(
+                    '<a href="%s" target="_blank">Review in Dutchie backoffice — %s</a>'
+                    % (lg.backoffice_url, lg.company_id.name or 'store')
+                )
+            if links:
+                body += '<br/>' + '<br/>'.join(links)
+            deal.message_post(body=body, message_type='comment')
 
     # Backward-compat alias: the old button name / any automations that still
     # call action_set_live now route through the full publish path.

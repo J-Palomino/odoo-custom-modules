@@ -40,6 +40,16 @@ PUSH_URL_PARAM = 'mint.dutchie_discount_push.url'     # mintinvsvc base URL
 DEFAULT_PUSH_URL = 'https://mintinvsvc-production-6aa5.up.railway.app/api/admin/discounts'
 PUSH_API_KEY_PARAM = 'mint.dutchie_discount_push.api_key'  # mirrors mint.ptl_sync.api_key
 
+# Backoffice review-link template. Tokens: {id} (Dutchie discount id),
+# {locId}, {lspId}. Route confirmed from the backoffice SPA bundle
+# (marketing.discounts.createNew = '/marketing/discounts/discount/new'; a
+# specific discount shares the ':id' sibling route). Templated via system
+# parameter so ops can correct the path without a code change.
+BACKOFFICE_DISCOUNT_URL_PARAM = 'mint.dutchie_backoffice.discount_url'
+DEFAULT_BACKOFFICE_DISCOUNT_URL = (
+    'https://themint.backoffice.dutchie.com/marketing/discounts/discount/{id}'
+)
+
 
 class MintRegionDutchiePush(models.Model):
     _inherit = 'mint.region'
@@ -100,6 +110,12 @@ class DutchieDiscountPushLog(models.Model):
     success = fields.Boolean(string='Success', index=True)
     error_message = fields.Text(string='Error')
     elapsed_ms = fields.Integer(string='Elapsed (ms)')
+    backoffice_url = fields.Char(
+        string='Backoffice URL',
+        help='Deep link to review this discount in the Dutchie backoffice. '
+             'Populated on a successful live push (needs the Dutchie discount '
+             'id returned by mintinvsvc); empty for dry-run / failed pushes.',
+    )
 
 
 class PtlDayDutchiePush(models.Model):
@@ -144,6 +160,19 @@ class PtlDayDutchiePush(models.Model):
         if getattr(discount, 'item_group_type_id', 0):
             return int(discount.item_group_type_id)
         return self.ITEM_GROUP_TYPE_ID_FALLBACK
+
+    def _build_backoffice_url(self, discount_id, loc_id, lsp_id):
+        """Build the Dutchie backoffice review URL for a discount.
+
+        Templated via BACKOFFICE_DISCOUNT_URL_PARAM (tokens {id}/{locId}/{lspId})
+        so ops can correct the path in one place without a code change.
+        """
+        tmpl = self.env['ir.config_parameter'].sudo().get_param(
+            BACKOFFICE_DISCOUNT_URL_PARAM, DEFAULT_BACKOFFICE_DISCOUNT_URL)
+        try:
+            return tmpl.format(id=discount_id, locId=loc_id, lspId=lsp_id)
+        except Exception:
+            return tmpl
 
     def _format_dutchie_date(self, dt):
         """Format a date as Dutchie expects ('M/D/YYYY, h:mm:ss A')."""
@@ -561,13 +590,20 @@ class PtlDayDutchiePush(models.Model):
                 # Cache the returned Dutchie id so subsequent pushes use update-mode
                 try:
                     parsed = json.loads(body)
-                    new_id = (parsed.get('dutchie_raw') or {}).get('Data')
-                    # Field is Char (from mint_api_v2) — store as string. Only
-                    # overwrite if currently empty or a synthetic 'ptl_*' marker.
-                    cur = (discount.dutchie_discount_id or '').strip()
-                    is_synthetic = cur.startswith('ptl_') or not cur
-                    if isinstance(new_id, int) and new_id > 0 and is_synthetic:
-                        discount.sudo().write({'dutchie_discount_id': str(new_id)})
+                    # mintinvsvc success shape is {ok, discount_id, ...}; the
+                    # raw-fault shape nests the id under dutchie_raw.Data. Read
+                    # both so the id is captured on success (the old code only
+                    # checked dutchie_raw.Data, which success responses omit).
+                    new_id = parsed.get('discount_id') or (parsed.get('dutchie_raw') or {}).get('Data')
+                    if isinstance(new_id, int) and new_id > 0:
+                        # Backoffice review link for this push (live id only).
+                        log_vals['backoffice_url'] = self._build_backoffice_url(
+                            new_id, loc_id, lsp_id)
+                        # Field is Char (from mint_api_v2) — store as string. Only
+                        # overwrite if currently empty or a synthetic 'ptl_*' marker.
+                        cur = (discount.dutchie_discount_id or '').strip()
+                        if cur.startswith('ptl_') or not cur:
+                            discount.sudo().write({'dutchie_discount_id': str(new_id)})
                 except Exception:
                     pass
         except urllib.error.HTTPError as e:

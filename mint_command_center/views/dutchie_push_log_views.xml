@@ -23,6 +23,7 @@
                        decoration-success="mode == 'live'"/>
                 <field name="success" widget="boolean_toggle" readonly="1"/>
                 <field name="elapsed_ms"/>
+                <field name="backoffice_url" widget="url" optional="show"/>
                 <field name="error_message" optional="hide"/>
             </list>
         </field>
@@ -46,6 +47,9 @@
                             <field name="elapsed_ms" readonly="1"/>
                             <field name="create_date" readonly="1"/>
                         </group>
+                    </group>
+                    <group string="Backoffice" invisible="not backoffice_url">
+                        <field name="backoffice_url" widget="url" nolabel="1" readonly="1"/>
                     </group>
                     <group string="Error" invisible="not error_message">
                         <field name="error_message" nolabel="1" readonly="1"/>
