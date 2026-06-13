@@ -34,6 +34,11 @@ CALC_METHOD_MAP = {
     'fixed': 'DOLLAR_OFF',
     'bogo': 'BOGO',
     'price_to_amount': 'PRICE_TO_AMOUNT_TOTAL',
+    # Structured bundles (#93677): the mirror module normalizes
+    # calculation_method_id=6 rows to discount_type='price_per_unit' —
+    # without this entry the Redis webhook would fall back to PERCENT_OFF
+    # while discount_amount holds the bundle's dollar total.
+    'price_per_unit': 'PRICE_TO_AMOUNT_TOTAL',
     'points_multiplier': 'POINTS_MULTIPLIER',
     'clearance': 'CLEARANCE_PERCENT_OFF',
 }
@@ -457,6 +462,9 @@ class PtlDay(models.Model):
             'discount_code': discount.code or None,
             'discount_amount': discount.discount_amount,
             'calculation_method': calc_method,
+            # Minimum-item threshold (#93677): N of "N for $X" bundles and
+            # buy+get of structured BOGOs. 0 for legacy/non-threshold deals.
+            'threshold_min': discount.threshold_min or 0,
             'is_active': discount.is_active,
             'is_published': discount.is_published,
             'is_available_online': discount.is_available_online,
