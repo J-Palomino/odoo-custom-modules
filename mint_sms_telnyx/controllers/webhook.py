@@ -246,14 +246,28 @@ class TelnyxWebhook(http.Controller):
                     )
 
     def _match_partner(self, env, e164):
+        """Find the partner a number belongs to.
+
+        Primary: exact match on phone_sanitized (the stored E.164 number).
+        Fallback: last-10-digit match via Odoo's phone_mobile_search helper,
+        which also catches records whose phone never sanitized.
+
+        Note: res.partner has no `mobile` field on this Odoo 19 — searching it
+        raises ValueError. phone_sanitized + phone_mobile_search are the correct
+        fields (same recipe the SMS-Manager agent uses). Among duplicate
+        contacts sharing a number, prefer one linked to an internal user.
+        """
         if not e164:
             return env["res.partner"]
-        digits = _digits(e164)
-        last10 = digits[-10:] if len(digits) >= 10 else digits
-        # Partners store phone/mobile with varied formatting; match on last 10 digits.
-        partner = env["res.partner"].search([
-            "|",
-            ("mobile", "ilike", last10),
-            ("phone", "ilike", last10),
-        ], limit=1)
-        return partner
+        Partner = env["res.partner"]
+        candidates = Partner.search([("phone_sanitized", "=", e164)])
+        if not candidates:
+            digits = _digits(e164)
+            last10 = digits[-10:] if len(digits) >= 10 else digits
+            if last10:
+                candidates = Partner.search([("phone_mobile_search", "ilike", last10)])
+        if not candidates:
+            return Partner
+        # Prefer a partner with a linked user (staff) when several share a number.
+        with_user = candidates.filtered(lambda p: p.user_ids)
+        return (with_user or candidates)[0]
