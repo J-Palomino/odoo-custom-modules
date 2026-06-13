@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=127
+ARG CACHEBUST=128
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -18,7 +18,14 @@ RUN apt-get update \
     && mkdir -p /run/nginx /etc/cloudflared
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl cssselect
+# NOTE: pyOpenSSL is pinned alongside cryptography here on purpose. pywebpush pulls
+# in the latest `cryptography` via --ignore-installed; if pyOpenSSL is left at the
+# old Debian system version, a fresh rebuild gets a cryptography that dropped the
+# `_lib.GEN_EMAIL` symbol the old pyOpenSSL references, crashing Odoo's `base`
+# module on boot ("module 'lib' has no attribute 'GEN_EMAIL'" → registry never
+# builds → every route 404s). Installing pyOpenSSL in the SAME command lets pip
+# resolve a mutually-compatible pyOpenSSL+cryptography pair on every build.
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl cssselect pyOpenSSL
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
