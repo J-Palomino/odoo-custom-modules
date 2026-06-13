@@ -117,10 +117,21 @@ class MintDiscountCoreMixin(models.AbstractModel):
     discount_value = fields.Float(string='Discount Value')
     original_price = fields.Float(string='Original / MSRP Price')
 
-    # ── Structured BOGO spec (#93677 Cluster C) ──────────────────────────
-    # Canonical storage is the buy/get/pct triple; bogo_variant is the
-    # dropdown operators/vendors actually pick. Visible only when
-    # discount_type == 'bogo' (view-level), inert for every other type.
+
+class MintBogoSpecMixin(models.AbstractModel):
+    """Structured BOGO spec (#93677 Cluster C) — inherited ONLY by the two
+    models that render/sync it (mint.ptl.deal, mint.deal.submission), not by
+    the core discount mixin: hotbox + brand calendar share discount_type but
+    have no views or sync for the triple, and broadcasting inert columns
+    there invites invisible state.
+
+    Canonical storage is the buy/get/pct triple; bogo_variant is the
+    dropdown operators/vendors actually pick. Visible only when
+    discount_type == 'bogo' (view-level), inert for every other type."""
+
+    _name = 'mint.bogo.spec.mixin'
+    _description = 'Mixin: structured BOGO buy/get/pct spec'
+
     bogo_variant = fields.Selection(
         selection=BOGO_VARIANT_SELECTION,
         string='BOGO Variant',

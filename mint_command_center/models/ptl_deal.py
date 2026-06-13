@@ -45,8 +45,8 @@ class PtlDeal(models.Model):
     _description = 'PTL Deal — Reusable deal template referenced by PTL days'
     _inherit = [
         'mail.thread', 'mail.activity.mixin',
-        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
-        'mint.weight.parsed.mixin',
+        'mint.discount.core.mixin', 'mint.bogo.spec.mixin',
+        'mint.vendor.funding.mixin', 'mint.weight.parsed.mixin',
     ]
     _order = 'sequence, id'
 
@@ -99,7 +99,7 @@ class PtlDeal(models.Model):
     )
     # Structured bundle tiers (#93677): "2 for $18 or 3 for $25" as
     # (qty, price) rows rendered literally — never per-unit math. The
-    # structured BOGO triple comes from mint.discount.core.mixin.
+    # structured BOGO triple comes from mint.bogo.spec.mixin.
     bundle_tier_ids = fields.One2many(
         'mint.ptl.deal.bundle.tier',
         'ptl_deal_id',
@@ -569,7 +569,7 @@ class PtlDeal(models.Model):
     @api.depends('discount_type', 'discount_value', 'original_price',
                  'sales_details', 'bogo_buy_qty', 'bogo_get_qty',
                  'bogo_get_pct', 'bundle_tier_ids.qty',
-                 'bundle_tier_ids.price')
+                 'bundle_tier_ids.price', 'bundle_tier_ids.sequence')
     def _compute_display_text(self):
         for rec in self:
             # If sales_details is manually set, prefer it
@@ -612,16 +612,22 @@ class PtlDeal(models.Model):
                     rec.display_text = f"Starting @ ${msrp:.0f} | BOGO"
                 else:
                     rec.display_text = "Buy One Get One"
-            elif dtype == 'bundle' and rec.bundle_tier_ids:
+            elif dtype == 'bundle':
                 # Tiers render literally with NO per-unit MSRP math (#93677):
-                # "2 for $18 or 3 for $25".
-                rec.display_text = format_bundle_tiers_text(
+                # "2 for $18 or 3 for $25". Keyed on the FORMATTED text, not
+                # tier existence — all-zero tier rows fall through to the
+                # legacy discount_value rendering instead of blanking the
+                # display.
+                tiers_text = format_bundle_tiers_text(
                     [(t.qty, t.price) for t in rec.bundle_tier_ids])
-            elif dtype == 'bundle' and val:
-                if msrp:
+                if tiers_text:
+                    rec.display_text = tiers_text
+                elif val and msrp:
                     rec.display_text = f"${msrp:.0f} Value! Only ${val:.2f}"
-                else:
+                elif val:
                     rec.display_text = f"${val:.2f} Bundle"
+                else:
+                    rec.display_text = ''
             elif dtype == 'points_multiplier' and val:
                 mult = val if val >= 1 else 1 / val if val else 0
                 if mult == int(mult):

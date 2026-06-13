@@ -286,13 +286,35 @@ class PtlDay(models.Model):
         # = buy+get, amount = fractional get-discount; bundle → first tier's
         # qty/price. Un-backfilled deals (zero qtys / no tiers) keep the
         # legacy mapping above.
+        #
+        # threshold_min/calculation_method_id are reset unconditionally:
+        # _ensure_discount write()s these vals onto an existing record, and a
+        # key omitted from vals would leave a stale threshold/calc id behind
+        # when a deal is later de-structured (tiers deleted, type changed).
+        # calculation_method_id lives on mint_dutchie_discount_mirror, which
+        # mint_command_center doesn't depend on — guard on the field map.
+        Discount = self.env['mint.discount']
+        has_calc_field = 'calculation_method_id' in Discount._fields
+        vals['threshold_min'] = 0
+        if has_calc_field:
+            vals['calculation_method_id'] = 0
         if deal.discount_type == 'bogo' and deal.bogo_buy_qty and deal.bogo_get_qty:
             vals['threshold_min'] = deal.bogo_buy_qty + deal.bogo_get_qty
             vals['discount_amount'] = deal.bogo_get_pct or 1.0
         elif deal.discount_type == 'bundle' and deal.bundle_tier_ids:
-            first = deal.bundle_tier_ids.sorted('sequence')[0]
-            vals['threshold_min'] = first.qty
-            vals['discount_amount'] = first.price
+            # One2many is _order='sequence, id' — first row IS the first tier.
+            first = deal.bundle_tier_ids[0]
+            if has_calc_field:
+                # Calc id 6 = PRICE_TO_AMOUNT_TOTAL ("N for $X": amount is
+                # the bundle TOTAL, threshold_min is N) — without the explicit
+                # id the push falls back to PERCENT_OFF and would publish the
+                # dollar price as a percent (review finding, 2026-06-12).
+                vals['threshold_min'] = first.qty
+                vals['discount_amount'] = first.price
+                vals['calculation_method_id'] = 6
+            # Without the canonical-registry field there is no way to label
+            # the price correctly — keep the legacy amount (discount_value)
+            # rather than feeding a dollar price into a percent slot.
 
         # Date range from linked PTL days
         day_dates = deal.day_ids.mapped('date')

@@ -57,14 +57,12 @@
                     <group>
                         <group string="Deal Details">
                             <field name="discount_type"/>
-                            <field name="discount_value"
-                                   invisible="discount_type in ('bogo', 'bundle')"/>
+                            <field name="discount_value"/>
                             <field name="original_price" invisible="1"/>
                             <field name="sales_details_autogen" invisible="1"/>
                             <!-- Structured BOGO spec (#93677) -->
                             <field name="bogo_variant"
-                                   invisible="discount_type != 'bogo'"
-                                   required="discount_type == 'bogo'"/>
+                                   invisible="discount_type != 'bogo'"/>
                             <label for="bogo_buy_qty" string="Buy / Get"
                                    invisible="discount_type != 'bogo'"/>
                             <div class="o_row" invisible="discount_type != 'bogo'">

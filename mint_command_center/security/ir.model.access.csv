@@ -38,7 +38,6 @@ access_deal_reject_wizard,mint.deal.reject.wizard,model_mint_deal_reject_wizard,
 access_deal_reject_wizard_vendor,mint.deal.reject.wizard.vendor,model_mint_deal_reject_wizard,group_vendor_manager,1,1,1,1
 access_stock_check_wizard,mint.stock.check.wizard,model_mint_stock_check_wizard,group_ptl_manager,1,1,1,1
 access_text_deals_wizard,mint.ptl.text.deals.wizard,model_mint_ptl_text_deals_wizard,group_ptl_manager,1,1,1,1
-access_force_approve_wizard,mint.deal.force.approve.wizard,model_mint_deal_force_approve_wizard,group_ptl_manager,1,1,1,1
 access_revoke_wizard,mint.deal.revoke.wizard,model_mint_deal_revoke_wizard,group_ptl_manager,1,1,1,1
 access_bulk_revoke_wizard,mint.deal.bulk.revoke.wizard,model_mint_deal_bulk_revoke_wizard,group_ptl_manager,1,1,1,1
 access_revocation_audit_viewer,mint.deal.revocation.audit.log.viewer,model_mint_deal_revocation_audit_log,group_viewer,1,0,0,0

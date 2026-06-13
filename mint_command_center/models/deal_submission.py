@@ -14,7 +14,8 @@ class DealSubmission(models.Model):
     _description = 'Vendor Deal Submission'
     _inherit = [
         'mail.thread', 'mail.activity.mixin',
-        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
+        'mint.discount.core.mixin', 'mint.bogo.spec.mixin',
+        'mint.vendor.funding.mixin',
     ]
     _order = 'create_date desc'
 
@@ -85,7 +86,7 @@ class DealSubmission(models.Model):
     )
     # Structured bundle tiers (#93677): "2 for $18 or 3 for $25" as
     # (qty, price) rows. Forwarded to the PTL deal on conversion. The
-    # structured BOGO triple comes from mint.discount.core.mixin.
+    # structured BOGO triple comes from mint.bogo.spec.mixin.
     bundle_tier_ids = fields.One2many(
         'mint.deal.submission.bundle.tier',
         'submission_id',

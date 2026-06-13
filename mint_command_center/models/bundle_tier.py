@@ -34,10 +34,21 @@ class MintBundleTierMixin(models.AbstractModel):
             rec.display_text = format_bundle_tiers_text([(rec.qty, rec.price)])
 
 
+# Required=True on Integer/Float doesn't stop a 0 — enforce positivity at
+# the DB so a half-filled tier row can't blank the literal render downstream.
+_TIER_CHECKS = [
+    ('qty_positive', 'CHECK(qty > 0)',
+     'A bundle tier quantity must be at least 1.'),
+    ('price_positive', 'CHECK(price > 0)',
+     'A bundle tier price must be greater than $0.'),
+]
+
+
 class MintPtlDealBundleTier(models.Model):
     _name = 'mint.ptl.deal.bundle.tier'
     _description = 'PTL Deal Bundle Tier'
     _inherit = 'mint.bundle.tier.mixin'
+    _sql_constraints = _TIER_CHECKS
 
     ptl_deal_id = fields.Many2one(
         'mint.ptl.deal',
@@ -52,6 +63,7 @@ class MintDealSubmissionBundleTier(models.Model):
     _name = 'mint.deal.submission.bundle.tier'
     _description = 'Deal Submission Bundle Tier'
     _inherit = 'mint.bundle.tier.mixin'
+    _sql_constraints = _TIER_CHECKS
 
     submission_id = fields.Many2one(
         'mint.deal.submission',
