@@ -117,6 +117,15 @@ class DealSubmission(models.Model):
              'from the Dutchie sync). Drives the Specific Products picker '
              'domain.',
     )
+    publish_match_count = fields.Integer(
+        string='In-Stock Products Matched',
+        compute='_compute_publish_match_count',
+        help='How many in-stock products this deal resolves to at the target '
+             'stores (explicit Specific Products, else brand ∩ categories). '
+             '0 means the deal would be invisible on the storefront and apply '
+             'to nothing at the register — conversion is blocked. -1 means no '
+             'product-narrowing restriction (store-wide), handled elsewhere.',
+    )
     # discount_type / discount_value / original_price come from
     # mint.discount.core.mixin.
     sales_details = fields.Text(
@@ -545,6 +554,61 @@ class DealSubmission(models.Model):
                 (6, 0, variants.product_tmpl_id.ids)
             ]
 
+    def _resolve_publish_match_count(self):
+        """Count the IN-STOCK products this deal's restriction set actually
+        resolves to at the target stores — i.e. what the Dutchie discount
+        will match in the storefront cache.
+
+        Mirrors the published restriction precedence: explicit Specific
+        Products are authoritative; otherwise brand(s) ∩ picked categor(ies).
+        Scoped to the requested stores (else the market's stores) and to
+        on-hand stock (x_quantity_available > 0, the same Dutchie-synced
+        signal the FE inventory cache is built from). Searched on
+        product.product so one variant carries both the store and the stock.
+
+        A count of 0 means the deal would be invisible on the storefront and
+        apply to nothing at the register — the convert gate refuses it.
+        Returns -1 when there is no product-narrowing restriction at all
+        (no brand / no explicit products): that 'store-wide' case is caught
+        separately by the Dutchie publish builder, so the gate skips it.
+        """
+        self.ensure_one()
+        Variant = self.env['product.product'].sudo()
+        brands = self.brand_ids | self.brand_id
+        explicit = self.product_ids.filtered(
+            lambda p: not brands or p.brand_id in brands
+        )
+        domain = [('x_quantity_available', '>', 0)]
+        if explicit:
+            domain.append(('product_tmpl_id', 'in', explicit.ids))
+        elif brands:
+            domain.append(('product_tmpl_id.brand_id', 'in', brands.ids))
+            cats = self._all_picked_categories()
+            if cats:
+                domain.append(('product_tmpl_id.categ_id', 'in', cats.ids))
+        else:
+            return -1  # no brand & no explicit products → store-wide, not gated here
+        stores = self.store_ids or (
+            self.market_id and self.market_id.store_ids
+            or self.env['res.company'].browse([])
+        )
+        uuids = [s.dutchie_store_id for s in stores
+                 if getattr(s, 'dutchie_store_id', False)]
+        if uuids:
+            domain.append(('x_dutchie_location_id', 'in', uuids))
+        variants = Variant.search(domain)
+        return len(set(variants.product_tmpl_id.ids))
+
+    @api.depends('brand_id', 'brand_ids', 'product_ids',
+                 'product_category_id', 'product_category_ids',
+                 'market_id', 'store_ids')
+    def _compute_publish_match_count(self):
+        """Surfaced on the form so the approver sees how many in-stock
+        products the deal will hit BEFORE converting (the resolve-and-gate
+        number)."""
+        for sub in self:
+            sub.publish_match_count = sub._resolve_publish_match_count()
+
     def _ptl_category_bucket(self):
         """Map this submission's category picks / free text onto the master
         bucket Selection that mint.ptl.deal.product_category accepts.
@@ -661,6 +725,26 @@ class DealSubmission(models.Model):
         if self.state not in ('approved',):
             raise UserError("Only approved submissions can be converted to deals.")
 
+        # Resolve-and-gate: refuse to convert a deal whose brand/category/
+        # product selection matches NO in-stock product at the target stores.
+        # Such a deal publishes to Dutchie but is invisible on the storefront
+        # and discounts nothing at the register — the failure mode is silent
+        # today. -1 (no product-narrowing restriction) is the store-wide case,
+        # which the Dutchie publish builder refuses separately. Override with
+        # context force_empty_deal=True for a deliberate ahead-of-stock deal.
+        if not self.env.context.get('force_empty_deal'):
+            match_count = self._resolve_publish_match_count()
+            if match_count == 0:
+                raise UserError(
+                    "This deal's selection (brand / In-Stock Categories / "
+                    "Specific Products) matches no in-stock products at the "
+                    "target stores, so it would be invisible on the storefront "
+                    "and apply to nothing at the register.\n\n"
+                    "Fix the Inclusions or check stock for the chosen "
+                    "brand(s) and categories in this market. To convert anyway "
+                    "(e.g. an ahead-of-restock deal), use Convert (Force)."
+                )
+
         self._autoapprove_campaign()
 
         # Multi-brand (#93635): every selected brand rides through. The
@@ -734,6 +818,12 @@ class DealSubmission(models.Model):
             'res_id': deal.id,
             'view_mode': 'form',
         }
+
+    def action_convert_to_deal_force(self):
+        """Convert past the empty-resolution gate — for a deliberate
+        ahead-of-restock deal whose products aren't in stock yet."""
+        self.ensure_one()
+        return self.with_context(force_empty_deal=True).action_convert_to_deal()
 
     # ─── Run-end lifecycle: Scheduled -> Final Review -> Expired ──────────
 

@@ -23,6 +23,10 @@
                             type="object" class="btn-success"
                             invisible="state != 'approved'"
                             confirm="This will create a PTL Deal from this submission and schedule it to go live. Continue?"/>
+                    <button name="action_convert_to_deal_force" string="Convert (Force — 0 in stock)"
+                            type="object" class="btn-warning"
+                            invisible="state != 'approved' or publish_match_count != 0"
+                            confirm="No in-stock products match this deal's selection at the target stores — it will be invisible on the storefront until stock arrives. Convert anyway?"/>
                     <button name="action_to_final_review" string="Move to Final Review"
                             type="object" class="btn-primary"
                             invisible="state != 'scheduled'"/>
@@ -162,6 +166,18 @@
                                        placeholder="Add every in-stock category this deal includes"/>
                                 <field name="product_category"
                                        placeholder="Free text — auto-fills from the In-Stock Categories picks"/>
+                                <label for="publish_match_count" string="In-Stock Products Matched"/>
+                                <div>
+                                    <field name="publish_match_count" class="oe_inline"
+                                           decoration-danger="publish_match_count == 0"
+                                           decoration-success="publish_match_count &gt; 0"/>
+                                    <span class="text-danger ms-2" invisible="publish_match_count != 0">
+                                        ⚠ Resolves to 0 in-stock products — would be invisible on the storefront. Conversion is blocked.
+                                    </span>
+                                    <span class="text-muted ms-2" invisible="publish_match_count != -1">
+                                        No brand/product restriction (store-wide) — checked at publish.
+                                    </span>
+                                </div>
                             </group>
                             <group string="Specific Products (optional — overrides brand-wide matching)" col="1">
                                 <field name="available_product_ids" invisible="1"/>
