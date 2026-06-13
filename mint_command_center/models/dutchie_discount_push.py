@@ -172,7 +172,10 @@ class PtlDayDutchiePush(models.Model):
         try:
             return tmpl.format(id=discount_id, locId=loc_id, lspId=lsp_id)
         except Exception:
-            return tmpl
+            # Malformed ops-edited template (stray brace / unknown token):
+            # emit nothing rather than storing a broken half-rendered link.
+            _logger.warning('Dutchie backoffice URL template invalid: %r', tmpl)
+            return ''
 
     def _format_dutchie_date(self, dt):
         """Format a date as Dutchie expects ('M/D/YYYY, h:mm:ss A')."""
