@@ -1,5 +1,5 @@
 import logging
-from datetime import date as _date
+from datetime import date as _date, timedelta
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
@@ -795,21 +795,39 @@ class DealSubmission(models.Model):
             'deal_id': deal.id,
         })
 
-        # Replay any structured plot windows onto the new deal's day_ids.
-        # Falls back to no-op when window_ids is empty (legacy submissions
-        # that only set preferred_start/end use the old free-text path).
+        # Replay structured plot windows onto the new deal's day_ids. When the
+        # submission has no structured windows (legacy / public-form rows that
+        # only set preferred_start/end), synthesise a contiguous window from
+        # those preferred dates so the deal still plots instead of converting to
+        # a zero-day deal that needs manual calendar work (#93723 AC03).
         plotted_count = 0
-        if self.window_ids and self.market_id:
+        window_count = 0
+        dates = []
+        if self.window_ids:
             dates = self.window_ids.all_dates()
-            if dates:
-                day_ids = deal.action_plot_windows(dates, market_id=self.market_id.id)
-                plotted_count = len(day_ids)
+            window_count = len(self.window_ids)
+        elif self.preferred_start_date or self.preferred_end_date:
+            start = self.preferred_start_date or self.preferred_end_date
+            end = self.preferred_end_date or self.preferred_start_date
+            if end < start:
+                start, end = end, start
+            day = start
+            while day <= end:
+                dates.append(day.isoformat())
+                day += timedelta(days=1)
+            window_count = 1
+
+        # market_id is required to plot; without it we leave the deal unplotted
+        # rather than silently picking a market (action_plot_windows would raise).
+        if dates and self.market_id:
+            day_ids = deal.action_plot_windows(dates, market_id=self.market_id.id)
+            plotted_count = len(day_ids)
 
         body = f"Scheduled — created PTL Deal: {deal.name} (id={deal.id})"
         if plotted_count:
             body += (
                 f" — plotted {plotted_count} day(s) across "
-                f"{len(self.window_ids)} window(s)."
+                f"{window_count} window(s)."
             )
         self.message_post(body=body, message_type='comment')
         return {
