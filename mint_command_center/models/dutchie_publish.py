@@ -184,6 +184,41 @@ class DealSubmissionDutchiePublish(models.Model):
                 _logger.exception("…and the failure chatter post also failed (submission %s)", self.id)
         return res
 
+    def action_publish_to_dutchie(self):
+        """Manual (re)publish for an already-converted submission.
+
+        Auto-publish on convert never blocks the conversion, so a transient or
+        data error leaves the PTL deal created but nothing in Dutchie. This
+        button re-fires the publish. Unlike the auto path, errors surface
+        DIRECTLY to the reviewer (normal popup) so they can fix and retry.
+        """
+        self.ensure_one()
+        if not self.deal_id:
+            raise UserError(
+                "This submission hasn't been converted to a PTL deal yet — "
+                "Schedule it first (publishing fires automatically on convert)."
+            )
+        mode = (self.env['ir.config_parameter'].sudo()
+                .get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
+        if mode == 'off':
+            raise UserError("Dutchie publishing is turned off (dutchie.publish.mode=off).")
+        # Surfaces hard failures (no LSP / no restrictions / BOGO guard) as a
+        # popup; posts the payload (dry_run) or per-store HTTP result (live) to
+        # chatter either way.
+        self._dutchie_publish_after_convert()
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'type': 'success',
+                'title': "Dutchie publish",
+                'message': ("Dry-run payload posted to the chatter."
+                            if mode == 'dry_run'
+                            else "Publish attempted — see the chatter for the per-store result."),
+                'sticky': False,
+            },
+        }
+
     # ------------------------------------------------------------------
     # Payload assembly
     # ------------------------------------------------------------------
