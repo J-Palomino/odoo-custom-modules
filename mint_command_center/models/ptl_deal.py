@@ -836,9 +836,11 @@ class PtlDeal(models.Model):
         """Publish this deal to the storefront (Redis) AND Dutchie POS.
 
         Replaces the old "Set Live" button, which only flipped state and
-        pushed nothing. Reuses the mint.ptl.day engine scoped to THIS deal's
-        discount only — co-scheduled deals on the same days are left
-        untouched. The storefront/Redis push always runs. Dutchie writes are
+        pushed nothing. Reuses the mint.ptl.day engine to (re)build and push
+        only THIS deal's discount. Note: marking shared days published can
+        widen a co-scheduled deal's weekday set at the next lifecycle cron —
+        same semantics as the day-level publish. The storefront/Redis push
+        always runs. Dutchie writes are
         gated by mint.dutchie_discount_push.mode (off | dry-run | live) plus
         per-market and per-store flags: with the default 'dry-run' the Dutchie
         payload is built and logged to mint.dutchie.discount.push.log but no
@@ -863,14 +865,19 @@ class PtlDeal(models.Model):
                 {'state': 'published'}
             )
 
-            # Build/refresh ONLY this deal's discount. Use one of the deal's
-            # days as the market-scoping context the push helpers read from
-            # self.market_id (all of a deal's days share one market).
-            ctx_day = deal.day_ids[0]
-            discount = ctx_day._ensure_discount(deal)
+            # Build/refresh ONLY this deal's discount (the build itself is
+            # market-agnostic, so any day works as the context here).
+            discount = deal.day_ids[0]._ensure_discount(deal)
             Discount._recompute_day_booleans(discount)
-            ctx_day._push_discounts_to_redis(discount.ids)
-            ctx_day._push_discounts_to_dutchie(discount.ids)
+
+            # The push helpers scope to a single day's market_id, and a deal
+            # can be plotted into days of more than one market. Push once per
+            # distinct market, using a representative day from each, so no
+            # market's stores are silently skipped.
+            for market in deal.day_ids.mapped('market_id'):
+                mday = deal.day_ids.filtered(lambda d: d.market_id == market)[:1]
+                mday._push_discounts_to_redis(discount.ids)
+                mday._push_discounts_to_dutchie(discount.ids)
 
             deal.write({'state': 'live'})
 
