@@ -1,7 +1,7 @@
 import logging
 
 from odoo import api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from .brand_calendar import _brand_lookup_key, _parse_brand_name
 from .deal_mixins import format_bundle_tiers_text
@@ -832,8 +832,65 @@ class PtlDeal(models.Model):
             },
         }
 
+    def action_publish(self):
+        """Publish this deal to the storefront (Redis) AND Dutchie POS.
+
+        Replaces the old "Set Live" button, which only flipped state and
+        pushed nothing. Reuses the mint.ptl.day engine scoped to THIS deal's
+        discount only — co-scheduled deals on the same days are left
+        untouched. The storefront/Redis push always runs. Dutchie writes are
+        gated by mint.dutchie_discount_push.mode (off | dry-run | live) plus
+        per-market and per-store flags: with the default 'dry-run' the Dutchie
+        payload is built and logged to mint.dutchie.discount.push.log but no
+        HTTP call fires. Only mode='live' (+ enabled market/stores) writes to
+        real Dutchie POS.
+        """
+        Day = self.env['mint.ptl.day']
+        Discount = self.env['mint.discount']
+        for deal in self.filtered(lambda d: d.state in ('approved', 'live')):
+            if not deal.day_ids:
+                raise UserError(
+                    "“%s” isn't scheduled on any PTL day yet — add it to a "
+                    "day (or set start/end dates and plot it) before "
+                    "publishing." % deal.name
+                )
+
+            # Day-of-week booleans (_recompute_day_booleans) and the
+            # Redis/Dutchie push helpers both require the deal's days to be in
+            # state='published'. Mark just this deal's days; we do NOT call the
+            # day-level action_publish, so other deals on these days stay as-is.
+            deal.day_ids.filtered(lambda d: d.state != 'published').write(
+                {'state': 'published'}
+            )
+
+            # Build/refresh ONLY this deal's discount. Use one of the deal's
+            # days as the market-scoping context the push helpers read from
+            # self.market_id (all of a deal's days share one market).
+            ctx_day = deal.day_ids[0]
+            discount = ctx_day._ensure_discount(deal)
+            Discount._recompute_day_booleans(discount)
+            ctx_day._push_discounts_to_redis(discount.ids)
+            ctx_day._push_discounts_to_dutchie(discount.ids)
+
+            deal.write({'state': 'live'})
+
+            mode = Day._get_dutchie_push_mode()
+            note = (
+                " (LIVE Dutchie write)" if mode == 'live'
+                else " (Dutchie simulated — payload logged, not sent)"
+            )
+            deal.message_post(
+                body=(
+                    "Published to storefront + Dutchie across %d day(s). "
+                    "Push mode: <b>%s</b>%s." % (len(deal.day_ids), mode, note)
+                ),
+                message_type='comment',
+            )
+
+    # Backward-compat alias: the old button name / any automations that still
+    # call action_set_live now route through the full publish path.
     def action_set_live(self):
-        self.filtered(lambda d: d.state == 'approved').write({'state': 'live'})
+        return self.action_publish()
 
     def action_expire(self):
         self.filtered(lambda d: d.state in ('approved', 'live')).write({'state': 'expired'})

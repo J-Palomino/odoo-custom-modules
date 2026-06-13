@@ -197,9 +197,10 @@
                     <button name="action_reject" string="Reject"
                             type="object" class="btn-danger"
                             invisible="state != 'pending'"/>
-                    <button name="action_set_live" string="Set Live"
+                    <button name="action_publish" string="Publish"
                             type="object" class="btn-success"
-                            invisible="state != 'approved'"/>
+                            confirm="Publish this deal to the storefront and Dutchie POS? Its scheduled days will be marked published. Dutchie writes follow the current push mode (dry-run = built &amp; logged but not sent; live = real POS write)."
+                            invisible="state not in ('approved', 'live')"/>
                     <button name="action_expire" string="Expire"
                             type="object"
                             invisible="state not in ('approved', 'live')"/>
