@@ -481,6 +481,33 @@ class DealSubmissionDutchiePublish(models.Model):
     # Dispatch
     # ------------------------------------------------------------------
 
+    def _deal_audit_log(self, action, lsp, loc_id, discount, **extra):
+        """Structured deal-audit line. Ships to Grafana Loki via
+        mint_loki_logger (any _logger.info on this instance is forwarded),
+        greppable in Railway logs either way. One line per deal x store
+        action so LogQL can count/filter on the JSON fields."""
+        rew = discount.get('Reward') or {}
+        restr = rew.get('Restrictions') or {}
+        entry = {
+            'event': 'deal.audit',
+            'action': action,
+            'submission_id': self.id,
+            'external_id': discount.get('ExternalId'),
+            'name': discount.get('OnlineName') or discount.get('DiscountDescription'),
+            'lsp_id': lsp,
+            'loc_id': loc_id,
+            'calc_method_id': rew.get('CalculationMethodId'),
+            'value': rew.get('DiscountValue'),
+            'valid_from': discount.get('ValidDateFrom'),
+            'valid_to': discount.get('ValidDateTo'),
+            'brand_ids': (restr.get('Brand') or {}).get('RestrictionIds') or [],
+            'category_ids': (restr.get('Category') or {}).get('RestrictionIds') or [],
+            'user_id': self.env.uid,
+            'user': self.env.user.login,
+        }
+        entry.update(extra)
+        _logger.info("deal.audit %s", json.dumps(entry, default=str))
+
     def _dutchie_publish_after_convert(self):
         self.ensure_one()
         get_param = self.env['ir.config_parameter'].sudo().get_param
@@ -500,6 +527,8 @@ class DealSubmissionDutchiePublish(models.Model):
                 f"Payload:\n{json.dumps(discount, indent=1)}"
             )
             self.message_post(body=body, message_type='comment')
+            self._deal_audit_log('publish_dry_run', lsp, None, discount,
+                                 target_loc_ids=loc_ids)
             return
 
         # live
@@ -521,11 +550,17 @@ class DealSubmissionDutchiePublish(models.Model):
                 method='POST')
             try:
                 with urllib.request.urlopen(req, timeout=60) as resp:
+                    body_bytes = resp.read()[:200]
                     results.append(f"LocId {loc_id}: HTTP {resp.status} "
-                                   f"{resp.read()[:200].decode(errors='replace')}")
+                                   f"{body_bytes.decode(errors='replace')}")
+                    self._deal_audit_log('publish', lsp, loc_id, discount,
+                                         http_status=resp.status,
+                                         response=body_bytes.decode(errors='replace'))
             except Exception as exc:
                 failures += 1
                 results.append(f"LocId {loc_id}: FAILED — {exc}")
+                self._deal_audit_log('publish_failed', lsp, loc_id, discount,
+                                     error=str(exc))
         self.message_post(
             body=f"[Dutchie publish — LIVE{' — PARTIAL FAILURE' if failures else ''}]\n"
                  + "\n".join(results)

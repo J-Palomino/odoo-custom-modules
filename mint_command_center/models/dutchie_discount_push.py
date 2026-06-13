@@ -566,3 +566,20 @@ class PtlDayDutchiePush(models.Model):
             log_vals['error_message'] = f'{type(e).__name__}: {str(e)[:500]}'
 
         Log.create(log_vals)
+        # Structured audit line — ships to Grafana Loki via mint_loki_logger.
+        # The Log table above is the queryable Odoo audit; this line is the
+        # cross-service one (same event name as mintinvsvc dealAudit).
+        _logger.info("deal.audit %s", json.dumps({
+            'event': 'deal.audit',
+            'action': 'ptl_push' if log_vals.get('success') else 'ptl_push_failed',
+            'discount_odoo_id': discount.id,
+            'discount_name': discount.name,
+            'dutchie_discount_id': discount.dutchie_discount_id or None,
+            'store': store.name,
+            'loc_id': loc_id,
+            'lsp_id': lsp_id,
+            'mode': mode,
+            'elapsed_ms': log_vals.get('elapsed_ms'),
+            'error': log_vals.get('error_message'),
+            'user_id': self.env.uid,
+        }, default=str))
