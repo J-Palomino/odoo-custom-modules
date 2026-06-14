@@ -12,7 +12,10 @@
         -->
         <record id="group_web_customer_access" model="res.groups">
             <field name="name">Mint Web Customer Access</field>
-            <field name="category_id" ref="base.module_category_administration"/>
+            <!-- res.groups.category_id was removed in Odoo 19; the UI category
+                 was cosmetic only (group function = implied_ids + record rules
+                 below). Setting it crashed any -u with "Invalid field
+                 'category_id' in 'res.groups'". -->
             <field name="comment">
                 Grants visibility of partners and users created through the
                 MintDeals consumer websites. Assign only to staff who need
