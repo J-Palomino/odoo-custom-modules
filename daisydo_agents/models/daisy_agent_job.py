@@ -54,6 +54,32 @@ class DaisyAgentJob(models.Model):
         ``_enqueue_response`` — a truly simultaneous double-enqueue can still
         create two rows (a partial unique index would be needed to prevent it).
         """
+        # Reclaim jobs orphaned in 'processing'. A job is flipped to
+        # 'processing' and committed (releasing its row lock) BEFORE the slow
+        # Daisy+ call; if the worker then dies mid-call — e.g. a Railway
+        # redeploy during a 15s+ prediction — the except-handler never runs and
+        # the row is stranded. The claim SELECT below only looks at 'pending',
+        # so a stranded job is never retried and the agent goes silent until a
+        # human notices. attempts was already incremented at claim time, so the
+        # max_attempts ceiling still bounds retries. write_date is the last
+        # state flip, so a row 'processing' longer than the stale window
+        # (well past any real prediction) is presumed dead and re-pended.
+        stale_cutoff = fields.Datetime.subtract(fields.Datetime.now(), minutes=5)
+        orphaned = self.sudo().search([
+            ("state", "=", "processing"),
+            ("write_date", "<", stale_cutoff),
+        ])
+        if orphaned:
+            orphaned.write({
+                "state": "pending",
+                "error_message": "Reclaimed: orphaned in 'processing' (worker likely died mid-call)",
+            })
+            self.env.cr.commit()
+            _logger.warning(
+                "Reclaimed %s orphaned 'processing' agent job(s): %s",
+                len(orphaned), orphaned.ids,
+            )
+
         # ids touched this run — don't re-pick a re-pended failure. Seeded with
         # a sentinel 0 (no real job has id 0) so the array passed to ALL() is
         # never empty, which would otherwise be an untyped-array SQL error.
