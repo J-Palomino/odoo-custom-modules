@@ -28,13 +28,18 @@ RUN apt-get update \
     && mkdir -p /run/nginx /etc/cloudflared
 
 # Install Python dependencies for base_accounting_kit + push notifications + S3 storage.
-# cryptography is PINNED to Odoo 19's version (==42.0.8, paired with the base
-# image's pyopenssl==24.1.0). pywebpush -> http-ece -> cryptography otherwise
-# pulls the LATEST cryptography at build time; >=44 dropped the legacy OpenSSL
-# bindings (lib.GEN_EMAIL) that pyopenssl 24.1.0 needs, which makes Odoo's
-# `base` module fail to import on a fresh build (prod outage 2026-06-13).
-# Keeping the pin makes rebuilds deterministic regardless of build date.
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed "cryptography==42.0.8" openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl cssselect
+# ALL pinned to exact versions so a rebuild can't drift. cryptography==42.0.8 is the
+# load-bearing one: pywebpush -> http-ece -> cryptography otherwise pulls the LATEST
+# at build time, and cryptography >=44 dropped the legacy OpenSSL bindings
+# (lib.GEN_EMAIL) the base image's pyopenssl needs, which makes Odoo's `base` module
+# fail to import on a fresh build (prod outage 2026-06-13). The rest were unpinned and
+# silently took "latest" on every rebuild — pinned here to the versions validated on
+# staging 2026-06-13. Bump deliberately + staging-test. (Transitive deps are still
+# unpinned; a requirements.txt lock would close that fully — follow-up.)
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+    "cryptography==42.0.8" "openpyxl==3.1.5" "ofxparse==0.21" "qifparse==0.5" \
+    "pywebpush==2.3.0" "fsspec[s3]==2026.4.0" "packaging==26.2" "PyJWT==2.13.0" \
+    "redis==8.0.0" "pynacl==1.6.2" "cssselect==1.4.0"
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
