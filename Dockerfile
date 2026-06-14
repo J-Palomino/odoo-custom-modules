@@ -1,7 +1,13 @@
 # Odoo 19 with Custom Modules
-FROM odoo:19
+# Base PINNED BY DIGEST so a rebuild can't silently inherit a newer odoo:19
+# point release. The `19` tag is mutable and has already drifted the system
+# pyOpenSSL/cryptography out from under us (see the crypto pin below — prod
+# outage 2026-06-13). To take a newer base on purpose: re-resolve the digest
+# (`docker buildx imagetools inspect odoo:19`), update it here, and
+# staging-smoke-test. Digest resolved 2026-06-13 (== what `odoo:19` pointed to).
+FROM odoo:19@sha256:3eede45a6be2a1fe4dc2911b7fc5caa8c6d5999e8f56ed8e3135160d6dc115c7
 
-ARG CACHEBUST=127
+ARG CACHEBUST=128
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
