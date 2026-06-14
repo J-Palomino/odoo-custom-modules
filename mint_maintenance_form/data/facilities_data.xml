@@ -31,49 +31,41 @@
         <record id="equip_facilities_hvac" model="maintenance.equipment">
             <field name="name">HVAC</field>
             <field name="category_id" ref="categ_facilities_hvac"/>
-            <field name="maintenance_team_id" eval="1"/>
             <field name="company_id" eval="False"/>
         </record>
         <record id="equip_facilities_plumbing" model="maintenance.equipment">
             <field name="name">Plumbing</field>
             <field name="category_id" ref="categ_facilities_plumbing"/>
-            <field name="maintenance_team_id" eval="1"/>
             <field name="company_id" eval="False"/>
         </record>
         <record id="equip_facilities_electrical" model="maintenance.equipment">
             <field name="name">Electrical</field>
             <field name="category_id" ref="categ_facilities_electrical"/>
-            <field name="maintenance_team_id" eval="1"/>
             <field name="company_id" eval="False"/>
         </record>
         <record id="equip_facilities_janitorial" model="maintenance.equipment">
             <field name="name">Janitorial / Cleaning</field>
             <field name="category_id" ref="categ_facilities_janitorial"/>
-            <field name="maintenance_team_id" eval="1"/>
             <field name="company_id" eval="False"/>
         </record>
         <record id="equip_facilities_building_access" model="maintenance.equipment">
             <field name="name">Building Access / Locks</field>
             <field name="category_id" ref="categ_facilities_building_access"/>
-            <field name="maintenance_team_id" eval="1"/>
             <field name="company_id" eval="False"/>
         </record>
         <record id="equip_facilities_parking" model="maintenance.equipment">
             <field name="name">Parking Lot</field>
             <field name="category_id" ref="categ_facilities_parking"/>
-            <field name="maintenance_team_id" eval="1"/>
             <field name="company_id" eval="False"/>
         </record>
         <record id="equip_facilities_signage" model="maintenance.equipment">
             <field name="name">Signage</field>
             <field name="category_id" ref="categ_facilities_signage"/>
-            <field name="maintenance_team_id" eval="1"/>
             <field name="company_id" eval="False"/>
         </record>
         <record id="equip_facilities_furniture" model="maintenance.equipment">
             <field name="name">Furniture / Fixtures</field>
             <field name="category_id" ref="categ_facilities_furniture"/>
-            <field name="maintenance_team_id" eval="1"/>
             <field name="company_id" eval="False"/>
         </record>
     </data>
