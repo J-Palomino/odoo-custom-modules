@@ -46,20 +46,36 @@ _ORPHAN_CLEANUPS = [
 
 
 def post_init_hook(env):
-    """Idempotent: re-applies on install/upgrade. Safe to run repeatedly."""
+    """Idempotent: re-applies on install/upgrade. Safe to run repeatedly.
+
+    Each statement runs inside its OWN savepoint and is guarded: if a core mail
+    table/column gets renamed or removed in an Odoo point release, that single
+    statement is rolled back and logged, and the hook keeps going. Without this,
+    one schema drift here would raise and abort the entire upgrade transaction —
+    blocking not just this module but every module batched in the same `-u`.
+    """
     cr = env.cr
 
     for label, sql in _ORPHAN_CLEANUPS:
-        cr.execute(sql)
-        _logger.info("mint_mail_fk_hardening: cleaned %s -> %s rows", label, cr.rowcount)
+        try:
+            with cr.savepoint():
+                cr.execute(sql)
+                rows = cr.rowcount
+            _logger.info("mint_mail_fk_hardening: cleaned %s -> %s rows", label, rows)
+        except Exception as e:
+            _logger.warning("mint_mail_fk_hardening: skipped cleanup %s (%s)", label, e)
 
     for table, fk, col, ref, ondelete, not_valid in _FK_FIXES:
-        cr.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {fk}")
-        nv = " NOT VALID" if not_valid else ""
-        cr.execute(
-            f"ALTER TABLE {table} "
-            f"ADD CONSTRAINT {fk} "
-            f"FOREIGN KEY ({col}) REFERENCES {ref}(id) ON DELETE {ondelete}{nv}"
-        )
-        _logger.info("mint_mail_fk_hardening: %s.%s -> %s ON DELETE %s%s",
-                     table, col, ref, ondelete, " (NOT VALID)" if not_valid else "")
+        try:
+            with cr.savepoint():
+                cr.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {fk}")
+                nv = " NOT VALID" if not_valid else ""
+                cr.execute(
+                    f"ALTER TABLE {table} "
+                    f"ADD CONSTRAINT {fk} "
+                    f"FOREIGN KEY ({col}) REFERENCES {ref}(id) ON DELETE {ondelete}{nv}"
+                )
+            _logger.info("mint_mail_fk_hardening: %s.%s -> %s ON DELETE %s%s",
+                         table, col, ref, ondelete, " (NOT VALID)" if not_valid else "")
+        except Exception as e:
+            _logger.warning("mint_mail_fk_hardening: skipped FK %s on %s (%s)", fk, table, e)
