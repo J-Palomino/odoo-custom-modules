@@ -7,7 +7,7 @@
 # staging-smoke-test. Digest resolved 2026-06-13 (== what `odoo:19` pointed to).
 FROM odoo:19@sha256:3eede45a6be2a1fe4dc2911b7fc5caa8c6d5999e8f56ed8e3135160d6dc115c7
 
-ARG CACHEBUST=128
+ARG CACHEBUST=129
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -15,9 +15,13 @@ RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
 USER root
 
 # Install git (needed for OCA module cloning), nginx (websocket reverse proxy), and cloudflared (tunnel)
+# cloudflared is PINNED to a specific release — `latest/download` pulls whatever
+# Cloudflare published most recently on every rebuild, so a breaking cloudflared
+# release could kill the tunnel (= all Odoo ingress) on a build that changed no
+# code. Bump deliberately: pick a newer tag from github.com/cloudflare/cloudflared/releases.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git nginx curl \
-    && curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb \
+    && curl -fsSL https://github.com/cloudflare/cloudflared/releases/download/2026.6.0/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb \
     && dpkg -i /tmp/cloudflared.deb \
     && rm -f /tmp/cloudflared.deb \
     && rm -rf /var/lib/apt/lists/* \
