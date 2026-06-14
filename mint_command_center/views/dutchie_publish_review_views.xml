@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Pre-publish review (guards + alerts) shown before any Dutchie write.
+         Opened by the PTL deal "Publish" button and the submission
+         "Publish to Dutchie" button. Warn-only: surfaces target stores +
+         SOP/safety alerts, then publishes on confirm. -->
+    <record id="view_dutchie_publish_review_form" model="ir.ui.view">
+        <field name="name">mint.dutchie.publish.review.form</field>
+        <field name="model">mint.dutchie.publish.review</field>
+        <field name="arch" type="xml">
+            <form string="Review before publishing">
+                <field name="res_model" invisible="1"/>
+                <field name="res_id" invisible="1"/>
+                <field name="is_live" invisible="1"/>
+                <field name="review_html" widget="html" readonly="1" nolabel="1"/>
+                <footer>
+                    <button name="action_confirm" type="object" string="Publish"
+                            class="btn-primary"
+                            confirm="Proceed with the publish exactly as shown in the review above?"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

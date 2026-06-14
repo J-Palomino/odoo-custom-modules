@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.6.35.0',
+    'version': '19.0.6.36.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -105,6 +105,7 @@
         'reports/ptl_calendar_pdf_template.xml',
         'data/spreadsheet_dashboards.xml',
         'views/dutchie_push_log_views.xml',
+        'views/dutchie_publish_review_views.xml',
         'views/project_task_sdlc_views.xml',
     ],
     'post_init_hook': 'post_init_hook',

@@ -238,6 +238,71 @@ class DealSubmissionDutchiePublish(models.Model):
             },
         }
 
+    def action_open_dutchie_publish_review(self):
+        """Open the pre-publish review wizard (guards + alerts) for the
+        submission Publish-to-Dutchie button. Warn-only: shows mode, target
+        LocIds and SOP/safety alerts; action_publish_to_dutchie fires on
+        confirm."""
+        self.ensure_one()
+        from .dutchie_publish_review import build_review_html
+        mode, is_live, lines, warnings, blocks = self._dutchie_publish_review_data()
+        wiz = self.env['mint.dutchie.publish.review'].create({
+            'res_model': self._name,
+            'res_id': self.id,
+            'mode': mode,
+            'is_live': is_live,
+            'review_html': build_review_html(mode, is_live, lines, warnings, blocks),
+        })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Review before publishing',
+            'res_model': 'mint.dutchie.publish.review',
+            'res_id': wiz.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
+    def _dutchie_publish_review_data(self):
+        """Compute (mode, is_live, lines, warnings, blocks) for the submission
+        Dutchie publish WITHOUT writing anything (used by the review wizard)."""
+        self.ensure_one()
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        mode = (get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
+        is_live = mode == 'live'
+        lines, warnings, blocks = [], [], []
+        if mode == 'off':
+            warnings.append("dutchie.publish.mode is 'off' — publishing is disabled; confirming does nothing.")
+        elif mode not in ('dry_run', 'live'):
+            warnings.append("Unrecognized publish mode %r — this path treats anything that isn't 'off'/'dry_run' as LIVE (fail-open). Fix dutchie.publish.mode." % mode)
+            is_live = True
+        try:
+            built = self._dutchie_build()
+            discount, lsp = built['discount'], built['lsp']
+            warnings.extend(built['warnings'])
+            loc_map = json.loads(get_param('dutchie.publish.loc_ids') or '{}')
+            loc_ids = loc_map.get(str(lsp)) or []
+            lines.append("Vendor: %s — %s" % (self.vendor_name, discount.get('OnlineName')))
+            lines.append("Dates: %s → %s" % (discount.get('ValidDateFrom'), discount.get('ValidDateTo')))
+            active = [d for d in DAY_KEYS if discount.get(d)]
+            lines.append("Active days: %s" % (', '.join(active) if active else 'EVERY DAY (no day restriction)'))
+            if not active:
+                warnings.append("No day-of-week restriction — Dutchie applies this EVERY day in the date range.")
+            lines.append("LSP %s → %d LocId(s): %s" % (lsp, len(loc_ids), ', '.join(map(str, loc_ids)) or 'NONE'))
+            if not loc_ids:
+                warnings.append("No LocIds configured for LSP %s (dutchie.publish.loc_ids) — nothing will publish." % lsp)
+            if self.store_ids:
+                warnings.append("This submission is scoped to %d store(s), but Publish-to-Dutchie writes to ALL %d LocId(s) for the market — store scoping is IGNORED on this path."
+                                % (len(self.store_ids), len(loc_ids)))
+            try:
+                prior = json.loads(self.dutchie_publish_loc_ids or '{}')
+            except (ValueError, TypeError):
+                prior = {}
+            if prior:
+                lines.append("Re-publish: %d loc(s) already have a Dutchie id → they UPDATE in place (no duplicates)." % len(prior))
+        except Exception as exc:
+            blocks.append("Payload build failed — Publish would raise: %s" % exc)
+        return mode, is_live, lines, warnings, blocks
+
     # ------------------------------------------------------------------
     # Payload assembly
     # ------------------------------------------------------------------

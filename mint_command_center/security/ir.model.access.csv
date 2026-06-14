@@ -84,3 +84,4 @@ access_ambassador_vendor_mgr,mint.ambassador.vendor_mgr,model_mint_ambassador,gr
 access_ambassador_shift_viewer,mint.ambassador.shift.viewer,model_mint_ambassador_shift,group_viewer,1,0,0,0
 access_ambassador_shift_operations,mint.ambassador.shift.operations,model_mint_ambassador_shift,group_operations,1,1,1,1
 access_ambassador_shift_vendor_mgr,mint.ambassador.shift.vendor_mgr,model_mint_ambassador_shift,group_vendor_manager,1,1,1,0
+access_dutchie_publish_review,mint.dutchie.publish.review,model_mint_dutchie_publish_review,base.group_user,1,1,1,1

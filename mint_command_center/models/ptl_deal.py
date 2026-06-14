@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from markupsafe import Markup
 
@@ -928,6 +929,85 @@ class PtlDeal(models.Model):
     # call action_set_live now route through the full publish path.
     def action_set_live(self):
         return self.action_publish()
+
+    def action_open_publish_review(self):
+        """Open the pre-publish review wizard (guards + alerts) before the
+        deal's Dutchie/storefront publish. Warn-only: shows the target stores
+        and any SOP/safety alerts; action_publish fires on confirm."""
+        self.ensure_one()
+        from .dutchie_publish_review import build_review_html
+        mode, is_live, lines, warnings, blocks = self._dutchie_publish_review_data()
+        wiz = self.env['mint.dutchie.publish.review'].create({
+            'res_model': self._name,
+            'res_id': self.id,
+            'mode': mode,
+            'is_live': is_live,
+            'review_html': build_review_html(mode, is_live, lines, warnings, blocks),
+        })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Review before publishing',
+            'res_model': 'mint.dutchie.publish.review',
+            'res_id': wiz.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
+    def _dutchie_publish_review_data(self):
+        """Compute (mode, is_live, lines, warnings, blocks) for the deal
+        publish WITHOUT writing anything (used by the review wizard)."""
+        self.ensure_one()
+        Day = self.env['mint.ptl.day']
+        Company = self.env['res.company'].sudo()
+        mode = Day._get_dutchie_push_mode()
+        is_live = mode == 'live'
+        lines, warnings, blocks = [], [], []
+        lines.append("Deal: %s" % (self.name or ''))
+        lines.append("Discount: %s, value %s" % (self.discount_type, self.discount_value))
+        lines.append("Storefront (Redis) push ALWAYS runs — not gated by the Dutchie mode.")
+        lines.append("Dutchie push mode: %s" % mode)
+        if not self.day_ids:
+            blocks.append("Not scheduled on any PTL day — Publish would raise.")
+            return mode, is_live, lines, warnings, blocks
+
+        today = fields.Date.today()
+        markets = self.day_ids.mapped('market_id')
+        lines.append("Market(s): %s" % (', '.join(markets.mapped('name')) or '(none)'))
+        dates = self.day_ids.mapped('date')
+        if dates:
+            lines.append("Date range: %s → %s" % (min(dates), max(dates)))
+            if max(dates) < today:
+                warnings.append("All scheduled days are in the PAST — expired-on-arrival, will not apply.")
+            elif min(dates) > today:
+                warnings.append("Starts in the FUTURE (%s) — but the storefront push commits immediately on confirm." % min(dates))
+            if not any(today <= d <= today + timedelta(days=60) for d in dates):
+                warnings.append("No scheduled day is within the next 60 days — Dutchie day-of-week flags compute as 'every day'.")
+
+        if not self.brand_id and not self.product_category and not self.explicit_product_ids:
+            warnings.append("No brand / category / product restriction — the discount would apply STORE-WIDE.")
+
+        enabled = Company.search([
+            ('is_dispensary', '=', True),
+            ('dutchie_store_id', '!=', False),
+            ('region_id', 'in', markets.ids),
+            ('dutchie_discount_push_enabled', '=', True),
+        ])
+        targeted = (self.store_ids & enabled) if self.store_ids else enabled
+        lines.append("Stores that will receive the Dutchie write: %d — %s"
+                     % (len(targeted), ', '.join(targeted.mapped('name')) or 'NONE'))
+
+        if not markets.filtered('dutchie_discount_push_enabled'):
+            warnings.append("No market is enabled for the Dutchie push — nothing writes to Dutchie even in live mode (storefront still updates).")
+        if not targeted:
+            warnings.append("0 stores are enabled for the Dutchie push — this deal goes to the storefront only.")
+        if self.store_ids:
+            skipped = self.store_ids - targeted
+            if skipped:
+                warnings.append("%d of the deal's %d target store(s) are NOT enabled and will be SKIPPED on Dutchie: %s"
+                                % (len(skipped), len(self.store_ids), ', '.join(skipped.mapped('name'))))
+        elif targeted:
+            warnings.append("No explicit store scoping on this deal — it publishes to ALL %d enabled store(s) in the market." % len(targeted))
+        return mode, is_live, lines, warnings, blocks
 
     def action_expire(self):
         self.filtered(lambda d: d.state in ('approved', 'live')).write({'state': 'expired'})
