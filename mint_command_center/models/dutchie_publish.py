@@ -52,6 +52,12 @@ CALC_BY_TYPE = {
     'price': 3,
     'bundle': 6,
     'points_multiplier': 15,
+    # Clearance (near-expiry) publishes as a straight PERCENT_OFF — it carries
+    # a percent value like 'percent' (_format_sales_details renders
+    # "N% Off (Clearance)"). Without this, _dutchie_build raised "Unsupported
+    # discount type 'clearance'" — swallowed by the convert try/except — so
+    # clearance deals silently never reached Dutchie.
+    'clearance': 2,
 }
 
 DAY_KEYS = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
@@ -156,12 +162,15 @@ class DealSubmissionDutchiePublish(models.Model):
         mode = (self.env['ir.config_parameter'].sudo()
                 .get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
         # #2 reviewer gate: a deal can't convert (and thus can't publish) with
-        # no numeric value. Exemptions: bogo/clearance (valid without one),
-        # structured bundles (#93677 — pricing lives in bundle_tier_ids, and
-        # the auto-generated multi-tier text defeats the RE_NFOR parse), and
+        # no numeric value. Exemptions: bogo (valid without one), structured
+        # bundles (#93677 — pricing lives in bundle_tier_ids, and the
+        # auto-generated multi-tier text defeats the RE_NFOR parse), and
         # mode=off (publishing disabled — don't block legacy conversions).
+        # NOTE: clearance is NOT exempt — it maps to PERCENT_OFF and needs its
+        # percent, so a value-less clearance is caught here with a clear
+        # message instead of publishing a 0%-off discount.
         if (mode != 'off' and not self.discount_value
-                and self.discount_type not in ('bogo', 'clearance')
+                and self.discount_type != 'bogo'
                 and not (self.discount_type == 'bundle' and self.bundle_tier_ids)):
             parsed = self._parse_discount_from_text(self.sales_details)
             # Only trust the parse when its offer kind matches the chosen
