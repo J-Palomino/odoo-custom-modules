@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_social_publish" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.mint_social_publish</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//block[1]" position="before">
+                <block title="posts.agency Publishing" id="mint_social_publish_block">
+                    <setting id="mint_social_publish_credentials"
+                             string="API Key"
+                             help="API key for the posts.agency publishing account.">
+                        <field name="social_api_key" password="True"/>
+                        <div class="mt-2">
+                            <button name="action_social_test_connection"
+                                    type="object"
+                                    string="Test Connection"
+                                    class="btn-secondary"/>
+                            <button name="action_social_refresh_accounts"
+                                    type="object"
+                                    string="Refresh connected accounts"
+                                    class="btn-secondary ms-2"/>
+                            <button name="%(action_mint_social_profile)d"
+                                    type="action"
+                                    string="View accounts"
+                                    class="btn-link ms-2"/>
+                        </div>
+                    </setting>
+                    <setting id="mint_social_publish_api_base"
+                             string="API Base URL"
+                             help="Override only for testing against a sandbox/proxy.">
+                        <field name="social_api_base"/>
+                    </setting>
+                    <setting id="mint_social_publish_project"
+                             string="Social Media Project ID"
+                             help="The project.project whose cards publish to posts.agency.">
+                        <field name="social_project_id"/>
+                    </setting>
+                    <setting id="mint_social_publish_stage"
+                             string="Scheduled Stage ID"
+                             help="Moving a card into this stage queues it for publishing.">
+                        <field name="social_scheduled_stage_id"/>
+                    </setting>
+                    <setting id="mint_social_publish_retries"
+                             string="Max Publish Retries"
+                             help="How many times the background job retries a failed post.">
+                        <field name="social_max_retries"/>
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+</odoo>

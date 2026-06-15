@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate: defaults seeded once; admin edits persist across upgrades.
+         The secret api_key is intentionally NOT shipped here — set it under
+         Settings > posts.agency Publishing (or System Parameter
+         mint_social_publish.api_key). -->
+    <data noupdate="1">
+        <record id="param_api_base" model="ir.config_parameter">
+            <field name="key">mint_social_publish.api_base</field>
+            <field name="value">https://api.upload-post.com</field>
+        </record>
+        <record id="param_project_id" model="ir.config_parameter">
+            <field name="key">mint_social_publish.project_id</field>
+            <field name="value">42</field>
+        </record>
+        <record id="param_scheduled_stage_id" model="ir.config_parameter">
+            <field name="key">mint_social_publish.scheduled_stage_id</field>
+            <field name="value">1672</field>
+        </record>
+        <record id="param_max_retries" model="ir.config_parameter">
+            <field name="key">mint_social_publish.max_retries</field>
+            <field name="value">3</field>
+        </record>
+    </data>
+</odoo>

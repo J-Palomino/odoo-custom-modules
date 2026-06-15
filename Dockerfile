@@ -116,6 +116,9 @@ COPY --chown=odoo:odoo mint_survey_company /opt/extra-addons/mint_survey_company
 # ── Link Tracker QR (QR code generator for /r short links) ───────────
 COPY --chown=odoo:odoo mint_link_tracker_qr /opt/extra-addons/mint_link_tracker_qr
 
+# ── Social Publish (Social Media board → posts.agency publishing API) ─
+COPY --chown=odoo:odoo mint_social_publish /opt/extra-addons/mint_social_publish
+
 # ── Flipbook (marketing PDF + page-flip viewer of vendor offerings) ─
 COPY --chown=odoo:odoo mint_flipbook /opt/extra-addons/mint_flipbook
 
