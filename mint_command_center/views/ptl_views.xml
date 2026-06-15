@@ -65,6 +65,7 @@
                                            decoration-danger="stock_status == 'out_of_stock'"
                                            widget="badge"/>
                                     <field name="is_featured"/>
+                                    <field name="is_available_online" widget="boolean_toggle"/>
                                     <field name="state"
                                            decoration-warning="state == 'pending'"
                                            decoration-success="state == 'live'"
@@ -270,6 +271,7 @@
                                 <field name="weight_unit" nolabel="1"/>
                             </div>
                             <field name="is_featured"/>
+                            <field name="is_available_online" widget="boolean_toggle"/>
                             <field name="sequence"/>
                         </group>
                     </group>
@@ -419,6 +421,7 @@
                        decoration-danger="stock_status == 'out_of_stock'"/>
                 <field name="day_count"/>
                 <field name="is_featured"/>
+                <field name="is_available_online" optional="show"/>
                 <field name="state" widget="badge"
                        decoration-warning="state == 'pending'"
                        decoration-success="state == 'live'"
@@ -439,6 +442,8 @@
                 <field name="product_category"/>
                 <field name="market_id"/>
                 <filter name="featured" string="Featured" domain="[('is_featured', '=', True)]"/>
+                <filter name="online" string="Available Online" domain="[('is_available_online', '=', True)]"/>
+                <filter name="pos_only" string="POS / Register-Only" domain="[('is_available_online', '=', False)]"/>
                 <separator/>
                 <filter name="edlp" string="EDLP" domain="[('sale_type', '=', 'edlp')]"/>
                 <filter name="weekly_bundle" string="Weekly Bundle" domain="[('sale_type', '=', 'weekly_bundle')]"/>

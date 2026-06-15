@@ -162,6 +162,15 @@ class PtlDeal(models.Model):
     description = fields.Text(string='Description')
     sequence = fields.Integer(string='Sequence', default=10)
     is_featured = fields.Boolean(string='Featured')
+    is_available_online = fields.Boolean(
+        string='Available Online',
+        default=True,
+        tracking=True,
+        help='When True the deal is advertised on the ecommerce site and daily-deals '
+             'sheets. When False the deal is POS/register-only — it still applies at the '
+             'point of sale but is hidden from all online advertising surfaces. Mirrors '
+             "Dutchie's IsAvailableOnline flag.",
+    )
 
     # --- State machine ---
     state = fields.Selection(
