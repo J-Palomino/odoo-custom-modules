@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_task_form_social_publish" model="ir.ui.view">
+        <field name="name">project.task.form.social.publish</field>
+        <field name="model">project.task</field>
+        <field name="inherit_id" ref="project.view_task_form2"/>
+        <field name="arch" type="xml">
+
+            <!-- Header: manual publish button + status badge -->
+            <xpath expr="//header" position="inside">
+                <button name="action_social_publish_now"
+                        type="object"
+                        string="Publish to posts.agency"
+                        class="btn-primary"
+                        invisible="x_social_publish_state == 'sent'"/>
+                <field name="x_social_publish_state" widget="statusbar"
+                       statusbar_visible="draft,pending,sent"/>
+            </xpath>
+
+            <!-- Social publishing detail page -->
+            <xpath expr="//notebook" position="inside">
+                <page string="Social Publishing" name="social_publish">
+                    <group>
+                        <group string="Target">
+                            <field name="x_social_profile_id"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                            <field name="x_social_platforms"
+                                   placeholder="instagram"/>
+                            <field name="date_deadline" string="Scheduled (Deadline)"/>
+                        </group>
+                        <group string="Result" >
+                            <field name="x_social_publish_state" readonly="1"/>
+                            <field name="x_social_job_id" readonly="1"/>
+                            <field name="x_social_published_at" readonly="1"/>
+                            <field name="x_social_retry_count" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Caption">
+                        <field name="x_social_caption" nolabel="1"
+                               placeholder="Caption sent to the platforms. Falls back to the task description if empty."/>
+                    </group>
+                    <group string="Last Error"
+                           invisible="not x_social_publish_error">
+                        <field name="x_social_publish_error" nolabel="1" readonly="1"/>
+                    </group>
+                    <div class="text-muted">
+                        Attach the image or video to this task (paperclip in the
+                        chatter), then set the profile, platform(s) and a future
+                        Deadline. Moving the card to the <b>Scheduled</b> stage
+                        queues it to posts.agency automatically.
+                    </div>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

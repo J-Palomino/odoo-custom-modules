@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_mint_social_profile_list" model="ir.ui.view">
+        <field name="name">mint.social.profile.list</field>
+        <field name="model">mint.social.profile</field>
+        <field name="arch" type="xml">
+            <list string="posts.agency Accounts" create="false" edit="false">
+                <field name="name"/>
+                <field name="connected_platforms"/>
+                <field name="is_connected" widget="boolean_toggle"/>
+                <field name="last_synced"/>
+                <field name="active" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_social_profile_form" model="ir.ui.view">
+        <field name="name">mint.social.profile.form</field>
+        <field name="model">mint.social.profile</field>
+        <field name="arch" type="xml">
+            <form string="posts.agency Account" create="false">
+                <sheet>
+                    <group>
+                        <field name="name" readonly="1"/>
+                        <field name="connected_platforms" readonly="1"/>
+                        <field name="is_connected" readonly="1"/>
+                        <field name="last_synced" readonly="1"/>
+                        <field name="active" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_social_profile" model="ir.actions.act_window">
+        <field name="name">posts.agency Accounts</field>
+        <field name="res_model">mint.social.profile</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'active_test': False}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No accounts synced yet</p>
+            <p>Use <b>Refresh connected accounts</b> in
+               Settings &gt; posts.agency Publishing to pull the connected
+               accounts from posts.agency.</p>
+        </field>
+    </record>
+</odoo>
