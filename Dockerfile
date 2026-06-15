@@ -1,7 +1,7 @@
 # Odoo 19 with Custom Modules
 FROM odoo:19
 
-ARG CACHEBUST=127
+ARG CACHEBUST=128
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -118,6 +118,9 @@ COPY --chown=odoo:odoo mint_link_tracker_qr /opt/extra-addons/mint_link_tracker_
 
 # ── Flipbook (marketing PDF + page-flip viewer of vendor offerings) ─
 COPY --chown=odoo:odoo mint_flipbook /opt/extra-addons/mint_flipbook
+
+# ── Discuss /here command (insert current page URL in composer) ──────
+COPY --chown=odoo:odoo mint_discuss_here /opt/extra-addons/mint_discuss_here
 
 # ── DROPPED 2026-05-20: OCA Tier Validation / Knowledge / QMS bundle ──
 # 13 OCA modules (base_tier_validation*, document_knowledge, document_page*,
