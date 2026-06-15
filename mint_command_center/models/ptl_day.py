@@ -279,7 +279,7 @@ class PtlDay(models.Model):
             'discount_amount': amount,
             'is_published': True,
             'is_featured': deal.is_featured,
-            'is_available_online': True,
+            'is_available_online': deal.is_available_online,
             'ptl_deal_id': deal.id,
             'dutchie_discount_id': f'ptl_{deal.id}',
             'excluded_skus': deal.excluded_skus or False,
