@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 
 import requests
 
@@ -280,13 +281,9 @@ class ProjectTask(models.Model):
         Returns a status dict (ok, task_id, account, platforms, scheduled_at, state,
         message / error / available_accounts).
         """
-        Profile = self.env["mint.social.profile"]
-        prof = Profile.search(
-            [("is_connected", "=", True), ("name", "=ilike", account)], limit=1
-        ) or Profile.search(
-            [("is_connected", "=", True), ("name", "ilike", account)], limit=1
-        )
+        prof = self._social_resolve_account(account)
         if not prof:
+            Profile = self.env["mint.social.profile"]
             return {
                 "ok": False,
                 "error": _("No connected posts.agency account matches '%s'.") % account,
@@ -348,6 +345,26 @@ class ProjectTask(models.Model):
                 else _("Saved as draft. Attach the final asset, then submit it for approval.")
             ),
         }
+
+    @api.model
+    def _social_resolve_account(self, account):
+        """Fuzzy-match a connected posts.agency account from a plain name.
+        Handles 'Mint Florida' -> 'themintflorida' (spacing/prefix differences)."""
+        Profile = self.env["mint.social.profile"]
+        candidates = Profile.search([("is_connected", "=", True)])
+        norm = lambda s: re.sub(r"[^a-z0-9]", "", (s or "").lower())
+        na = norm(account)
+        if not na:
+            return Profile.browse()
+        # 1) normalized containment either direction
+        hit = candidates.filtered(lambda p: na in norm(p.name) or norm(p.name) in na)
+        if not hit:
+            # 2) all word-tokens of the request appear in the handle
+            toks = [t for t in re.split(r"\W+", (account or "").lower()) if t]
+            hit = candidates.filtered(
+                lambda p: toks and all(t in (p.name or "").lower() for t in toks)
+            )
+        return hit[:1]
 
     def _social_parse_when(self, when):
         if not when:
