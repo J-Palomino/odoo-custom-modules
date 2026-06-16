@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 
 import requests
 
@@ -263,6 +264,135 @@ class ProjectTask(models.Model):
                 }
             )
         return True
+
+    # ------------------------------------------------------------------
+    # single-call scheduler (plain-language / agent entry point)
+    # ------------------------------------------------------------------
+    @api.model
+    def social_schedule(self, account, when, content, platforms=None,
+                        title=None, image_url=None, submit=True):
+        """One call to schedule a social post — built for agents/natural language.
+
+        Resolves the posts.agency account by name, creates a Social Media card with
+        the chosen platform(s), date/time and caption, optionally attaches an image
+        from a URL, and submits it for approval. Runs with the caller's permissions,
+        so a scheduler (Ashton / Sage) can prepare + submit but never approve/send.
+
+        Returns a status dict (ok, task_id, account, platforms, scheduled_at, state,
+        message / error / available_accounts).
+        """
+        prof = self._social_resolve_account(account)
+        if not prof:
+            Profile = self.env["mint.social.profile"]
+            return {
+                "ok": False,
+                "error": _("No connected posts.agency account matches '%s'.") % account,
+                "available_accounts": Profile.search([("is_connected", "=", True)]).mapped("name"),
+            }
+        if not platforms:
+            platforms = prof.connected_platforms or "instagram"
+        if isinstance(platforms, (list, tuple)):
+            platforms = ",".join(str(p) for p in platforms)
+
+        dt = self._social_parse_when(when)
+        if not dt:
+            return {
+                "ok": False,
+                "error": _("Could not understand the date/time '%s'. Try e.g. '2026-12-20 09:00'.") % when,
+            }
+
+        project_id = self._social_param_int(PARAM_PROJECT, 0) or 42
+        task = self.create(
+            {
+                "name": (title or (content or "Social Post")).strip()[:60] or "Social Post",
+                "project_id": project_id,
+                "date_deadline": fields.Datetime.to_string(dt),
+                "x_social_profile_id": prof.id,
+                "x_social_platforms": platforms,
+                "x_social_caption": content or "",
+            }
+        )
+
+        if image_url:
+            try:
+                task._social_attach_from_url(image_url)
+            except Exception as exc:  # noqa: BLE001
+                return {
+                    "ok": True, "task_id": task.id, "account": prof.name, "state": "draft",
+                    "warning": _("Card created but the image could not be fetched: %s") % exc,
+                }
+
+        if submit and task._social_media_attachment():
+            try:
+                task._social_submit_for_approval()
+            except UserError as exc:
+                return {
+                    "ok": True, "task_id": task.id, "account": prof.name, "state": "draft",
+                    "needs": exc.args[0] if exc.args else _("not ready"),
+                }
+
+        state = task.x_social_publish_state
+        return {
+            "ok": True,
+            "task_id": task.id,
+            "account": prof.name,
+            "platforms": platforms,
+            "scheduled_at": task.date_deadline and fields.Datetime.to_string(task.date_deadline),
+            "state": state,
+            "message": (
+                _("Submitted for approval — Pablo or Juan must approve before it is sent.")
+                if state == "pending_approval"
+                else _("Saved as draft. Attach the final asset, then submit it for approval.")
+            ),
+        }
+
+    @api.model
+    def _social_resolve_account(self, account):
+        """Fuzzy-match a connected posts.agency account from a plain name.
+        Handles 'Mint Florida' -> 'themintflorida' (spacing/prefix differences)."""
+        Profile = self.env["mint.social.profile"]
+        candidates = Profile.search([("is_connected", "=", True)])
+        norm = lambda s: re.sub(r"[^a-z0-9]", "", (s or "").lower())
+        na = norm(account)
+        if not na:
+            return Profile.browse()
+        # 1) normalized containment either direction
+        hit = candidates.filtered(lambda p: na in norm(p.name) or norm(p.name) in na)
+        if not hit:
+            # 2) all word-tokens of the request appear in the handle
+            toks = [t for t in re.split(r"\W+", (account or "").lower()) if t]
+            hit = candidates.filtered(
+                lambda p: toks and all(t in (p.name or "").lower() for t in toks)
+            )
+        return hit[:1]
+
+    def _social_parse_when(self, when):
+        if not when:
+            return False
+        if not isinstance(when, str):
+            return when
+        try:
+            from dateutil import parser as dtp
+
+            return dtp.parse(when, fuzzy=True)
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _social_attach_from_url(self, image_url):
+        self.ensure_one()
+        resp = requests.get(image_url, headers={"User-Agent": "mint-social/1.0"}, timeout=60)
+        resp.raise_for_status()
+        ctype = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
+        name = (image_url.split("/")[-1].split("?")[0]) or "asset"
+        self.env["ir.attachment"].create(
+            {
+                "name": name,
+                "res_model": "project.task",
+                "res_id": self.id,
+                "datas": base64.b64encode(resp.content).decode(),
+                "mimetype": ctype or "image/jpeg",
+            }
+        )
 
     # ------------------------------------------------------------------
     # cron sweep — only ever forwards APPROVED posts
