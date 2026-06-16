@@ -640,9 +640,16 @@ class ProjectTask(models.Model):
             ]
             resp = requests.post(url, headers=headers, data=data, files=files, timeout=HTTP_TIMEOUT)
         else:
+            if not att.datas:
+                raise UserError(
+                    _("Attachment '%s' has no file data to upload.") % (att.name or att.id)
+                )
+            # upload the video as binary (posts.agency can't fetch a tokenized
+            # Odoo URL — "Video URL is not accessible").
+            mt = att.mimetype if (att.mimetype or "").startswith("video/") else "video/mp4"
             url = "%s/api/upload" % base
-            data.append(("video", self._social_attachment_public_url(att)))
-            resp = requests.post(url, headers=headers, data=data, timeout=HTTP_TIMEOUT)
+            files = [("video", (att.name or "video.mp4", base64.b64decode(att.datas), mt))]
+            resp = requests.post(url, headers=headers, data=data, files=files, timeout=HTTP_TIMEOUT)
 
         self._social_handle_response(resp)
 

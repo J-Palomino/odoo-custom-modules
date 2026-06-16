@@ -1,6 +1,6 @@
 {
     'name': 'Mint Social Publish',
-    'version': '19.0.7.1.0',
+    'version': '19.0.7.2.0',
     'category': 'Marketing',
     'summary': 'Push scheduled Social Media project cards to the posts.agency API',
     'description': """
