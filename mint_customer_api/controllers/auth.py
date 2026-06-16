@@ -206,6 +206,14 @@ class MintCustomerAuth(http.Controller):
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
 
+        # Front-end gate: only the MintDeals frontend (which holds the rpc
+        # API key) may reach this endpoint. Blocks direct hits to the backend
+        # that would otherwise bypass the FE's origin check and per-IP /
+        # per-target throttle (reset-email bombing).
+        api_key = request.httprequest.headers.get('X-Api-Key', '')
+        if not api_key or not self._verify_fe_api_key(api_key):
+            return error_response('Unauthorized', 401)
+
         try:
             data = json.loads(request.httprequest.data)
         except (json.JSONDecodeError, TypeError):
