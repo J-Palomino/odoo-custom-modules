@@ -46,7 +46,6 @@
         <field name="arch" type="xml">
             <search string="Knowledge Pages">
                 <field name="name"/>
-                <field name="content"/>
                 <field name="category_id"/>
                 <filter name="archived" string="Archived"
                         domain="[('active', '=', False)]"/>
