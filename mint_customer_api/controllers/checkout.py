@@ -176,6 +176,11 @@ class MintCheckout(http.Controller):
                 'email': email or False,
                 'phone': phone or False,
                 'customer_rank': 1,
+                # Mark consumer-origin partners so the web-customer record rules
+                # hide their PII from regular staff (vendors/employees), matching
+                # the /auth/register flow. Only set on NEWLY created partners — a
+                # found partner may legitimately be a vendor/employee.
+                'is_web_customer': True,
             })
             _logger.info('Created new customer partner %s: %s', partner.id, name)
 
@@ -358,6 +363,11 @@ class MintCheckout(http.Controller):
                 'email': email or False,
                 'phone': phone or False,
                 'customer_rank': 1,
+                # Mark consumer-origin partners so the web-customer record rules
+                # hide their PII from regular staff (vendors/employees), matching
+                # the /auth/register flow. Only set on NEWLY created partners — a
+                # found partner may legitimately be a vendor/employee.
+                'is_web_customer': True,
             })
             _logger.info('Created new customer partner %s: %s', partner.id, name)
 
