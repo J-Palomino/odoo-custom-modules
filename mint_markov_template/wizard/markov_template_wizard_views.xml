@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="mint_markov_template_wizard_form" model="ir.ui.view">
+        <field name="name">mint.markov.template.wizard.form</field>
+        <field name="model">mint.markov.template.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Generate Markov Survey">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="title"/>
+                        <h1>
+                            <field name="title" placeholder="e.g. Q3 Product Direction"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="target_survey_id"
+                                   options="{'no_create': True}"/>
+                            <field name="questions_layout"
+                                   invisible="target_survey_id"/>
+                            <field name="access_mode"
+                                   invisible="target_survey_id"/>
+                        </group>
+                        <group>
+                            <field name="comment_label"/>
+                            <field name="mark_best_as_correct"/>
+                            <field name="scored"/>
+                        </group>
+                    </group>
+                    <field name="description" placeholder="Optional intro shown on the survey landing page..."
+                           invisible="target_survey_id"/>
+                    <separator string="Questions"/>
+                    <p class="text-muted">
+                        Each row becomes a single-choice question offering the
+                        best suggested answer, the alternative viable solution,
+                        and a free-text "Something Else" option.
+                    </p>
+                    <field name="line_ids">
+                        <list editable="bottom">
+                            <field name="sequence" widget="handle"/>
+                            <field name="title" placeholder="Question text"/>
+                            <field name="best_answer" placeholder="Best suggested answer"/>
+                            <field name="alternative_answer" placeholder="Alternative viable solution"/>
+                            <field name="description" optional="hide"/>
+                        </list>
+                    </field>
+                </sheet>
+                <footer>
+                    <button name="action_generate" type="object" string="Generate Survey"
+                            class="btn-primary" data-hotkey="q"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"
+                            data-hotkey="x"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_markov_template_wizard" model="ir.actions.act_window">
+        <field name="name">Generate Markov Survey</field>
+        <field name="res_model">mint.markov.template.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

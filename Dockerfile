@@ -142,6 +142,7 @@ COPY --chown=odoo:odoo mint_discuss_here /opt/extra-addons/mint_discuss_here
 
 # ── Knowledge Base (Odoo-19-native wiki; replaces non-installable OCA document_page) ──
 COPY --chown=odoo:odoo mint_knowledge /opt/extra-addons/mint_knowledge
+COPY --chown=odoo:odoo mint_markov_template /opt/extra-addons/mint_markov_template
 
 # ── DROPPED 2026-05-20: OCA Tier Validation / Knowledge / QMS bundle ──
 # 13 OCA modules (base_tier_validation*, document_knowledge, document_page*,
