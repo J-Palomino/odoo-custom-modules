@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint SMS — Telnyx Gateway (Transactional Only)',
-    'version': '19.0.2.0.0',
+    'version': '19.0.2.1.0',
     'category': 'Tools',
     'summary': 'Transactional SMS via Telnyx + gated iMessage (BlueBubbles) — cannabis-content guardrail',
     'description': """
@@ -45,6 +45,7 @@
         'views/res_config_settings_views.xml',
         'views/telnyx_message_log_views.xml',
         'views/mint_sms_message_views.xml',
+        'views/res_partner_views.xml',
     ],
     'installable': True,
     'auto_install': False,

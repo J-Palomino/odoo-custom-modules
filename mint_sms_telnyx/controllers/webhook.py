@@ -217,15 +217,11 @@ class TelnyxWebhook(http.Controller):
         # Opt-out / opt-in handling
         keyword = (body_text or "").strip().upper().split()[0] if body_text.strip() else ""
         if keyword in STOP_KEYWORDS and partner:
-            partner.write({
-                "sms_opt_out": True,
-                "sms_opt_out_date": fields.Datetime.now(),
-            })
+            # Revoke consent (also clears opt-in).
+            partner.set_sms_opt_out()
         elif keyword in START_KEYWORDS and partner:
-            partner.write({
-                "sms_opt_out": False,
-                "sms_opt_out_date": False,
-            })
+            # START/YES is an explicit keyword consent → grant opt-in.
+            partner.set_sms_opt_in(source="sms_keyword")
 
         # Route to partner chatter, fallback to configured Discuss channel.
         if partner:

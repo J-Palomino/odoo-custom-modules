@@ -89,7 +89,7 @@ class MintSmsMessage(models.Model):
         }
 
     @api.model
-    def _whitelist_category(self):
+    def _whitelist_category(self):  # noqa: D401
         """Return the 'SMS Whitelist' partner category recordset (or empty)."""
         ICP = self.env["ir.config_parameter"].sudo()
         cat_id = ICP.get_param("mint_sms_telnyx.whitelist_category_id")
@@ -131,6 +131,9 @@ class MintSmsMessage(models.Model):
 
         if partner.sms_opt_out:
             return False, "Recipient has opted out of texts (sms_opt_out)."
+
+        if not partner.sms_opt_in:
+            return False, "Recipient has not opted in to texts (sms_opt_in)."
 
         # Reuse the cannabis-content guardrail from the Telnyx transport so
         # there's a single blocklist + scan-mode setting for the module.
