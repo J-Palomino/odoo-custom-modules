@@ -172,6 +172,8 @@ class MintSocialProfile(models.Model):
     def action_connect(self):
         """Per-account button: open the posts.agency page to connect/re-auth a platform."""
         self.ensure_one()
+        if not self.env.user.has_group("base.group_system"):
+            raise UserError(_("Only Settings administrators can connect posts.agency accounts."))
         return {
             "type": "ir.actions.act_url",
             "url": self._social_connect_url(self.name),
@@ -193,6 +195,8 @@ class MintSocialConnectWizard(models.TransientModel):
         """Create the profile on posts.agency if new, sync it into Odoo, and open
         the OAuth page to authenticate the social platform."""
         self.ensure_one()
+        if not self.env.user.has_group("base.group_system"):
+            raise UserError(_("Only Settings administrators can connect posts.agency accounts."))
         Profile = self.env["mint.social.profile"]
         username = (self.username or "").strip().lower().replace(" ", "")
         if not username:

@@ -38,7 +38,8 @@
             <list string="posts.agency Accounts" create="false" edit="false">
                 <header>
                     <button name="%(action_social_connect_wizard)d" type="action"
-                            string="Add / Connect Account" class="btn-primary"/>
+                            string="Add / Connect Account" class="btn-primary"
+                            groups="base.group_system"/>
                 </header>
                 <field name="name"/>
                 <field name="connected_platforms"/>
@@ -46,7 +47,7 @@
                 <field name="last_synced"/>
                 <field name="active" column_invisible="1"/>
                 <button name="action_connect" type="object" string="Connect / Re-auth"
-                        icon="fa-link"/>
+                        icon="fa-link" groups="base.group_system"/>
             </list>
         </field>
     </record>
@@ -58,7 +59,8 @@
             <form string="posts.agency Account" create="false">
                 <header>
                     <button name="action_connect" type="object"
-                            string="Connect / Re-authenticate" class="btn-primary"/>
+                            string="Connect / Re-authenticate" class="btn-primary"
+                            groups="base.group_system"/>
                 </header>
                 <sheet>
                     <group>
