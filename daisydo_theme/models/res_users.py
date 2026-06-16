@@ -3,7 +3,7 @@ import os
 
 from markupsafe import Markup
 
-from odoo import models, _
+from odoo import fields, models, _
 from odoo.exceptions import AccessDenied
 
 _logger = logging.getLogger(__name__)
@@ -12,6 +12,18 @@ _BOT_NAME = os.environ.get('BRAND_BOT_NAME', 'MintBot')
 
 class ResUsersDaisy(models.Model):
     _inherit = 'res.users'
+
+    # Dash-separated company ids (e.g. "1-3-5") the user last had active in the
+    # multi-company switcher. Odoo clears the `cids` cookie on logout, so this
+    # field lets us restore the selection on the next login. Maintained
+    # automatically from the `cids` cookie in ir.http.session_info; not shown in
+    # any view and always read/written via sudo().
+    last_company_cids = fields.Char(
+        string="Last Selected Companies",
+        copy=False,
+        help="Internal: remembers the multi-company switcher selection so it "
+             "survives logout/login.",
+    )
 
     def _auth_oauth_signin(self, provider, validation, params):
         """Override to link existing users by email on first OAuth login."""
