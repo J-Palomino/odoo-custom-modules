@@ -129,3 +129,113 @@ class TestPtlDealExplicitProducts(MintPtlDealCommon):
         deal = self._make_deal()
         vals = self.PtlDay._deal_to_discount_vals(deal)
         self.assertNotIn("product_ids", vals)
+
+
+@tagged("post_install", "-at_install")
+class TestPtlDealMarketScoping(MintPtlDealCommon):
+    """Market scoping for matching_product_ids (Odoo #587).
+
+    A PTL deal must only fan out across products carried by its OWN market.
+    Each product.template row belongs to exactly one Dutchie location
+    (x_location_id == res.company.x_dutchie_store_id), so the matcher restricts
+    to the deal's store_ids (else its region's stores). This locks in the fix
+    for the chatter report on mint.ptl.deal #13955: an AZ "Timeless - Vapes"
+    deal was pulling up an MO SKU (44471020) of the same brand.
+
+    matching_product_ids is a preview/format-key field, not the publish path
+    (_deal_to_discount_vals already store-scopes the mint.discount); this makes
+    the curator's previewed set agree with that store scope.
+    """
+
+    AZ_GUID = "FA587-GUID-AZ-0001"
+    MO_GUID = "FA587-GUID-MO-0001"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        Company = cls.env["res.company"]
+        Template = cls.env["product.template"]
+        Region = cls.env["mint.region"]
+
+        cls.region_az = Region.create({"name": "FA-587 AZ", "code": "AZ7"})
+        cls.az_store = Company.create({
+            "name": "FA-587 AZ Store",
+            "x_dutchie_store_id": cls.AZ_GUID,
+            "region_id": cls.region_az.id,
+        })
+        cls.mo_store = Company.create({
+            "name": "FA-587 MO Store",
+            "x_dutchie_store_id": cls.MO_GUID,
+        })
+
+        def _mk(name, code, loc):
+            return Template.create({
+                "name": name,
+                "brand_id": cls.brand.id,
+                "categ_id": cls.cat_flower.id,
+                "default_code": code,
+                "type": "consu",
+                "x_location_id": loc,
+            })
+
+        # Same brand + category, split across markets. The MO rows are the
+        # cross-market leak the fix must exclude from an AZ deal.
+        cls.az_flowers = Template
+        for i in range(3):
+            cls.az_flowers |= _mk(f"AZ Flower {i}", f"FA587-AZ-{i}", cls.AZ_GUID)
+        cls.mo_flowers = Template
+        for i in range(2):
+            cls.mo_flowers |= _mk(f"MO Flower {i}", f"FA587-MO-{i}", cls.MO_GUID)
+        # In-brand flower with no location — unattributable to any market, so
+        # excluded once scoping is active (the 0.1% blank-x_location_id tail).
+        cls.blank_flower = _mk("Blank Flower", "FA587-BLANK", False)
+
+    def _make_deal(self, **overrides):
+        vals = {
+            "name": "FA-587 Deal",
+            "brand_id": self.brand.id,
+            "product_category": "Flower",
+            "discount_type": "percent",
+            "discount_value": 0.5,
+        }
+        vals.update(overrides)
+        return self.PtlDeal.create(vals)
+
+    def test_store_ids_scope_excludes_other_market_skus(self):
+        """store_ids = AZ store → only AZ-located brand flowers match."""
+        deal = self._make_deal(store_ids=[(6, 0, self.az_store.ids)])
+        self.assertEqual(set(deal.matching_product_ids.ids), set(self.az_flowers.ids))
+        self.assertEqual(deal.matching_product_count, 3)
+        # The MO SKUs of the same brand+category must NOT leak in (#587).
+        self.assertFalse(deal.matching_product_ids & self.mo_flowers)
+        # Blank-location and the common (no-location) flowers are unattributable
+        # and must not appear under an explicit store scope.
+        self.assertNotIn(self.blank_flower, deal.matching_product_ids)
+        self.assertFalse(deal.matching_product_ids & self.flowers)
+
+    def test_region_stores_scope_when_no_store_ids(self):
+        """No store_ids → fall back to the deal's region (market_id) stores."""
+        deal = self._make_deal(market_id=self.region_az.id)
+        self.assertFalse(deal.store_ids)
+        self.assertEqual(set(deal.matching_product_ids.ids), set(self.az_flowers.ids))
+        self.assertFalse(deal.matching_product_ids & self.mo_flowers)
+
+    def test_market_blind_fallback_when_no_stores_or_region(self):
+        """No store_ids and no market_id → unscoped brand+category matching
+        (documents the logged market-blind fallback)."""
+        deal = self._make_deal()
+        self.assertFalse(deal.store_ids)
+        self.assertFalse(deal.market_id)
+        expected = self.flowers | self.az_flowers | self.mo_flowers | self.blank_flower
+        self.assertEqual(set(deal.matching_product_ids.ids), set(expected.ids))
+
+    def test_explicit_picks_are_market_scoped(self):
+        """A wrong-market SKU can't be hand-picked past the scope either."""
+        picks = self.az_flowers | self.mo_flowers
+        deal = self._make_deal(
+            store_ids=[(6, 0, self.az_store.ids)],
+            explicit_product_ids=[(6, 0, picks.ids)],
+        )
+        self.assertEqual(set(deal.matching_product_ids.ids), set(self.az_flowers.ids))
+        self.assertEqual(deal.matching_product_count, 3)
+        self.assertFalse(deal.matching_product_ids & self.mo_flowers)

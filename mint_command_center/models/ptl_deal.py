@@ -283,11 +283,14 @@ class PtlDeal(models.Model):
         compute='_compute_matching_products',
         string='Matching Products',
         help='Live product.template records this deal will apply to, '
-             'resolved from brand_id + product_category at form open. '
+             'resolved from brand_id + product_category at form open, then '
+             'scoped to the deal\'s market (store_ids, else market_id stores) '
+             'via product.template.x_location_id so an AZ deal never lists a '
+             'same-brand MO/IL SKU (Odoo #587). '
              'Mirrors the matching used by mint.discount._ensure (brand_ids + '
              'category_ids resolved via product.category name match). '
              'When explicit_product_ids is populated, equals that set '
-             '(intersected with brand_id) instead.',
+             '(intersected with brand_id and the market scope) instead.',
     )
     matching_product_count = fields.Integer(
         string='# Matching SKUs',
@@ -359,7 +362,25 @@ class PtlDeal(models.Model):
         ]
         return Category.search(domain)
 
-    @api.depends('brand_id', 'brand_ids', 'product_category', 'excluded_skus', 'explicit_product_ids')
+    def _market_location_guids(self):
+        """Dutchie store GUIDs (res.company.x_dutchie_store_id) that scope this
+        deal's market. Prefer the explicitly-picked store_ids; fall back to all
+        stores in the deal's region (market_id) — mirroring the publish-time
+        fallback in ptl_day._push_discounts_to_redis. Returns a set of
+        non-empty GUID strings — an empty set means "no stores known", i.e.
+        unscoped.
+
+        Each product.template row belongs to exactly one Dutchie location
+        (product.template.x_location_id == res.company.x_dutchie_store_id), so
+        restricting on this set keeps an AZ deal from listing an MO/IL SKU of
+        the same brand (Odoo #587: 'AZ deal pulling up an MO sku').
+        """
+        self.ensure_one()
+        stores = self.store_ids or self.market_id.store_ids
+        return {g for g in stores.mapped('x_dutchie_store_id') if g}
+
+    @api.depends('brand_id', 'brand_ids', 'product_category', 'excluded_skus',
+                 'explicit_product_ids', 'store_ids', 'market_id')
     def _compute_matching_products(self):
         Template = self.env['product.template'].sudo()
         for rec in self:
@@ -368,11 +389,21 @@ class PtlDeal(models.Model):
                 rec.matching_product_ids = False
                 rec.matching_product_count = 0
                 continue
+            # Market scope: the Dutchie store GUIDs this deal targets. When
+            # empty (no store_ids and no region stores) matching stays
+            # market-blind — log it so the gap is visible rather than silent.
+            loc_guids = rec._market_location_guids()
+            if not loc_guids:
+                _logger.warning(
+                    'PTL deal %s: no store_ids/market stores — matching is '
+                    'market-blind (brand+category only).', rec.id)
             # Explicit set wins when populated — intersect with the brand set
-            # so a stale-brand pick doesn't sneak through.
+            # (so a stale-brand pick doesn't sneak through) AND the market
+            # scope (so a wrong-market SKU can't be hand-picked in either).
             if rec.explicit_product_ids:
                 explicit = rec.explicit_product_ids.filtered(
                     lambda p: p.brand_id in brands
+                    and (not loc_guids or p.x_location_id in loc_guids)
                 )
                 rec.matching_product_ids = explicit
                 rec.matching_product_count = len(explicit)
@@ -382,6 +413,8 @@ class PtlDeal(models.Model):
                 cats = rec._resolve_master_categories()
                 if cats:
                     domain.append(('categ_id', 'in', cats.ids))
+            if loc_guids:
+                domain.append(('x_location_id', 'in', list(loc_guids)))
             tmpls = Template.search(domain)
             if rec.excluded_skus and tmpls:
                 tokens = {
