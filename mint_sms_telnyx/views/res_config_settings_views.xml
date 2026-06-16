@@ -66,6 +66,30 @@
                         <field name="telnyx_block_mailing_sms"/>
                     </setting>
                 </block>
+                <block title="iMessage Gateway (BlueBubbles)" id="mint_sms_bluebubbles_block">
+                    <setting id="mint_sms_bluebubbles_enabled"
+                             help="Deliver mint.sms.message records via the BlueBubbles iMessage gateway. Whitelist + content guardrail apply.">
+                        <field name="bluebubbles_enabled"/>
+                    </setting>
+                    <setting id="mint_sms_bluebubbles_url"
+                             string="Server URL"
+                             help="BlueBubbles base URL (e.g. the public ngrok endpoint)."
+                             invisible="not bluebubbles_enabled">
+                        <field name="bluebubbles_url"/>
+                    </setting>
+                    <setting id="mint_sms_bluebubbles_password"
+                             string="Server Password"
+                             help="Sent as ?password= on every request."
+                             invisible="not bluebubbles_enabled">
+                        <field name="bluebubbles_password" password="True"/>
+                    </setting>
+                    <setting id="mint_sms_bluebubbles_whitelist"
+                             string="SMS Whitelist Tag"
+                             help="Only contacts with this tag may receive texts. Defaults to the 'SMS Whitelist' category."
+                             invisible="not bluebubbles_enabled">
+                        <field name="bluebubbles_whitelist_category_id"/>
+                    </setting>
+                </block>
             </xpath>
         </field>
     </record>

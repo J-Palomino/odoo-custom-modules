@@ -1,3 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_telnyx_message_log_user,telnyx.message.log user,model_telnyx_message_log,base.group_user,1,0,0,0
 access_telnyx_message_log_system,telnyx.message.log system,model_telnyx_message_log,base.group_system,1,1,1,1
+access_mint_sms_message_user,mint.sms.message user,model_mint_sms_message,base.group_user,1,0,0,0
+access_mint_sms_message_sender,mint.sms.message sender,model_mint_sms_message,mint_sms_telnyx.group_sms_sender,1,1,1,0
+access_mint_sms_message_system,mint.sms.message system,model_mint_sms_message,base.group_system,1,1,1,1
