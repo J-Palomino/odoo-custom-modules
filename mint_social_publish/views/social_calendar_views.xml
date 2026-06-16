@@ -109,10 +109,8 @@
                 <filter name="f_draft" string="Draft"
                         domain="[('x_social_publish_state','=','draft')]"/>
                 <filter name="f_rejected" string="Rejected / Failed"
-                        domain="[('x_social_publish_state','in',('rejected','failed'))]"/>
+                        domain="[('x_social_publish_state','in',['rejected','failed'])]"/>
                 <separator/>
-                <filter name="f_upcoming" string="Upcoming"
-                        domain="[('date_deadline','&gt;=', context_today().strftime('%Y-%m-%d'))]"/>
                 <group expand="0" string="Group By">
                     <filter name="g_account" string="Account"
                             context="{'group_by':'x_social_profile_id'}"/>
