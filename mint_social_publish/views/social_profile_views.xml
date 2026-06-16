@@ -1,15 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Add / Connect Account wizard -->
+    <record id="view_mint_social_connect_wizard" model="ir.ui.view">
+        <field name="name">mint.social.connect.wizard.form</field>
+        <field name="model">mint.social.connect.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add / Connect a posts.agency Account">
+                <p>
+                    Enter the account handle to create (if new) and authenticate on posts.agency.
+                    A new browser tab will open where you sign in to the social platform
+                    (Instagram, YouTube, etc.) and authorize posting. After connecting, use
+                    <b>Refresh connected accounts</b> so it appears here.
+                </p>
+                <group>
+                    <field name="username" placeholder="e.g. themintchicago"/>
+                </group>
+                <footer>
+                    <button name="action_connect" type="object" string="Connect Account"
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_social_connect_wizard" model="ir.actions.act_window">
+        <field name="name">Add / Connect Account</field>
+        <field name="res_model">mint.social.connect.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
     <record id="view_mint_social_profile_list" model="ir.ui.view">
         <field name="name">mint.social.profile.list</field>
         <field name="model">mint.social.profile</field>
         <field name="arch" type="xml">
             <list string="posts.agency Accounts" create="false" edit="false">
+                <header>
+                    <button name="%(action_social_connect_wizard)d" type="action"
+                            string="Add / Connect Account" class="btn-primary"/>
+                </header>
                 <field name="name"/>
                 <field name="connected_platforms"/>
                 <field name="is_connected" widget="boolean_toggle"/>
                 <field name="last_synced"/>
                 <field name="active" column_invisible="1"/>
+                <button name="action_connect" type="object" string="Connect / Re-auth"
+                        icon="fa-link"/>
             </list>
         </field>
     </record>
@@ -19,6 +56,10 @@
         <field name="model">mint.social.profile</field>
         <field name="arch" type="xml">
             <form string="posts.agency Account" create="false">
+                <header>
+                    <button name="action_connect" type="object"
+                            string="Connect / Re-authenticate" class="btn-primary"/>
+                </header>
                 <sheet>
                     <group>
                         <field name="name" readonly="1"/>
@@ -39,9 +80,8 @@
         <field name="context">{'active_test': False}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">No accounts synced yet</p>
-            <p>Use <b>Refresh connected accounts</b> in
-               Settings &gt; posts.agency Publishing to pull the connected
-               accounts from posts.agency.</p>
+            <p>Use <b>Add / Connect Account</b> to authenticate a social account, or
+               <b>Refresh connected accounts</b> in Settings &gt; posts.agency Publishing.</p>
         </field>
     </record>
 </odoo>

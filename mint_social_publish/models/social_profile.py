@@ -125,3 +125,82 @@ class MintSocialProfile(models.Model):
                 "next": {"type": "ir.actions.act_window_close"},
             },
         }
+
+    # ------------------------------------------------------------------
+    # connect / authenticate a social account (posts.agency OAuth)
+    # ------------------------------------------------------------------
+    @api.model
+    def _social_api(self):
+        ICP = self.env["ir.config_parameter"].sudo()
+        base = (ICP.get_param(PARAM_BASE) or DEFAULT_BASE).strip().rstrip("/")
+        key = (ICP.get_param(PARAM_KEY) or "").strip()
+        if not key:
+            raise UserError(_("Set the posts.agency API key first (Settings > posts.agency Publishing)."))
+        return base, {"Authorization": "ApiKey %s" % key}
+
+    @api.model
+    def _ensure_remote_profile(self, username):
+        """Create the profile on posts.agency if it doesn't exist (idempotent)."""
+        base, headers = self._social_api()
+        r = requests.post(
+            "%s/api/uploadposts/users" % base,
+            headers={**headers, "Content-Type": "application/json"},
+            json={"username": username}, timeout=30,
+        )
+        if r.status_code not in (200, 201, 204, 409):
+            raise UserError(_("posts.agency could not create the account '%(u)s' (HTTP %(s)s): %(b)s")
+                            % {"u": username, "s": r.status_code, "b": r.text[:300]})
+
+    @api.model
+    def _social_connect_url(self, username):
+        """Return the posts.agency OAuth URL to authenticate a social account
+        to the given profile (valid 48h)."""
+        base, headers = self._social_api()
+        r = requests.post(
+            "%s/api/uploadposts/users/generate-jwt" % base,
+            headers={**headers, "Content-Type": "application/json"},
+            json={"username": username}, timeout=30,
+        )
+        if r.status_code != 200:
+            raise UserError(_("posts.agency could not create a connect link (HTTP %(s)s): %(b)s")
+                            % {"s": r.status_code, "b": r.text[:300]})
+        url = (r.json() or {}).get("access_url")
+        if not url:
+            raise UserError(_("posts.agency did not return a connect link."))
+        return url
+
+    def action_connect(self):
+        """Per-account button: open the posts.agency page to connect/re-auth a platform."""
+        self.ensure_one()
+        return {
+            "type": "ir.actions.act_url",
+            "url": self._social_connect_url(self.name),
+            "target": "new",
+        }
+
+
+class MintSocialConnectWizard(models.TransientModel):
+    _name = "mint.social.connect.wizard"
+    _description = "Add / Connect a posts.agency Account"
+
+    username = fields.Char(
+        string="Account Username", required=True,
+        help="The posts.agency profile handle to create/connect, e.g. themintchicago. "
+        "Lowercase, no spaces.",
+    )
+
+    def action_connect(self):
+        """Create the profile on posts.agency if new, sync it into Odoo, and open
+        the OAuth page to authenticate the social platform."""
+        self.ensure_one()
+        Profile = self.env["mint.social.profile"]
+        username = (self.username or "").strip().lower().replace(" ", "")
+        if not username:
+            raise UserError(_("Enter an account username."))
+        Profile._ensure_remote_profile(username)
+        Profile.sync_from_posts_agency()
+        return {
+            "type": "ir.actions.act_url",
+            "url": Profile._social_connect_url(username),
+            "target": "new",
+        }
