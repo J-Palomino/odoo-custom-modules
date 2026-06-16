@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+
+    <!-- ============ Knowledge Page ============ -->
+    <record id="view_mint_knowledge_page_list" model="ir.ui.view">
+        <field name="name">mint.knowledge.page.list</field>
+        <field name="model">mint.knowledge.page</field>
+        <field name="arch" type="xml">
+            <list string="Knowledge Pages">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="category_id"/>
+                <field name="author_id"/>
+                <field name="write_date" string="Last Updated"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_knowledge_page_form" model="ir.ui.view">
+        <field name="name">mint.knowledge.page.form</field>
+        <field name="model">mint.knowledge.page</field>
+        <field name="arch" type="xml">
+            <form string="Knowledge Page">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="Page title..."/>
+                        </h1>
+                    </div>
+                    <group>
+                        <field name="category_id"/>
+                        <field name="author_id"/>
+                        <field name="active" invisible="1"/>
+                    </group>
+                    <field name="content" widget="html"
+                           placeholder="Write the article content here..."/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_mint_knowledge_page_search" model="ir.ui.view">
+        <field name="name">mint.knowledge.page.search</field>
+        <field name="model">mint.knowledge.page</field>
+        <field name="arch" type="xml">
+            <search string="Knowledge Pages">
+                <field name="name"/>
+                <field name="content"/>
+                <field name="category_id"/>
+                <filter name="archived" string="Archived"
+                        domain="[('active', '=', False)]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_category" string="Category"
+                            context="{'group_by': 'category_id'}"/>
+                    <filter name="group_author" string="Author"
+                            context="{'group_by': 'author_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mint_knowledge_page" model="ir.actions.act_window">
+        <field name="name">Pages</field>
+        <field name="res_model">mint.knowledge.page</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_mint_knowledge_page_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create your first knowledge page</p>
+            <p>File rich-text documentation under a category.</p>
+        </field>
+    </record>
+
+    <!-- ============ Knowledge Category ============ -->
+    <record id="view_mint_knowledge_category_list" model="ir.ui.view">
+        <field name="name">mint.knowledge.category.list</field>
+        <field name="model">mint.knowledge.category</field>
+        <field name="arch" type="xml">
+            <list string="Categories">
+                <field name="sequence" widget="handle"/>
+                <field name="complete_name" string="Category"/>
+                <field name="parent_id"/>
+                <field name="page_count" string="Pages"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_knowledge_category_form" model="ir.ui.view">
+        <field name="name">mint.knowledge.category.form</field>
+        <field name="model">mint.knowledge.category</field>
+        <field name="arch" type="xml">
+            <form string="Category">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button" type="object"
+                                name="action_view_pages" icon="fa-file-text-o">
+                            <field name="page_count" widget="statinfo" string="Pages"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="Category name..."/>
+                        </h1>
+                    </div>
+                    <group>
+                        <field name="parent_id"/>
+                        <field name="sequence"/>
+                    </group>
+                    <field name="description" placeholder="Optional description..."/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_knowledge_category" model="ir.actions.act_window">
+        <field name="name">Categories</field>
+        <field name="res_model">mint.knowledge.category</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create your first category</p>
+            <p>Organize knowledge pages into a hierarchy (e.g. an "IT" category).</p>
+        </field>
+    </record>
+
+    <!-- ============ Menus ============ -->
+    <menuitem id="menu_mint_knowledge_root"
+              name="Knowledge"
+              web_icon="mint_knowledge,static/description/icon.png"
+              sequence="95"
+              groups="group_mint_knowledge_user"/>
+
+    <menuitem id="menu_mint_knowledge_pages"
+              name="Pages"
+              parent="menu_mint_knowledge_root"
+              action="action_mint_knowledge_page"
+              sequence="10"
+              groups="group_mint_knowledge_user"/>
+
+    <menuitem id="menu_mint_knowledge_categories"
+              name="Categories"
+              parent="menu_mint_knowledge_root"
+              action="action_mint_knowledge_category"
+              sequence="20"
+              groups="group_mint_knowledge_manager"/>
+
+</odoo>

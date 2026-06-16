@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_knowledge_category_reader,mint.knowledge.category reader,model_mint_knowledge_category,group_mint_knowledge_user,1,0,0,0
+access_mint_knowledge_category_manager,mint.knowledge.category manager,model_mint_knowledge_category,group_mint_knowledge_manager,1,1,1,1
+access_mint_knowledge_page_reader,mint.knowledge.page reader,model_mint_knowledge_page,group_mint_knowledge_user,1,0,0,0
+access_mint_knowledge_page_manager,mint.knowledge.page manager,model_mint_knowledge_page,group_mint_knowledge_manager,1,1,1,1

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <record id="group_mint_knowledge_user" model="res.groups">
+        <field name="name">Knowledge Base / Reader</field>
+        <field name="comment">Read-only access to knowledge base pages and categories.</field>
+    </record>
+
+    <record id="group_mint_knowledge_manager" model="res.groups">
+        <field name="name">Knowledge Base / Manager</field>
+        <field name="comment">Full create/edit/delete access to the knowledge base.</field>
+        <field name="implied_ids" eval="[(4, ref('group_mint_knowledge_user'))]"/>
+    </record>
+</odoo>

@@ -140,6 +140,9 @@ COPY --chown=odoo:odoo mint_flipbook /opt/extra-addons/mint_flipbook
 # ── Discuss /here command (insert current page URL in composer) ──────
 COPY --chown=odoo:odoo mint_discuss_here /opt/extra-addons/mint_discuss_here
 
+# ── Knowledge Base (Odoo-19-native wiki; replaces non-installable OCA document_page) ──
+COPY --chown=odoo:odoo mint_knowledge /opt/extra-addons/mint_knowledge
+
 # ── DROPPED 2026-05-20: OCA Tier Validation / Knowledge / QMS bundle ──
 # 13 OCA modules (base_tier_validation*, document_knowledge, document_page*,
 # mgmtsystem*) were ported from 18.0→19.0 in commit 3946172 but shipped
