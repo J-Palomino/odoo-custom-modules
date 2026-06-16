@@ -19,7 +19,7 @@
                             groups="mint_social_publish.group_social_approver"
                             invisible="x_social_publish_state != 'pending_approval'"/>
                     <field name="x_social_publish_state" widget="statusbar"
-                           statusbar_visible="draft,pending_approval,approved,sent"/>
+                           statusbar_visible="draft,pending_approval,approved,sent,published"/>
                 </header>
                 <sheet>
                     <group>
@@ -27,14 +27,18 @@
                             <field name="x_social_profile_id"
                                    options="{'no_create': True, 'no_open': True}"/>
                             <field name="x_social_platforms" placeholder="instagram"/>
+                            <field name="x_social_youtube_privacy"
+                                   invisible="'youtube' not in (x_social_platforms or '')"/>
                             <field name="date_deadline" string="Scheduled (post time)"/>
                             <field name="project_id" invisible="1"/>
                         </group>
-                        <group string="Approval">
+                        <group string="Result">
                             <field name="x_social_approved_by" readonly="1"/>
-                            <field name="x_social_approved_at" readonly="1"/>
                             <field name="x_social_job_id" readonly="1"/>
-                            <field name="x_social_published_at" readonly="1"/>
+                            <field name="x_social_post_url" widget="url" readonly="1"
+                                   invisible="not x_social_post_url"/>
+                            <field name="x_social_reconciled_at" readonly="1"
+                                   invisible="not x_social_reconciled_at"/>
                         </group>
                     </group>
                     <field name="name" placeholder="Internal title (optional)"/>
@@ -83,12 +87,44 @@
                 <field name="x_social_platforms" string="Platform"/>
                 <field name="name" string="Post"/>
                 <field name="x_social_publish_state" string="Status" widget="badge"
-                       decoration-success="x_social_publish_state == 'sent'"
-                       decoration-info="x_social_publish_state == 'approved'"
+                       decoration-success="x_social_publish_state == 'published'"
+                       decoration-info="x_social_publish_state in ('approved','sent')"
                        decoration-warning="x_social_publish_state == 'pending_approval'"
-                       decoration-danger="x_social_publish_state in ('failed','rejected')"/>
-                <field name="x_social_approved_by" string="Approved By" optional="show"/>
+                       decoration-danger="x_social_publish_state in ('failed','rejected','publish_failed')"/>
+                <field name="x_social_post_url" widget="url" string="Live URL" optional="show"/>
+                <field name="x_social_approved_by" string="Approved By" optional="hide"/>
             </list>
+        </field>
+    </record>
+
+    <!-- Search + filters (Odoo 19: group-by filters are top-level, no <group expand>) -->
+    <record id="view_social_post_search" model="ir.ui.view">
+        <field name="name">project.task.social.search</field>
+        <field name="model">project.task</field>
+        <field name="arch" type="xml">
+            <search string="Social Posts">
+                <field name="name"/>
+                <field name="x_social_profile_id" string="Account"/>
+                <filter name="f_pending" string="Pending Approval"
+                        domain="[('x_social_publish_state','=','pending_approval')]"/>
+                <filter name="f_approved" string="Approved"
+                        domain="[('x_social_publish_state','=','approved')]"/>
+                <filter name="f_sent" string="Queued"
+                        domain="[('x_social_publish_state','=','sent')]"/>
+                <filter name="f_published" string="Published"
+                        domain="[('x_social_publish_state','=','published')]"/>
+                <filter name="f_publish_failed" string="Publish Failed"
+                        domain="[('x_social_publish_state','=','publish_failed')]"/>
+                <filter name="f_draft" string="Draft"
+                        domain="[('x_social_publish_state','=','draft')]"/>
+                <filter name="f_rejected" string="Rejected / Failed"
+                        domain="[('x_social_publish_state','in',['rejected','failed'])]"/>
+                <separator/>
+                <filter name="g_account" string="Account"
+                        context="{'group_by': 'x_social_profile_id'}"/>
+                <filter name="g_status" string="Status"
+                        context="{'group_by': 'x_social_publish_state'}"/>
+            </search>
         </field>
     </record>
 
@@ -98,6 +134,7 @@
         <field name="res_model">project.task</field>
         <field name="view_mode">calendar,list,form</field>
         <field name="domain">[('x_social_profile_id','!=',False)]</field>
+        <field name="search_view_id" ref="view_social_post_search"/>
         <field name="context">{'default_project_id': 42}</field>
         <field name="view_ids" eval="[(5, 0, 0),
             (0, 0, {'sequence': 1, 'view_mode': 'calendar', 'view_id': ref('view_social_post_calendar')}),

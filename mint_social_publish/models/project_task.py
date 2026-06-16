@@ -62,7 +62,9 @@ class ProjectTask(models.Model):
             ("draft", "Draft"),
             ("pending_approval", "Pending Approval"),
             ("approved", "Approved"),
-            ("sent", "Sent to posts.agency"),
+            ("sent", "Queued at posts.agency"),
+            ("published", "Published"),
+            ("publish_failed", "Publish Failed"),
             ("failed", "Failed"),
             ("rejected", "Rejected"),
         ],
@@ -70,6 +72,14 @@ class ProjectTask(models.Model):
         default="draft",
         copy=False,
     )
+    x_social_youtube_privacy = fields.Selection(
+        [("public", "Public"), ("unlisted", "Unlisted"), ("private", "Private")],
+        string="YouTube Privacy",
+        help="Privacy for YouTube posts (ignored for other platforms).",
+    )
+    x_social_post_url = fields.Char(string="Live Post URL", copy=False, readonly=True)
+    x_social_platform_post_id = fields.Char(string="Platform Post ID", copy=False, readonly=True)
+    x_social_reconciled_at = fields.Datetime(string="Last Checked", copy=False, readonly=True)
     x_social_approved = fields.Boolean(string="Approved", copy=False, readonly=True)
     x_social_approved_by = fields.Many2one(
         "res.users", string="Approved By", copy=False, readonly=True
@@ -436,6 +446,148 @@ class ProjectTask(models.Model):
         return True
 
     # ------------------------------------------------------------------
+    # reconciliation — did the queued post actually publish?
+    # ------------------------------------------------------------------
+    @api.model
+    def _cron_social_reconcile(self):
+        """For 'sent' (queued) posts, ask posts.agency whether the job actually
+        published. Marks them 'published' (with the live URL) or 'publish_failed'
+        (with the error), and DMs the scheduler on failure."""
+        base = (self._social_param(PARAM_BASE) or DEFAULT_BASE).rstrip("/")
+        api_key = self._social_param(PARAM_KEY)
+        if not api_key:
+            return True
+        headers = {"Authorization": "ApiKey %s" % api_key}
+        grace_minutes = self._social_param_int("mint_social_publish.reconcile_grace_min", 30)
+        now = fields.Datetime.now()
+        tasks = self.search(
+            [("x_social_publish_state", "=", "sent"), ("x_social_job_id", "!=", False)],
+            limit=SWEEP_LIMIT,
+        )
+        for task in tasks:
+            try:
+                outcome = task._social_job_outcome(base, headers)
+            except Exception:  # noqa: BLE001 - keep the sweep alive
+                _logger.exception("reconcile lookup failed for task %s", task.id)
+                continue
+            vals = {"x_social_reconciled_at": now}
+            if outcome.get("done") and outcome.get("success"):
+                vals.update(
+                    {
+                        "x_social_publish_state": "published",
+                        "x_social_post_url": outcome.get("post_url") or False,
+                        "x_social_platform_post_id": outcome.get("platform_post_id") or False,
+                        "x_social_publish_error": False,
+                    }
+                )
+            elif outcome.get("done") and not outcome.get("success"):
+                vals.update(
+                    {
+                        "x_social_publish_state": "publish_failed",
+                        "x_social_publish_error": (outcome.get("error") or _("Publish failed."))[:2000],
+                    }
+                )
+            else:
+                # not done yet; flag only if well past the scheduled time
+                dl = task.date_deadline
+                if dl and (now - dl).total_seconds() > grace_minutes * 60:
+                    vals.update(
+                        {
+                            "x_social_publish_state": "publish_failed",
+                            "x_social_publish_error": _("No publish confirmation from posts.agency after the scheduled time."),
+                        }
+                    )
+                else:
+                    task.write(vals)
+                    continue
+            task.write(vals)
+            if vals.get("x_social_publish_state") == "publish_failed":
+                task._social_notify_failure()
+            self.env.cr.commit()
+        return True
+
+    def _social_job_outcome(self, base, headers):
+        """Return {done, success, post_url, platform_post_id, error} for this card's
+        job, from posts.agency. Prefers the per-job status endpoint, falls back to
+        the account's history."""
+        self.ensure_one()
+        job = self.x_social_job_id
+        # 1) per-job status endpoint
+        try:
+            r = requests.get(
+                "%s/api/uploadposts/status" % base, headers=headers,
+                params={"job_id": job}, timeout=30,
+            )
+            if r.status_code == 200:
+                d = r.json()
+                rec = d.get("results") or d.get("result") or d
+                if isinstance(rec, dict) and ("success" in rec or rec.get("status") in ("done", "completed", "failed")):
+                    succ = bool(rec.get("success")) if "success" in rec else rec.get("status") in ("done", "completed")
+                    return {
+                        "done": rec.get("status") in ("done", "completed", "failed") or "success" in rec,
+                        "success": succ,
+                        "post_url": rec.get("post_url"),
+                        "platform_post_id": rec.get("platform_post_id"),
+                        "error": rec.get("error_message") or rec.get("error"),
+                    }
+        except Exception:  # noqa: BLE001
+            pass
+        # 2) history fallback (match job_id)
+        prof = self.x_social_profile_id.name
+        for page in (1, 2, 3):
+            r = requests.get(
+                "%s/api/uploadposts/history" % base, headers=headers,
+                params={"profile": prof, "page": page}, timeout=30,
+            )
+            if r.status_code != 200:
+                break
+            hist = (r.json() or {}).get("history") or []
+            for h in hist:
+                if h.get("job_id") == job:
+                    return {
+                        "done": True, "success": bool(h.get("success")),
+                        "post_url": h.get("post_url"),
+                        "platform_post_id": h.get("platform_post_id"),
+                        "error": h.get("error_message"),
+                    }
+            if not hist:
+                break
+        return {"done": False}
+
+    def _social_notify_failure(self):
+        """DM the scheduler (task creator) that a post failed to publish.
+        Uses Discuss, not task chatter (avoids the prod message_post bug)."""
+        self.ensure_one()
+        partner = (self.create_uid.partner_id or self.env.user.partner_id)
+        if not partner:
+            return
+        body = _(
+            "<p>⚠️ A scheduled social post did not publish.</p>"
+            "<p><b>%(name)s</b> — account %(acct)s, %(plat)s, scheduled %(when)s.</p>"
+            "<p>posts.agency error: %(err)s</p>"
+        ) % {
+            "name": self.display_name,
+            "acct": self.x_social_profile_id.name or "?",
+            "plat": self.x_social_platforms or "?",
+            "when": self.date_deadline or "?",
+            "err": (self.x_social_publish_error or "")[:300],
+        }
+        try:
+            channel = self.env["discuss.channel"].create(
+                {
+                    "name": "Social Publish Alerts",
+                    "channel_type": "chat",
+                    "channel_member_ids": [
+                        (0, 0, {"partner_id": self.env.user.partner_id.id}),
+                        (0, 0, {"partner_id": partner.id}),
+                    ],
+                }
+            )
+            channel.message_post(body=body, message_type="comment", subtype_xmlid="mail.mt_comment")
+        except Exception:  # noqa: BLE001 - alerting must never break the cron
+            _logger.exception("failed to DM publish-failure for task %s", self.id)
+
+    # ------------------------------------------------------------------
     # the actual posts.agency call (never sends unless approved)
     # ------------------------------------------------------------------
     def _social_do_publish(self):
@@ -463,8 +615,11 @@ class ProjectTask(models.Model):
             data.append(("description", caption))
         if self.date_deadline:
             data.append(("scheduled_date", self._social_scheduled_iso()))
-        for platform in self._social_platform_list():
+        platforms = self._social_platform_list()
+        for platform in platforms:
             data.append(("platform[]", platform))
+        if "youtube" in platforms and self.x_social_youtube_privacy:
+            data.append(("youtubePrivacy", self.x_social_youtube_privacy))
 
         if (att.mimetype or "").startswith("image/"):
             if not att.datas:
