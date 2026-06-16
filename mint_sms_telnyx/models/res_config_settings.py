@@ -92,3 +92,10 @@ class ResConfigSettings(models.TransientModel):
         help="Only contacts carrying this tag may receive texts. Defaults to the "
              "'SMS Whitelist' category when left blank.",
     )
+    bluebubbles_register_secret = fields.Char(
+        string="URL Self-Register Secret",
+        config_parameter="mint_sms_telnyx.bluebubbles_register_secret",
+        help="Shared secret for POST /mint_sms/bluebubbles/register, which lets "
+             "the BlueBubbles host push its new ngrok URL when the tunnel cycles. "
+             "Blank disables the endpoint.",
+    )

@@ -89,6 +89,12 @@
                              invisible="not bluebubbles_enabled">
                         <field name="bluebubbles_whitelist_category_id"/>
                     </setting>
+                    <setting id="mint_sms_bluebubbles_register_secret"
+                             string="URL Self-Register Secret"
+                             help="Shared secret for POST /mint_sms/bluebubbles/register — lets the BlueBubbles host push its new URL when ngrok cycles. Blank disables it."
+                             invisible="not bluebubbles_enabled">
+                        <field name="bluebubbles_register_secret" password="True"/>
+                    </setting>
                 </block>
             </xpath>
         </field>
