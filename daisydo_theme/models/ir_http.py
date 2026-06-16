@@ -13,8 +13,28 @@ class IrHttp(models.AbstractModel):
         if api_url and api_key:
             info["error_report_api_url"] = api_url
             info["error_report_api_key"] = api_key
+        info["company_states"] = self._company_state_map()
         self._sync_company_selection()
         return info
+
+    def _company_state_map(self):
+        """Map each company the user may access to its US state name.
+
+        Consumed by the company switcher (switch_company_states.esm.js) to
+        group the company list under state subheaders. Only companies with a
+        ``state_id`` are included; the rest fall back to an "Other" group on
+        the client. Display-only — does not touch the multi-company tree.
+        """
+        if not request:
+            return {}
+        user = self.env.user
+        if not user or not user._is_internal():
+            return {}
+        states = {}
+        for company in user.company_ids:
+            if company.state_id:
+                states[company.id] = company.state_id.name
+        return states
 
     def _sync_company_selection(self):
         """Make a user's multi-company switcher selection survive logout/login.

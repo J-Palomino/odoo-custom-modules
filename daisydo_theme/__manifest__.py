@@ -1,6 +1,6 @@
 {
     "name": "DaisyERP Theme",
-    "version": "19.0.1.0.6",
+    "version": "19.0.1.0.7",
     "post_init_hook": "post_init_hook",
     "category": "Theme",
     "summary": "Yellow daisy theme for DaisyERP",
@@ -16,6 +16,8 @@
         "web.assets_backend": [
             "daisydo_theme/static/src/scss/theme.scss",
             "daisydo_theme/static/src/js/error_reporter.esm.js",
+            "daisydo_theme/static/src/js/switch_company_states.esm.js",
+            "daisydo_theme/static/src/xml/switch_company_menu.xml",
         ],
         "web.assets_frontend": [
             "daisydo_theme/static/src/scss/theme.scss",
