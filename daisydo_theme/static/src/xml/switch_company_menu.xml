@@ -2,10 +2,11 @@
 <templates xml:space="preserve">
 
     <!--
-        Insert a state subheader before each group of companies. The patched
-        computeVisibleCompanies() (switch_company_states.esm.js) sorts entries
-        by `stateName`, so a header is rendered whenever the state differs from
-        the previous row.
+        Insert a clickable state subheader before each group of companies. The
+        patched computeVisibleCompanies() (switch_company_states.esm.js) sorts
+        entries by `stateName`, so a header is rendered whenever the state
+        differs from the previous row. Clicking the header stages/unstages every
+        store in that state; the base Confirm button then applies the switch.
     -->
     <t t-name="daisydo_theme.SwitchCompanyMenuItems"
        t-inherit="web.SwitchCompanyMenu.Items"
@@ -14,8 +15,17 @@
             <t t-foreach="visibleCompanies" t-as="entry" t-key="entry.company.id">
                 <t t-set="prevState" t-value="entry_index > 0 ? visibleCompanies[entry_index - 1].stateName : null"/>
                 <div t-if="entry.stateName and entry.stateName !== prevState"
-                     class="o_switch_company_state_header px-3 pt-2 pb-1 text-uppercase small fw-bold text-muted">
-                    <t t-esc="entry.stateName"/>
+                     class="o_switch_company_state_header o-navigable d-flex align-items-center px-2 pt-2 pb-1"
+                     role="menuitemcheckbox"
+                     t-att-aria-checked="stateSelectIcon(entry.stateName).includes('fa-check-square') ? 'true' : 'false'"
+                     t-att-aria-label="'Select all in ' + entry.stateName"
+                     t-att-title="'Select all in ' + entry.stateName"
+                     style="cursor: pointer;"
+                     t-on-click="() => this.selectState(entry.stateName)">
+                    <span class="btn border-0 py-0 px-1">
+                        <i class="fa fa-fw" t-att-class="stateSelectIcon(entry.stateName)"/>
+                    </span>
+                    <span class="text-uppercase small fw-bold text-muted"><t t-esc="entry.stateName"/></span>
                 </div>
                 <SwitchCompanyItem company="entry.company" level="entry.level"/>
             </t>

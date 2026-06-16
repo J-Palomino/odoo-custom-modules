@@ -12,8 +12,9 @@ import { SwitchCompanyMenu } from "@web/webclient/switch_company_menu/switch_com
  * list of `{ company, level }` entries. We keep those entries (so selectAll /
  * search / toggle behaviour is untouched) but annotate each with `stateName`
  * and reorder them into state buckets. The template
- * (daisydo_theme.SwitchCompanyMenuItems) renders a subheader whenever the
- * state changes between two consecutive rows.
+ * (daisydo_theme.SwitchCompanyMenuItems) renders a clickable subheader whenever
+ * the state changes between two consecutive rows; clicking it stages every
+ * store in that state (the existing Confirm button then applies the switch).
  *
  * State names come from `session.company_states` (injected in
  * daisydo_theme/models/ir_http.py). Companies without a state — the root
@@ -48,5 +49,30 @@ patch(SwitchCompanyMenu.prototype, {
                 return sa.localeCompare(sb);
             })
             .map((wrapped) => wrapped.entry);
+    },
+
+    /** Company ids currently shown under a given state header. */
+    stateCompanyIds(stateName) {
+        return this.visibleCompanies
+            .filter((entry) => entry.stateName === stateName)
+            .map((entry) => entry.company.id);
+    },
+
+    /** Toggle the whole state group: select all if none/some, else deselect all. */
+    selectState(stateName) {
+        this.companySelector.selectAll(this.stateCompanyIds(stateName));
+    },
+
+    /** Tri-state checkbox icon for a state header (mirrors the global selectAllIcon). */
+    stateSelectIcon(stateName) {
+        const ids = this.stateCompanyIds(stateName);
+        const selected = ids.filter((id) => this.companySelector.isCompanySelected(id));
+        if (ids.length && selected.length === ids.length) {
+            return "fa-check-square text-primary";
+        }
+        if (selected.length) {
+            return "fa-minus-square-o";
+        }
+        return "fa-square-o";
     },
 });
