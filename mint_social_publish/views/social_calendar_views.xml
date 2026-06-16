@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Minimal, posting-only form: just the fields needed to post -->
+    <record id="view_social_post_form" model="ir.ui.view">
+        <field name="name">project.task.social.post.form</field>
+        <field name="model">project.task</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Social Post">
+                <header>
+                    <button name="action_social_submit" type="object"
+                            string="Submit for Approval" class="btn-primary"
+                            invisible="x_social_publish_state in ('pending_approval','sent')"/>
+                    <button name="action_social_approve" type="object"
+                            string="Approve &amp; Publish" class="btn-primary"
+                            groups="mint_social_publish.group_social_approver"
+                            invisible="x_social_publish_state not in ('pending_approval','approved','failed')"/>
+                    <button name="action_social_reject" type="object" string="Reject"
+                            groups="mint_social_publish.group_social_approver"
+                            invisible="x_social_publish_state != 'pending_approval'"/>
+                    <field name="x_social_publish_state" widget="statusbar"
+                           statusbar_visible="draft,pending_approval,approved,sent"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Post">
+                            <field name="x_social_profile_id"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                            <field name="x_social_platforms" placeholder="instagram"/>
+                            <field name="date_deadline" string="Scheduled (post time)"/>
+                            <field name="project_id" invisible="1"/>
+                        </group>
+                        <group string="Approval">
+                            <field name="x_social_approved_by" readonly="1"/>
+                            <field name="x_social_approved_at" readonly="1"/>
+                            <field name="x_social_job_id" readonly="1"/>
+                            <field name="x_social_published_at" readonly="1"/>
+                        </group>
+                    </group>
+                    <field name="name" placeholder="Internal title (optional)"/>
+                    <group string="Caption">
+                        <field name="x_social_caption" nolabel="1"
+                               placeholder="What the post says…"/>
+                    </group>
+                    <group string="Final Asset (image or video — required to submit)">
+                        <field name="x_social_asset" filename="x_social_asset_filename" nolabel="1"/>
+                        <field name="x_social_asset_filename" invisible="1"/>
+                    </group>
+                    <group invisible="not x_social_rejection_reason">
+                        <field name="x_social_rejection_reason" readonly="1" nolabel="1"/>
+                    </group>
+                    <group invisible="not x_social_publish_error">
+                        <field name="x_social_publish_error" readonly="1" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Calendar: event cards keyed on the scheduled time, colored by status -->
+    <record id="view_social_post_calendar" model="ir.ui.view">
+        <field name="name">project.task.social.calendar</field>
+        <field name="model">project.task</field>
+        <field name="arch" type="xml">
+            <calendar string="Social Publish Calendar" date_start="date_deadline"
+                      color="x_social_publish_state" mode="month" quick_create="0"
+                      event_open_popup="1" form_view_id="%(view_social_post_form)d">
+                <field name="x_social_profile_id" filters="1"/>
+                <field name="x_social_platforms"/>
+                <field name="x_social_publish_state" invisible="1"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- Posting-only list -->
+    <record id="view_social_post_list" model="ir.ui.view">
+        <field name="name">project.task.social.list</field>
+        <field name="model">project.task</field>
+        <field name="arch" type="xml">
+            <list string="Social Posts" create="false">
+                <field name="date_deadline" string="Scheduled"/>
+                <field name="x_social_profile_id" string="Account"/>
+                <field name="x_social_platforms" string="Platform"/>
+                <field name="name" string="Post"/>
+                <field name="x_social_publish_state" string="Status" widget="badge"
+                       decoration-success="x_social_publish_state == 'sent'"
+                       decoration-info="x_social_publish_state == 'approved'"
+                       decoration-warning="x_social_publish_state == 'pending_approval'"
+                       decoration-danger="x_social_publish_state in ('failed','rejected')"/>
+                <field name="x_social_approved_by" string="Approved By" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search + filters -->
+    <record id="view_social_post_search" model="ir.ui.view">
+        <field name="name">project.task.social.search</field>
+        <field name="model">project.task</field>
+        <field name="arch" type="xml">
+            <search string="Social Posts">
+                <field name="x_social_profile_id" string="Account"/>
+                <field name="name"/>
+                <filter name="f_pending" string="Pending Approval"
+                        domain="[('x_social_publish_state','=','pending_approval')]"/>
+                <filter name="f_approved" string="Approved"
+                        domain="[('x_social_publish_state','=','approved')]"/>
+                <filter name="f_sent" string="Sent"
+                        domain="[('x_social_publish_state','=','sent')]"/>
+                <filter name="f_draft" string="Draft"
+                        domain="[('x_social_publish_state','=','draft')]"/>
+                <filter name="f_rejected" string="Rejected / Failed"
+                        domain="[('x_social_publish_state','in',('rejected','failed'))]"/>
+                <separator/>
+                <filter name="f_upcoming" string="Upcoming"
+                        domain="[('date_deadline','&gt;=', context_today().strftime('%Y-%m-%d'))]"/>
+                <group expand="0" string="Group By">
+                    <filter name="g_account" string="Account"
+                            context="{'group_by':'x_social_profile_id'}"/>
+                    <filter name="g_status" string="Status"
+                            context="{'group_by':'x_social_publish_state'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action: only social posts (cards that have a posts.agency account) -->
+    <record id="action_social_posts" model="ir.actions.act_window">
+        <field name="name">Social Publish Calendar</field>
+        <field name="res_model">project.task</field>
+        <field name="view_mode">calendar,list,form</field>
+        <field name="domain">[('x_social_profile_id','!=',False)]</field>
+        <field name="search_view_id" ref="view_social_post_search"/>
+        <field name="context">{'default_project_id': 42}</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'sequence': 1, 'view_mode': 'calendar', 'view_id': ref('view_social_post_calendar')}),
+            (0, 0, {'sequence': 2, 'view_mode': 'list', 'view_id': ref('view_social_post_list')}),
+            (0, 0, {'sequence': 3, 'view_mode': 'form', 'view_id': ref('view_social_post_form')})]"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No social posts scheduled yet</p>
+            <p>Posts created on the Social Media board (or by Sage) appear here on their scheduled date.</p>
+        </field>
+    </record>
+
+    <!-- Dedicated menu -->
+    <menuitem id="menu_social_publish_root" name="Social Publish"
+              sequence="55" groups="project.group_project_user"/>
+    <menuitem id="menu_social_publish_calendar" name="Calendar"
+              parent="menu_social_publish_root" action="action_social_posts" sequence="1"/>
+    <menuitem id="menu_social_publish_accounts" name="Connected Accounts"
+              parent="menu_social_publish_root" action="action_mint_social_profile" sequence="2"/>
+</odoo>

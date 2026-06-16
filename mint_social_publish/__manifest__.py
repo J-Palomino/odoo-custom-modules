@@ -1,6 +1,6 @@
 {
     'name': 'Mint Social Publish',
-    'version': '19.0.4.0.0',
+    'version': '19.0.5.0.0',
     'category': 'Marketing',
     'summary': 'Push scheduled Social Media project cards to the posts.agency API',
     'description': """
@@ -56,6 +56,7 @@ publishing to work.
         'views/social_profile_views.xml',
         'views/res_config_settings_views.xml',
         'views/project_task_views.xml',
+        'views/social_calendar_views.xml',
     ],
     'external_dependencies': {'python': ['requests']},
     'installable': True,

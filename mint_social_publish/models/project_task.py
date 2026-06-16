@@ -49,6 +49,12 @@ class ProjectTask(models.Model):
         help="Caption/description sent to the platforms. Falls back to the task "
         "description if left empty.",
     )
+    x_social_asset = fields.Binary(
+        string="Final Asset",
+        attachment=True,
+        help="The image or video to post. Required before a post can be submitted.",
+    )
+    x_social_asset_filename = fields.Char(string="Asset Filename")
 
     # --- workflow / approval state (publisher + approvers) ---
     x_social_publish_state = fields.Selection(
@@ -194,7 +200,10 @@ class ProjectTask(models.Model):
                 [
                     ("res_model", "=", "project.task"),
                     ("res_id", "=", self.id),
-                    ("res_field", "=", False),
+                    # the Final Asset field (res_field='x_social_asset') or a file
+                    # attached via chatter (res_field=False) — but NOT images
+                    # embedded in the HTML description (res_field='description').
+                    ("res_field", "in", [False, "x_social_asset"]),
                     "|",
                     ("mimetype", "=ilike", "image/%"),
                     ("mimetype", "=ilike", "video/%"),
