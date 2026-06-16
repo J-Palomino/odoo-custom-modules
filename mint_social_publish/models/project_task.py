@@ -5,7 +5,7 @@ import logging
 import requests
 
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.tools import html2plaintext
 
 _logger = logging.getLogger(__name__)
@@ -17,6 +17,10 @@ PARAM_STAGE = "mint_social_publish.scheduled_stage_id"
 PARAM_MAXRETRY = "mint_social_publish.max_retries"
 
 DEFAULT_BASE = "https://api.upload-post.com"
+APPROVER_GROUP = "mint_social_publish.group_social_approver"
+# Fields/states that only an approver (or the system) may set — server-side gate.
+APPROVAL_FIELDS = {"x_social_approved", "x_social_approved_by", "x_social_approved_at"}
+APPROVAL_STATES = {"approved", "sent"}
 # Sweep cap per cron run so one stuck profile can't starve the rest.
 SWEEP_LIMIT = 50
 HTTP_TIMEOUT = 120
@@ -25,14 +29,13 @@ HTTP_TIMEOUT = 120
 class ProjectTask(models.Model):
     _inherit = "project.task"
 
-    # --- intake fields (user fills these on the card) ---
+    # --- intake fields (schedulers: Ashton / Sage fill these) ---
     x_social_profile_id = fields.Many2one(
         "mint.social.profile",
         string="posts.agency Account",
         domain=[("is_connected", "=", True)],
-        help="Connected posts.agency account to publish to. The list shows only "
-        "accounts that have a platform connected; refresh it in "
-        "Settings > posts.agency Publishing.",
+        help="Connected posts.agency account to publish to. Shows only accounts "
+        "with a platform connected; refresh in Settings > posts.agency Publishing.",
     )
     x_social_platforms = fields.Char(
         string="Social Platforms",
@@ -46,27 +49,35 @@ class ProjectTask(models.Model):
         "description if left empty.",
     )
 
-    # --- result tracking (written by the publisher) ---
+    # --- workflow / approval state (publisher + approvers) ---
     x_social_publish_state = fields.Selection(
         [
             ("draft", "Draft"),
-            ("pending", "Pending"),
+            ("pending_approval", "Pending Approval"),
+            ("approved", "Approved"),
             ("sent", "Sent to posts.agency"),
             ("failed", "Failed"),
+            ("rejected", "Rejected"),
         ],
         string="Publish Status",
         default="draft",
         copy=False,
     )
+    x_social_approved = fields.Boolean(string="Approved", copy=False, readonly=True)
+    x_social_approved_by = fields.Many2one(
+        "res.users", string="Approved By", copy=False, readonly=True
+    )
+    x_social_approved_at = fields.Datetime(string="Approved On", copy=False, readonly=True)
+    x_social_rejection_reason = fields.Text(string="Rejection Reason", copy=False, readonly=True)
     x_social_job_id = fields.Char(string="posts.agency Job ID", copy=False, readonly=True)
     x_social_publish_error = fields.Text(string="Publish Error", copy=False, readonly=True)
-    x_social_published_at = fields.Datetime(string="Forwarded At", copy=False, readonly=True)
+    x_social_published_at = fields.Datetime(string="Sent On", copy=False, readonly=True)
     x_social_retry_count = fields.Integer(
         string="Publish Attempts", default=0, copy=False, readonly=True
     )
 
     # ------------------------------------------------------------------
-    # config helpers
+    # config + permission helpers
     # ------------------------------------------------------------------
     @api.model
     def _social_param(self, key, default=None):
@@ -79,16 +90,14 @@ class ProjectTask(models.Model):
         except (TypeError, ValueError):
             return default
 
+    def _social_is_approver(self):
+        return self.env.user.has_group(APPROVER_GROUP)
+
     # ------------------------------------------------------------------
-    # connection check (used by the Settings "Test Connection" button)
+    # connection check (Settings "Test Connection" button)
     # ------------------------------------------------------------------
     @api.model
     def _social_check_credentials(self, base=None, api_key=None):
-        """Ping posts.agency with the given (or configured) credentials.
-
-        Returns a (ok: bool, message: str) tuple. Never raises; never returns
-        account identifiers — only a yes/no and a profile count.
-        """
         base = (base or self._social_param(PARAM_BASE) or DEFAULT_BASE).strip().rstrip("/")
         api_key = (api_key or self._social_param(PARAM_KEY) or "").strip()
         if not api_key:
@@ -101,7 +110,7 @@ class ProjectTask(models.Model):
             )
         except Exception as exc:  # noqa: BLE001
             return (False, _("Could not reach posts.agency: %s") % exc)
-        if resp.status_code == 401 or resp.status_code == 403:
+        if resp.status_code in (401, 403):
             return (False, _("posts.agency rejected the API key (HTTP %s).") % resp.status_code)
         if resp.status_code != 200:
             return (False, _("posts.agency returned HTTP %s.") % resp.status_code)
@@ -111,16 +120,21 @@ class ProjectTask(models.Model):
             count = 0
         return (True, _("Connected to posts.agency — %s profile(s) available.") % count)
 
-    @api.onchange("x_social_profile_id")
-    def _onchange_social_profile_id(self):
-        """Default the platforms to whatever the chosen account has connected."""
-        if self.x_social_profile_id and self.x_social_profile_id.connected_platforms:
-            self.x_social_platforms = self.x_social_profile_id.connected_platforms
-
     # ------------------------------------------------------------------
-    # trigger: entering the "Scheduled" stage enqueues the card
+    # write: approval guard + Scheduled-stage submit trigger
     # ------------------------------------------------------------------
     def write(self, vals):
+        # Server-side gate: only approvers (or the system) may set the approval
+        # fields or move state to approved/sent. Blocks self-approval via raw
+        # RPC/MCP writes by schedulers (Ashton/Sage).
+        if not self.env.su:
+            touches_approval = bool(APPROVAL_FIELDS & set(vals)) or (
+                vals.get("x_social_publish_state") in APPROVAL_STATES
+            )
+            if touches_approval and not self._social_is_approver():
+                raise AccessError(
+                    _("Only a Social Publish Approver (Pablo or Juan) can approve or send a post.")
+                )
         res = super().write(vals)
         if vals.get("stage_id"):
             target_stage = self._social_param_int(PARAM_STAGE, 0)
@@ -129,22 +143,8 @@ class ProjectTask(models.Model):
                 for task in self:
                     if target_project and task.project_id.id != target_project:
                         continue
-                    task._social_enqueue()
+                    task._social_submit_for_approval()
         return res
-
-    def _social_enqueue(self):
-        """Validate and mark the card pending. Raises UserError (blocking the
-        stage move) when the card is not publish-ready."""
-        self.ensure_one()
-        self._social_validate()
-        # nested write carries no stage_id, so the trigger above won't recurse
-        self.write(
-            {
-                "x_social_publish_state": "pending",
-                "x_social_publish_error": False,
-                "x_social_retry_count": 0,
-            }
-        )
 
     # ------------------------------------------------------------------
     # validation
@@ -161,9 +161,6 @@ class ProjectTask(models.Model):
         if not chosen:
             missing.append(_("at least one platform"))
         elif profile and profile.is_connected:
-            # block platforms the account doesn't actually have linked — this is
-            # the silent-loss case (scheduled posts to an unlinked platform get a
-            # 202 but never publish).
             allowed = set(profile.platform_list())
             bad = [p for p in chosen if p not in allowed]
             if bad:
@@ -179,7 +176,7 @@ class ProjectTask(models.Model):
             missing.append(_("a Deadline in the future"))
         if missing:
             raise UserError(
-                _('Cannot publish "%(name)s" to posts.agency — missing: %(items)s.')
+                _('Cannot submit "%(name)s" to posts.agency — missing: %(items)s.')
                 % {"name": self.display_name, "items": "; ".join(missing)}
             )
 
@@ -196,8 +193,6 @@ class ProjectTask(models.Model):
                 [
                     ("res_model", "=", "project.task"),
                     ("res_id", "=", self.id),
-                    # res_field=False excludes images embedded in the HTML
-                    # description (those carry res_field='description').
                     ("res_field", "=", False),
                     "|",
                     ("mimetype", "=ilike", "image/%"),
@@ -209,14 +204,76 @@ class ProjectTask(models.Model):
         )
 
     # ------------------------------------------------------------------
-    # cron sweep + manual button
+    # workflow actions
+    # ------------------------------------------------------------------
+    def _social_submit_for_approval(self):
+        """Scheduler step (Ashton/Sage): validate + mark pending approval.
+        Does NOT send — an approver must approve."""
+        self.ensure_one()
+        self._social_validate()
+        self.write(
+            {
+                "x_social_publish_state": "pending_approval",
+                "x_social_publish_error": False,
+                "x_social_rejection_reason": False,
+                "x_social_retry_count": 0,
+            }
+        )
+
+    def action_social_submit(self):
+        for task in self:
+            task._social_submit_for_approval()
+        return True
+
+    def action_social_approve(self):
+        """Approver-only (Pablo/Juan): approve and send the post."""
+        if not self._social_is_approver():
+            raise AccessError(
+                _("Only a Social Publish Approver (Pablo or Juan) can approve a post.")
+            )
+        for task in self:
+            task._social_validate()
+            task.write(
+                {
+                    "x_social_approved": True,
+                    "x_social_approved_by": self.env.user.id,
+                    "x_social_approved_at": fields.Datetime.now(),
+                    "x_social_publish_state": "approved",
+                    "x_social_rejection_reason": False,
+                }
+            )
+            task._social_do_publish()
+        return True
+
+    def action_social_reject(self):
+        """Approver-only: reject a pending post (back to the scheduler)."""
+        if not self._social_is_approver():
+            raise AccessError(
+                _("Only a Social Publish Approver (Pablo or Juan) can reject a post.")
+            )
+        for task in self:
+            task.write(
+                {
+                    "x_social_publish_state": "rejected",
+                    "x_social_approved": False,
+                    "x_social_approved_by": False,
+                    "x_social_approved_at": False,
+                    "x_social_rejection_reason": task.x_social_rejection_reason
+                    or _("Rejected by %s") % self.env.user.name,
+                }
+            )
+        return True
+
+    # ------------------------------------------------------------------
+    # cron sweep — only ever forwards APPROVED posts
     # ------------------------------------------------------------------
     @api.model
     def _cron_social_publish(self):
         max_retries = self._social_param_int(PARAM_MAXRETRY, 3)
         domain = [
+            ("x_social_approved", "=", True),
             "|",
-            ("x_social_publish_state", "=", "pending"),
+            ("x_social_publish_state", "=", "approved"),
             "&",
             ("x_social_publish_state", "=", "failed"),
             ("x_social_retry_count", "<", max_retries),
@@ -225,7 +282,6 @@ class ProjectTask(models.Model):
         for task in tasks:
             try:
                 task._social_do_publish()
-                # commit per card so one later failure can't roll back successes
                 self.env.cr.commit()
             except Exception as exc:  # noqa: BLE001 - keep the sweep alive
                 self.env.cr.rollback()
@@ -240,17 +296,13 @@ class ProjectTask(models.Model):
                 self.env.cr.commit()
         return True
 
-    def action_social_publish_now(self):
-        for task in self:
-            task._social_validate()
-            task._social_do_publish()
-        return True
-
     # ------------------------------------------------------------------
-    # the actual posts.agency call
+    # the actual posts.agency call (never sends unless approved)
     # ------------------------------------------------------------------
     def _social_do_publish(self):
         self.ensure_one()
+        if not self.x_social_approved:
+            raise UserError(_("This post has not been approved for sending."))
         base = (self._social_param(PARAM_BASE) or DEFAULT_BASE).rstrip("/")
         api_key = self._social_param(PARAM_KEY)
         if not api_key:
@@ -263,7 +315,6 @@ class ProjectTask(models.Model):
             raise UserError(_("No image/video attachment found on this task."))
 
         headers = {"Authorization": "ApiKey %s" % api_key}
-        # multipart form: lists are sent as repeated keys (platform[])
         data = [
             ("user", (self.x_social_profile_id.name or "").strip()),
             ("title", (self.name or "Scheduled Post")[:200]),
@@ -285,17 +336,11 @@ class ProjectTask(models.Model):
             files = [
                 (
                     "photos[]",
-                    (
-                        att.name or "photo.jpg",
-                        base64.b64decode(att.datas),
-                        att.mimetype or "image/jpeg",
-                    ),
+                    (att.name or "photo.jpg", base64.b64decode(att.datas), att.mimetype or "image/jpeg"),
                 )
             ]
             resp = requests.post(url, headers=headers, data=data, files=files, timeout=HTTP_TIMEOUT)
         else:
-            # Videos: the service fetches a public URL (mirrors the working
-            # posts.agency path); avoids streaming large bytes through Odoo.
             url = "%s/api/upload" % base
             data.append(("video", self._social_attachment_public_url(att)))
             resp = requests.post(url, headers=headers, data=data, timeout=HTTP_TIMEOUT)
@@ -334,24 +379,22 @@ class ProjectTask(models.Model):
         )
 
     # ------------------------------------------------------------------
-    # small formatting helpers
+    # helpers
     # ------------------------------------------------------------------
+    @api.onchange("x_social_profile_id")
+    def _onchange_social_profile_id(self):
+        if self.x_social_profile_id and self.x_social_profile_id.connected_platforms:
+            self.x_social_platforms = self.x_social_profile_id.connected_platforms
+
     def _social_description_text(self):
         self.ensure_one()
         return html2plaintext(self.description or "") if self.description else ""
 
     def _social_scheduled_iso(self):
-        # date_deadline is stored naive-UTC; emit ISO-8601 with explicit Z.
-        return fields.Datetime.to_datetime(self.date_deadline).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        return fields.Datetime.to_datetime(self.date_deadline).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def _social_attachment_public_url(self, attachment):
         attachment = attachment.sudo()
         token = attachment.access_token or attachment.generate_access_token()[0]
         base_url = self.env["ir.config_parameter"].sudo().get_param("web.base.url")
-        return "%s/web/content/%s?access_token=%s&download=true" % (
-            base_url,
-            attachment.id,
-            token,
-        )
+        return "%s/web/content/%s?access_token=%s&download=true" % (base_url, attachment.id, token)
