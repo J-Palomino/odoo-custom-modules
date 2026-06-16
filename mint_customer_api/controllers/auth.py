@@ -74,6 +74,14 @@ class MintCustomerAuth(http.Controller):
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
 
+        # Front-end gate: only the MintDeals frontend (which holds the rpc
+        # API key) may reach this endpoint. Blocks direct hits to the backend
+        # that would otherwise bypass the FE's honeypot, timing token, bot
+        # score and per-account/per-IP brute-force throttling.
+        api_key = request.httprequest.headers.get('X-Api-Key', '')
+        if not api_key or not self._verify_fe_api_key(api_key):
+            return error_response('Unauthorized', 401)
+
         try:
             data = json.loads(request.httprequest.data)
         except (json.JSONDecodeError, TypeError):
@@ -131,6 +139,14 @@ class MintCustomerAuth(http.Controller):
         """Create a new portal user and return JWT."""
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
+
+        # Front-end gate: only the MintDeals frontend (which holds the rpc
+        # API key) may reach this endpoint. Blocks direct hits to the backend
+        # that would otherwise bypass the FE's honeypot, timing token, bot
+        # score and per-IP daily registration cap (mass account creation).
+        api_key = request.httprequest.headers.get('X-Api-Key', '')
+        if not api_key or not self._verify_fe_api_key(api_key):
+            return error_response('Unauthorized', 401)
 
         try:
             data = json.loads(request.httprequest.data)
