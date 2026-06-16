@@ -23,10 +23,10 @@
                             type="object" class="btn-success"
                             invisible="state != 'approved'"
                             confirm="This will create a PTL Deal from this submission and schedule it to go live. Continue?"/>
-                    <button name="action_convert_to_deal_force" string="Convert (Force — 0 in stock)"
+                    <button name="action_convert_to_deal_force" string="Convert (Force)"
                             type="object" class="btn-warning"
-                            invisible="state != 'approved' or publish_match_count != 0"
-                            confirm="No in-stock products match this deal's selection at the target stores — it will be invisible on the storefront until stock arrives. Convert anyway?"/>
+                            invisible="state != 'approved' or (publish_match_count != 0 and (window_ids or preferred_start_date or preferred_end_date) and market_id)"
+                            confirm="This deal would either match no in-stock products or land on zero calendar days (no schedule/market). Converting anyway creates it as publish-only — it won't show in the daily-deals carousel until stock/schedule is fixed. Continue?"/>
                     <button name="action_open_dutchie_publish_review" string="Publish to Dutchie"
                             type="object" class="btn-secondary"
                             invisible="not deal_id or state not in ('scheduled', 'final_review')"/>

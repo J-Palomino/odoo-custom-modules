@@ -745,6 +745,34 @@ class DealSubmission(models.Model):
                     "(e.g. an ahead-of-restock deal), use Convert (Force)."
                 )
 
+        # Schedule gate: refuse to convert when nothing would land on the PTL
+        # calendar. Conversion plots from structured window_ids, else falls back
+        # to a window synthesised from preferred_start/end (#93723 AC03); with
+        # neither — or no market to plot into — the deal is created but plots
+        # ZERO days, invisible in the daily-deals carousel (the silent failure
+        # mode for the JotForm-backfilled submissions). Override with
+        # force_empty_schedule=True for a deliberate publish-only deal.
+        if not self.env.context.get('force_empty_schedule'):
+            has_dates = bool(self.window_ids) or bool(
+                self.preferred_start_date or self.preferred_end_date)
+            if not has_dates:
+                raise UserError(
+                    "This submission has no schedule — no plot windows and no "
+                    "preferred start/end dates — so converting it would create a "
+                    "deal that lands on zero calendar days (invisible in the "
+                    "daily-deals carousel).\n\n"
+                    "Add plot windows (Schedule tab) or preferred dates, then "
+                    "convert. To convert anyway (publish-only, no PTL "
+                    "placement), use Convert (Force)."
+                )
+            if not self.market_id:
+                raise UserError(
+                    "This submission has no Market, so its deal can't be plotted "
+                    "onto a PTL calendar (plotting is per-market).\n\n"
+                    "Set a Market, then convert. To convert anyway "
+                    "(publish-only), use Convert (Force)."
+                )
+
         self._autoapprove_campaign()
 
         # Multi-brand (#93635): every selected brand rides through. The
@@ -838,10 +866,13 @@ class DealSubmission(models.Model):
         }
 
     def action_convert_to_deal_force(self):
-        """Convert past the empty-resolution gate — for a deliberate
-        ahead-of-restock deal whose products aren't in stock yet."""
+        """Convert past both gates — the empty in-stock match (an ahead-of-
+        restock deal whose products aren't in stock yet) and the empty schedule
+        (a deliberate publish-only deal with no PTL calendar placement)."""
         self.ensure_one()
-        return self.with_context(force_empty_deal=True).action_convert_to_deal()
+        return self.with_context(
+            force_empty_deal=True, force_empty_schedule=True,
+        ).action_convert_to_deal()
 
     # ─── Run-end lifecycle: Scheduled -> Final Review -> Expired ──────────
 
