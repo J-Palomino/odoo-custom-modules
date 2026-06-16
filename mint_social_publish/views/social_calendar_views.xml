@@ -92,42 +92,12 @@
         </field>
     </record>
 
-    <!-- Search + filters -->
-    <record id="view_social_post_search" model="ir.ui.view">
-        <field name="name">project.task.social.search</field>
-        <field name="model">project.task</field>
-        <field name="arch" type="xml">
-            <search string="Social Posts">
-                <field name="x_social_profile_id" string="Account"/>
-                <field name="name"/>
-                <filter name="f_pending" string="Pending Approval"
-                        domain="[('x_social_publish_state','=','pending_approval')]"/>
-                <filter name="f_approved" string="Approved"
-                        domain="[('x_social_publish_state','=','approved')]"/>
-                <filter name="f_sent" string="Sent"
-                        domain="[('x_social_publish_state','=','sent')]"/>
-                <filter name="f_draft" string="Draft"
-                        domain="[('x_social_publish_state','=','draft')]"/>
-                <filter name="f_rejected" string="Rejected / Failed"
-                        domain="[('x_social_publish_state','in',['rejected','failed'])]"/>
-                <separator/>
-                <group expand="0" string="Group By">
-                    <filter name="g_account" string="Account"
-                            context="{'group_by':'x_social_profile_id'}"/>
-                    <filter name="g_status" string="Status"
-                            context="{'group_by':'x_social_publish_state'}"/>
-                </group>
-            </search>
-        </field>
-    </record>
-
     <!-- Action: only social posts (cards that have a posts.agency account) -->
     <record id="action_social_posts" model="ir.actions.act_window">
         <field name="name">Social Publish Calendar</field>
         <field name="res_model">project.task</field>
         <field name="view_mode">calendar,list,form</field>
         <field name="domain">[('x_social_profile_id','!=',False)]</field>
-        <field name="search_view_id" ref="view_social_post_search"/>
         <field name="context">{'default_project_id': 42}</field>
         <field name="view_ids" eval="[(5, 0, 0),
             (0, 0, {'sequence': 1, 'view_mode': 'calendar', 'view_id': ref('view_social_post_calendar')}),
