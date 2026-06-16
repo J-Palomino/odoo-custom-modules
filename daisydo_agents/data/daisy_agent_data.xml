@@ -34,6 +34,18 @@
         <field name="active">True</field>
     </record>
 
+    <!-- Fire one-time scheduled jobs whose run_at is due -->
+    <record id="ir_cron_run_scheduled_jobs" model="ir.cron">
+        <field name="name">Daisy Agency: Run Due Scheduled Jobs</field>
+        <field name="model_id" ref="model_daisy_scheduled_job"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_run_due_jobs()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+        <field name="priority">1</field>
+    </record>
+
     <!-- Daisy Error Handler configuration.
          noupdate: these xmlids own the LIVE param rows (daisy_error_handler's
          own seed xmlids are dangling on prod), and without it every
