@@ -1,6 +1,6 @@
 {
     'name': 'Mint Social Publish',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Marketing',
     'summary': 'Push scheduled Social Media project cards to the posts.agency API',
     'description': """
@@ -49,6 +49,7 @@ publishing to work.
     'license': 'LGPL-3',
     'depends': ['project'],
     'data': [
+        'security/social_publish_security.xml',
         'security/ir.model.access.csv',
         'data/ir_config_parameter.xml',
         'data/ir_cron.xml',

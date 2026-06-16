@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Only members of this group can approve a post for actual sending.
+             Membership (Pablo, Juan) is assigned as data, not hard-coded. -->
+        <record id="group_social_approver" model="res.groups">
+            <field name="name">Social Publish Approver</field>
+            <field name="category_id" ref="base.module_category_marketing"/>
+            <field name="comment">Can approve scheduled social posts so they are actually sent to posts.agency. Schedulers (e.g. Ashton, Sage) can prepare and submit posts but cannot approve or send them.</field>
+        </record>
+    </data>
+</odoo>
