@@ -164,6 +164,22 @@ class MintCustomerAuth(http.Controller):
         if len(password) < 8:
             return error_response('Password must be at least 8 characters')
 
+        # Server-side 21+ enforcement (defense in depth). The FE form checks
+        # age client-side, but a manipulated client could submit any DOB, so
+        # the account creator must verify it too. DOB is sent as ISO yyyy-mm-dd.
+        from datetime import date
+        dob_raw = (data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
+        if not dob_raw:
+            return error_response('Date of birth is required')
+        try:
+            dob = date.fromisoformat(dob_raw[:10])
+        except (ValueError, TypeError):
+            return error_response('Invalid date of birth')
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        if age < 21:
+            return error_response('You must be 21 or older to create an account', 403)
+
         # Only block on existing WEB customer account. An internal employee
         # with login=<email> (share=False) must still be able to sign up as
         # a separate customer (their work identity stays disjoint).
