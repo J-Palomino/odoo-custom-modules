@@ -520,16 +520,21 @@ class ProjectTask(models.Model):
             )
             if r.status_code == 200:
                 d = r.json()
-                rec = d.get("results") or d.get("result") or d
-                if isinstance(rec, dict) and ("success" in rec or rec.get("status") in ("done", "completed", "failed")):
-                    succ = bool(rec.get("success")) if "success" in rec else rec.get("status") in ("done", "completed")
+                # shape: {"status":"completed|failed|pending","results":[{success,post_url,...}]}
+                top = (d.get("status") or "").lower()
+                results = d.get("results") or []
+                rec = results[0] if results else {}
+                if rec and "success" in rec:
                     return {
-                        "done": rec.get("status") in ("done", "completed", "failed") or "success" in rec,
-                        "success": succ,
+                        "done": True,
+                        "success": bool(rec.get("success")),
                         "post_url": rec.get("post_url"),
                         "platform_post_id": rec.get("platform_post_id"),
-                        "error": rec.get("error_message") or rec.get("error"),
+                        "error": rec.get("error_message"),
                     }
+                if top == "failed":
+                    return {"done": True, "success": False,
+                            "error": d.get("error") or _("Publish failed.")}
         except Exception:  # noqa: BLE001
             pass
         # 2) history fallback (match job_id)
