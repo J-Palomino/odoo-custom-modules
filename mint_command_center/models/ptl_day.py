@@ -453,6 +453,31 @@ class PtlDay(models.Model):
             if dutchie_ids:
                 products = {'ids': dutchie_ids, 'isExclusion': False}
 
+        # Fail-closed brand guard (Odoo #587 / #90738 — cross-brand phantom prices).
+        # When an INCLUDE brand is chosen on the deal but none of its brands
+        # resolve to a Dutchie brand id, `brands` stays None and the discount
+        # would publish with its CATEGORY scope alone. The downstream resolver
+        # then sweeps it onto every brand's products in that category — e.g. a
+        # "Dr. Zodiak's Moonrock … 50% Off" whose brand (Nirvana, no Dutchie id)
+        # didn't resolve landed its 50%-off on a $5 MCG preroll. Silently
+        # widening across brands is strictly worse than not showing the deal, so
+        # drop the category scope: with no brand and no resolved category the
+        # resolver computes an empty set (the deal matches nothing) until the
+        # brand is corrected or given a dutchie_brand_id. An explicit resolved
+        # product list, if present, is a precise scope and is left intact.
+        include_brand_chosen = bool(discount.brand_ids)
+        have_include_brand = bool(brands and not brands.get('isExclusion'))
+        if include_brand_chosen and not have_include_brand and categories is not None:
+            _logger.warning(
+                'PTL publish: discount %s (%r) names brand(s) "%s" with no '
+                'Dutchie brand id — suppressing category-only scope to avoid a '
+                'cross-brand match; deal matches nothing until the brand is '
+                'corrected or backfilled.',
+                discount.id, discount.name,
+                ', '.join(discount.brand_ids.mapped('name')),
+            )
+            categories = None
+
         excluded_skus = sorted(discount._excluded_sku_set()) if discount.excluded_skus else None
 
         return {

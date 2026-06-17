@@ -239,3 +239,63 @@ class TestPtlDealMarketScoping(MintPtlDealCommon):
         self.assertEqual(set(deal.matching_product_ids.ids), set(self.az_flowers.ids))
         self.assertEqual(deal.matching_product_count, 3)
         self.assertFalse(deal.matching_product_ids & self.mo_flowers)
+
+
+@tagged("post_install", "-at_install")
+class TestPtlWebhookBrandGuard(MintPtlDealCommon):
+    """Fail-closed brand guard in `_discount_to_webhook_payload` (Odoo #587 / #90738).
+
+    A PTL deal whose brand cannot resolve to a Dutchie brand id must NOT publish
+    with its category scope alone — that swept a "Dr. Zodiak's Moonrock 50% Off"
+    (brand=Nirvana, no Dutchie id) onto a $5 MCG preroll. The guard drops the
+    category scope so the deal matches nothing until the brand is corrected.
+    """
+
+    def _make_deal(self, **overrides):
+        vals = {
+            "name": "FA-90738 Deal",
+            "brand_id": self.brand.id,
+            "product_category": "Flower",
+            "discount_type": "percent",
+            "discount_value": 0.2,
+        }
+        vals.update(overrides)
+        return self.PtlDeal.create(vals)
+
+    def _discount_from(self, deal):
+        vals = self.PtlDay._deal_to_discount_vals(deal)
+        vals["source"] = "ptl"
+        return self.env["mint.discount"].create(vals)
+
+    def test_resolvable_brand_emits_brand_and_category(self):
+        """Control: a brand WITH a Dutchie id publishes brand + category."""
+        self.cat_flower.dutchie_category_id = "88001"
+        self.brand.dutchie_brand_id = "54905"
+        payload = self.PtlDay._discount_to_webhook_payload(
+            self._discount_from(self._make_deal()), "store-uuid")
+        self.assertIsNotNone(payload["brands"])
+        self.assertEqual(payload["brands"]["ids"], [54905])
+        self.assertIsNotNone(payload["product_categories"])
+
+    def test_unresolvable_brand_suppresses_category_scope(self):
+        """Brand WITHOUT a Dutchie id → no brands AND category suppressed."""
+        self.cat_flower.dutchie_category_id = "88001"
+        self.assertFalse(self.brand.dutchie_brand_id)
+        payload = self.PtlDay._discount_to_webhook_payload(
+            self._discount_from(self._make_deal()), "store-uuid")
+        self.assertIsNone(payload["brands"])
+        self.assertIsNone(
+            payload["product_categories"],
+            "category-only scope must be suppressed when the brand is unresolved")
+
+    def test_unresolvable_brand_keeps_explicit_products(self):
+        """An explicit, resolved product list survives the guard."""
+        self.brand.dutchie_brand_id = False
+        for i, tmpl in enumerate(self.flowers):
+            tmpl.dutchie_product_id = str(70000 + i)
+        deal = self._make_deal(explicit_product_ids=[(6, 0, self.flowers.ids)])
+        payload = self.PtlDay._discount_to_webhook_payload(
+            self._discount_from(deal), "store-uuid")
+        self.assertIsNone(payload["brands"])
+        self.assertIsNotNone(payload["products"])
+        self.assertEqual(set(payload["products"]["ids"]), {70000 + i for i in range(5)})
