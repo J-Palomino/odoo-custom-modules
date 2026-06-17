@@ -8,7 +8,7 @@ class ProjectProject(models.Model):
         "daisy.agent",
         string="Daisy Agent Inbox",
         index=True,
-        ondelete="cascade",
+        ondelete="set null",
         help="Set when this project is a Daisy agent's private email inbox. "
         "Such projects (and their tasks) are visible only to the agent's "
         "manager, the agent itself, and Daisy administrators.",

@@ -27,6 +27,7 @@ class DaisyOrchestratorCommand(models.Model):
             ("terminate", "Terminate"),
             ("set_prompt", "Set chatflow system prompt"),
             ("fix_mcp_actions", "Fix MCP tool allowlist from template"),
+            ("sync_key", "Re-key chatflow (fix key 401 without re-clone)"),
         ],
         required=True,
     )
@@ -152,5 +153,18 @@ class DaisyOrchestratorCommand(models.Model):
         elif cmd == "fix_mcp_actions":
             applied = self._fix_mcp_actions(agent)
             self.result_message = f"Reset MCP allowlist on {agent.name} from template ({applied} config(s))."
+        elif cmd == "sync_key":
+            ai = self.env["daisy.ai.service"]
+            key = agent._get_effective_api_key() or agent._workspace_key()
+            cf = agent.daisy_agency_id
+            if not cf:
+                raise ValueError("Agent has no chatflow (daisy_agency_id).")
+            info = ai.create_apikey(key, f"agent:{agent.code}")
+            new_key, key_id = info.get("apiKey"), info.get("id")
+            if not (new_key and key_id):
+                raise ValueError("create_apikey returned no usable key.")
+            ai.link_apikey(key, cf, key_id)
+            agent.write({"daisy_api_key": new_key})
+            self.result_message = f"Re-keyed {agent.name}: minted + linked fresh gating key on chatflow {cf}."
         else:
             raise ValueError(f"Unknown command {cmd}.")
