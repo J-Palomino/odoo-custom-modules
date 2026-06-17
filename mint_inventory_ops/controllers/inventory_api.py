@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 
@@ -24,6 +25,20 @@ def _error(message, status=400):
     return _json({'error': message}, status=status)
 
 
+def _verify_api_key():
+    """Gate the inventory-ops API on the shared checkout API key (Odoo #662).
+    Previously every route was auth=none with no key check -> unauthenticated
+    read AND mutation of METRC-tracked stock (create/submit/approve/apply)."""
+    key = request.httprequest.headers.get("X-Api-Key", "")
+    if not key:
+        return False
+    expected = request.env["ir.config_parameter"].sudo().get_param(
+        "mint_customer_api.checkout_api_key", ""
+    )
+    # Constant-time compare to avoid a timing side-channel (Odoo #675).
+    return bool(key and expected and hmac.compare_digest(key, expected))
+
+
 class InventoryAPI(http.Controller):
 
     # ------------------------------------------------------------------
@@ -47,6 +62,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/adjustments', type='http', auth='none',
                 methods=['GET'], csrf=False)
     def list_adjustments(self, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         Adj = request.env['mint.inventory.adjustment'].sudo()
         domain = []
 
@@ -78,6 +95,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/adjustments', type='http', auth='none',
                 methods=['POST'], csrf=False)
     def create_adjustment(self, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         try:
             data = json.loads(request.httprequest.data or '{}')
         except json.JSONDecodeError:
@@ -136,6 +155,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/adjustments/<int:adj_id>', type='http',
                 auth='none', methods=['GET'], csrf=False)
     def get_adjustment(self, adj_id, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         adj = request.env['mint.inventory.adjustment'].sudo().browse(adj_id)
         if not adj.exists():
             return _error('Adjustment not found', 404)
@@ -148,6 +169,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/adjustments/<int:adj_id>/submit', type='http',
                 auth='none', methods=['PUT'], csrf=False)
     def submit_adjustment(self, adj_id, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         adj = request.env['mint.inventory.adjustment'].sudo().browse(adj_id)
         if not adj.exists():
             return _error('Adjustment not found', 404)
@@ -160,6 +183,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/adjustments/<int:adj_id>/approve', type='http',
                 auth='none', methods=['PUT'], csrf=False)
     def approve_adjustment(self, adj_id, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         adj = request.env['mint.inventory.adjustment'].sudo().browse(adj_id)
         if not adj.exists():
             return _error('Adjustment not found', 404)
@@ -172,6 +197,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/adjustments/<int:adj_id>/reject', type='http',
                 auth='none', methods=['PUT'], csrf=False)
     def reject_adjustment(self, adj_id, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         adj = request.env['mint.inventory.adjustment'].sudo().browse(adj_id)
         if not adj.exists():
             return _error('Adjustment not found', 404)
@@ -185,6 +212,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/adjustments/<int:adj_id>/apply', type='http',
                 auth='none', methods=['PUT'], csrf=False)
     def apply_adjustment(self, adj_id, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         adj = request.env['mint.inventory.adjustment'].sudo().browse(adj_id)
         if not adj.exists():
             return _error('Adjustment not found', 404)
@@ -202,6 +231,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/stock', type='http', auth='none',
                 methods=['GET'], csrf=False)
     def get_stock(self, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         domain = [('location_id.usage', '=', 'internal')]
 
         if kw.get('warehouse_id'):
@@ -245,6 +276,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/transfer', type='http', auth='none',
                 methods=['POST'], csrf=False)
     def create_transfer(self, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         """Shortcut: create + submit a move adjustment."""
         try:
             data = json.loads(request.httprequest.data or '{}')
@@ -258,6 +291,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/destroy', type='http', auth='none',
                 methods=['POST'], csrf=False)
     def create_destroy(self, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         """Shortcut: create + submit a destroy adjustment."""
         try:
             data = json.loads(request.httprequest.data or '{}')
@@ -274,6 +309,8 @@ class InventoryAPI(http.Controller):
     @http.route('/api/v1/inventory/batch-update', type='http', auth='none',
                 methods=['POST'], csrf=False)
     def batch_update(self, **kw):
+        if not _verify_api_key():
+            return _error("Unauthorized", 401)
         """Batch update product inventory status or quantities."""
         try:
             data = json.loads(request.httprequest.data or '{}')
