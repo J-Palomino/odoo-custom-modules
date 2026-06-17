@@ -78,9 +78,9 @@ class MintCustomerAuth(http.Controller):
         # API key) may reach this endpoint. Blocks direct hits to the backend
         # that would otherwise bypass the FE's honeypot, timing token, bot
         # score and per-account/per-IP brute-force throttling.
-        api_key = request.httprequest.headers.get('X-Api-Key', '')
-        if not api_key or not self._verify_fe_api_key(api_key):
-            return error_response('Unauthorized', 401)
+        gate = self._require_fe_key()
+        if gate:
+            return gate
 
         try:
             data = json.loads(request.httprequest.data)
@@ -144,9 +144,9 @@ class MintCustomerAuth(http.Controller):
         # API key) may reach this endpoint. Blocks direct hits to the backend
         # that would otherwise bypass the FE's honeypot, timing token, bot
         # score and per-IP daily registration cap (mass account creation).
-        api_key = request.httprequest.headers.get('X-Api-Key', '')
-        if not api_key or not self._verify_fe_api_key(api_key):
-            return error_response('Unauthorized', 401)
+        gate = self._require_fe_key()
+        if gate:
+            return gate
 
         try:
             data = json.loads(request.httprequest.data)
@@ -226,9 +226,9 @@ class MintCustomerAuth(http.Controller):
         # API key) may reach this endpoint. Blocks direct hits to the backend
         # that would otherwise bypass the FE's origin check and per-IP /
         # per-target throttle (reset-email bombing).
-        api_key = request.httprequest.headers.get('X-Api-Key', '')
-        if not api_key or not self._verify_fe_api_key(api_key):
-            return error_response('Unauthorized', 401)
+        gate = self._require_fe_key()
+        if gate:
+            return gate
 
         try:
             data = json.loads(request.httprequest.data)
@@ -271,9 +271,9 @@ class MintCustomerAuth(http.Controller):
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
 
-        api_key = request.httprequest.headers.get('X-Api-Key', '')
-        if not api_key or not self._verify_fe_api_key(api_key):
-            return error_response('Unauthorized', 401)
+        gate = self._require_fe_key()
+        if gate:
+            return gate
 
         try:
             data = json.loads(request.httprequest.data)
@@ -316,6 +316,19 @@ class MintCustomerAuth(http.Controller):
                 'partner_id': user.partner_id.id,
             },
         })
+
+    def _require_fe_key(self):
+        """Reject the request unless it carries the FE-shared rpc X-Api-Key.
+
+        Only the MintDeals frontend holds this key, so gating on it blocks
+        direct hits to the backend that would bypass the FE's honeypot, timing
+        token, bot score and rate limiting. Returns an error Response to return,
+        or None when the caller is authorized.
+        """
+        api_key = request.httprequest.headers.get('X-Api-Key', '')
+        if not api_key or not self._verify_fe_api_key(api_key):
+            return error_response('Unauthorized', 401)
+        return None
 
     def _verify_fe_api_key(self, key):
         """Verify X-Api-Key against Odoo's res.users.apikeys store."""
