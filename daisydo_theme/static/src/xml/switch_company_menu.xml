@@ -12,10 +12,25 @@
        t-inherit="web.SwitchCompanyMenu.Items"
        t-inherit-mode="extension">
         <xpath expr="//div[hasclass('o_switch_company_menu_items')]/t[@t-foreach='visibleCompanies']" position="replace">
+            <!-- Org-root master row: checking it selects every company in every state. -->
+            <div t-if="rootName"
+                 class="o_switch_company_master_header o-navigable d-flex align-items-center px-2 pt-1 pb-1"
+                 role="menuitemcheckbox"
+                 t-att-aria-checked="masterIcon().includes('fa-check-square') ? 'true' : 'false'"
+                 t-att-aria-label="'Select all — ' + rootName"
+                 t-att-title="'Select all — ' + rootName"
+                 style="cursor: pointer;"
+                 t-on-click="() => this.selectMaster()">
+                <span class="btn border-0 py-0 px-1">
+                    <i class="fa fa-fw" t-att-class="masterIcon()"/>
+                </span>
+                <span class="fw-bold"><t t-esc="rootName"/></span>
+            </div>
             <t t-foreach="visibleCompanies" t-as="entry" t-key="entry.company.id">
                 <t t-set="prevState" t-value="entry_index > 0 ? visibleCompanies[entry_index - 1].stateName : null"/>
                 <div t-if="entry.stateName and entry.stateName !== prevState"
                      class="o_switch_company_state_header o-navigable d-flex align-items-center px-2 pt-2 pb-1"
+                     t-att-class="rootName ? 'ms-3' : ''"
                      role="menuitemcheckbox"
                      t-att-aria-checked="stateSelectIcon(entry.stateName).includes('fa-check-square') ? 'true' : 'false'"
                      t-att-aria-label="'Select all in ' + entry.stateName"
