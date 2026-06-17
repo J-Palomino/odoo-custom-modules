@@ -51,4 +51,27 @@
         <field name="domain_force">[(1, '=', 1)]</field>
     </record>
 
+    <!-- Personal agent mailboxes are private: an agent's email project (and its
+         tasks) is visible only to the agent's manager, the agent's own user, and
+         Daisy administrators (break-glass). These are GLOBAL rules (no groups), so
+         they are ANDed with every other rule and override the project-administrator
+         "see all" rule. -->
+    <record id="rule_daisy_agent_project_private" model="ir.rule">
+        <field name="name">Daisy agent inbox: private to manager/agent</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="domain_force">['|', ('daisy_agent_id', '=', False),
+            '|', ('daisy_agent_id.manager_id', '=', user.id),
+            '|', ('daisy_agent_id.user_id', '=', user.id),
+            (1, '=', 1) if user.has_group('daisydo_agents.group_daisy_admin') else (1, '=', 0)]</field>
+    </record>
+
+    <record id="rule_daisy_agent_task_private" model="ir.rule">
+        <field name="name">Daisy agent inbox tasks: private to manager/agent</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="domain_force">['|', ('project_id.daisy_agent_id', '=', False),
+            '|', ('project_id.daisy_agent_id.manager_id', '=', user.id),
+            '|', ('project_id.daisy_agent_id.user_id', '=', user.id),
+            (1, '=', 1) if user.has_group('daisydo_agents.group_daisy_admin') else (1, '=', 0)]</field>
+    </record>
+
 </odoo>

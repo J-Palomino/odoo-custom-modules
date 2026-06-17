@@ -12,4 +12,5 @@ from . import im_livechat_channel
 from . import mail_message
 from . import mail_thread
 from . import project_task
+from . import project_project
 from . import res_config_settings

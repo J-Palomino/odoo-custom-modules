@@ -226,6 +226,7 @@ class DaisyAgent(models.Model):
             project = self.env["project.project"].sudo().create({
                 "name": f"{self.name} - Email",
                 "alias_name": self.code,
+                "daisy_agent_id": self.id,
             })
             self.mail_project_id = project
 
