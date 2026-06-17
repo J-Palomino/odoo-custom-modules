@@ -14,6 +14,10 @@ class IrHttp(models.AbstractModel):
             info["error_report_api_url"] = api_url
             info["error_report_api_key"] = api_key
         info["company_states"] = self._company_state_map()
+        root = self._company_root()
+        if root:
+            info["company_root_id"] = root.id
+            info["company_root_name"] = root.name
         self._sync_company_selection()
         return info
 
@@ -35,6 +39,31 @@ class IrHttp(models.AbstractModel):
             if company.state_id:
                 states[company.id] = company.state_id.name
         return states
+
+    def _company_root(self):
+        """Top-most ancestor company of the user's state-bearing stores.
+
+        The switcher renders this as a "Mint Cannabis" master row above the
+        state groups whose checkbox selects every company. Derived by climbing
+        each state store to its no-parent ancestor and taking the most common
+        one (resolves to "Mint Cannabis", id=1). Returns an empty recordset
+        when the user has no state companies.
+        """
+        if not request:
+            return self.env["res.company"].browse()
+        user = self.env.user
+        if not user or not user._is_internal():
+            return self.env["res.company"].browse()
+        counts = {}
+        for company in user.company_ids.filtered("state_id"):
+            node = company
+            while node.parent_id:
+                node = node.parent_id
+            counts[node.id] = counts.get(node.id, 0) + 1
+        if not counts:
+            return self.env["res.company"].browse()
+        root_id = max(counts, key=counts.get)
+        return self.env["res.company"].browse(root_id)
 
     def _sync_company_selection(self):
         """Make a user's multi-company switcher selection survive logout/login.

@@ -49,12 +49,11 @@
                 <field name="category_id"/>
                 <filter name="archived" string="Archived"
                         domain="[('active', '=', False)]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_category" string="Category"
-                            context="{'group_by': 'category_id'}"/>
-                    <filter name="group_author" string="Author"
-                            context="{'group_by': 'author_id'}"/>
-                </group>
+                <separator/>
+                <filter name="group_category" string="Category"
+                        context="{'group_by': 'category_id'}"/>
+                <filter name="group_author" string="Author"
+                        context="{'group_by': 'author_id'}"/>
             </search>
         </field>
     </record>

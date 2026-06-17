@@ -32,7 +32,7 @@ patch(SwitchCompanyMenu.prototype, {
         }
 
         // Stable sort: group by state, "Other" last, original order within a group.
-        return entries
+        const sorted = entries
             .map((entry, index) => ({ entry, index }))
             .sort((a, b) => {
                 const sa = a.entry.stateName;
@@ -49,6 +49,44 @@ patch(SwitchCompanyMenu.prototype, {
                 return sa.localeCompare(sb);
             })
             .map((wrapped) => wrapped.entry);
+
+        // The org root ("Mint Cannabis") is rendered as a master row above the
+        // groups, so drop its own entry here to avoid showing it twice.
+        const rootId = session.company_root_id;
+        return rootId ? sorted.filter((entry) => entry.company.id !== rootId) : sorted;
+    },
+
+    /** Name of the org-root master row, or "" when grouping is inactive. */
+    get rootName() {
+        return session.company_root_name || "";
+    },
+
+    /** Every company the master row controls: all grouped rows plus the root. */
+    masterCompanyIds() {
+        const ids = this.visibleCompanies.map((entry) => entry.company.id);
+        const rootId = session.company_root_id;
+        if (rootId && !ids.includes(rootId)) {
+            ids.push(rootId);
+        }
+        return ids;
+    },
+
+    /** Toggle the whole org: select all companies if not all selected, else clear. */
+    selectMaster() {
+        this.companySelector.selectAll(this.masterCompanyIds());
+    },
+
+    /** Tri-state checkbox icon for the master row. */
+    masterIcon() {
+        const ids = this.masterCompanyIds();
+        const selected = ids.filter((id) => this.companySelector.isCompanySelected(id));
+        if (ids.length && selected.length === ids.length) {
+            return "fa-check-square text-primary";
+        }
+        if (selected.length) {
+            return "fa-minus-square-o";
+        }
+        return "fa-square-o";
     },
 
     /** Company ids currently shown under a given state header. */

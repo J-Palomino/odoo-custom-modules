@@ -10,6 +10,32 @@ from .deal_mixins import coerce_dutchie_ids
 
 _logger = logging.getLogger(__name__)
 
+
+def _pick_dutchie_brand_id(brand, lsp_id):
+    """Resolve a mint.brand's Dutchie BrandId for a specific LSP (Dutchie tenant).
+
+    Dutchie BrandIds are per-LSP. ``mint.brand.dutchie_brand_ids`` holds
+    ``'lsp:id'`` lines (e.g. ``'575:54905\n821:54905'``); the legacy
+    ``dutchie_brand_id`` is the AZ (575) id only. Prefer the per-LSP line; fall
+    back to the legacy field for AZ. Returns an int id or None — None drops the
+    brand from the payload (same fail-closed semantics the guard relies on).
+    """
+    target = str(lsp_id) if lsp_id else None
+    if target:
+        for line in (brand.dutchie_brand_ids or '').split('\n'):
+            parts = line.split(':')
+            if len(parts) == 2 and parts[0].strip() == target and parts[1].strip():
+                try:
+                    return int(parts[1].strip())
+                except ValueError:
+                    return None
+    if (target is None or target == '575') and brand.dutchie_brand_id:
+        try:
+            return int(str(brand.dutchie_brand_id).strip())
+        except ValueError:
+            return None
+    return None
+
 WEBHOOK_URL_PARAM = 'mint.ptl_sync.webhook_url'
 DEFAULT_WEBHOOK_URL = 'https://mintinvsvc-production-6aa5.up.railway.app/api/webhook/ptl-discount-sync'
 API_KEY_PARAM = 'mint.inventory_service.api_key'
@@ -130,6 +156,14 @@ class PtlDay(models.Model):
             domain.append(('region_id', '=', self.market_id.id))
         stores = self.env['res.company'].sudo().search(domain)
         return {s.id: s.dutchie_store_id for s in stores if s.dutchie_store_id}
+
+    def _get_store_lsp_map(self):
+        """Build Dutchie store UUID → dutchie_lsp_id map for per-LSP brand resolution."""
+        domain = [('is_dispensary', '=', True), ('dutchie_store_id', '!=', False)]
+        if self.market_id:
+            domain.append(('region_id', '=', self.market_id.id))
+        stores = self.env['res.company'].sudo().search(domain)
+        return {s.dutchie_store_id: s.dutchie_lsp_id for s in stores if s.dutchie_store_id}
 
     # ─── Daily Cron (called via ir.cron on mint.ptl.day) ─────────────────
 
@@ -368,6 +402,7 @@ class PtlDay(models.Model):
 
         discounts = self.env['mint.discount'].sudo().browse(discount_ids)
         store_uuid_map = self._get_store_uuid_map()
+        store_lsp_map = self._get_store_lsp_map()
 
         if not store_uuid_map:
             _logger.warning('PTL publish: no stores with Dutchie UUIDs found for market %s',
@@ -385,7 +420,7 @@ class PtlDay(models.Model):
                     continue
                 if uuid not in store_payloads:
                     store_payloads[uuid] = []
-                store_payloads[uuid].append(self._discount_to_webhook_payload(discount, uuid))
+                store_payloads[uuid].append(self._discount_to_webhook_payload(discount, uuid, store_lsp_map.get(uuid)))
 
         # Fire webhook per store (async, fire-and-forget)
         get_param = self.env['ir.config_parameter'].sudo().get_param
@@ -420,7 +455,7 @@ class PtlDay(models.Model):
         _logger.info('PTL publish: fired webhooks for %d stores, %d discounts',
                       len(store_payloads), len(discount_ids))
 
-    def _discount_to_webhook_payload(self, discount, location_uuid):
+    def _discount_to_webhook_payload(self, discount, location_uuid, lsp_id=None):
         """Convert mint.discount → inventory service webhook payload."""
         calc_method = CALC_METHOD_MAP.get(discount.discount_type, 'PERCENT_OFF')
 
@@ -431,15 +466,20 @@ class PtlDay(models.Model):
         # IDs — Odoo-internal record ids have no meaning downstream. Records
         # without a cross-reference are dropped from the payload so we never
         # emit wrong-namespace IDs the resolver would silently miss.
+        # Per-LSP brand resolution (Odoo #90738 phase 2). Dutchie BrandIds are
+        # per-tenant; resolve each brand against THIS store's LSP via
+        # mint.brand.dutchie_brand_ids, falling back to the legacy AZ-only
+        # dutchie_brand_id. Emitting the AZ id to a non-AZ store would not match
+        # that tenant's inventory.
         brands = None
         if discount.brand_ids:
-            dutchie_ids = coerce_dutchie_ids(discount.brand_ids, 'dutchie_brand_id')
-            if dutchie_ids:
-                brands = {'ids': dutchie_ids, 'isExclusion': False}
+            ids = [b for b in (_pick_dutchie_brand_id(r, lsp_id) for r in discount.brand_ids) if b is not None]
+            if ids:
+                brands = {'ids': ids, 'isExclusion': False}
         elif discount.exclude_brand_ids:
-            dutchie_ids = coerce_dutchie_ids(discount.exclude_brand_ids, 'dutchie_brand_id')
-            if dutchie_ids:
-                brands = {'ids': dutchie_ids, 'isExclusion': True}
+            ids = [b for b in (_pick_dutchie_brand_id(r, lsp_id) for r in discount.exclude_brand_ids) if b is not None]
+            if ids:
+                brands = {'ids': ids, 'isExclusion': True}
 
         categories = None
         if discount.category_ids:

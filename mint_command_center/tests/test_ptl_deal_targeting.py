@@ -299,3 +299,22 @@ class TestPtlWebhookBrandGuard(MintPtlDealCommon):
         self.assertIsNone(payload["brands"])
         self.assertIsNotNone(payload["products"])
         self.assertEqual(set(payload["products"]["ids"]), {70000 + i for i in range(5)})
+
+    def test_per_lsp_brand_id_resolution(self):
+        """Phase 2: brand id resolves against the store's LSP, AZ legacy fallback."""
+        self.brand.dutchie_brand_id = "54905"            # legacy (AZ 575)
+        self.brand.dutchie_brand_ids = "575:54905\n576:99999"
+        self.cat_flower.dutchie_category_id = "88001"
+        disc = self._discount_from(self._make_deal())
+        az = self.PtlDay._discount_to_webhook_payload(disc, "uuid", 575)
+        self.assertEqual(az["brands"]["ids"], [54905])
+        mi = self.PtlDay._discount_to_webhook_payload(disc, "uuid", 576)
+        self.assertEqual(mi["brands"]["ids"], [99999])
+        # legacy fallback: only dutchie_brand_id set, AZ lsp
+        self.brand.dutchie_brand_ids = False
+        az2 = self.PtlDay._discount_to_webhook_payload(disc, "uuid", 575)
+        self.assertEqual(az2["brands"]["ids"], [54905])
+        # non-AZ LSP with no per-LSP id → brand drops; guard suppresses category
+        mo = self.PtlDay._discount_to_webhook_payload(disc, "uuid", 723)
+        self.assertIsNone(mo["brands"])
+        self.assertIsNone(mo["product_categories"])
