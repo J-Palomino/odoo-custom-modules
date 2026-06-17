@@ -227,6 +227,9 @@ class MaintenanceFormController(http.Controller):
     def _create_request(self, vals, valid_files, template, ctx, success_msg):
         """Create maintenance.request + attachments. Returns rendered response."""
         try:
+            # Mark how the ticket came in so it's distinguishable from
+            # agent-created (phone/sms) and Odoo-direct tickets.
+            vals.setdefault("x_intake_channel", "web")
             maint_req = request.env["maintenance.request"].sudo().create(vals)
 
             # Subscribe team members and notify
