@@ -1,6 +1,6 @@
 {
     'name': 'Mint Knowledge Base',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Productivity/Knowledge',
     'summary': 'Lightweight internal knowledge base — categorized rich-text '
                'wiki pages with reader / manager access control',
@@ -29,11 +29,12 @@ top-level category per domain (e.g. "IT").
     'author': 'Mint Dispensaries',
     'website': 'https://mintdispensaries.com',
     'license': 'LGPL-3',
-    'depends': ['base', 'html_editor'],
+    'depends': ['base', 'html_editor', 'website'],
     'data': [
         'security/knowledge_security.xml',
         'security/ir.model.access.csv',
         'views/knowledge_views.xml',
+        'views/website_templates.xml',
     ],
     'installable': True,
     'application': True,

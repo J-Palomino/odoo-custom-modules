@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+
+    <template id="kb_index" name="IT Knowledge Base">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container my-5">
+                    <h1 class="mb-4">IT Knowledge Base</h1>
+                    <t t-if="not categories">
+                        <p class="text-muted">No knowledge pages yet.</p>
+                    </t>
+                    <t t-foreach="categories" t-as="cat">
+                        <section class="mb-4">
+                            <h2 t-esc="cat.name" class="h4 border-bottom pb-2"/>
+                            <ul class="list-unstyled ms-2">
+                                <t t-foreach="cat.page_ids" t-as="pg">
+                                    <li class="mb-1">
+                                        <a t-attf-href="/it-knowledge/page/{{ pg.id }}" t-esc="pg.name"/>
+                                    </li>
+                                </t>
+                            </ul>
+                            <t t-foreach="cat.child_ids" t-as="sub">
+                                <div class="ms-3">
+                                    <h3 t-esc="sub.name" class="h6 text-muted"/>
+                                    <ul class="list-unstyled ms-2">
+                                        <t t-foreach="sub.page_ids" t-as="pg">
+                                            <li class="mb-1">
+                                                <a t-attf-href="/it-knowledge/page/{{ pg.id }}" t-esc="pg.name"/>
+                                            </li>
+                                        </t>
+                                    </ul>
+                                </div>
+                            </t>
+                        </section>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <template id="kb_page" name="IT Knowledge Page">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container my-5">
+                    <p>
+                        <a href="/it-knowledge">&#8592; Back to Knowledge Base</a>
+                    </p>
+                    <p class="text-muted small mb-1" t-esc="page.category_id.complete_name"/>
+                    <h1 class="mb-4" t-esc="page.name"/>
+                    <div t-out="page.content"/>
+                </div>
+            </div>
+        </t>
+    </template>
+
+</odoo>
