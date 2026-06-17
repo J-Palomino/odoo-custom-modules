@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import re
+import struct
 
 import requests
 
@@ -25,6 +26,83 @@ APPROVAL_STATES = {"approved", "sent"}
 # Sweep cap per cron run so one stuck profile can't starve the rest.
 SWEEP_LIMIT = 50
 HTTP_TIMEOUT = 120
+
+# Per-platform media ceilings, used to warn the scheduler BEFORE a card is
+# queued so an over-limit asset gets trimmed/compressed instead of failing at
+# posts.agency. Values are the platforms' hard publish maxima (not the softer
+# "best-practice" lengths) so we only block uploads that would actually be
+# rejected. Duration is keyed by post type where a platform differs (story vs
+# reel vs feed). Verified 2026-06 — review periodically; platforms move these.
+#   max_mb        : max file size in megabytes
+#   duration_s    : {post_type: max seconds}; "default" applies to auto/feed.
+PLATFORM_LIMITS = {
+    "instagram": {"max_mb": 1024, "duration_s": {"story": 60, "reel": 900, "default": 3600}},
+    "facebook": {"max_mb": 10240, "duration_s": {"story": 60, "reel": 90, "default": 14400}},
+    "tiktok": {"max_mb": 4096, "duration_s": {"default": 600}},
+    "youtube": {"max_mb": 262144, "duration_s": {"default": 43200}},
+    "x": {"max_mb": 512, "duration_s": {"default": 140}},
+    "linkedin": {"max_mb": 5120, "duration_s": {"default": 600}},
+    "pinterest": {"max_mb": 2048, "duration_s": {"default": 900}},
+    "threads": {"max_mb": 1024, "duration_s": {"default": 300}},
+    "bluesky": {"max_mb": 100, "duration_s": {"default": 180}},
+}
+
+
+def _mp4_duration_seconds(raw):
+    """Best-effort video duration (float seconds) from MP4/MOV bytes.
+
+    Walks the ISO-BMFF box tree to moov > mvhd and reads duration/timescale.
+    Returns None when it can't be determined (non-MP4 container, fragmented
+    file with a zero mvhd duration, truncated bytes) — callers MUST treat None
+    as "unknown, don't block on duration". No external binary (ffmpeg) needed.
+    """
+    if not raw or len(raw) < 16:
+        return None
+
+    def _iter_boxes(start, end):
+        i = start
+        while i + 8 <= end:
+            size = struct.unpack(">I", raw[i:i + 4])[0]
+            typ = raw[i + 4:i + 8]
+            header = 8
+            if size == 1:  # 64-bit largesize
+                if i + 16 > end:
+                    break
+                size = struct.unpack(">Q", raw[i + 8:i + 16])[0]
+                header = 16
+            elif size == 0:  # box extends to end of file
+                size = end - i
+            if size < header or i + size > end:
+                break
+            yield typ, i + header, i + size
+            i += size
+
+    try:
+        for typ, s, e in _iter_boxes(0, len(raw)):
+            if typ != b"moov":
+                continue
+            for t2, s2, _e2 in _iter_boxes(s, e):
+                if t2 != b"mvhd":
+                    continue
+                version = raw[s2]
+                if version == 1:
+                    timescale = struct.unpack(">I", raw[s2 + 20:s2 + 24])[0]
+                    duration = struct.unpack(">Q", raw[s2 + 24:s2 + 32])[0]
+                else:
+                    timescale = struct.unpack(">I", raw[s2 + 12:s2 + 16])[0]
+                    duration = struct.unpack(">I", raw[s2 + 16:s2 + 20])[0]
+                if timescale and duration > 0:
+                    return duration / timescale
+                return None
+    except (struct.error, IndexError):
+        return None
+    return None
+
+
+def _fmt_seconds(secs):
+    """Human mm:ss for guard messages."""
+    secs = int(round(secs))
+    return "%d:%02d" % (secs // 60, secs % 60)
 
 
 class ProjectTask(models.Model):
@@ -213,10 +291,18 @@ class ProjectTask(models.Model):
             missing.append(_("a scheduled date (Deadline)"))
         elif self.date_deadline <= fields.Datetime.now():
             missing.append(_("a Deadline in the future"))
-        if missing:
+        # Per-platform size/duration ceilings: catch an over-limit asset here so
+        # the scheduler trims it instead of the post failing at posts.agency.
+        oversize = self._social_media_limit_problems()
+        if missing or oversize:
+            parts = []
+            if missing:
+                parts.append(_("missing: %s") % "; ".join(missing))
+            if oversize:
+                parts.append("; ".join(oversize))
             raise UserError(
-                _('Cannot submit "%(name)s" to posts.agency — missing: %(items)s.')
-                % {"name": self.display_name, "items": "; ".join(missing)}
+                _('Cannot submit "%(name)s" to posts.agency — %(msg)s.')
+                % {"name": self.display_name, "msg": ". ".join(parts)}
             )
 
     def _social_platform_list(self):
@@ -267,6 +353,64 @@ class ProjectTask(models.Model):
                 limit=1,
             )
         )
+
+    def _social_video_duration_seconds(self, attachment):
+        """Duration (float seconds) of a video attachment, or None if unknown
+        (non-video, non-MP4/MOV container, or unreadable). Best-effort: never
+        raises, so an unparseable file just skips the duration guard."""
+        self.ensure_one()
+        if not attachment or not (attachment.mimetype or "").startswith("video/"):
+            return None
+        try:
+            return _mp4_duration_seconds(attachment.sudo().raw)
+        except Exception:  # noqa: BLE001 - guard must never block the form
+            _logger.warning("Could not read duration for attachment %s", attachment.id)
+            return None
+
+    def _platform_duration_limit(self, platform, post_type):
+        """Max video seconds for a platform + post type, or None if uncapped/
+        unknown. Falls back to the platform's 'default' (auto/feed) limit."""
+        limits = (PLATFORM_LIMITS.get(platform) or {}).get("duration_s") or {}
+        return limits.get(post_type) or limits.get("default")
+
+    def _social_media_limit_problems(self):
+        """List of human, actionable over-limit messages for the chosen
+        platforms (empty when the asset is within every platform's limits).
+        Checks file size for any media and duration for videos."""
+        self.ensure_one()
+        att = self._social_media_attachment()
+        if not att:
+            return []
+        problems = []
+        platforms = self._social_platform_list()
+        post_type = self.x_social_post_type or "auto"
+        is_video = (att.mimetype or "").startswith("video/")
+        size_mb = (att.file_size or 0) / (1024.0 * 1024.0)
+        duration = self._social_video_duration_seconds(att) if is_video else None
+        for platform in platforms:
+            limit = PLATFORM_LIMITS.get(platform)
+            if not limit:
+                continue
+            max_mb = limit.get("max_mb")
+            if max_mb and size_mb > max_mb:
+                problems.append(
+                    _("%(p)s allows max %(max)s MB but this file is %(have)s MB — compress it")
+                    % {"p": platform, "max": max_mb, "have": round(size_mb)}
+                )
+            if is_video and duration:
+                max_s = self._platform_duration_limit(platform, post_type)
+                if max_s and duration > max_s:
+                    fmt = {"story": "Story", "reel": "Reel"}.get(post_type, "video")
+                    problems.append(
+                        _("%(p)s %(fmt)s max length is %(max)s but this video is %(have)s — trim it")
+                        % {
+                            "p": platform,
+                            "fmt": fmt,
+                            "max": _fmt_seconds(max_s),
+                            "have": _fmt_seconds(duration),
+                        }
+                    )
+        return problems
 
     # ------------------------------------------------------------------
     # workflow actions
