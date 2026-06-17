@@ -1,6 +1,6 @@
 {
     'name': 'Mint Knowledge Base',
-    'version': '19.0.5.0.0',
+    'version': '19.0.6.0.0',
     'category': 'Productivity/Knowledge',
     'summary': 'Lightweight internal knowledge base — categorized rich-text '
                'wiki pages with reader / manager access control',
@@ -36,6 +36,13 @@ top-level category per domain (e.g. "IT").
         'views/knowledge_views.xml',
         'views/website_templates.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'mint_knowledge/static/src/article_picker_dialog.js',
+            'mint_knowledge/static/src/article_picker_dialog.xml',
+            'mint_knowledge/static/src/article_link_plugin.js',
+        ],
+    },
     'installable': True,
     'application': True,
     'auto_install': False,
