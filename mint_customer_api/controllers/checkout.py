@@ -11,6 +11,7 @@ Provides:
 These endpoints use API key auth (X-Api-Key header) rather than JWT,
 since checkout can happen for guest customers.
 """
+import hmac
 import json
 import logging
 
@@ -30,7 +31,8 @@ def _verify_api_key():
     expected = request.env['ir.config_parameter'].sudo().get_param(
         'mint_customer_api.checkout_api_key', ''
     )
-    return key and expected and key == expected
+    # Constant-time compare to avoid a timing side-channel (Odoo #675).
+    return bool(key and expected and hmac.compare_digest(key, expected))
 
 
 class MintCheckout(http.Controller):
