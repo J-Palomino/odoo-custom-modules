@@ -77,6 +77,20 @@ class ProjectTask(models.Model):
         string="YouTube Privacy",
         help="Privacy for YouTube posts (ignored for other platforms).",
     )
+    x_social_post_type = fields.Selection(
+        [
+            ("auto", "Auto (Feed / Reel)"),
+            ("reel", "Reel"),
+            ("story", "Story"),
+        ],
+        string="IG/FB Post Type",
+        default="auto",
+        help="How Instagram/Facebook publishes this card. 'Auto' lets "
+        "posts.agency decide (photo -> feed, video -> Reel); 'Reel' forces a "
+        "Reel (video only); 'Story' posts a 24h Story (image or video). Sent as "
+        "media_type (Instagram) / facebook_media_type (Facebook); ignored by "
+        "platforms without Reels/Stories (TikTok, YouTube, X, ...).",
+    )
     x_social_post_url = fields.Char(string="Live Post URL", copy=False, readonly=True)
     x_social_platform_post_id = fields.Char(string="Platform Post ID", copy=False, readonly=True)
     x_social_reconciled_at = fields.Datetime(string="Last Checked", copy=False, readonly=True)
@@ -185,8 +199,16 @@ class ProjectTask(models.Model):
                     _("only platforms connected for this account [%(ok)s]; remove: %(bad)s")
                     % {"ok": ", ".join(sorted(allowed)) or _("none"), "bad": ", ".join(bad)}
                 )
-        if not self._social_media_attachment():
+        att = self._social_media_attachment()
+        if not att:
             missing.append(_("a media attachment (image or video) on the task"))
+        post_type = self.x_social_post_type or "auto"
+        if post_type in ("reel", "story") and not ({"instagram", "facebook"} & set(chosen)):
+            missing.append(
+                _("Instagram or Facebook in the platforms for a Reel/Story")
+            )
+        if post_type == "reel" and att and (att.mimetype or "").startswith("image/"):
+            missing.append(_("a video attachment for a Reel (an image can't be a Reel)"))
         if not self.date_deadline:
             missing.append(_("a scheduled date (Deadline)"))
         elif self.date_deadline <= fields.Datetime.now():
@@ -200,6 +222,29 @@ class ProjectTask(models.Model):
     def _social_platform_list(self):
         raw = (self.x_social_platforms or "").replace(";", ",")
         return [p.strip().lower() for p in raw.split(",") if p.strip()]
+
+    # posts.agency media_type values per IG/FB post type. "auto" is omitted so
+    # the service auto-detects (photo -> feed, video -> Reel) — preserving the
+    # pre-Story behaviour for cards that don't opt in.
+    _SOCIAL_MEDIA_TYPE = {"reel": "REELS", "story": "STORIES"}
+
+    def _social_media_type_params(self, platforms):
+        """Form fields telling posts.agency how to publish on IG/FB.
+
+        Instagram reads ``media_type`` and Facebook ``facebook_media_type``
+        (REELS | STORIES). Returns an empty list for the "auto" post type or
+        when neither IG nor FB is targeted, so other platforms are untouched.
+        """
+        self.ensure_one()
+        mtype = self._SOCIAL_MEDIA_TYPE.get(self.x_social_post_type or "auto")
+        if not mtype:
+            return []
+        params = []
+        if "instagram" in platforms:
+            params.append(("media_type", mtype))
+        if "facebook" in platforms:
+            params.append(("facebook_media_type", mtype))
+        return params
 
     def _social_media_attachment(self):
         self.ensure_one()
@@ -625,6 +670,8 @@ class ProjectTask(models.Model):
             data.append(("platform[]", platform))
         if "youtube" in platforms and self.x_social_youtube_privacy:
             data.append(("youtubePrivacy", self.x_social_youtube_privacy))
+        for key, val in self._social_media_type_params(platforms):
+            data.append((key, val))
 
         if (att.mimetype or "").startswith("image/"):
             if not att.datas:
