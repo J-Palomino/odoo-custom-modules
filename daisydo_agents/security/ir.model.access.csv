@@ -17,3 +17,4 @@ access_daisy_agent_create_for_user_admin,daisy.agent.create.for.user admin,model
 access_daisy_scheduled_job_user,daisy.scheduled.job user,model_daisy_scheduled_job,daisydo_agents.group_daisy_user,1,1,1,0
 access_daisy_scheduled_job_officer,daisy.scheduled.job officer,model_daisy_scheduled_job,daisydo_agents.group_daisy_officer,1,1,1,1
 access_daisy_scheduled_job_admin,daisy.scheduled.job admin,model_daisy_scheduled_job,daisydo_agents.group_daisy_admin,1,1,1,1
+access_daisy_orchestrator_command_admin,daisy.orchestrator.command,model_daisy_orchestrator_command,daisydo_agents.group_daisy_admin,1,1,1,1
