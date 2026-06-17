@@ -277,17 +277,26 @@ class DealSubmissionDutchiePublish(models.Model):
             is_live = True
         try:
             built = self._dutchie_build()
-            discount, lsp = built['discount'], built['lsp']
+            discounts, lsp = built['discounts'], built['lsp']
             warnings.extend(built['warnings'])
             loc_map = json.loads(get_param('dutchie.publish.loc_ids') or '{}')
             loc_ids = loc_map.get(str(lsp)) or []
-            lines.append("Vendor: %s — %s" % (self.vendor_name, discount.get('OnlineName')))
-            lines.append("Dates: %s → %s" % (discount.get('ValidDateFrom'), discount.get('ValidDateTo')))
-            active = [d for d in DAY_KEYS if discount.get(d)]
-            lines.append("Active days: %s" % (', '.join(active) if active else 'EVERY DAY (no day restriction)'))
-            if not active:
-                warnings.append("No day-of-week restriction — Dutchie applies this EVERY day in the date range.")
+            lines.append("Vendor: %s — %s" % (
+                self.vendor_name, discounts[0].get('OnlineName') if discounts else '?'))
+            if len(discounts) > 1:
+                lines.append("Schedule has gap(s) → %d SEPARATE Dutchie discounts (one per contiguous span):"
+                             % len(discounts))
+            for gi, discount in enumerate(discounts, 1):
+                prefix = ("  • span %d: " % gi) if len(discounts) > 1 else "Dates: "
+                active = [d for d in DAY_KEYS if discount.get(d)]
+                lines.append("%s%s → %s  [%s]" % (
+                    prefix, discount.get('ValidDateFrom'), discount.get('ValidDateTo'),
+                    ', '.join(active) if active else 'EVERY DAY (no day restriction)'))
+                if not active:
+                    warnings.append("Span %d has no day-of-week restriction — Dutchie applies it EVERY day in the range." % gi)
             lines.append("LSP %s → %d LocId(s): %s" % (lsp, len(loc_ids), ', '.join(map(str, loc_ids)) or 'NONE'))
+            lines.append("Total Dutchie writes: %d discount(s) × %d loc(s) = %d"
+                         % (len(discounts), len(loc_ids), len(discounts) * len(loc_ids)))
             if not loc_ids:
                 warnings.append("No LocIds configured for LSP %s (dutchie.publish.loc_ids) — nothing will publish." % lsp)
             if self.store_ids:
@@ -298,7 +307,10 @@ class DealSubmissionDutchiePublish(models.Model):
             except (ValueError, TypeError):
                 prior = {}
             if prior:
-                lines.append("Re-publish: %d loc(s) already have a Dutchie id → they UPDATE in place (no duplicates)." % len(prior))
+                prior_count = (sum(len(v) for v in prior.values())
+                               if all(isinstance(v, dict) for v in prior.values())
+                               else len(prior))
+                lines.append("Re-publish: %d prior Dutchie id(s) recorded → matching span/loc UPDATE in place (no duplicates)." % prior_count)
         except Exception as exc:
             blocks.append("Payload build failed — Publish would raise: %s" % exc)
         return mode, is_live, lines, warnings, blocks
@@ -361,6 +373,41 @@ class DealSubmissionDutchiePublish(models.Model):
     @staticmethod
     def _dutchie_date(d, end_of_day=False):
         return f"{d.month}/{d.day}/{d.year}, " + ("11:59:59 PM" if end_of_day else "12:00:00 AM")
+
+    @staticmethod
+    def _partition_faithful(dates):
+        """Partition sorted, unique date objects into 'faithful' groups.
+
+        A group is faithful when collapsing it to [min, max] + the union of its
+        weekdays reproduces EXACTLY the group's dates — no date inside the span
+        that matches one of the group's weekdays is missing from it. Greedy
+        left-to-right: extend the current group while it stays faithful, else
+        start a new one. An unbroken weekly recurrence (every Thu/Fri/Sat for
+        12 weeks) stays ONE group; a real calendar gap forces a split so the
+        published Dutchie discount never fires on un-plotted days between
+        windows. Returns a list of date-object lists (each already sorted)."""
+        groups = []
+        cur = []
+        for d in dates:
+            if not cur:
+                cur = [d]
+                continue
+            allowed = set(cur) | {d}
+            dows = {x.weekday() for x in allowed}
+            probe, ok = cur[0], True
+            while probe <= d:
+                if probe.weekday() in dows and probe not in allowed:
+                    ok = False
+                    break
+                probe += timedelta(days=1)
+            if ok:
+                cur.append(d)
+            else:
+                groups.append(cur)
+                cur = [d]
+        if cur:
+            groups.append(cur)
+        return groups
 
     def _dutchie_build(self):
         """Build {lsp, discount, warnings} for this submission, or raise."""
@@ -447,13 +494,15 @@ class DealSubmissionDutchiePublish(models.Model):
                 cur += timedelta(days=1)
         if not dates:
             raise UserError("No schedule: add Plot Windows (or preferred dates) before converting.")
-        dates = sorted(dates)
-        dows = {d.weekday() for d in dates}  # Mon=0..Sun=6
-        # python weekday Mon=0; DAY_KEYS starts Sunday
-        day_flags = {}
-        for idx, key in enumerate(DAY_KEYS):  # Sunday=0 in Dutchie ordering
-            py = (idx - 1) % 7                # Sunday -> 6, Monday -> 0 ...
-            day_flags[key] = py in dows
+        dates = sorted(set(dates))
+        # Split into FAITHFUL groups so a non-contiguous schedule (e.g. early
+        # July + late September, skipping August) becomes SEPARATE Dutchie
+        # discounts — collapsing every plotted date to a single [min, max]
+        # range + weekday union would also activate the discount on matching
+        # weekdays inside the gap, days that were never scheduled. An unbroken
+        # weekly recurrence stays a SINGLE group. Day-of-week flags are derived
+        # per group below.
+        groups = self._partition_faithful(dates)
 
         # BOGO: Dutchie has no native BOGO type. The live-verified encoding
         # (discounts 379870 "BOGO 50%" / 379191 "BOGO" at Tempe, read raw
@@ -542,59 +591,73 @@ class DealSubmissionDutchiePublish(models.Model):
                  else f"{threshold_min} for ${value:g}" if calc == 6
                  else f"${value:g} Off" if calc == 1
                  else f"${value:g}")
-        discount = {
-            'Id': 0,
-            'ApplicationMethodId': 1,
-            'CanStackAutomatically': False,
-            'Constraints': [],
-            'DiscountDescription': f"lgm | {self.vendor_name} (Odoo sub {self.id})",
-            'ExternalId': f"lgm_{self.id}",
-            'FirstTimeCustomerOnly': 0,
-            'IgnoreNetTax': False,
-            'IsAvailableOnline': True,
-            'IsBundledDiscount': calc == 6,
-            'LocationRestrictions': [],
-            'OnlineName': f"{self.vendor_name} — {label}",
-            'PaymentRestrictions': {'PayByBankSignupIncentive': False},
-            'RedemptionLimit': '',
-            'RequireManagerApproval': False,
-            'RestrictToGroupIds': [],
-            'RestrictToSegmentIds': [],
-            'PlatformTypeRestrictions': [{'PlatformTypeId': 2, 'IsExclusion': False}],
-            'OrderTypeRestrictions': [],
-            'Reward': {
-                'DiscountRewardId': None,
-                'HasThreshold': bool(threshold_min) or calc in (5, 6),
-                'ApplyToOnlyOneItem': apply_to_one,
-                'CalculationMethodId': calc,
-                'DiscountValue': value,
-                'IncludeNonCannabis': False,
-                # 5 = single-item discount, 6 = bundle grouping (see
-                # dutchie_discount_push.py docs). Live BOGO records use 5.
-                'ItemGroupTypeId': 5 if is_bogo else 6,
-                'ManualDefaultApplyTo': 1,
-                'Restrictions': restrictions,
-                'ThresholdMax': None,
-                'ThresholdMin': threshold_min,
-                'ThresholdTypeId': 1 if threshold_min else 2 if calc == 5 else 0,
-            },
-            'SavedWithAdvancedOptions': False,
-            'ValidDateFrom': self._dutchie_date(dates[0]),
-            'ValidDateTo': self._dutchie_date(dates[-1], end_of_day=True),
-            'DiscountCode': '',
-            'MaxRedemptions': 0,
-            'RedemptionLimitCountingMode': 0,
-            **day_flags,
-            'MenuDisplayRank': 0,
-            'DiscountMenuDisplayDetails': {
-                'DiscountId': 0,
-                'MenuDisplayImageUrl': '',
-                'MenuDisplayName': self.vendor_name or '',
-                'MenuDisplayDescription': '',
-                'DiscountMenuDisplayId': None,
-            },
-        }
-        return {'lsp': lsp, 'discount': discount, 'warnings': warnings}
+        # One Dutchie discount per faithful date-group. All non-date fields are
+        # shared; only ValidDate*, the day-of-week flags, and ExternalId vary.
+        # A single group keeps the historic un-suffixed ExternalId (lgm_<id>)
+        # so already-published deals UPDATE in place; multiple groups get
+        # lgm_<id>_w<k> so each gap-separated span is its own Dutchie record.
+        n_groups = len(groups)
+        discounts = []
+        for gidx, grp in enumerate(groups, 1):
+            gdows = {d.weekday() for d in grp}
+            # python weekday Mon=0; DAY_KEYS starts Sunday (idx 0 -> py 6).
+            day_flags = {key: ((i - 1) % 7) in gdows
+                         for i, key in enumerate(DAY_KEYS)}
+            external_id = (f"lgm_{self.id}" if n_groups == 1
+                           else f"lgm_{self.id}_w{gidx}")
+            discounts.append({
+                'Id': 0,
+                'ApplicationMethodId': 1,
+                'CanStackAutomatically': False,
+                'Constraints': [],
+                'DiscountDescription': f"lgm | {self.vendor_name} (Odoo sub {self.id})",
+                'ExternalId': external_id,
+                'FirstTimeCustomerOnly': 0,
+                'IgnoreNetTax': False,
+                'IsAvailableOnline': True,
+                'IsBundledDiscount': calc == 6,
+                'LocationRestrictions': [],
+                'OnlineName': f"{self.vendor_name} — {label}",
+                'PaymentRestrictions': {'PayByBankSignupIncentive': False},
+                'RedemptionLimit': '',
+                'RequireManagerApproval': False,
+                'RestrictToGroupIds': [],
+                'RestrictToSegmentIds': [],
+                'PlatformTypeRestrictions': [{'PlatformTypeId': 2, 'IsExclusion': False}],
+                'OrderTypeRestrictions': [],
+                'Reward': {
+                    'DiscountRewardId': None,
+                    'HasThreshold': bool(threshold_min) or calc in (5, 6),
+                    'ApplyToOnlyOneItem': apply_to_one,
+                    'CalculationMethodId': calc,
+                    'DiscountValue': value,
+                    'IncludeNonCannabis': False,
+                    # 5 = single-item discount, 6 = bundle grouping (see
+                    # dutchie_discount_push.py docs). Live BOGO records use 5.
+                    'ItemGroupTypeId': 5 if is_bogo else 6,
+                    'ManualDefaultApplyTo': 1,
+                    'Restrictions': restrictions,
+                    'ThresholdMax': None,
+                    'ThresholdMin': threshold_min,
+                    'ThresholdTypeId': 1 if threshold_min else 2 if calc == 5 else 0,
+                },
+                'SavedWithAdvancedOptions': False,
+                'ValidDateFrom': self._dutchie_date(grp[0]),
+                'ValidDateTo': self._dutchie_date(grp[-1], end_of_day=True),
+                'DiscountCode': '',
+                'MaxRedemptions': 0,
+                'RedemptionLimitCountingMode': 0,
+                **day_flags,
+                'MenuDisplayRank': 0,
+                'DiscountMenuDisplayDetails': {
+                    'DiscountId': 0,
+                    'MenuDisplayImageUrl': '',
+                    'MenuDisplayName': self.vendor_name or '',
+                    'MenuDisplayDescription': '',
+                    'DiscountMenuDisplayId': None,
+                },
+            })
+        return {'lsp': lsp, 'discounts': discounts, 'warnings': warnings}
 
     # ------------------------------------------------------------------
     # Dispatch
@@ -634,20 +697,27 @@ class DealSubmissionDutchiePublish(models.Model):
         if mode == 'off':
             return
         built = self._dutchie_build()
-        lsp, discount, warnings = built['lsp'], built['discount'], built['warnings']
+        lsp, discounts, warnings = built['lsp'], built['discounts'], built['warnings']
         loc_map = json.loads(get_param('dutchie.publish.loc_ids') or '{}')
         loc_ids = loc_map.get(str(lsp)) or []
 
         if mode == 'dry_run':
+            spans = "\n".join(
+                f"  span {i}: {d['ValidDateFrom']} → {d['ValidDateTo']} "
+                f"[{', '.join(k for k in DAY_KEYS if d.get(k)) or 'EVERY DAY'}] "
+                f"ExternalId={d['ExternalId']}"
+                for i, d in enumerate(discounts, 1))
             body = (
                 f"[Dutchie publish — DRY RUN]\n"
-                f"LSP {lsp} | target LocIds {loc_ids or '(none configured)'}\n"
+                f"LSP {lsp} | {len(discounts)} discount(s) × LocIds {loc_ids or '(none configured)'}\n"
+                f"{spans}\n"
                 f"Warnings: {'; '.join(warnings) or 'none'}\n"
-                f"Payload:\n{json.dumps(discount, indent=1)}"
+                f"Payload (span 1):\n{json.dumps(discounts[0], indent=1) if discounts else '(none)'}"
             )
             self.message_post(body=body, message_type='comment')
-            self._deal_audit_log('publish_dry_run', lsp, None, discount,
-                                 target_loc_ids=loc_ids)
+            for d in discounts:
+                self._deal_audit_log('publish_dry_run', lsp, None, d,
+                                     target_loc_ids=loc_ids)
             return
 
         # live
@@ -658,54 +728,65 @@ class DealSubmissionDutchiePublish(models.Model):
             raise UserError("dutchie.publish.api_key is not configured for live mode.")
         if not loc_ids:
             raise UserError(f"dutchie.publish.loc_ids has no LocIds for LSP {lsp}.")
-        # Resolve update-vs-create PER LocId. Each loc has its OWN Dutchie
-        # discount, so reuse the id recorded from the last successful publish
-        # — a re-publish (or a re-click of the manual button) then UPDATES that
-        # discount in place instead of creating a duplicate. Without this the
-        # payload's hardcoded Id=0 makes every publish a fresh create.
+        # Resolve update-vs-create PER (span, LocId). Each contiguous span is a
+        # distinct Dutchie discount keyed by its ExternalId; each loc within a
+        # span has its OWN Dutchie id. Re-publish UPDATES every (span, loc) in
+        # place instead of duplicating. Recorded map is
+        # {externalId: {locId: dutchieId}}; legacy single-discount deals stored
+        # a flat {locId: dutchieId} — migrate those under the lone span's
+        # ExternalId (lgm_<id>) so they keep updating in place.
         try:
             published = json.loads(self.dutchie_publish_loc_ids or '{}')
         except (ValueError, TypeError):
             published = {}
-        updated = dict(published)
-        # Per-LocId isolation: one store failing must not hide which stores
-        # DID publish — accumulate every outcome and report them all.
+        if published and not all(isinstance(v, dict) for v in published.values()):
+            published = {f"lgm_{self.id}": published}
+        updated = {k: dict(v) for k, v in published.items()}
+        # Per-(span, loc) isolation: one store failing must not hide which
+        # stores DID publish — accumulate every outcome and report them all.
         results, failures = [], 0
-        for loc_id in loc_ids:
-            existing = int(published.get(str(loc_id)) or 0)
-            discount['Id'] = existing
-            if isinstance(discount.get('DiscountMenuDisplayDetails'), dict):
-                discount['DiscountMenuDisplayDetails']['DiscountId'] = existing
-            payload = json.dumps({'locId': loc_id, 'lspId': lsp, 'discount': discount}).encode()
-            req = urllib.request.Request(
-                f"{url}/api/admin/discounts", data=payload,
-                headers={'Content-Type': 'application/json', 'x-api-key': api_key},
-                method='POST')
-            try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    raw = resp.read().decode(errors='replace')
-                    # Record the returned Dutchie id so the NEXT publish updates
-                    # this loc's discount in place (idempotent, no duplicates).
-                    try:
-                        rid = json.loads(raw).get('discount_id')
-                        if isinstance(rid, int) and not isinstance(rid, bool) and rid > 0:
-                            updated[str(loc_id)] = rid
-                    except (ValueError, TypeError):
-                        pass
-                    results.append(f"LocId {loc_id}: HTTP {resp.status} {raw[:200]}")
-                    self._deal_audit_log('publish', lsp, loc_id, discount,
-                                         http_status=resp.status,
-                                         response=raw[:200])
-            except Exception as exc:
-                failures += 1
-                results.append(f"LocId {loc_id}: FAILED — {exc}")
-                self._deal_audit_log('publish_failed', lsp, loc_id, discount,
-                                     error=str(exc))
-        # Persist the loc->id map for idempotent re-publish.
+        multi = len(discounts) > 1
+        for discount in discounts:
+            ext = discount['ExternalId']
+            span_prior = published.get(ext, {})
+            span_updated = updated.setdefault(ext, {})
+            for loc_id in loc_ids:
+                existing = int(span_prior.get(str(loc_id)) or 0)
+                discount['Id'] = existing
+                if isinstance(discount.get('DiscountMenuDisplayDetails'), dict):
+                    discount['DiscountMenuDisplayDetails']['DiscountId'] = existing
+                payload = json.dumps({'locId': loc_id, 'lspId': lsp, 'discount': discount}).encode()
+                req = urllib.request.Request(
+                    f"{url}/api/admin/discounts", data=payload,
+                    headers={'Content-Type': 'application/json', 'x-api-key': api_key},
+                    method='POST')
+                tag = (f"{ext} LocId {loc_id}" if multi else f"LocId {loc_id}")
+                try:
+                    with urllib.request.urlopen(req, timeout=60) as resp:
+                        raw = resp.read().decode(errors='replace')
+                        # Record the returned Dutchie id so the NEXT publish
+                        # updates this (span, loc) in place (no duplicates).
+                        try:
+                            rid = json.loads(raw).get('discount_id')
+                            if isinstance(rid, int) and not isinstance(rid, bool) and rid > 0:
+                                span_updated[str(loc_id)] = rid
+                        except (ValueError, TypeError):
+                            pass
+                        results.append(f"{tag}: HTTP {resp.status} {raw[:160]}")
+                        self._deal_audit_log('publish', lsp, loc_id, discount,
+                                             http_status=resp.status,
+                                             response=raw[:160])
+                except Exception as exc:
+                    failures += 1
+                    results.append(f"{tag}: FAILED — {exc}")
+                    self._deal_audit_log('publish_failed', lsp, loc_id, discount,
+                                         error=str(exc))
+        # Persist the {externalId: {locId: id}} map for idempotent re-publish.
         if updated != published:
             self.sudo().write({'dutchie_publish_loc_ids': json.dumps(updated)})
         self.message_post(
             body=f"[Dutchie publish — LIVE{' — PARTIAL FAILURE' if failures else ''}]\n"
+                 + (f"{len(discounts)} span(s) × {len(loc_ids)} loc(s):\n" if multi else "")
                  + "\n".join(results)
                  + ("\nWarnings: " + "; ".join(warnings) if warnings else ''),
             message_type='comment')
