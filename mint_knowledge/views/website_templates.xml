@@ -112,6 +112,19 @@
                     </div>
                     <h1 class="mb-4" t-esc="page.name"/>
                     <div t-out="page.content"/>
+
+                    <t t-if="backlinks">
+                        <hr class="my-4"/>
+                        <h2 class="h6 text-muted">Referenced by</h2>
+                        <ul class="list-unstyled ms-2">
+                            <t t-foreach="backlinks" t-as="bl">
+                                <li class="mb-1">
+                                    <a t-attf-href="/knowledge/page/{{ bl.id }}" t-esc="bl.name"/>
+                                    <span class="text-muted small"> — <t t-esc="bl.category_id.complete_name"/></span>
+                                </li>
+                            </t>
+                        </ul>
+                    </t>
                 </div>
             </div>
         </t>

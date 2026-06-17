@@ -77,6 +77,23 @@ class KnowledgeController(http.Controller):
             "mint_knowledge.kb_section", dict(self._common(), section=section)
         )
 
+    def _backlinks(self, page):
+        """Other pages whose content links to this page (by id or slug)."""
+        Page = request.env["mint.knowledge.page"].sudo()
+        terms = ['/knowledge/page/%s"' % page.id]
+        if page.slug:
+            terms.append('/knowledge/p/%s"' % page.slug)
+        content_dom = [("content", "ilike", t) for t in terms]
+        if len(content_dom) > 1:
+            content_dom = ["|"] * (len(content_dom) - 1) + content_dom
+        return Page.search(["&", ("id", "!=", page.id)] + content_dom, order="name")
+
+    def _render_page(self, page):
+        return request.render(
+            "mint_knowledge.kb_page",
+            dict(self._common(), page=page, backlinks=self._backlinks(page)),
+        )
+
     @http.route(
         "/knowledge/page/<int:page_id>",
         type="http",
@@ -89,9 +106,23 @@ class KnowledgeController(http.Controller):
         page = request.env["mint.knowledge.page"].sudo().browse(page_id)
         if not page.exists():
             raise NotFound()
-        return request.render(
-            "mint_knowledge.kb_page", dict(self._common(), page=page)
+        return self._render_page(page)
+
+    @http.route(
+        "/knowledge/p/<string:slug>",
+        type="http",
+        auth="user",
+        website=True,
+        sitemap=False,
+    )
+    def kb_page_slug(self, slug, **kw):
+        self._require_employee()
+        page = (
+            request.env["mint.knowledge.page"].sudo().search([("slug", "=", slug)], limit=1)
         )
+        if not page:
+            raise NotFound()
+        return self._render_page(page)
 
     # ── Backward-compat: old IT-scoped URLs ──────────────────────────────
     @http.route("/it-knowledge", type="http", auth="user", website=True, sitemap=False)
