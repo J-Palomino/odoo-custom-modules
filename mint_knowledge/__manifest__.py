@@ -1,6 +1,6 @@
 {
     'name': 'Mint Knowledge Base',
-    'version': '19.0.2.0.0',
+    'version': '19.0.3.0.0',
     'category': 'Productivity/Knowledge',
     'summary': 'Lightweight internal knowledge base — categorized rich-text '
                'wiki pages with reader / manager access control',

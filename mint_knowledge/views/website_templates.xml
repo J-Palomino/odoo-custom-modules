@@ -6,32 +6,61 @@
             <div id="wrap" class="oe_structure">
                 <div class="container my-5">
                     <h1 class="mb-4">IT Knowledge Base</h1>
-                    <t t-if="not categories">
-                        <p class="text-muted">No knowledge pages yet.</p>
-                    </t>
-                    <t t-foreach="categories" t-as="cat">
-                        <section class="mb-4">
-                            <h2 t-esc="cat.name" class="h4 border-bottom pb-2"/>
-                            <ul class="list-unstyled ms-2">
-                                <t t-foreach="cat.page_ids" t-as="pg">
-                                    <li class="mb-1">
-                                        <a t-attf-href="/it-knowledge/page/{{ pg.id }}" t-esc="pg.name"/>
-                                    </li>
-                                </t>
-                            </ul>
-                            <t t-foreach="cat.child_ids" t-as="sub">
-                                <div class="ms-3">
-                                    <h3 t-esc="sub.name" class="h6 text-muted"/>
-                                    <ul class="list-unstyled ms-2">
-                                        <t t-foreach="sub.page_ids" t-as="pg">
-                                            <li class="mb-1">
-                                                <a t-attf-href="/it-knowledge/page/{{ pg.id }}" t-esc="pg.name"/>
-                                            </li>
-                                        </t>
-                                    </ul>
-                                </div>
+
+                    <form action="/it-knowledge" method="get" class="mb-4">
+                        <div class="input-group" style="max-width: 480px;">
+                            <input type="text" name="search" t-att-value="search"
+                                   class="form-control" placeholder="Search the knowledge base..."/>
+                            <button type="submit" class="btn btn-primary">Search</button>
+                        </div>
+                    </form>
+
+                    <t t-if="search">
+                        <p class="text-muted">
+                            <a href="/it-knowledge">&#8592; All categories</a>
+                        </p>
+                        <h2 class="h5">Results for "<t t-esc="search"/>"</h2>
+                        <t t-if="not results">
+                            <p class="text-muted">No pages matched your search.</p>
+                        </t>
+                        <ul class="list-unstyled ms-2">
+                            <t t-foreach="results" t-as="pg">
+                                <li class="mb-1">
+                                    <a t-attf-href="/it-knowledge/page/{{ pg.id }}" t-esc="pg.name"/>
+                                    <span class="text-muted small"> — <t t-esc="pg.category_id.complete_name"/></span>
+                                </li>
                             </t>
-                        </section>
+                        </ul>
+                    </t>
+
+                    <t t-else="">
+                        <t t-if="not categories">
+                            <p class="text-muted">No knowledge pages yet.</p>
+                        </t>
+                        <t t-foreach="categories" t-as="cat">
+                            <section class="mb-4">
+                                <h2 t-esc="cat.name" class="h4 border-bottom pb-2"/>
+                                <ul class="list-unstyled ms-2">
+                                    <t t-foreach="cat.page_ids" t-as="pg">
+                                        <li class="mb-1">
+                                            <a t-attf-href="/it-knowledge/page/{{ pg.id }}" t-esc="pg.name"/>
+                                        </li>
+                                    </t>
+                                </ul>
+                                <t t-foreach="cat.child_ids" t-as="sub">
+                                    <div class="ms-3">
+                                        <h3 t-esc="sub.name" class="h6 text-muted"/>
+                                        <ul class="list-unstyled ms-2">
+                                            <t t-foreach="sub.page_ids" t-as="pg">
+                                                <li class="mb-1">
+                                                    <a t-attf-href="/it-knowledge/page/{{ pg.id }}" t-esc="pg.name"/>
+                                                </li>
+                                            </t>
+                                        </ul>
+                                    </div>
+                                </t>
+                            </section>
+                        </t>
                     </t>
                 </div>
             </div>
@@ -42,9 +71,17 @@
         <t t-call="website.layout">
             <div id="wrap" class="oe_structure">
                 <div class="container my-5">
-                    <p>
-                        <a href="/it-knowledge">&#8592; Back to Knowledge Base</a>
-                    </p>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <p>
+                            <a href="/it-knowledge">&#8592; Back to Knowledge Base</a>
+                        </p>
+                        <t t-if="is_manager and edit_action_id">
+                            <a t-attf-href="/odoo/action-{{ edit_action_id }}/{{ page.id }}"
+                               class="btn btn-sm btn-outline-primary" target="_blank">
+                                <i class="fa fa-pencil"/> Edit
+                            </a>
+                        </t>
+                    </div>
                     <p class="text-muted small mb-1" t-esc="page.category_id.complete_name"/>
                     <h1 class="mb-4" t-esc="page.name"/>
                     <div t-out="page.content"/>
