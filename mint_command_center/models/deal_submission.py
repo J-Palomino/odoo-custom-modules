@@ -884,9 +884,16 @@ class DealSubmission(models.Model):
 
     def action_expire(self):
         """Sign off a deal after final review (or end a scheduled one early)."""
-        self.filtered(lambda s: s.state in ('scheduled', 'final_review')).write({
-            'state': 'expired',
-        })
+        to_expire = self.filtered(lambda s: s.state in ('scheduled', 'final_review'))
+        to_expire.write({'state': 'expired'})
+        # Pull the discount down from Dutchie too — expiring in Odoo alone left
+        # it running in Dutchie until its own ValidDateTo. Best-effort per
+        # submission so one failure can't block the others' state change.
+        for sub in to_expire:
+            try:
+                sub._dutchie_deactivate()
+            except Exception as e:  # noqa: BLE001 — never block expiry on a Dutchie hiccup
+                _logger.warning('Expire: Dutchie deactivate failed for submission %s: %s', sub.id, e)
 
     @api.model
     def _cron_advance_lifecycle(self):

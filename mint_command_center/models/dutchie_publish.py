@@ -790,3 +790,99 @@ class DealSubmissionDutchiePublish(models.Model):
                  + "\n".join(results)
                  + ("\nWarnings: " + "; ".join(warnings) if warnings else ''),
             message_type='comment')
+
+    def _dutchie_deactivate(self):
+        """Mark this submission's published Dutchie discounts deleted (IsDeleted=True).
+
+        The inverse of _dutchie_publish_after_convert: expiring or revoking a
+        deal in Odoo must also stop its discount in Dutchie, otherwise Dutchie
+        keeps applying it until its own ValidDateTo — the publish was
+        one-directional, which is why an expired deal stayed live in Dutchie.
+
+        Only discounts we actually published are touched: the per-(span, loc)
+        Dutchie ids recorded in dutchie_publish_loc_ids ({externalId:{locId:id}}).
+        Nothing is created — a (span, loc) with no recorded id is skipped. We
+        re-POST the SAME full payload as publish (a bare {Id, IsDeleted} body
+        NREs in Dutchie's update-discount-item) with IsDeleted=True. Gated by the
+        same dutchie.publish.mode param (off → no-op; dry_run → chatter only;
+        live → POST). The recorded id map is left intact so a later re-publish
+        UPDATES the same Dutchie record in place (reactivating it).
+        """
+        self.ensure_one()
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        mode = (get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
+        if mode == 'off':
+            return
+        try:
+            published = json.loads(self.dutchie_publish_loc_ids or '{}')
+        except (ValueError, TypeError):
+            published = {}
+        # Legacy flat {locId: id} maps live under the lone span's ExternalId.
+        if published and not all(isinstance(v, dict) for v in published.values()):
+            published = {f"lgm_{self.id}": published}
+        if not any(isinstance(v, dict) and v for v in published.values()):
+            return  # never published live → nothing in Dutchie to pull
+
+        # Rebuild the full payload so update-discount-item gets a valid Discount
+        # object. Index built spans by ExternalId; fall back to the first span as
+        # a template for any recorded ExternalId the rebuild no longer produces
+        # (e.g. the deal's windows changed after publish).
+        built = self._dutchie_build()
+        lsp, discounts = built['lsp'], built['discounts']
+        by_ext = {d['ExternalId']: d for d in discounts}
+        template = discounts[0] if discounts else None
+
+        url = api_key = None
+        if mode == 'live':
+            url = (get_param('dutchie.publish.url')
+                   or 'https://mintinvsvc-production-6aa5.up.railway.app').rstrip('/')
+            api_key = get_param('dutchie.publish.api_key')
+            if not api_key:
+                raise UserError("dutchie.publish.api_key is not configured for live mode.")
+
+        results, failures = [], 0
+        for ext, loc_map in published.items():
+            if not isinstance(loc_map, dict):
+                continue
+            discount = dict(by_ext.get(ext) or template or {})
+            if not discount:
+                continue
+            discount['ExternalId'] = ext
+            discount['IsDeleted'] = True
+            for loc_id, dutchie_id in loc_map.items():
+                existing = int(dutchie_id or 0)
+                if not existing:
+                    continue  # nothing live for this (span, loc)
+                discount['Id'] = existing
+                if isinstance(discount.get('DiscountMenuDisplayDetails'), dict):
+                    discount['DiscountMenuDisplayDetails'] = dict(discount['DiscountMenuDisplayDetails'])
+                    discount['DiscountMenuDisplayDetails']['DiscountId'] = existing
+                tag = f"{ext} LocId {loc_id}"
+                if mode == 'dry_run':
+                    results.append(f"{tag}: [dry-run] would delete Dutchie id {existing}")
+                    self._deal_audit_log('deactivate_dry_run', lsp, int(loc_id), discount)
+                    continue
+                payload = json.dumps({'locId': int(loc_id), 'lspId': lsp, 'discount': discount}).encode()
+                req = urllib.request.Request(
+                    f"{url}/api/admin/discounts", data=payload,
+                    headers={'Content-Type': 'application/json', 'x-api-key': api_key},
+                    method='POST')
+                try:
+                    with urllib.request.urlopen(req, timeout=60) as resp:
+                        raw = resp.read().decode(errors='replace')
+                        ok = 200 <= resp.status < 300
+                        failures += 0 if ok else 1
+                        results.append(f"{tag}: HTTP {resp.status} {raw[:160]}")
+                        self._deal_audit_log('deactivate' if ok else 'deactivate_failed',
+                                             lsp, int(loc_id), discount,
+                                             http_status=resp.status, response=raw[:160])
+                except Exception as exc:
+                    failures += 1
+                    results.append(f"{tag}: FAILED — {exc}")
+                    self._deal_audit_log('deactivate_failed', lsp, int(loc_id), discount,
+                                         error=str(exc))
+        if results:
+            verb = 'DRY RUN' if mode == 'dry_run' else ('LIVE' + (' — PARTIAL FAILURE' if failures else ''))
+            self.message_post(
+                body=f"[Dutchie deactivate — {verb}]\n" + "\n".join(results),
+                message_type='comment')

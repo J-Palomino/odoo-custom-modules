@@ -489,6 +489,7 @@ class PtlDeal(models.Model):
         ])
         if expired:
             expired.write({'state': 'expired'})
+            expired._deactivate_in_dutchie_on_expire()
         return len(expired)
 
     # ─── Multi-window plotting (drives the submission-form picker) ───────
@@ -1052,7 +1053,37 @@ class PtlDeal(models.Model):
         return mode, is_live, lines, warnings, blocks
 
     def action_expire(self):
-        self.filtered(lambda d: d.state in ('approved', 'live')).write({'state': 'expired'})
+        to_expire = self.filtered(lambda d: d.state in ('approved', 'live'))
+        to_expire.write({'state': 'expired'})
+        to_expire._deactivate_in_dutchie_on_expire()
+
+    def _deactivate_in_dutchie_on_expire(self):
+        """Pull each deal's discount down from Dutchie (IsDeleted=True).
+
+        Mirror of action_publish's Dutchie push: expiring a deal in Odoo must
+        also stop the discount in Dutchie, otherwise it keeps running at the
+        register/online until its own ValidDateTo. Covers BOTH publish paths:
+          • the day/discount path (mint.dutchie_discount_push.mode), via the
+            linked mint.discount and its per-store push log, and
+          • the submission path (dutchie.publish.mode — the one live in prod),
+            via each linked submission's recorded Dutchie ids.
+        No-op for deals never pushed live; each side is gated by its own mode
+        param and wrapped so one failure can't block the rest.
+        """
+        if not self:
+            return
+        discounts = self.mapped('discount_id')
+        if discounts:
+            try:
+                self.env['mint.ptl.day'].sudo()._deactivate_discounts_in_dutchie(discounts)
+            except Exception as e:  # noqa: BLE001
+                _logger.warning('Expire: day-path Dutchie deactivate failed: %s', e)
+        subs = self.env['mint.deal.submission'].sudo().search([('deal_id', 'in', self.ids)])
+        for sub in subs:
+            try:
+                sub._dutchie_deactivate()
+            except Exception as e:  # noqa: BLE001
+                _logger.warning('Expire: submission Dutchie deactivate failed for %s: %s', sub.id, e)
 
     def action_reset_to_pending(self):
         self.filtered(lambda d: d.state in ('rejected', 'expired')).write({
