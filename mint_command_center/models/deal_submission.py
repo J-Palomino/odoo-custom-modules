@@ -16,7 +16,7 @@ class DealSubmission(models.Model):
     _inherit = [
         'mail.thread', 'mail.activity.mixin',
         'mint.discount.core.mixin', 'mint.bogo.spec.mixin',
-        'mint.vendor.funding.mixin',
+        'mint.vendor.funding.mixin', 'mint.weight.parsed.mixin',
     ]
     _order = 'create_date desc'
 
@@ -513,8 +513,26 @@ class DealSubmission(models.Model):
         self.ensure_one()
         return self.product_category_ids | self.product_category_id
 
+    # --- Parsed weight (mint.weight.parsed.mixin) -----------------------
+    # The submission auto-derives a weight/unit from its own title and the
+    # vendor's raw product list, the same way mint.ptl.deal and the brand
+    # calendar entry do. The weight then acts as a pre-search filter on the
+    # Specific Products picker below (see _compute_available_product_ids).
+
+    def _weight_source(self):
+        """Parse weight from the deal name first, then the vendor's raw
+        product list ("Products (raw, with weights)"). Manually editable."""
+        self.ensure_one()
+        return (self.name, self.product_list)
+
+    @api.depends('name', 'product_list')
+    def _compute_weight(self):
+        # Thin @api.depends wrapper around the mixin's source-agnostic body.
+        return super()._compute_weight()
+
     @api.depends('brand_id', 'brand_ids', 'product_category_id',
-                 'product_category_ids', 'market_id', 'store_ids')
+                 'product_category_ids', 'market_id', 'store_ids',
+                 'weight_value', 'weight_unit')
     def _compute_available_product_ids(self):
         """Products matching every facet, for the Specific Products domain.
 
@@ -525,7 +543,18 @@ class DealSubmission(models.Model):
         market. Store scope = requested store_ids when set, else the
         market's stores; no stores resolved -> stock anywhere. sudo for the
         same reason as _compute_available_category_ids.
+
+        Weight pre-filter (#weight): when Weight + Unit are set on the
+        submission, candidates are narrowed to products whose name parses to
+        the SAME weight (e.g. 3.5g → only 3.5g products), then the candidate
+        set is ordered by parsed weight (unit, value) so sizes group and
+        ascend. Blank Weight keeps every in-stock candidate, weight-sorted.
+        Products with no parseable weight are dropped only when a weight
+        filter is active; otherwise they sort last.
         """
+        # Lazy import: brand_calendar loads AFTER this module in models/
+        # __init__, so a top-level import would fail at load time.
+        from .brand_calendar import _parse_weight
         Variant = self.env['product.product'].sudo()
         for sub in self:
             brands = sub.brand_ids | sub.brand_id
@@ -550,9 +579,20 @@ class DealSubmission(models.Model):
             if uuids:
                 domain.append(('x_dutchie_location_id', 'in', uuids))
             variants = Variant.search(domain)
-            sub.available_product_ids = [
-                (6, 0, variants.product_tmpl_id.ids)
-            ]
+            tmpls = variants.product_tmpl_id
+            # Parse each candidate's weight once: {tmpl_id: (value, unit)}.
+            wmap = {t.id: _parse_weight(t.name) for t in tmpls}
+            want_val, want_unit = sub.weight_value, sub.weight_unit
+            if want_unit and want_val:
+                tmpls = tmpls.filtered(
+                    lambda t: wmap[t.id][1] == want_unit
+                    and abs(wmap[t.id][0] - want_val) < 1e-4
+                )
+            # Sort by (unit, value); unparsed weights (unit False) sort last.
+            ordered = tmpls.sorted(
+                key=lambda t: (wmap[t.id][1] or '￿', wmap[t.id][0])
+            )
+            sub.available_product_ids = [(6, 0, ordered.ids)]
 
     def _resolve_publish_match_count(self):
         """Count the IN-STOCK products this deal's restriction set actually
