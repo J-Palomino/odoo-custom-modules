@@ -329,6 +329,64 @@ class MintCustomerAuth(http.Controller):
         if not api_key or not self._verify_fe_api_key(api_key):
             return error_response('Unauthorized', 401)
         return None
+    @http.route('/api/v1/auth/apple', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def apple_auth(self, **kw):
+        """Sign-in with Apple. Called server-to-server by the Astro callback
+        after it exchanges the OAuth code with Apple and verifies the id_token
+        against Apple's JWKS. Mirrors google_auth: trust relies on X-Api-Key
+        (only the frontend server holds it). Find-or-create is keyed on email
+        exactly like Google; Apple's private-relay email is stable per Services
+        ID, so repeat logins resolve to the same account. Controller-only — no
+        model change, so deploys with a plain restart (no -u)."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        api_key = request.httprequest.headers.get('X-Api-Key', '')
+        if not api_key or not self._verify_fe_api_key(api_key):
+            return error_response('Unauthorized', 401)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        email = data.get('email', '').strip().lower()
+        name = (data.get('name') or '').strip() or (email.split('@')[0] if email else '')
+        apple_sub = (data.get('apple_sub') or '').strip()
+
+        if not email or not apple_sub:
+            return error_response('email and apple_sub are required')
+
+        # Find existing web customer (prefixed or legacy). share=True ensures
+        # we never return an internal employee account for a matching email.
+        user = request.env['res.users'].sudo().search(
+            [
+                ('login', 'in', [email, _web_login(email)]),
+                ('share', '=', True),
+                ('active', '=', True),
+            ],
+            limit=1,
+        )
+
+        if not user:
+            try:
+                user = self._create_web_user(email=email, name=name)
+            except Exception as e:
+                _logger.exception('Apple OAuth account creation failed: %s', e)
+                return error_response('Could not create account', 500)
+
+        token = user._generate_jwt()
+        return json_response({
+            'token': token,
+            'user': {
+                'id': user.id,
+                'name': user.partner_id.name,
+                'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
+                'phone': user.partner_id.phone or '',
+                'partner_id': user.partner_id.id,
+            },
+        })
 
     def _verify_fe_api_key(self, key):
         """Verify X-Api-Key against Odoo's res.users.apikeys store."""
