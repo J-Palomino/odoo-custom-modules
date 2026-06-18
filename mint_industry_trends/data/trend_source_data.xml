@@ -10,9 +10,9 @@
         <field name="name">Google Trends — Cannabis Terms</field>
         <field name="signal_type">search_trend</field>
         <field name="apify_actor">apify/google-trends-scraper</field>
-        <field name="apify_input">{"geo": "US", "timeRange": "today 3-m", "isPublic": false}</field>
+        <field name="apify_input">{"geo": "US", "timeRange": "today 3-m", "isPublic": false, "proxyConfiguration": {"useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"]}}</field>
         <field name="active" eval="True"/>
-        <field name="notes">VERIFIED 2026-06-02. Collector runs one actor call per linked term (isMultiple=false) so each 0-100 index is self-normalized and comparable day-to-day. PAY_PER_EVENT (~cents/run).</field>
+        <field name="notes">VERIFIED 2026-06-02. Collector runs one actor call per linked term (isMultiple=false) so each 0-100 index is self-normalized. Residential proxies + low concurrency (APIFY_CONCURRENCY=2) avoid Google rate-limiting the Trends actor. PAY_PER_EVENT + residential proxy GB.</field>
     </record>
 
     <record id="source_reddit" model="mint.trend.source">
