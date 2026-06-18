@@ -245,12 +245,13 @@ class DealSubmissionDutchiePublish(models.Model):
         confirm."""
         self.ensure_one()
         from .dutchie_publish_review import build_review_html
-        mode, is_live, lines, warnings, blocks = self._dutchie_publish_review_data()
+        mode, is_live, lines, warnings, blocks, requires_ack = self._dutchie_publish_review_data()
         wiz = self.env['mint.dutchie.publish.review'].create({
             'res_model': self._name,
             'res_id': self.id,
             'mode': mode,
             'is_live': is_live,
+            'requires_ack': requires_ack,
             'review_html': build_review_html(mode, is_live, lines, warnings, blocks),
         })
         return {
@@ -263,8 +264,11 @@ class DealSubmissionDutchiePublish(models.Model):
         }
 
     def _dutchie_publish_review_data(self):
-        """Compute (mode, is_live, lines, warnings, blocks) for the submission
-        Dutchie publish WITHOUT writing anything (used by the review wizard)."""
+        """Compute (mode, is_live, lines, warnings, blocks, requires_ack) for
+        the submission Dutchie publish WITHOUT writing anything (used by the
+        review wizard). ``requires_ack`` is True when this deal overlaps an
+        active deal's Dutchie scope — the wizard then forces an explicit
+        acknowledgement before it will publish."""
         self.ensure_one()
         get_param = self.env['ir.config_parameter'].sudo().get_param
         mode = (get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
@@ -313,7 +317,15 @@ class DealSubmissionDutchiePublish(models.Model):
                 lines.append("Re-publish: %d prior Dutchie id(s) recorded → matching span/loc UPDATE in place (no duplicates)." % prior_count)
         except Exception as exc:
             blocks.append("Payload build failed — Publish would raise: %s" % exc)
-        return mode, is_live, lines, warnings, blocks
+        requires_ack = False
+        try:
+            overlaps = self._dutchie_overlap_alerts()
+            if overlaps:
+                warnings.extend(overlaps)
+                requires_ack = True
+        except Exception as exc:  # the guard must never break the review itself
+            _logger.warning("Overlap guard failed for submission %s: %s", self.id, exc)
+        return mode, is_live, lines, warnings, blocks, requires_ack
 
     # ------------------------------------------------------------------
     # Payload assembly
@@ -328,13 +340,86 @@ class DealSubmissionDutchiePublish(models.Model):
         return None
 
     def _dutchie_brands(self):
-        """Brand records this deal targets: brand_id, else alias resolution
-        of the vendor string (#3 — may return several for multi-brand)."""
+        """Brand records this deal targets — ID-ONLY: the explicitly chosen
+        ``brand_id``/``brand_ids``. Vendor-name/alias resolution is purged;
+        a deal with no brand selected resolves to no brand (and must rely on
+        product/category ids, or it hard-blocks downstream)."""
         self.ensure_one()
-        brands = (self.brand_ids | self.brand_id) if self.brand_id else self.brand_ids
-        if brands:
-            return brands
-        return self.env['mint.brand'].resolve_vendor_string(self.vendor_name)
+        return (self.brand_ids | self.brand_id) if self.brand_id else self.brand_ids
+
+    def _dutchie_scope_ids(self, lsp):
+        """Resolve this deal's Dutchie targeting to
+        ``(brand_ids, category_ids, product_ids)`` as frozensets, mirroring
+        ``_dutchie_build``'s Brand/Category/Product restriction resolution.
+        Read-only and schedule-free — used by the overlap guard to compare two
+        deals' product scope without building a full payload."""
+        self.ensure_one()
+        brand_ids = set()
+        for b in self._dutchie_brands():
+            bid = b.dutchie_brand_id_for_lsp(lsp)
+            if bid and str(bid).isdigit():
+                brand_ids.add(int(bid))
+        prod_ids = {int(p.dutchie_product_id) for p in self.product_ids
+                    if str(p.dutchie_product_id or '').strip().isdigit()}
+        # ID-ONLY: categories come from structured picks (real product.category
+        # records carrying a dutchie_category_id). Free-text product_category
+        # name matching is purged — a free-text-only deal contributes no
+        # category here (and hard-blocks at publish time).
+        cat_ids = set()
+        picked = self._all_picked_categories()
+        if picked:
+            cat_ids = {int(c.dutchie_category_id) for c in picked
+                       if str(c.dutchie_category_id or '').strip().isdigit()}
+        return frozenset(brand_ids), frozenset(cat_ids), frozenset(prod_ids)
+
+    def _dutchie_overlap_alerts(self):
+        """Detect OTHER active Dutchie publications in the same market whose
+        product scope overlaps this deal's. A publish here would mint a SECOND
+        Dutchie discount competing on the same items (the publisher de-dupes
+        only WITHIN a submission's own ExternalId, never across deals). Same
+        brand AND (shared category, shared product, or either side targeting
+        the whole brand) = overlap. Returns human-readable alert strings."""
+        self.ensure_one()
+        lsp = self._dutchie_lsp()
+        if not lsp or not self.market_id:
+            return []
+        my_brands, my_cats, my_prods = self._dutchie_scope_ids(lsp)
+        if not my_brands:
+            return []  # no brand anchor → can't judge overlap reliably
+        candidates = self.env['mint.deal.submission'].search([
+            ('id', '!=', self.id),
+            ('market_id', '=', self.market_id.id),
+            ('state', 'not in', ('expired', 'rejected', 'new', 'under_review')),
+            ('dutchie_publish_loc_ids', '!=', False),
+        ])
+        alerts = []
+        for other in candidates:
+            try:
+                o_brands, o_cats, o_prods = other._dutchie_scope_ids(lsp)
+            except Exception:  # a malformed sibling must never block this review
+                continue
+            if not (my_brands & o_brands):
+                continue  # different brand → no overlap
+            my_broad = not my_cats and not my_prods
+            o_broad = not o_cats and not o_prods
+            shared_cats = my_cats & o_cats
+            shared_prods = my_prods & o_prods
+            if my_broad or o_broad:
+                why = "the entire brand (one side has no category/product narrowing)"
+            elif shared_cats:
+                why = "shared categor%s %s" % (
+                    'ies' if len(shared_cats) > 1 else 'y', sorted(shared_cats))
+            elif shared_prods:
+                why = "shared product id(s) %s" % sorted(shared_prods)
+            elif (my_cats and o_prods) or (my_prods and o_cats):
+                why = "the same brand with mixed category/product scope (likely overlap)"
+            else:
+                continue
+            alerts.append(
+                "⚠ Overlaps active deal %r (submission #%d, %s) on %s — publishing "
+                "will create a SECOND Dutchie discount competing on the same items."
+                % (other.name or other.vendor_name or '?', other.id, other.state, why))
+        return alerts
 
     def _exclusion_terms(self):
         """Clean vendor exclusion prose into searchable product terms (#4)."""
@@ -351,24 +436,6 @@ class DealSubmissionDutchiePublish(models.Model):
             if t:
                 terms.append(t)
         return terms
-
-    def _resolve_exclusion_products(self, brands):
-        """Brand-scoped term -> product resolution. Returns
-        (dutchie_product_ids, unresolved_terms)."""
-        Product = self.env['product.template']
-        ids, unresolved = [], []
-        for term in self._exclusion_terms():
-            domain = [('name', 'ilike', term), ('dutchie_product_id', '!=', False)]
-            if brands:
-                domain = [('brand_id', 'in', brands.ids)] + domain
-            hits = Product.search(domain, limit=500)
-            got = [int(p.dutchie_product_id) for p in hits
-                   if str(p.dutchie_product_id or '').strip().isdigit()]
-            if got:
-                ids.extend(got)
-            else:
-                unresolved.append(term)
-        return list(dict.fromkeys(ids)), unresolved
 
     @staticmethod
     def _dutchie_date(d, end_of_day=False):
@@ -409,78 +476,90 @@ class DealSubmissionDutchiePublish(models.Model):
             groups.append(cur)
         return groups
 
-    def _dutchie_build(self):
-        """Build {lsp, discount, warnings} for this submission, or raise."""
+    def _dutchie_build(self, for_deactivation=False):
+        """Build {lsp, discount, warnings} for this submission, or raise.
+
+        ``for_deactivation``: when True (called from _dutchie_deactivate), the
+        ID-only targeting guards do NOT hard-block — restrictions are
+        irrelevant when re-POSTing with IsDeleted=True, and a legacy
+        fuzzy-targeted deal must still be deactivatable. Unresolvable
+        targeting is best-effort/skipped instead of raising.
+        """
         self.ensure_one()
         warnings = []
         lsp = self._dutchie_lsp()
         if not lsp:
             raise UserError(f"No Dutchie LSP mapping for market {self.market_id.name!r}.")
 
+        # ── ID-ONLY targeting (all fuzzy/name matching purged) ───────────
+        # Every restriction is resolved from explicit identifiers: brand →
+        # per-LSP dutchie id, products → dutchie_product_id, categories →
+        # dutchie_category_id (structured picks), excluded brands → id. Any
+        # targeting that can't resolve to an id HARD-BLOCKS the publish — we
+        # never name-match and never silently drop a restriction (dropping one
+        # would publish a broader / duplicate discount).
         brands = self._dutchie_brands()
         brand_ids = []
         for b in brands:
             bid = b.dutchie_brand_id_for_lsp(lsp)
             if bid and str(bid).isdigit():
                 brand_ids.append(int(bid))
-            else:
-                warnings.append(f"brand {b.name!r} has no Dutchie id for LSP {lsp}")
-        if not brands:
-            warnings.append(f"vendor {self.vendor_name!r} resolved to no brand (add an alias on mint.brand)")
+            elif not for_deactivation:
+                raise UserError(
+                    f"Brand {b.name!r} has no Dutchie brand id for LSP {lsp}. "
+                    f"Add it on the brand (mint.brand.dutchie_brand_ids) — "
+                    f"name/alias matching is disabled.")
 
+        unres_inc = [p.name for p in self.product_ids
+                     if not str(p.dutchie_product_id or '').strip().isdigit()]
+        if unres_inc and not for_deactivation:
+            raise UserError(
+                "These products have no Dutchie product id: "
+                + ", ".join(unres_inc[:10]) + (" …" if len(unres_inc) > 10 else "")
+                + ". Resolve their dutchie_product_id or remove them — "
+                "name matching is disabled.")
         prod_inc = [int(p.dutchie_product_id) for p in self.product_ids
                     if str(p.dutchie_product_id or '').strip().isdigit()]
-        unres_inc = [p.name for p in self.product_ids if not p.dutchie_product_id]
-        if unres_inc:
-            warnings.append("products without dutchie id skipped: " + ", ".join(unres_inc[:5]))
-        prod_exc, unres_exc = self._resolve_exclusion_products(brands)
-        if unres_exc:
-            warnings.append("exclusion terms unresolved: " + ", ".join(unres_exc))
 
+        # Exclusions: brand ids only. Free-text excluded_skus can't be
+        # id-matched — block rather than silently widen the discount.
+        exc_terms = self._exclusion_terms()
+        if exc_terms and not for_deactivation:
+            raise UserError(
+                "Excluded SKUs are free text (%s) — SKU/name exclusion matching "
+                "is disabled. Use Excluded Brands, add the products to exclude "
+                "by their Dutchie ids, or clear the field."
+                % ", ".join(exc_terms[:5]))
+        prod_exc = []
         exc_brand_ids = []
         for b in self.excluded_brand_ids:
             bid = b.dutchie_brand_id_for_lsp(lsp)
             if bid and str(bid).isdigit():
                 exc_brand_ids.append(int(bid))
+            elif not for_deactivation:
+                raise UserError(
+                    f"Excluded brand {b.name!r} has no Dutchie id for LSP {lsp}.")
 
-        # Category restriction. Structured picks first: the In-Stock
-        # Categories dropdown stores the exact product.category records the
-        # submitter chose — emit their Dutchie ids directly, no name
-        # matching. Legacy free-text fallback: the field may carry a MASTER
-        # bucket ('Edibles & Tinctures', ...), one Dutchie category name, or
-        # a comma-joined list of names (the dropdown mirror writes 'A, B, C'
-        # — treating that as ONE name matched nothing and silently published
-        # the deal with no category restriction at all).
+        # Category restriction — structured picks ONLY. The In-Stock Categories
+        # dropdown stores real product.category records; emit their Dutchie
+        # ids. Free-text product_category name matching is purged.
         cat_ids = []
         picked = self._all_picked_categories()
         if picked:
-            cat_ids = sorted({int(c.dutchie_category_id) for c in picked
-                              if str(c.dutchie_category_id or '').strip().isdigit()})
             unres = [c.name for c in picked
                      if not str(c.dutchie_category_id or '').strip().isdigit()]
-            if unres:
-                warnings.append(
-                    "categories without Dutchie id skipped: " + ", ".join(unres))
-        elif self.product_category and self.product_category.strip().lower() not in NOISE:
-            from .ptl_deal import MASTER_CATEGORY_PATTERNS
-            Categ = self.env['product.category']
-            cats = Categ.browse([])
-            for token in (t.strip() for t in self.product_category.split(',')):
-                if not token or token.lower() in NOISE:
-                    continue
-                patterns = MASTER_CATEGORY_PATTERNS.get(token)
-                if patterns:
-                    domain = ['|'] * (len(patterns) - 1) + [('name', 'ilike', p) for p in patterns]
-                    cats |= Categ.search(domain)
-                else:
-                    cats |= Categ.search([('name', 'ilike', token)])
-            cat_ids = sorted({int(c.dutchie_category_id) for c in cats
+            if unres and not for_deactivation:
+                raise UserError(
+                    "These picked categories have no Dutchie category id: "
+                    + ", ".join(unres) + ".")
+            cat_ids = sorted({int(c.dutchie_category_id) for c in picked
                               if str(c.dutchie_category_id or '').strip().isdigit()})
-        if (picked or (self.product_category
-                       and self.product_category.strip().lower() not in NOISE)) \
-                and not cat_ids:
-            warnings.append(
-                f"category {self.product_category!r} resolved to no Dutchie category ids")
+        elif self.product_category and self.product_category.strip().lower() not in NOISE \
+                and not for_deactivation:
+            raise UserError(
+                "Category %r is set as free text, not structured picks — "
+                "free-text category matching is disabled. Choose categories "
+                "from the In-Stock Categories dropdown." % self.product_category)
 
         # Active window + day-of-week from the structured plot windows.
         # all_dates() returns ISO strings — coerce to date objects.
@@ -571,8 +650,12 @@ class DealSubmissionDutchiePublish(models.Model):
         # Refuse a discount with NO restrictions at all — that would apply
         # store-wide (every product, every brand). Reachable when none of the
         # deal's brands resolve to a per-LSP Dutchie id and there are no
-        # product/category restrictions either.
-        if not any(r['RestrictionIds'] for r in restrictions.values()):
+        # product/category restrictions either. Skipped for deactivation: an
+        # empty-restriction payload is fine when re-POSTing IsDeleted=True
+        # (Dutchie matches the delete by Id/ExternalId, not restrictions), and
+        # a legacy deal that only ever resolved via the removed fuzzy paths
+        # must still be deactivatable.
+        if not for_deactivation and not any(r['RestrictionIds'] for r in restrictions.values()):
             raise UserError(
                 "Refusing to publish: no Brand/Product/Category restriction "
                 "resolved — the discount would apply store-wide. "
@@ -693,6 +776,13 @@ class DealSubmissionDutchiePublish(models.Model):
         lsp, discounts, warnings = built['lsp'], built['discounts'], built['warnings']
         loc_map = json.loads(get_param('dutchie.publish.loc_ids') or '{}')
         loc_ids = loc_map.get(str(lsp)) or []
+        # Overlap guard (auto-convert path can't prompt for an override, so it
+        # only annotates the chatter — the interactive Publish button enforces
+        # the acknowledgement). Never let the guard break a conversion.
+        try:
+            warnings = list(warnings) + self._dutchie_overlap_alerts()
+        except Exception as exc:
+            _logger.warning("Overlap guard failed for submission %s: %s", self.id, exc)
 
         if mode == 'dry_run':
             spans = "\n".join(
@@ -820,7 +910,9 @@ class DealSubmissionDutchiePublish(models.Model):
         # object. Index built spans by ExternalId; fall back to the first span as
         # a template for any recorded ExternalId the rebuild no longer produces
         # (e.g. the deal's windows changed after publish).
-        built = self._dutchie_build()
+        # Permissive build: deactivation re-POSTs with IsDeleted=True, so the
+        # ID-only targeting guards must not block pulling a legacy/fuzzy deal.
+        built = self._dutchie_build(for_deactivation=True)
         lsp, discounts = built['lsp'], built['discounts']
         by_ext = {d['ExternalId']: d for d in discounts}
         template = discounts[0] if discounts else None

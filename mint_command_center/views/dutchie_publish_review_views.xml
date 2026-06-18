@@ -13,7 +13,12 @@
                 <field name="res_model" invisible="1"/>
                 <field name="res_id" invisible="1"/>
                 <field name="is_live" invisible="1"/>
+                <field name="requires_ack" invisible="1"/>
                 <field name="review_html" widget="html" readonly="1" nolabel="1"/>
+                <div invisible="not requires_ack"
+                     style="margin-top:8px;padding:8px 12px;border-radius:4px;background:#fff3e0;border:1px solid #e65100">
+                    <field name="overlap_ack"/>
+                </div>
                 <footer>
                     <button name="action_confirm" type="object" string="Publish"
                             class="btn-primary"
