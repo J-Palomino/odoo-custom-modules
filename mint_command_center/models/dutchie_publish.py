@@ -840,7 +840,7 @@ class DealSubmissionDutchiePublish(models.Model):
             if not api_key:
                 raise UserError("dutchie.publish.api_key is not configured for live mode.")
 
-        results, failures = [], 0
+        results, failures, deleted = [], 0, 0
         for ext, loc_map in published.items():
             if not isinstance(loc_map, dict):
                 continue
@@ -872,6 +872,7 @@ class DealSubmissionDutchiePublish(models.Model):
                         raw = resp.read().decode(errors='replace')
                         ok = 200 <= resp.status < 300
                         failures += 0 if ok else 1
+                        deleted += 1 if ok else 0
                         results.append(f"{tag}: HTTP {resp.status} {raw[:160]}")
                         self._deal_audit_log('deactivate' if ok else 'deactivate_failed',
                                              lsp, int(loc_id), discount,
@@ -886,3 +887,12 @@ class DealSubmissionDutchiePublish(models.Model):
             self.message_post(
                 body=f"[Dutchie deactivate — {verb}]\n" + "\n".join(results),
                 message_type='comment')
+        # Self-confirm: once every recorded (span, loc) is deleted in Dutchie,
+        # clear the publish map so Odoo accurately reflects "no longer live in
+        # Dutchie". This is the canonical signal the Deal Parity Monitor keys on
+        # (expired/rejected submissions with a populated dutchie_publish_loc_ids
+        # = still live). The publish/deactivate chatter retains the per-id audit
+        # trail. Only on a fully-successful LIVE pull-down — partial failures
+        # keep the map so the remaining ids can be retried.
+        if mode == 'live' and deleted and not failures:
+            self.sudo().write({'dutchie_publish_loc_ids': '{}'})
