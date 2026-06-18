@@ -18,6 +18,7 @@
         "views/daisy_agent_menus.xml",
         "views/daisy_scheduled_job_views.xml",
         "views/res_config_settings_views.xml",
+        "views/res_users_views.xml",
         "data/daisy_agent_data.xml",
     ],
     "assets": {

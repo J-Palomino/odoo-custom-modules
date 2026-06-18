@@ -15,3 +15,4 @@ from . import project_task
 from . import project_project
 from . import daisy_orchestrator_command
 from . import res_config_settings
+from . import res_users
