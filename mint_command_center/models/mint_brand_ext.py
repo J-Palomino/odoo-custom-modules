@@ -21,6 +21,7 @@ class MintBrand(models.Model):
         string='Vendor Portal Contacts',
         help='Portal users (by partner) allowed to view this brand\'s promo '
              'calendar when logged in on the public /promos page.',
+    )
     brand_class = fields.Selection(
         selection=[
             ('house', 'House'),
