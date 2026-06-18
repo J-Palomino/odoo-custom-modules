@@ -1,9 +1,13 @@
 import logging
+from datetime import timedelta
+
+from markupsafe import Markup
 
 from odoo import api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from .brand_calendar import _brand_lookup_key, _parse_brand_name
+from .deal_mixins import format_bundle_tiers_text
 
 _logger = logging.getLogger(__name__)
 
@@ -44,8 +48,8 @@ class PtlDeal(models.Model):
     _description = 'PTL Deal — Reusable deal template referenced by PTL days'
     _inherit = [
         'mail.thread', 'mail.activity.mixin',
-        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
-        'mint.weight.parsed.mixin',
+        'mint.discount.core.mixin', 'mint.bogo.spec.mixin',
+        'mint.vendor.funding.mixin', 'mint.weight.parsed.mixin',
     ]
     _order = 'sequence, id'
 
@@ -95,6 +99,14 @@ class PtlDeal(models.Model):
     sales_details = fields.Text(
         string='Sales Details',
         help='Formatted pricing text displayed to customers (PTL Column D)',
+    )
+    # Structured bundle tiers (#93677): "2 for $18 or 3 for $25" as
+    # (qty, price) rows rendered literally — never per-unit math. The
+    # structured BOGO triple comes from mint.bogo.spec.mixin.
+    bundle_tier_ids = fields.One2many(
+        'mint.ptl.deal.bundle.tier',
+        'ptl_deal_id',
+        string='Bundle Tiers',
     )
     sale_type = fields.Selection(
         selection=[
@@ -165,6 +177,15 @@ class PtlDeal(models.Model):
     description = fields.Text(string='Description')
     sequence = fields.Integer(string='Sequence', default=10)
     is_featured = fields.Boolean(string='Featured')
+    is_available_online = fields.Boolean(
+        string='Available Online',
+        default=True,
+        tracking=True,
+        help='When True the deal is advertised on the ecommerce site and daily-deals '
+             'sheets. When False the deal is POS/register-only — it still applies at the '
+             'point of sale but is hidden from all online advertising surfaces. Mirrors '
+             "Dutchie's IsAvailableOnline flag.",
+    )
 
     # --- State machine ---
     state = fields.Selection(
@@ -277,11 +298,14 @@ class PtlDeal(models.Model):
         compute='_compute_matching_products',
         string='Matching Products',
         help='Live product.template records this deal will apply to, '
-             'resolved from brand_id + product_category at form open. '
+             'resolved from brand_id + product_category at form open, then '
+             'scoped to the deal\'s market (store_ids, else market_id stores) '
+             'via product.template.x_location_id so an AZ deal never lists a '
+             'same-brand MO/IL SKU (Odoo #587). '
              'Mirrors the matching used by mint.discount._ensure (brand_ids + '
              'category_ids resolved via product.category name match). '
              'When explicit_product_ids is populated, equals that set '
-             '(intersected with brand_id) instead.',
+             '(intersected with brand_id and the market scope) instead.',
     )
     matching_product_count = fields.Integer(
         string='# Matching SKUs',
@@ -353,7 +377,25 @@ class PtlDeal(models.Model):
         ]
         return Category.search(domain)
 
-    @api.depends('brand_id', 'brand_ids', 'product_category', 'excluded_skus', 'explicit_product_ids')
+    def _market_location_guids(self):
+        """Dutchie store GUIDs (res.company.x_dutchie_store_id) that scope this
+        deal's market. Prefer the explicitly-picked store_ids; fall back to all
+        stores in the deal's region (market_id) — mirroring the publish-time
+        fallback in ptl_day._push_discounts_to_redis. Returns a set of
+        non-empty GUID strings — an empty set means "no stores known", i.e.
+        unscoped.
+
+        Each product.template row belongs to exactly one Dutchie location
+        (product.template.x_location_id == res.company.x_dutchie_store_id), so
+        restricting on this set keeps an AZ deal from listing an MO/IL SKU of
+        the same brand (Odoo #587: 'AZ deal pulling up an MO sku').
+        """
+        self.ensure_one()
+        stores = self.store_ids or self.market_id.store_ids
+        return {g for g in stores.mapped('x_dutchie_store_id') if g}
+
+    @api.depends('brand_id', 'brand_ids', 'product_category', 'excluded_skus',
+                 'explicit_product_ids', 'store_ids', 'market_id')
     def _compute_matching_products(self):
         Template = self.env['product.template'].sudo()
         for rec in self:
@@ -362,11 +404,21 @@ class PtlDeal(models.Model):
                 rec.matching_product_ids = False
                 rec.matching_product_count = 0
                 continue
+            # Market scope: the Dutchie store GUIDs this deal targets. When
+            # empty (no store_ids and no region stores) matching stays
+            # market-blind — log it so the gap is visible rather than silent.
+            loc_guids = rec._market_location_guids()
+            if not loc_guids:
+                _logger.warning(
+                    'PTL deal %s: no store_ids/market stores — matching is '
+                    'market-blind (brand+category only).', rec.id)
             # Explicit set wins when populated — intersect with the brand set
-            # so a stale-brand pick doesn't sneak through.
+            # (so a stale-brand pick doesn't sneak through) AND the market
+            # scope (so a wrong-market SKU can't be hand-picked in either).
             if rec.explicit_product_ids:
                 explicit = rec.explicit_product_ids.filtered(
                     lambda p: p.brand_id in brands
+                    and (not loc_guids or p.x_location_id in loc_guids)
                 )
                 rec.matching_product_ids = explicit
                 rec.matching_product_count = len(explicit)
@@ -376,6 +428,8 @@ class PtlDeal(models.Model):
                 cats = rec._resolve_master_categories()
                 if cats:
                     domain.append(('categ_id', 'in', cats.ids))
+            if loc_guids:
+                domain.append(('x_location_id', 'in', list(loc_guids)))
             tmpls = Template.search(domain)
             if rec.excluded_skus and tmpls:
                 tokens = {
@@ -450,6 +504,7 @@ class PtlDeal(models.Model):
         ])
         if expired:
             expired.write({'state': 'expired'})
+            expired._deactivate_in_dutchie_on_expire()
         return len(expired)
 
     # ─── Multi-window plotting (drives the submission-form picker) ───────
@@ -572,7 +627,10 @@ class PtlDeal(models.Model):
                 by_norm[key] = brand
             rec.brand_id = brand.id
 
-    @api.depends('discount_type', 'discount_value', 'original_price', 'sales_details')
+    @api.depends('discount_type', 'discount_value', 'original_price',
+                 'sales_details', 'bogo_buy_qty', 'bogo_get_qty',
+                 'bogo_get_pct', 'bundle_tier_ids.qty',
+                 'bundle_tier_ids.price', 'bundle_tier_ids.sequence')
     def _compute_display_text(self):
         for rec in self:
             # If sales_details is manually set, prefer it
@@ -603,15 +661,34 @@ class PtlDeal(models.Model):
                 else:
                     rec.display_text = f"${val:.2f}"
             elif dtype == 'bogo':
-                if msrp:
+                # Structured triple (#93677) renders literally, e.g.
+                # "B1G1 50% Off"; un-backfilled deals keep the legacy text.
+                structured = rec._bogo_sales_text()
+                if structured:
+                    rec.display_text = (
+                        f"Starting @ ${msrp:.0f} | {structured}" if msrp
+                        else structured
+                    )
+                elif msrp:
                     rec.display_text = f"Starting @ ${msrp:.0f} | BOGO"
                 else:
                     rec.display_text = "Buy One Get One"
-            elif dtype == 'bundle' and val:
-                if msrp:
+            elif dtype == 'bundle':
+                # Tiers render literally with NO per-unit MSRP math (#93677):
+                # "2 for $18 or 3 for $25". Keyed on the FORMATTED text, not
+                # tier existence — all-zero tier rows fall through to the
+                # legacy discount_value rendering instead of blanking the
+                # display.
+                tiers_text = format_bundle_tiers_text(
+                    [(t.qty, t.price) for t in rec.bundle_tier_ids])
+                if tiers_text:
+                    rec.display_text = tiers_text
+                elif val and msrp:
                     rec.display_text = f"${msrp:.0f} Value! Only ${val:.2f}"
-                else:
+                elif val:
                     rec.display_text = f"${val:.2f} Bundle"
+                else:
+                    rec.display_text = ''
             elif dtype == 'points_multiplier' and val:
                 mult = val if val >= 1 else 1 / val if val else 0
                 if mult == int(mult):
@@ -849,11 +926,212 @@ class PtlDeal(models.Model):
             },
         }
 
+    def action_publish(self):
+        """Publish this deal to the storefront (Redis) AND Dutchie POS.
+
+        Replaces the old "Set Live" button, which only flipped state and
+        pushed nothing. Reuses the mint.ptl.day engine to (re)build and push
+        only THIS deal's discount. Note: marking shared days published can
+        widen a co-scheduled deal's weekday set at the next lifecycle cron —
+        same semantics as the day-level publish. The storefront/Redis push
+        always runs. Dutchie writes are
+        gated by mint.dutchie_discount_push.mode (off | dry-run | live) plus
+        per-market and per-store flags: with the default 'dry-run' the Dutchie
+        payload is built and logged to mint.dutchie.discount.push.log but no
+        HTTP call fires. Only mode='live' (+ enabled market/stores) writes to
+        real Dutchie POS.
+        """
+        Day = self.env['mint.ptl.day']
+        Discount = self.env['mint.discount']
+        for deal in self.filtered(lambda d: d.state in ('approved', 'live')):
+            if not deal.day_ids:
+                raise UserError(
+                    "“%s” isn't scheduled on any PTL day yet — add it to a "
+                    "day (or set start/end dates and plot it) before "
+                    "publishing." % deal.name
+                )
+
+            # Day-of-week booleans (_recompute_day_booleans) and the
+            # Redis/Dutchie push helpers both require the deal's days to be in
+            # state='published'. Mark just this deal's days; we do NOT call the
+            # day-level action_publish, so other deals on these days stay as-is.
+            deal.day_ids.filtered(lambda d: d.state != 'published').write(
+                {'state': 'published'}
+            )
+
+            # Build/refresh ONLY this deal's discount (the build itself is
+            # market-agnostic, so any day works as the context here).
+            discount = deal.day_ids[0]._ensure_discount(deal)
+            Discount._recompute_day_booleans(discount)
+
+            # The push helpers scope to a single day's market_id, and a deal
+            # can be plotted into days of more than one market. Push once per
+            # distinct market, using a representative day from each, so no
+            # market's stores are silently skipped.
+            Log = self.env['mint.dutchie.discount.push.log'].sudo()
+            # Watermark the log id BEFORE the push so the backoffice links below
+            # can be scoped to rows created by THIS publish. Use the monotonic,
+            # transaction-visible id rather than create_date — create_date is
+            # DB-clocked while a wall-clock cutoff would be app-clocked, and the
+            # skew between the two servers intermittently dropped the link.
+            last_log_id = Log.search([], order='id desc', limit=1).id or 0
+            for market in deal.day_ids.mapped('market_id'):
+                mday = deal.day_ids.filtered(lambda d: d.market_id == market)[:1]
+                mday._push_discounts_to_redis(discount.ids)
+                mday._push_discounts_to_dutchie(discount.ids)
+
+            deal.write({'state': 'live'})
+
+            mode = Day._get_dutchie_push_mode()
+            note = (
+                " (LIVE Dutchie write)" if mode == 'live'
+                else " (Dutchie simulated — payload logged, not sent)"
+            )
+            # Build as Markup so the chatter renders HTML (bold + the link);
+            # message_post escapes a plain str body in Odoo 19. The `%` operator
+            # on Markup auto-escapes the substituted values (mode/note/store
+            # name/url), so no injection from those.
+            body = Markup(
+                "Published to storefront + Dutchie across %d day(s). "
+                "Push mode: <b>%s</b>%s."
+            ) % (len(deal.day_ids), mode, note)
+            # Append Dutchie backoffice review link(s). Only present after a
+            # successful live push — the URL needs the Dutchie discount id, so
+            # dry-run / failed pushes contribute nothing here. Scoped to logs
+            # created by THIS publish via the id watermark above.
+            logs = Log.search([
+                ('id', '>', last_log_id),
+                ('discount_id', '=', discount.id),
+                ('backoffice_url', '!=', False),
+            ], order='id desc')
+            seen, links = set(), []
+            for lg in logs:
+                if lg.backoffice_url in seen:
+                    continue
+                seen.add(lg.backoffice_url)
+                links.append(Markup(
+                    '<a href="%s" target="_blank">Review in Dutchie backoffice — %s</a>'
+                ) % (lg.backoffice_url, lg.company_id.name or 'store'))
+            if links:
+                body += Markup('<br/>') + Markup('<br/>').join(links)
+            deal.message_post(body=body, message_type='comment')
+
+    # Backward-compat alias: the old button name / any automations that still
+    # call action_set_live now route through the full publish path.
     def action_set_live(self):
-        self.filtered(lambda d: d.state == 'approved').write({'state': 'live'})
+        return self.action_publish()
+
+    def action_open_publish_review(self):
+        """Open the pre-publish review wizard (guards + alerts) before the
+        deal's Dutchie/storefront publish. Warn-only: shows the target stores
+        and any SOP/safety alerts; action_publish fires on confirm."""
+        self.ensure_one()
+        from .dutchie_publish_review import build_review_html
+        mode, is_live, lines, warnings, blocks = self._dutchie_publish_review_data()
+        wiz = self.env['mint.dutchie.publish.review'].create({
+            'res_model': self._name,
+            'res_id': self.id,
+            'mode': mode,
+            'is_live': is_live,
+            'review_html': build_review_html(mode, is_live, lines, warnings, blocks),
+        })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Review before publishing',
+            'res_model': 'mint.dutchie.publish.review',
+            'res_id': wiz.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
+    def _dutchie_publish_review_data(self):
+        """Compute (mode, is_live, lines, warnings, blocks) for the deal
+        publish WITHOUT writing anything (used by the review wizard)."""
+        self.ensure_one()
+        Day = self.env['mint.ptl.day']
+        Company = self.env['res.company'].sudo()
+        mode = Day._get_dutchie_push_mode()
+        is_live = mode == 'live'
+        lines, warnings, blocks = [], [], []
+        lines.append("Deal: %s" % (self.name or ''))
+        lines.append("Discount: %s, value %s" % (self.discount_type, self.discount_value))
+        lines.append("Storefront (Redis) push ALWAYS runs — not gated by the Dutchie mode.")
+        lines.append("Dutchie push mode: %s" % mode)
+        if not self.day_ids:
+            blocks.append("Not scheduled on any PTL day — Publish would raise.")
+            return mode, is_live, lines, warnings, blocks
+
+        today = fields.Date.today()
+        markets = self.day_ids.mapped('market_id')
+        lines.append("Market(s): %s" % (', '.join(markets.mapped('name')) or '(none)'))
+        dates = self.day_ids.mapped('date')
+        if dates:
+            lines.append("Date range: %s → %s" % (min(dates), max(dates)))
+            if max(dates) < today:
+                warnings.append("All scheduled days are in the PAST — expired-on-arrival, will not apply.")
+            elif min(dates) > today:
+                warnings.append("Starts in the FUTURE (%s) — but the storefront push commits immediately on confirm." % min(dates))
+            if not any(today <= d <= today + timedelta(days=60) for d in dates):
+                warnings.append("No scheduled day is within the next 60 days — Dutchie day-of-week flags compute as 'every day'.")
+
+        if not self.brand_id and not self.product_category and not self.explicit_product_ids:
+            warnings.append("No brand / category / product restriction — the discount would apply STORE-WIDE.")
+
+        enabled = Company.search([
+            ('is_dispensary', '=', True),
+            ('dutchie_store_id', '!=', False),
+            ('region_id', 'in', markets.ids),
+            ('dutchie_discount_push_enabled', '=', True),
+        ])
+        targeted = (self.store_ids & enabled) if self.store_ids else enabled
+        lines.append("Stores that will receive the Dutchie write: %d — %s"
+                     % (len(targeted), ', '.join(targeted.mapped('name')) or 'NONE'))
+
+        if not markets.filtered('dutchie_discount_push_enabled'):
+            warnings.append("No market is enabled for the Dutchie push — nothing writes to Dutchie even in live mode (storefront still updates).")
+        if not targeted:
+            warnings.append("0 stores are enabled for the Dutchie push — this deal goes to the storefront only.")
+        if self.store_ids:
+            skipped = self.store_ids - targeted
+            if skipped:
+                warnings.append("%d of the deal's %d target store(s) are NOT enabled and will be SKIPPED on Dutchie: %s"
+                                % (len(skipped), len(self.store_ids), ', '.join(skipped.mapped('name'))))
+        elif targeted:
+            warnings.append("No explicit store scoping on this deal — it publishes to ALL %d enabled store(s) in the market." % len(targeted))
+        return mode, is_live, lines, warnings, blocks
 
     def action_expire(self):
-        self.filtered(lambda d: d.state in ('approved', 'live')).write({'state': 'expired'})
+        to_expire = self.filtered(lambda d: d.state in ('approved', 'live'))
+        to_expire.write({'state': 'expired'})
+        to_expire._deactivate_in_dutchie_on_expire()
+
+    def _deactivate_in_dutchie_on_expire(self):
+        """Pull each deal's discount down from Dutchie (IsDeleted=True).
+
+        Mirror of action_publish's Dutchie push: expiring a deal in Odoo must
+        also stop the discount in Dutchie, otherwise it keeps running at the
+        register/online until its own ValidDateTo. Covers BOTH publish paths:
+          • the day/discount path (mint.dutchie_discount_push.mode), via the
+            linked mint.discount and its per-store push log, and
+          • the submission path (dutchie.publish.mode — the one live in prod),
+            via each linked submission's recorded Dutchie ids.
+        No-op for deals never pushed live; each side is gated by its own mode
+        param and wrapped so one failure can't block the rest.
+        """
+        if not self:
+            return
+        discounts = self.mapped('discount_id')
+        if discounts:
+            try:
+                self.env['mint.ptl.day'].sudo()._deactivate_discounts_in_dutchie(discounts)
+            except Exception as e:  # noqa: BLE001
+                _logger.warning('Expire: day-path Dutchie deactivate failed: %s', e)
+        subs = self.env['mint.deal.submission'].sudo().search([('deal_id', 'in', self.ids)])
+        for sub in subs:
+            try:
+                sub._dutchie_deactivate()
+            except Exception as e:  # noqa: BLE001
+                _logger.warning('Expire: submission Dutchie deactivate failed for %s: %s', sub.id, e)
 
     def action_reset_to_pending(self):
         self.filtered(lambda d: d.state in ('rejected', 'expired')).write({

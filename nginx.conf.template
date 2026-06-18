@@ -38,6 +38,20 @@ http {
             add_header Content-Type application/json;
         }
 
+        # Database manager — hard-blocked at the proxy. Odoo already sets
+        # list_db=False (manager disabled, create/backup/restore/drop return
+        # Access Denied), but the routes still answer 200 with the manager
+        # template, leaking that this is Odoo and leaving the master-password
+        # surface exposed. This is a single-db deployment (db_name=odoo), so
+        # the web client never needs /web/database/*. Return 404 so the route
+        # is genuinely unreachable. ^~ stops at this prefix (beats the
+        # catch-all location /). Covers /web/database, /manager, /selector,
+        # /list, /create, /backup, /restore, /duplicate, /drop, /change_password.
+        location ^~ /web/database {
+            access_log off;
+            return 404;
+        }
+
         # Websocket — route to gevent worker (Odoo 19 bus)
         # Odoo 19 requires Origin header for websocket validation
         location /websocket {

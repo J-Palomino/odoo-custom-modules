@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <menuitem id="menu_mint_markov_template_wizard"
+              name="Generate Markov Survey"
+              parent="survey.menu_surveys"
+              action="action_mint_markov_template_wizard"
+              sequence="5"
+              groups="survey.group_survey_user"/>
+
+</odoo>

@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_markov_template_wizard_user,mint.markov.template.wizard.user,model_mint_markov_template_wizard,survey.group_survey_user,1,1,1,1
+access_mint_markov_template_wizard_line_user,mint.markov.template.wizard.line.user,model_mint_markov_template_wizard_line,survey.group_survey_user,1,1,1,1

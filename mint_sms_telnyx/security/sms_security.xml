@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Who may create outbound texts (mint.sms.message). The recipient
+             gate runs regardless, but this controls who can trigger sends.
+             Grant to agents (e.g. HUGO) and senders, not all staff. -->
+        <record id="group_sms_sender" model="res.groups">
+            <field name="name">SMS Sender</field>
+            <field name="comment">Can create/send outbound texts via the gated iMessage transport.</field>
+        </record>
+    </data>
+</odoo>

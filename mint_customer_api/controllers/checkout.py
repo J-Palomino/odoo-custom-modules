@@ -11,6 +11,7 @@ Provides:
 These endpoints use API key auth (X-Api-Key header) rather than JWT,
 since checkout can happen for guest customers.
 """
+import hmac
 import json
 import logging
 
@@ -30,7 +31,8 @@ def _verify_api_key():
     expected = request.env['ir.config_parameter'].sudo().get_param(
         'mint_customer_api.checkout_api_key', ''
     )
-    return key and expected and key == expected
+    # Constant-time compare to avoid a timing side-channel (Odoo #675).
+    return bool(key and expected and hmac.compare_digest(key, expected))
 
 
 class MintCheckout(http.Controller):
@@ -176,6 +178,11 @@ class MintCheckout(http.Controller):
                 'email': email or False,
                 'phone': phone or False,
                 'customer_rank': 1,
+                # Mark consumer-origin partners so the web-customer record rules
+                # hide their PII from regular staff (vendors/employees), matching
+                # the /auth/register flow. Only set on NEWLY created partners — a
+                # found partner may legitimately be a vendor/employee.
+                'is_web_customer': True,
             })
             _logger.info('Created new customer partner %s: %s', partner.id, name)
 
@@ -358,6 +365,11 @@ class MintCheckout(http.Controller):
                 'email': email or False,
                 'phone': phone or False,
                 'customer_rank': 1,
+                # Mark consumer-origin partners so the web-customer record rules
+                # hide their PII from regular staff (vendors/employees), matching
+                # the /auth/register flow. Only set on NEWLY created partners — a
+                # found partner may legitimately be a vendor/employee.
+                'is_web_customer': True,
             })
             _logger.info('Created new customer partner %s: %s', partner.id, name)
 

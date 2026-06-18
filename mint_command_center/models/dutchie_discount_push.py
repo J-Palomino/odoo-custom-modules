@@ -40,6 +40,16 @@ PUSH_URL_PARAM = 'mint.dutchie_discount_push.url'     # mintinvsvc base URL
 DEFAULT_PUSH_URL = 'https://mintinvsvc-production-6aa5.up.railway.app/api/admin/discounts'
 PUSH_API_KEY_PARAM = 'mint.dutchie_discount_push.api_key'  # mirrors mint.ptl_sync.api_key
 
+# Backoffice review-link template. Tokens: {id} (Dutchie discount id),
+# {locId}, {lspId}. Route confirmed from the backoffice SPA bundle
+# (marketing.discounts.createNew = '/marketing/discounts/discount/new'; a
+# specific discount shares the ':id' sibling route). Templated via system
+# parameter so ops can correct the path without a code change.
+BACKOFFICE_DISCOUNT_URL_PARAM = 'mint.dutchie_backoffice.discount_url'
+DEFAULT_BACKOFFICE_DISCOUNT_URL = (
+    'https://themint.backoffice.dutchie.com/marketing/discounts/discount/{id}'
+)
+
 
 class MintRegionDutchiePush(models.Model):
     _inherit = 'mint.region'
@@ -100,6 +110,20 @@ class DutchieDiscountPushLog(models.Model):
     success = fields.Boolean(string='Success', index=True)
     error_message = fields.Text(string='Error')
     elapsed_ms = fields.Integer(string='Elapsed (ms)')
+    dutchie_discount_id = fields.Integer(
+        string='Dutchie Discount Id',
+        index=True,
+        help='The PER-STORE Dutchie discount id returned by a successful live '
+             'push. Each store has its own Dutchie discount (distinct id per '
+             'loc), so update-vs-create on re-publish is resolved from this '
+             'log per (discount, store) — NOT from a single id on mint.discount.',
+    )
+    backoffice_url = fields.Char(
+        string='Backoffice URL',
+        help='Deep link to review this discount in the Dutchie backoffice. '
+             'Populated on a successful live push (needs the Dutchie discount '
+             'id returned by mintinvsvc); empty for dry-run / failed pushes.',
+    )
 
 
 class PtlDayDutchiePush(models.Model):
@@ -145,6 +169,22 @@ class PtlDayDutchiePush(models.Model):
             return int(discount.item_group_type_id)
         return self.ITEM_GROUP_TYPE_ID_FALLBACK
 
+    def _build_backoffice_url(self, discount_id, loc_id, lsp_id):
+        """Build the Dutchie backoffice review URL for a discount.
+
+        Templated via BACKOFFICE_DISCOUNT_URL_PARAM (tokens {id}/{locId}/{lspId})
+        so ops can correct the path in one place without a code change.
+        """
+        tmpl = self.env['ir.config_parameter'].sudo().get_param(
+            BACKOFFICE_DISCOUNT_URL_PARAM, DEFAULT_BACKOFFICE_DISCOUNT_URL)
+        try:
+            return tmpl.format(id=discount_id, locId=loc_id, lspId=lsp_id)
+        except Exception:
+            # Malformed ops-edited template (stray brace / unknown token):
+            # emit nothing rather than storing a broken half-rendered link.
+            _logger.warning('Dutchie backoffice URL template invalid: %r', tmpl)
+            return ''
+
     def _format_dutchie_date(self, dt):
         """Format a date as Dutchie expects ('M/D/YYYY, h:mm:ss A')."""
         if not dt:
@@ -169,12 +209,21 @@ class PtlDayDutchiePush(models.Model):
         (Monday..Sunday). If all 7 flags are False (the default), Dutchie
         treats the discount as active every day.
         """
-        # dutchie_discount_id is a Char (defined in mint_api_v2). For Dutchie's
-        # update-discount-item we need an integer Id (0 = create new). PTL-derived
-        # rows carry a synthetic 'ptl_<n>' value here that's NOT a Dutchie id;
-        # treat those as 0 (create) and let the live response give us the real id.
-        existing = (discount.dutchie_discount_id or '').strip()
-        existing_int = int(existing) if existing.isdigit() else 0
+        # Dutchie's update-discount-item needs an integer Id (0 = create new,
+        # a real id = update THAT record). Each store gets its OWN Dutchie
+        # discount (distinct id per loc), so the id must be resolved PER
+        # (discount, store) — reusing a single id across stores would make
+        # store N update store 1's discount. Look it up from the most recent
+        # successful live push log for this exact (discount, store); absent →
+        # 0 (create) and the live response records the new id on its own log.
+        prior = self.env['mint.dutchie.discount.push.log'].sudo().search([
+            ('discount_id', '=', discount.id),
+            ('company_id', '=', store.id),
+            ('mode', '=', 'live'),
+            ('success', '=', True),
+            ('dutchie_discount_id', '!=', 0),
+        ], order='id desc', limit=1)
+        existing_int = prior.dutchie_discount_id or 0
 
         name = (discount.name or '')[:120]
         calc_method_id = self._resolve_calc_method_id(discount)
@@ -274,6 +323,19 @@ class PtlDayDutchiePush(models.Model):
             'Friday': bool(discount.friday),
             'Saturday': bool(discount.saturday),
             'MenuDisplayRank': 0,
+            # Customer-facing menu card name. Without DiscountMenuDisplayDetails
+            # /MenuDisplayName, Dutchie's online menu falls back to
+            # DiscountDescription (internal "lgm ..." text) and mintinvsvc warns
+            # "SOP §7: MenuDisplayName is missing". Mirror OnlineName so the
+            # storefront card shows the deal name. Shape per the canonical
+            # fixture / scripts/dutchie/publish-deal.mjs.
+            'DiscountMenuDisplayDetails': {
+                'DiscountId': existing_int,
+                'MenuDisplayImageUrl': '',
+                'MenuDisplayName': name,
+                'MenuDisplayDescription': '',
+                'DiscountMenuDisplayId': None,
+            },
         }
 
     # ─── Push entry point — call AFTER _push_discounts_to_redis ──────────
@@ -324,6 +386,64 @@ class PtlDayDutchiePush(models.Model):
                             else enabled_stores
             for store in target_stores:
                 self._push_one_discount(discount, store, mode, url, api_key, Log)
+
+    # ─── Deactivate (expire / revoke) — the inverse of the push ──────────
+
+    def _deactivate_discounts_in_dutchie(self, discounts):
+        """Pull discounts down from Dutchie by re-POSTing them with IsDeleted=True.
+
+        The inverse of _push_discounts_to_dutchie, called when a deal is expired
+        or revoked in Odoo. Expiring in Odoo alone never stopped the Dutchie
+        discount — it kept running until its own ValidDateTo — because the
+        publish was one-directional. This closes that gap for the day/discount
+        push path (mint.dutchie_discount_push.mode).
+
+        The authoritative "where is this live in Dutchie" set is the push log:
+        every (discount, store) row with mode='live', success, and a real
+        dutchie_discount_id. Dry-run / never-pushed discounts have no such row,
+        so they no-op. Gated by the same mode param as publish (off → no-op;
+        dry-run → log only; live → POST IsDeleted), so a store can never be
+        deactivated by a path that couldn't publish it.
+
+        On a fully-successful live deactivation (no failed stores) we set
+        mint.discount.dutchie_is_deleted so Odoo's own state matches Dutchie
+        immediately, before the next inbound discount sync re-confirms it.
+        """
+        if not discounts:
+            return
+        mode = self._get_dutchie_push_mode()
+        if mode == 'off':
+            return  # symmetric with publish — nothing was ever sent live
+
+        url = self._get_dutchie_push_url()
+        api_key = self._get_dutchie_push_api_key()
+        Log = self.env['mint.dutchie.discount.push.log'].sudo()
+        Company = self.env['res.company'].sudo()
+
+        for discount in discounts:
+            live_logs = Log.search([
+                ('discount_id', '=', discount.id),
+                ('mode', '=', 'live'),
+                ('success', '=', True),
+                ('dutchie_discount_id', '!=', 0),
+            ])
+            stores = Company.browse(sorted(set(live_logs.mapped('company_id').ids)))
+            if not stores:
+                _logger.info(
+                    'Dutchie deactivate: discount %s has no live push — nothing to pull',
+                    discount.id)
+                continue
+            results = [
+                self._push_one_discount(discount, store, mode, url, api_key, Log, is_delete=True)
+                for store in stores
+            ]
+            if mode == 'live' and results and all(results):
+                try:
+                    discount.sudo().write({'dutchie_is_deleted': True})
+                except Exception as e:  # noqa: BLE001 — best-effort state mirror
+                    _logger.warning(
+                        'Dutchie deactivate: could not set dutchie_is_deleted on %s: %s',
+                        discount.id, e)
 
     # ─── Restriction resolvers (Reward.Restrictions.*) ─────────────────────
 
@@ -484,8 +604,18 @@ class PtlDayDutchiePush(models.Model):
         v2 may infer from market_id when the override is unset."""
         return int(getattr(store, 'dutchie_lsp_id', 0) or 0)
 
-    def _push_one_discount(self, discount, store, mode, url, api_key, Log):
-        """Build payload, log, and (in 'live' mode only) POST to mintinvsvc."""
+    def _push_one_discount(self, discount, store, mode, url, api_key, Log, is_delete=False):
+        """Build payload, log, and (in 'live' mode only) POST to mintinvsvc.
+
+        With is_delete=True this is the EXPIRE/REVOKE mirror: it re-POSTs the
+        discount with IsDeleted=True so Dutchie stops applying it. Only an
+        EXISTING Dutchie discount can be deleted, so the payload's Id (resolved
+        per-store from the prior live push log by _deal_to_dutchie_payload) must
+        be non-zero — Id=0 means we never pushed it live here, so there's
+        nothing to pull and we no-op. Returns True on success (dry-run and the
+        nothing-to-delete case count as success); False on a config gap or a
+        failed HTTP call.
+        """
         loc_id = self._resolve_pos_loc_id(store)
         lsp_id = self._resolve_lsp_id(store)
         payload = {
@@ -510,7 +640,17 @@ class PtlDayDutchiePush(models.Model):
                     f'this store can push to Dutchie.'
                 ),
             })
-            return
+            return False
+
+        if is_delete:
+            # Mark the existing Dutchie discount deleted. Id=0 ⇒ never pushed
+            # live to this store ⇒ nothing to deactivate (no-op success).
+            if not payload['discount'].get('Id'):
+                _logger.info(
+                    'Dutchie deactivate: no live id for discount %s @ %s — skip',
+                    discount.id, store.name)
+                return True
+            payload['discount']['IsDeleted'] = True
         log_vals = {
             'discount_id': discount.id,
             'company_id': store.id,
@@ -524,8 +664,9 @@ class PtlDayDutchiePush(models.Model):
             log_vals['success'] = True
             log_vals['response_body'] = '(dry-run — no HTTP call)'
             Log.create(log_vals)
-            _logger.info('[dry-run] Dutchie push %s for %s', discount.id, store.name)
-            return
+            _logger.info('[dry-run] Dutchie %s %s for %s',
+                         'deactivate' if is_delete else 'push', discount.id, store.name)
+            return True
 
         # mode == 'live': fire the HTTP call (synchronously so we capture the response)
         import time as _t
@@ -548,13 +689,22 @@ class PtlDayDutchiePush(models.Model):
                 # Cache the returned Dutchie id so subsequent pushes use update-mode
                 try:
                     parsed = json.loads(body)
-                    new_id = (parsed.get('dutchie_raw') or {}).get('Data')
-                    # Field is Char (from mint_api_v2) — store as string. Only
-                    # overwrite if currently empty or a synthetic 'ptl_*' marker.
-                    cur = (discount.dutchie_discount_id or '').strip()
-                    is_synthetic = cur.startswith('ptl_') or not cur
-                    if isinstance(new_id, int) and new_id > 0 and is_synthetic:
-                        discount.sudo().write({'dutchie_discount_id': str(new_id)})
+                    # mintinvsvc success shape is {ok, discount_id, ...}; the
+                    # raw-fault shape nests the id under dutchie_raw.Data. Read
+                    # both so the id is captured on success (the old code only
+                    # checked dutchie_raw.Data, which success responses omit).
+                    new_id = parsed.get('discount_id') or (parsed.get('dutchie_raw') or {}).get('Data')
+                    if isinstance(new_id, int) and new_id > 0:
+                        # Record the Dutchie id on THIS (discount, store) log row.
+                        # _deal_to_dutchie_payload reads it back per-store to do
+                        # update-vs-create on re-publish. Deliberately NOT cached
+                        # onto mint.discount.dutchie_discount_id — that single
+                        # field can't represent N per-store ids and previously
+                        # made store N target store 1's discount.
+                        log_vals['dutchie_discount_id'] = new_id
+                        # Backoffice review link for this push (live id only).
+                        log_vals['backoffice_url'] = self._build_backoffice_url(
+                            new_id, loc_id, lsp_id)
                 except Exception:
                     pass
         except urllib.error.HTTPError as e:
@@ -566,3 +716,22 @@ class PtlDayDutchiePush(models.Model):
             log_vals['error_message'] = f'{type(e).__name__}: {str(e)[:500]}'
 
         Log.create(log_vals)
+        # Structured audit line — ships to Grafana Loki via mint_loki_logger.
+        # The Log table above is the queryable Odoo audit; this line is the
+        # cross-service one (same event name as mintinvsvc dealAudit).
+        verb = 'ptl_deactivate' if is_delete else 'ptl_push'
+        _logger.info("deal.audit %s", json.dumps({
+            'event': 'deal.audit',
+            'action': verb if log_vals.get('success') else f'{verb}_failed',
+            'discount_odoo_id': discount.id,
+            'discount_name': discount.name,
+            'dutchie_discount_id': log_vals.get('dutchie_discount_id') or None,
+            'store': store.name,
+            'loc_id': loc_id,
+            'lsp_id': lsp_id,
+            'mode': mode,
+            'elapsed_ms': log_vals.get('elapsed_ms'),
+            'error': log_vals.get('error_message'),
+            'user_id': self.env.uid,
+        }, default=str))
+        return bool(log_vals.get('success'))

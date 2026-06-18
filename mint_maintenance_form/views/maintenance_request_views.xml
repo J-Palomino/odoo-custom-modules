@@ -12,6 +12,47 @@
         </field>
     </record>
 
+    <!-- Show "Intake Channel" on the request form (badge) -->
+    <record id="maintenance_request_form_intake_channel" model="ir.ui.view">
+        <field name="name">maintenance.request.form.intake.channel</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_request_view_form"/>
+        <field name="arch" type="xml">
+            <field name="user_id" position="after">
+                <field name="x_intake_channel" widget="badge"/>
+            </field>
+        </field>
+    </record>
+
+    <!-- Add "Intake Channel" column to the request list view -->
+    <record id="maintenance_request_tree_intake_channel" model="ir.ui.view">
+        <field name="name">maintenance.request.tree.intake.channel</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_request_view_tree"/>
+        <field name="arch" type="xml">
+            <field name="user_id" position="after">
+                <field name="x_intake_channel" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+    <!-- Add "Intake Channel" filters + group-by to the request search view -->
+    <record id="maintenance_request_search_intake_channel" model="ir.ui.view">
+        <field name="name">maintenance.request.search.intake.channel</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_request_view_search"/>
+        <field name="arch" type="xml">
+            <field name="user_id" position="after">
+                <field name="x_intake_channel"/>
+                <separator/>
+                <filter string="Phone" name="channel_phone" domain="[('x_intake_channel', '=', 'phone')]"/>
+                <filter string="SMS" name="channel_sms" domain="[('x_intake_channel', '=', 'sms')]"/>
+                <filter string="Web Form" name="channel_web" domain="[('x_intake_channel', '=', 'web')]"/>
+                <filter string="Group by Intake Channel" name="group_intake_channel" context="{'group_by': 'x_intake_channel'}"/>
+            </field>
+        </field>
+    </record>
+
     <!-- Add "Team" column to Equipment list view -->
     <record id="equipment_tree_add_team" model="ir.ui.view">
         <field name="name">maintenance.equipment.tree.add.team</field>

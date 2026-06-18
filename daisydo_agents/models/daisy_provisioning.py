@@ -293,6 +293,7 @@ class DaisyAgentProvisioning(models.Model):
                 project = self.env["project.project"].sudo().create({
                     "name": f"{agent.name} - Email",
                     "alias_name": agent.code,
+                    "daisy_agent_id": agent.id,
                     # The employee owns + can see their own inbox (invited-only).
                     "user_id": user.id,
                     "privacy_visibility": "followers",

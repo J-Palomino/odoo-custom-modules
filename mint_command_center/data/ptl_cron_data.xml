@@ -23,4 +23,22 @@
             <field name="active" eval="True"/>
         </record>
     </data>
+
+    <!-- Daily deal-level expiry (#93723 AC04). post_init_hook only runs on
+         INSTALL, not on -u, so a new recurring cron must be an XML data record
+         to appear on an upgrade of an already-installed module. cron_expire_past_deals
+         flips live -> expired for deals whose date_end has passed. noupdate="1" so a
+         later upgrade creates it once but never resets its schedule/nextcall. -->
+    <data noupdate="1">
+        <record id="ir_cron_expire_past_deals" model="ir.cron">
+            <field name="name">PTL: Expire Past Deals</field>
+            <field name="model_id" ref="model_mint_ptl_deal"/>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_expire_past_deals()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

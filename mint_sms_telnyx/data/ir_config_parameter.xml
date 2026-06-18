@@ -9,5 +9,11 @@
             <field name="key">mint_sms_telnyx.api_base</field>
             <field name="value">https://api.telnyx.com/v2</field>
         </record>
+        <!-- BlueBubbles iMessage transport (mint.sms.message). Dormant until
+             enabled + url + password are set. -->
+        <record id="param_bluebubbles_enabled" model="ir.config_parameter">
+            <field name="key">mint_sms_telnyx.bluebubbles_enabled</field>
+            <field name="value">False</field>
+        </record>
     </data>
 </odoo>

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+
+    <!-- Index: directory of sections (top-level categories) + search -->
+    <template id="kb_index" name="Knowledge Base">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container my-5">
+                    <h1 class="mb-4">Knowledge Base</h1>
+
+                    <form action="/knowledge" method="get" class="mb-4">
+                        <div class="input-group" style="max-width: 480px;">
+                            <input type="text" name="search" t-att-value="search"
+                                   class="form-control" placeholder="Search the knowledge base..."/>
+                            <button type="submit" class="btn btn-primary">Search</button>
+                        </div>
+                    </form>
+
+                    <t t-if="search">
+                        <p class="text-muted"><a href="/knowledge">&#8592; All sections</a></p>
+                        <h2 class="h5">Results for "<t t-esc="search"/>"</h2>
+                        <t t-if="not results"><p class="text-muted">No pages matched your search.</p></t>
+                        <ul class="list-unstyled ms-2">
+                            <t t-foreach="results" t-as="pg">
+                                <li class="mb-1">
+                                    <a t-attf-href="/knowledge/page/{{ pg.id }}" t-esc="pg.name"/>
+                                    <span class="text-muted small"> — <t t-esc="pg.category_id.complete_name"/></span>
+                                </li>
+                            </t>
+                        </ul>
+                    </t>
+
+                    <t t-else="">
+                        <t t-if="not sections"><p class="text-muted">No sections yet.</p></t>
+                        <div class="row">
+                            <t t-foreach="sections" t-as="sec">
+                                <div class="col-md-4 mb-4">
+                                    <div class="card h-100">
+                                        <div class="card-body">
+                                            <h2 class="h5 card-title">
+                                                <a t-attf-href="/knowledge/section/{{ sec.id }}" t-esc="sec.name"/>
+                                            </h2>
+                                            <p class="card-text text-muted small" t-esc="sec.description"/>
+                                            <p class="card-text text-muted small">
+                                                <t t-esc="sec.page_count"/> page(s)
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </t>
+                        </div>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- Section: one top-level category and its pages / sub-sections -->
+    <template id="kb_section" name="Knowledge Section">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container my-5">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <p class="text-muted small mb-1">
+                            <a href="/knowledge">Knowledge Base</a> / <t t-esc="section.complete_name"/>
+                        </p>
+                        <t t-if="is_manager and edit_cat_action_id">
+                            <a t-attf-href="/odoo/action-{{ edit_cat_action_id }}/{{ section.id }}"
+                               class="btn btn-sm btn-outline-primary" target="_blank">
+                                <i class="fa fa-pencil"/> Edit section
+                            </a>
+                        </t>
+                    </div>
+                    <h1 class="mb-4" t-esc="section.name"/>
+
+                    <ul class="list-unstyled ms-2">
+                        <t t-foreach="section.page_ids" t-as="pg">
+                            <li class="mb-1"><a t-attf-href="/knowledge/page/{{ pg.id }}" t-esc="pg.name"/></li>
+                        </t>
+                    </ul>
+                    <t t-foreach="section.child_ids" t-as="sub">
+                        <div class="ms-3">
+                            <h2 class="h6 text-muted" t-esc="sub.name"/>
+                            <ul class="list-unstyled ms-2">
+                                <t t-foreach="sub.page_ids" t-as="pg">
+                                    <li class="mb-1"><a t-attf-href="/knowledge/page/{{ pg.id }}" t-esc="pg.name"/></li>
+                                </t>
+                            </ul>
+                        </div>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- Single page -->
+    <template id="kb_page" name="Knowledge Page">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container my-5">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <p class="text-muted small mb-1">
+                            <a href="/knowledge">Knowledge Base</a> /
+                            <a t-attf-href="/knowledge/section/{{ page.category_id.id }}" t-esc="page.category_id.complete_name"/>
+                        </p>
+                        <t t-if="is_manager and edit_page_action_id">
+                            <a t-attf-href="/odoo/action-{{ edit_page_action_id }}/{{ page.id }}"
+                               class="btn btn-sm btn-outline-primary" target="_blank">
+                                <i class="fa fa-pencil"/> Edit
+                            </a>
+                        </t>
+                    </div>
+                    <h1 class="mb-4" t-esc="page.name"/>
+                    <div t-out="page.content"/>
+
+                    <t t-if="backlinks">
+                        <hr class="my-4"/>
+                        <h2 class="h6 text-muted">Referenced by</h2>
+                        <ul class="list-unstyled ms-2">
+                            <t t-foreach="backlinks" t-as="bl">
+                                <li class="mb-1">
+                                    <a t-attf-href="/knowledge/page/{{ bl.id }}" t-esc="bl.name"/>
+                                    <span class="text-muted small"> — <t t-esc="bl.category_id.complete_name"/></span>
+                                </li>
+                            </t>
+                        </ul>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+
+</odoo>

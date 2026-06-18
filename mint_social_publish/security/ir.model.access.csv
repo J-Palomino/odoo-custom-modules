@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_social_profile_user,mint.social.profile.user,model_mint_social_profile,base.group_user,1,0,0,0
+access_mint_social_profile_admin,mint.social.profile.admin,model_mint_social_profile,base.group_system,1,1,1,1
+access_mint_social_schedule_request_user,mint.social.schedule.request.user,model_mint_social_schedule_request,base.group_user,1,1,1,0
+access_mint_social_schedule_request_admin,mint.social.schedule.request.admin,model_mint_social_schedule_request,base.group_system,1,1,1,1
+access_mint_social_connect_wizard,mint.social.connect.wizard,model_mint_social_connect_wizard,base.group_system,1,1,1,1

@@ -3,6 +3,7 @@ from . import daisy_agent_presence
 from . import daisy_agent_feed
 from . import daisy_agent_job
 from . import daisy_agent_metric
+from . import daisy_scheduled_job
 from . import daisy_ai_service
 from . import daisy_provisioning
 from . import daisy_go2rtc_service
@@ -11,4 +12,6 @@ from . import im_livechat_channel
 from . import mail_message
 from . import mail_thread
 from . import project_task
+from . import project_project
+from . import daisy_orchestrator_command
 from . import res_config_settings

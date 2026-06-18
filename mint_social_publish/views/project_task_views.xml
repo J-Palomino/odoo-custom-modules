@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_task_form_social_publish" model="ir.ui.view">
+        <field name="name">project.task.form.social.publish</field>
+        <field name="model">project.task</field>
+        <field name="inherit_id" ref="project.view_task_form2"/>
+        <field name="arch" type="xml">
+
+            <!-- Header: scheduler submit + approver approve/reject + status -->
+            <xpath expr="//header" position="inside">
+                <!-- Schedulers (Ashton/Sage): prepare + submit. Never sends. -->
+                <button name="action_social_submit"
+                        type="object"
+                        string="Submit for Approval"
+                        class="btn-primary"
+                        invisible="x_social_publish_state in ('pending_approval','sent')"/>
+                <!-- Approvers only (Pablo/Juan): the action that actually sends. -->
+                <button name="action_social_approve"
+                        type="object"
+                        string="Approve &amp; Publish"
+                        class="btn-primary"
+                        groups="mint_social_publish.group_social_approver"
+                        invisible="x_social_publish_state not in ('pending_approval','approved','failed')"/>
+                <button name="action_social_reject"
+                        type="object"
+                        string="Reject"
+                        groups="mint_social_publish.group_social_approver"
+                        invisible="x_social_publish_state != 'pending_approval'"/>
+                <field name="x_social_publish_state" widget="statusbar"
+                       statusbar_visible="draft,pending_approval,approved,sent"/>
+            </xpath>
+
+            <!-- Social publishing detail page -->
+            <xpath expr="//notebook" position="inside">
+                <page string="Social Publishing" name="social_publish">
+                    <group>
+                        <group string="Target">
+                            <field name="x_social_profile_id"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                            <field name="x_social_platforms"
+                                   placeholder="instagram"/>
+                            <field name="x_social_post_type"/>
+                            <field name="date_deadline" string="Scheduled (Deadline)"/>
+                        </group>
+                        <group string="Approval &amp; Result">
+                            <field name="x_social_publish_state" readonly="1"/>
+                            <field name="x_social_approved_by" readonly="1"/>
+                            <field name="x_social_approved_at" readonly="1"/>
+                            <field name="x_social_job_id" readonly="1"/>
+                            <field name="x_social_published_at" readonly="1"/>
+                            <field name="x_social_retry_count" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Caption">
+                        <field name="x_social_caption" nolabel="1"
+                               placeholder="Caption sent to the platforms. Falls back to the task description if empty."/>
+                    </group>
+                    <group string="Rejection Reason"
+                           invisible="not x_social_rejection_reason">
+                        <field name="x_social_rejection_reason" nolabel="1" readonly="1"/>
+                    </group>
+                    <group string="Last Error"
+                           invisible="not x_social_publish_error">
+                        <field name="x_social_publish_error" nolabel="1" readonly="1"/>
+                    </group>
+                    <div class="text-muted">
+                        <b>Schedulers</b> (e.g. Ashton / Sage): attach the image or video
+                        (paperclip in the chatter), set the account, platform(s), caption and a
+                        future Deadline, then <b>Submit for Approval</b> (or move the card to the
+                        <b>Scheduled</b> stage). <b>Only an approver (Pablo or Juan)</b> can
+                        <b>Approve &amp; Publish</b> — that is what actually sends the post to
+                        posts.agency.
+                    </div>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

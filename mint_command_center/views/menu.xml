@@ -27,7 +27,7 @@
               sequence="10"/>
 
     <menuitem id="menu_ptl_calendar"
-              name="PTL Calendar"
+              name="Daily Deals"
               parent="menu_ptl"
               action="action_ptl_day"
               sequence="10"/>
@@ -49,6 +49,12 @@
               parent="menu_ptl"
               action="action_brand_calendar_entry"
               sequence="25"/>
+
+    <!-- Temporarily hide "Brand Calendar". Re-enable by setting active back
+         to True (prod xmlid row is pinned noupdate, so flip it live too). -->
+    <record id="menu_brand_calendar" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
 
     <menuitem id="menu_deal_submissions"
               name="Deal Submissions"
@@ -74,11 +80,24 @@
               action="action_hotbox_deal"
               sequence="35"/>
 
+    <!-- Hide "Hot Box" from the Mint Marketing menu. The action
+         (action_hotbox_deal) and hotbox.deal model are retained and still
+         reachable directly; re-enable by setting active back to True (prod
+         xmlid row is pinned noupdate, so flip it live too). -->
+    <record id="menu_hotbox" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+
     <menuitem id="menu_brand_rankings"
               name="Brand Rankings"
               parent="menu_ptl"
               action="action_brand_ranking"
               sequence="40"/>
+
+    <!-- Hide "Brand Rankings" — same pattern as Hot Box above. -->
+    <record id="menu_brand_rankings" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
 
     <!-- ── Push Section ── (was "Marketing") -->
     <menuitem id="menu_marketing"

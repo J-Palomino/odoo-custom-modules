@@ -1,7 +1,13 @@
-from datetime import date as _date
+import logging
+from datetime import date as _date, timedelta
 
 from odoo import api, fields, models
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import UserError
+
+from .deal_mixins import format_bundle_tiers_text
+from .ptl_deal import MASTER_CATEGORY_PATTERNS
+
+_logger = logging.getLogger(__name__)
 
 
 class DealSubmission(models.Model):
@@ -9,7 +15,8 @@ class DealSubmission(models.Model):
     _description = 'Vendor Deal Submission'
     _inherit = [
         'mail.thread', 'mail.activity.mixin',
-        'mint.discount.core.mixin', 'mint.vendor.funding.mixin',
+        'mint.discount.core.mixin', 'mint.bogo.spec.mixin',
+        'mint.vendor.funding.mixin',
     ]
     _order = 'create_date desc'
 
@@ -72,25 +79,66 @@ class DealSubmission(models.Model):
     # --- Deal details ---
     name = fields.Char(string='Deal Name', required=True, tracking=True)
     product_category = fields.Char(string='Product Category')
-    # weight_value / weight_unit — grafted from staging (reconcile 2026-06).
-    weight_value = fields.Float(
-        string='Weight',
-        help='Numeric weight/count of the product (e.g. 3.5 for an eighth).',
+    product_category_id = fields.Many2one(
+        'product.category',
+        string='In-Stock Category',
+        help='Primary in-stock category. Kept for back-compat (mirrors the '
+             'brand_id/brand_ids pattern); when In-Stock Categories below is '
+             'used, this is its first entry.',
     )
-    weight_unit = fields.Selection(
-        selection=[
-            ('g', 'g'),
-            ('mg', 'mg'),
-            ('oz', 'oz'),
-            ('ct', 'ct'),
-        ],
-        string='Unit',
+    product_category_ids = fields.Many2many(
+        'product.category',
+        'mint_deal_submission_categ_rel',
+        'submission_id',
+        'categ_id',
+        string='In-Stock Categories',
+        help='All categories this deal includes — limited to categories the '
+             'selected brand(s) currently have in stock, same multi-select '
+             'pattern as Brands. Picks fill the plain-text Product Category '
+             '(comma-separated Dutchie names); downstream (PTL conversion, '
+             'stock check, Dutchie publish) keeps reading the text field.',
+    )
+    available_category_ids = fields.Many2many(
+        'product.category',
+        compute='_compute_available_category_ids',
+        string='Available In-Stock Categories',
+        help='Distinct Dutchie categories with on-hand stock '
+             '(x_quantity_available > 0) across the selected brand(s). '
+             'Drives the In-Stock Category dropdown domain.',
+    )
+    available_product_ids = fields.Many2many(
+        'product.template',
+        compute='_compute_available_product_ids',
+        string='Available Products',
+        help='Products matching every selected facet — brand(s), in-stock '
+             'categor(ies), and market/stores. A product qualifies when one '
+             'of its variants has on-hand stock at one of the requested '
+             'stores (variant x_dutchie_location_id + x_quantity_available '
+             'from the Dutchie sync). Drives the Specific Products picker '
+             'domain.',
+    )
+    publish_match_count = fields.Integer(
+        string='In-Stock Products Matched',
+        compute='_compute_publish_match_count',
+        help='How many in-stock products this deal resolves to at the target '
+             'stores (explicit Specific Products, else brand ∩ categories). '
+             '0 means the deal would be invisible on the storefront and apply '
+             'to nothing at the register — conversion is blocked. -1 means no '
+             'product-narrowing restriction (store-wide), handled elsewhere.',
     )
     # discount_type / discount_value / original_price come from
     # mint.discount.core.mixin.
     sales_details = fields.Text(
         string='Sales Details',
         help='Formatted pricing text — how this deal should be displayed',
+    )
+    # Structured bundle tiers (#93677): "2 for $18 or 3 for $25" as
+    # (qty, price) rows. Forwarded to the PTL deal on conversion. The
+    # structured BOGO triple comes from mint.bogo.spec.mixin.
+    bundle_tier_ids = fields.One2many(
+        'mint.deal.submission.bundle.tier',
+        'submission_id',
+        string='Bundle Tiers',
     )
     details_exclusions = fields.Text(
         string='Details & Exclusions',
@@ -112,28 +160,10 @@ class DealSubmission(models.Model):
     )
 
     # --- Targeting ---
-    # market_ids multi-market (#93723, grafted from staging). market_id is
-    # kept as the computed "primary" (first of market_ids) so all downstream
-    # main code using market_id (action_approve, plot-gate,
-    # national_promo.get_or_create, convert_to_deal) keeps working unchanged.
-    market_ids = fields.Many2many(
-        'mint.region',
-        'mint_deal_submission_market_rel',
-        'submission_id',
-        'market_id',
-        string='Markets',
-        tracking=True,
-        help='Regions this deal targets. Use the public form to pick multiple.',
-    )
     market_id = fields.Many2one(
         'mint.region',
-        string='Primary Market',
-        compute='_compute_primary_market',
-        store=True,
-        readonly=False,
+        string='Market',
         tracking=True,
-        help='First of market_ids — kept for downstream compatibility '
-             '(action_approve, action_convert_to_deal, mint.national.promo.get_or_create).',
     )
     store_ids = fields.Many2many(
         'res.company',
@@ -189,54 +219,46 @@ class DealSubmission(models.Model):
                         )
             rec.windows_summary = ', '.join(parts) or False
 
-    # --- Holiday / Special Event (grafted from staging, reconcile 2026-06) ---
-    is_holiday = fields.Boolean(
-        string='Special Event / Holiday',
-        default=False,
-        tracking=True,
-        help='Marks this deal as a Holiday / Special Event submission '
-             '(unlocks Event Name + Promo Units sub-form on the public form).',
-    )
-    event_name = fields.Char(
-        string='Event Name',
-        tracking=True,
-        help='Required when is_holiday=True. Surfaces in the PTL Category column downstream.',
-    )
-    # NOTE: promo-units fields come from main's #124 JotForm intake schema
-    # (promo_units / promo_units_product / promo_units_qty) further below — the
-    # staging graft's parallel promo block was dropped here to avoid duplicates.
-
-    @api.depends('market_ids')
-    def _compute_primary_market(self):
-        for rec in self:
-            # Fall back to the existing market_id value if market_ids is empty —
-            # protects legacy rows during the additive migration window.
-            if rec.market_ids:
-                rec.market_id = rec.market_ids[:1]
-            elif not rec.market_id:
-                rec.market_id = False
-
-    @api.constrains('is_holiday', 'event_name')
-    def _check_event_name_when_holiday(self):
-        for rec in self:
-            if rec.is_holiday and not (rec.event_name and rec.event_name.strip()):
-                raise ValidationError(
-                    "Event Name is required when Special Event / Holiday is enabled."
-                )
-
     # --- State machine ---
+    # Board lifecycle: New -> Under Review -> [Approved] -> Scheduled ->
+    # Final Review -> Expired, with Rejected off the happy path.
+    #   * Approved stays an internal greenlight (creates the National Promo
+    #     campaign and is the gate the plot-check enforces) before a deal can
+    #     be plotted.
+    #   * Scheduled (formerly "Converted to Deal") = PTL deal created + plotted
+    #     onto the calendar = scheduled to go live.
+    #   * Final Review (formerly "Live") = the run window has ended; awaiting
+    #     human closeout sign-off. The daily cron advances Scheduled here on the
+    #     run's last day.
+    #   * Expired = closed out (manual sign-off from Final Review).
     state = fields.Selection(
         selection=[
             ('new', 'New'),
             ('under_review', 'Under Review'),
             ('approved', 'Approved'),
+            ('scheduled', 'Scheduled'),
+            ('final_review', 'Final Review'),
+            ('expired', 'Expired'),
             ('rejected', 'Rejected'),
-            ('converted', 'Converted to Deal'),
         ],
         string='Status',
         default='new',
         tracking=True,
     )
+
+    # Last day this deal runs — max of the plot windows, falling back to the
+    # legacy preferred end date. Drives the Scheduled -> Final Review cron.
+    run_end_date = fields.Date(
+        string='Run Ends',
+        compute='_compute_run_end_date',
+        store=True,
+    )
+
+    @api.depends('window_ids.date_end', 'preferred_end_date')
+    def _compute_run_end_date(self):
+        for rec in self:
+            ends = [d for d in rec.window_ids.mapped('date_end') if d]
+            rec.run_end_date = max(ends) if ends else rec.preferred_end_date
 
     # --- Linked deal (after conversion) ---
     deal_id = fields.Many2one(
@@ -351,17 +373,21 @@ class DealSubmission(models.Model):
             # Multi-brand (#93635): the campaign keys on the PRIMARY brand —
             # first of brand_ids when the single brand_id isn't set.
             primary = sub.brand_id or sub.brand_ids[:1]
-            if sub.campaign_id or not primary or not sub.market_id:
-                continue
-            target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
-            campaign = Campaign.get_or_create(
-                brand_id=primary.id,
-                market_id=sub.market_id.id,
-                year=target_year,
-                crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
-            )
-            if campaign:
-                sub.campaign_id = campaign.id
+            if not sub.campaign_id and primary and sub.market_id:
+                target_year = sub.preferred_start_date.year if sub.preferred_start_date else year
+                campaign = Campaign.get_or_create(
+                    brand_id=primary.id,
+                    market_id=sub.market_id.id,
+                    year=target_year,
+                    crm_lead_id=sub.crm_lead_id.id if sub.crm_lead_id else False,
+                )
+                if campaign:
+                    sub.campaign_id = campaign.id
+        # Campaigns are background bookkeeping — never staff-entered and
+        # never a blocker. get_or_create births them 'approved'; this batched
+        # call heals any pre-existing 'planning' rows (action_approve filters
+        # to planning internally, so it's a no-op for the rest).
+        records.campaign_id.action_approve()
 
     def action_reject(self):
         return {
@@ -376,55 +402,35 @@ class DealSubmission(models.Model):
             },
         }
 
-    # ─── Plot gate ───────────────────────────────────────────────────────
+    # ─── Campaign self-heal (replaces the old blocking plot gate) ────────
     #
-    # Conversion to a mint.ptl.deal requires the parent campaign
-    # (mint.national.promo for this brand × market × year) to be approved
-    # — i.e. the brand × market is "blessed to plot" per Famous's approved-
-    # offers concept. The gate is bypassable via the Force-Approve wizard,
-    # which sets `force_override=True` in context and writes a reason to
-    # chatter on both the submission and the campaign.
+    # Campaigns (mint.national.promo) are background bookkeeping: they are
+    # auto-created on submission approval (born 'approved'), never entered
+    # by staff, and their menu is hidden. Per the 2026-06-12 directive they
+    # must never block plotting — a leftover 'planning' campaign is
+    # auto-approved in place, and a missing campaign is simply not a
+    # problem (the rollup link is best-effort).
 
-    PLOTTABLE_CAMPAIGN_STATES = ('approved', 'active')
+    def _autoapprove_campaign(self):
+        """Heal a legacy 'planning' campaign; never blocks, never raises.
 
-    def _check_plot_gate(self):
-        """Raise UserError if the submission's campaign isn't approved,
-        unless force_override is set in context."""
+        NOTE: this mutates campaign state (mail-tracked) — do not call
+        from read-only contexts (computes, constraints, reports).
+        """
         self.ensure_one()
-        if self.env.context.get('force_override'):
-            return
         campaign = self.campaign_id
-        if not campaign:
-            raise UserError(
-                "No National Promo Campaign linked to this submission yet. "
-                "Approve the submission first (creates the campaign), then "
-                "approve the campaign — or use Force Approve & Plot."
-            )
-        if campaign.state not in self.PLOTTABLE_CAMPAIGN_STATES:
-            raise UserError(
-                f"Campaign \"{campaign.name}\" is in state "
-                f"\"{campaign.state}\" — only "
-                f"{', '.join(self.PLOTTABLE_CAMPAIGN_STATES)} campaigns can "
-                f"be plotted. Approve the campaign first, or use Force "
-                f"Approve & Plot to do both with an audit-logged reason."
-            )
-
-    def action_force_approve_and_plot(self):
-        """Open the Force Approve & Plot wizard for this submission."""
-        self.ensure_one()
-        return {
-            'name': 'Force Approve & Plot',
-            'type': 'ir.actions.act_window',
-            'res_model': 'mint.deal.force.approve.wizard',
-            'view_mode': 'form',
-            'target': 'new',
-            'context': {'default_submission_id': self.id},
-        }
+        if campaign.state == 'closed':
+            _logger.warning(
+                'Deal submission %s plots under CLOSED campaign %s (%s) — '
+                'allowed per never-block policy, but the campaign rollup '
+                'will keep accruing.', self.id, campaign.id, campaign.name)
+            return
+        campaign.action_approve()  # filters to 'planning' internally
 
     def _format_sales_details(self):
         """Render the public Sales Details string from the structured discount
-        type + value (+ MSRP). Returns '' for types that need extra structure
-        the form doesn't capture yet (Bundle/multi-buy) — those stay free-text.
+        type + value (+ MSRP). BOGO and Bundle now read their structured spec
+        (#93677): the bogo buy/get/pct triple and the bundle_tier_ids table.
 
         Driven by the existing discount_type Selection rather than a redundant
         new "sales format" field (#94626). discount_type already enumerates the
@@ -443,24 +449,258 @@ class DealSubmission(models.Model):
         if dt == 'price' and v:
             return money(v)
         if dt == 'bogo':
-            return "BOGO"
+            return self._bogo_sales_text() or "BOGO"
+        if dt == 'bundle':
+            return format_bundle_tiers_text(
+                [(t.qty, t.price) for t in self.bundle_tier_ids])
         if dt == 'clearance':
             return f"{n(v)}% Off (Clearance)" if v else "Clearance"
         if dt == 'points_multiplier' and v:
             return f"{n(v)}x Points"
-        return ''  # bundle / no value -> keep free text
+        return ''  # no value -> keep free text
 
-    @api.onchange('discount_type', 'discount_value')
+    sales_details_autogen = fields.Char(
+        string='Last Auto-generated Sales Details',
+        help='Internal: last value _onchange_autofill_sales_details wrote, so '
+             'structured-field edits can refresh the text without clobbering '
+             'a manual override.',
+    )
+
+    @api.onchange('discount_type', 'discount_value', 'bogo_variant',
+                  'bogo_buy_qty', 'bogo_get_qty', 'bogo_get_pct',
+                  'bundle_tier_ids')
     def _onchange_autofill_sales_details(self):
         """Auto-generate Sales Details from the discount type when it's still
-        blank, so submitters stop free-typing inconsistent pricing strings
-        (#94626). Only fills when empty — never clobbers a custom edit, and
-        Bundle/multi-buy wording is left to the user."""
-        if self.sales_details:
-            return
+        blank OR still equal to the previous auto-fill, so submitters stop
+        free-typing inconsistent pricing strings (#94626 / #93677). Never
+        clobbers a custom edit."""
         generated = self._format_sales_details()
-        if generated:
+        if not generated:
+            return
+        if not self.sales_details or self.sales_details == self.sales_details_autogen:
             self.sales_details = generated
+            self.sales_details_autogen = generated
+
+    @api.depends('brand_id', 'brand_ids')
+    def _compute_available_category_ids(self):
+        """Distinct categories the selected brand(s) have in stock right now.
+
+        x_quantity_available on product.template is the Dutchie-synced
+        on-hand quantity (refreshed continuously by the inventory sync), so
+        a plain aggregate here is cheap and always current — no inventory-
+        service HTTP round-trip needed. sudo: submitters reviewing deals
+        don't necessarily hold product read rights, and this exposes only
+        category names.
+        """
+        Product = self.env['product.template'].sudo()
+        for sub in self:
+            brands = sub.brand_ids | sub.brand_id
+            if not brands:
+                sub.available_category_ids = False
+                continue
+            groups = Product._read_group(
+                [('brand_id', 'in', brands.ids),
+                 ('x_quantity_available', '>', 0),
+                 ('categ_id', '!=', False)],
+                groupby=['categ_id'],
+                aggregates=[],
+            )
+            sub.available_category_ids = [(6, 0, [g[0].id for g in groups])]
+
+    def _all_picked_categories(self):
+        """Union of the multi-select and the legacy single pick, multi first.
+        Mirrors the brand_ids|brand_id union used everywhere for brands."""
+        self.ensure_one()
+        return self.product_category_ids | self.product_category_id
+
+    @api.depends('brand_id', 'brand_ids', 'product_category_id',
+                 'product_category_ids', 'market_id', 'store_ids')
+    def _compute_available_product_ids(self):
+        """Products matching every facet, for the Specific Products domain.
+
+        Searched on product.product (not dotted template domains) so the
+        SAME variant must carry both the store location and the stock —
+        dotted m2o-path conditions each match against any variant
+        independently, which would pass a product stocked only outside the
+        market. Store scope = requested store_ids when set, else the
+        market's stores; no stores resolved -> stock anywhere. sudo for the
+        same reason as _compute_available_category_ids.
+        """
+        Variant = self.env['product.product'].sudo()
+        for sub in self:
+            brands = sub.brand_ids | sub.brand_id
+            if not brands:
+                sub.available_product_ids = False
+                continue
+            domain = [
+                ('product_tmpl_id.brand_id', 'in', brands.ids),
+                ('x_quantity_available', '>', 0),
+            ]
+            cats = sub._all_picked_categories()
+            if cats:
+                domain.append(('product_tmpl_id.categ_id', 'in', cats.ids))
+            stores = sub.store_ids or (
+                sub.market_id and sub.market_id.store_ids
+                or self.env['res.company'].browse([])
+            )
+            uuids = [
+                s.dutchie_store_id for s in stores
+                if getattr(s, 'dutchie_store_id', False)
+            ]
+            if uuids:
+                domain.append(('x_dutchie_location_id', 'in', uuids))
+            variants = Variant.search(domain)
+            sub.available_product_ids = [
+                (6, 0, variants.product_tmpl_id.ids)
+            ]
+
+    def _resolve_publish_match_count(self):
+        """Count the IN-STOCK products this deal's restriction set actually
+        resolves to at the target stores — i.e. what the Dutchie discount
+        will match in the storefront cache.
+
+        Mirrors the published restriction precedence: explicit Specific
+        Products are authoritative; otherwise brand(s) ∩ picked categor(ies).
+        Scoped to the requested stores (else the market's stores) and to
+        on-hand stock (x_quantity_available > 0, the same Dutchie-synced
+        signal the FE inventory cache is built from). Searched on
+        product.product so one variant carries both the store and the stock.
+
+        A count of 0 means the deal would be invisible on the storefront and
+        apply to nothing at the register — the convert gate refuses it.
+        Returns -1 when there is no product-narrowing restriction at all
+        (no brand / no explicit products): that 'store-wide' case is caught
+        separately by the Dutchie publish builder, so the gate skips it.
+        """
+        self.ensure_one()
+        Variant = self.env['product.product'].sudo()
+        brands = self.brand_ids | self.brand_id
+        explicit = self.product_ids.filtered(
+            lambda p: not brands or p.brand_id in brands
+        )
+        domain = [('x_quantity_available', '>', 0)]
+        if explicit:
+            domain.append(('product_tmpl_id', 'in', explicit.ids))
+        elif brands:
+            domain.append(('product_tmpl_id.brand_id', 'in', brands.ids))
+            cats = self._all_picked_categories()
+            if cats:
+                domain.append(('product_tmpl_id.categ_id', 'in', cats.ids))
+        else:
+            return -1  # no brand & no explicit products → store-wide, not gated here
+        stores = self.store_ids or (
+            self.market_id and self.market_id.store_ids
+            or self.env['res.company'].browse([])
+        )
+        uuids = [s.dutchie_store_id for s in stores
+                 if getattr(s, 'dutchie_store_id', False)]
+        if uuids:
+            domain.append(('x_dutchie_location_id', 'in', uuids))
+        variants = Variant.search(domain)
+        return len(set(variants.product_tmpl_id.ids))
+
+    @api.depends('brand_id', 'brand_ids', 'product_ids',
+                 'product_category_id', 'product_category_ids',
+                 'market_id', 'store_ids')
+    def _compute_publish_match_count(self):
+        """Surfaced on the form so the approver sees how many in-stock
+        products the deal will hit BEFORE converting (the resolve-and-gate
+        number)."""
+        for sub in self:
+            sub.publish_match_count = sub._resolve_publish_match_count()
+
+    def _ptl_category_bucket(self):
+        """Map this submission's category picks / free text onto the master
+        bucket Selection that mint.ptl.deal.product_category accepts.
+
+        The PTL field is a Selection (Flower / Pre-Rolls / Vapes / ...), so
+        raw Dutchie leaf names ('Infused Prerolls') or comma-joined text
+        would raise ValueError on conversion. Exact bucket text passes
+        through; otherwise each picked name is reverse-matched against
+        MASTER_CATEGORY_PATTERNS fragments and the first bucket wins
+        (multi-category nuance is preserved in product_category_legacy and
+        the published Dutchie restriction, not the PTL display bucket).
+        Returns False when nothing matches."""
+        self.ensure_one()
+        text = (self.product_category or '').strip()
+        if text in MASTER_CATEGORY_PATTERNS:
+            return text
+        names = [c.name for c in self._all_picked_categories()]
+        if not names and text:
+            names = [t.strip() for t in text.split(',') if t.strip()]
+        for name in names:
+            low = name.lower()
+            for bucket, patterns in MASTER_CATEGORY_PATTERNS.items():
+                if any(p.lower() in low for p in patterns):
+                    return bucket
+        return False
+
+    @api.onchange('product_category_id', 'product_category_ids')
+    def _onchange_product_category_fill_text(self):
+        """Mirror the dropdown picks into the legacy free-text field that all
+        downstream consumers (PTL conversion, stock-check wizard, Dutchie
+        publish) read. Leaf names only ('Infused Prerolls'), not the
+        'Cannabis / ...' path — that's what Dutchie item categories match.
+        Multiple picks join comma-separated. Also keeps the back-compat
+        single product_category_id aligned to the first multi pick."""
+        cats = self._all_picked_categories()
+        if cats:
+            self.product_category = ', '.join(cats.mapped('name'))
+        if self.product_category_ids and (
+                not self.product_category_id
+                or self.product_category_id not in self.product_category_ids):
+            self.product_category_id = self.product_category_ids[:1]
+
+    @api.onchange('brand_id', 'brand_ids')
+    def _onchange_brands_reset_category(self):
+        """Drop stale category picks when the brand set changes and the
+        new brand(s) no longer stock them. The free-text field is left
+        alone — it may carry an intentional manual value."""
+        avail = set(self.available_category_ids._origin.ids)
+        kept = self.product_category_ids._origin.filtered(lambda c: c.id in avail)
+        if len(kept) != len(self.product_category_ids):
+            self.product_category_ids = [(6, 0, kept.ids)]
+        current = self.product_category_id._origin.id
+        if current and current not in avail:
+            self.product_category_id = kept[:1] if kept else False
+
+    @api.model
+    def _mirror_category_text(self, vals):
+        """Non-form writes (RPC, imports, server actions) that set the
+        dropdowns without the text get the same mirroring the onchange does
+        in the form view."""
+        if vals.get('product_category'):
+            return
+        Category = self.env['product.category']
+        names = []
+        if vals.get('product_category_ids'):
+            # Resolve ids out of standard m2m command tuples ((6,0,ids)/(4,id))
+            ids = []
+            for cmd in vals['product_category_ids']:
+                if isinstance(cmd, (list, tuple)):
+                    if cmd[0] == 6:
+                        ids.extend(cmd[2])
+                    elif cmd[0] == 4:
+                        ids.append(cmd[1])
+                elif isinstance(cmd, int):
+                    ids.append(cmd)
+            names = Category.browse(ids).exists().mapped('name')
+        elif vals.get('product_category_id'):
+            cat = Category.browse(vals['product_category_id'])
+            if cat.exists():
+                names = [cat.name]
+        if names:
+            vals['product_category'] = ', '.join(names)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            self._mirror_category_text(vals)
+        return super().create(vals_list)
+
+    def write(self, vals):
+        self._mirror_category_text(vals)
+        return super().write(vals)
 
     @api.onchange('market_id')
     def _onchange_market_fill_stores(self):
@@ -485,7 +725,55 @@ class DealSubmission(models.Model):
         if self.state not in ('approved',):
             raise UserError("Only approved submissions can be converted to deals.")
 
-        self._check_plot_gate()
+        # Resolve-and-gate: refuse to convert a deal whose brand/category/
+        # product selection matches NO in-stock product at the target stores.
+        # Such a deal publishes to Dutchie but is invisible on the storefront
+        # and discounts nothing at the register — the failure mode is silent
+        # today. -1 (no product-narrowing restriction) is the store-wide case,
+        # which the Dutchie publish builder refuses separately. Override with
+        # context force_empty_deal=True for a deliberate ahead-of-stock deal.
+        if not self.env.context.get('force_empty_deal'):
+            match_count = self._resolve_publish_match_count()
+            if match_count == 0:
+                raise UserError(
+                    "This deal's selection (brand / In-Stock Categories / "
+                    "Specific Products) matches no in-stock products at the "
+                    "target stores, so it would be invisible on the storefront "
+                    "and apply to nothing at the register.\n\n"
+                    "Fix the Inclusions or check stock for the chosen "
+                    "brand(s) and categories in this market. To convert anyway "
+                    "(e.g. an ahead-of-restock deal), use Convert (Force)."
+                )
+
+        # Schedule gate: refuse to convert when nothing would land on the PTL
+        # calendar. Conversion plots from structured window_ids, else falls back
+        # to a window synthesised from preferred_start/end (#93723 AC03); with
+        # neither — or no market to plot into — the deal is created but plots
+        # ZERO days, invisible in the daily-deals carousel (the silent failure
+        # mode for the JotForm-backfilled submissions). Override with
+        # force_empty_schedule=True for a deliberate publish-only deal.
+        if not self.env.context.get('force_empty_schedule'):
+            has_dates = bool(self.window_ids) or bool(
+                self.preferred_start_date or self.preferred_end_date)
+            if not has_dates:
+                raise UserError(
+                    "This submission has no schedule — no plot windows and no "
+                    "preferred start/end dates — so converting it would create a "
+                    "deal that lands on zero calendar days (invisible in the "
+                    "daily-deals carousel).\n\n"
+                    "Add plot windows (Schedule tab) or preferred dates, then "
+                    "convert. To convert anyway (publish-only, no PTL "
+                    "placement), use Convert (Force)."
+                )
+            if not self.market_id:
+                raise UserError(
+                    "This submission has no Market, so its deal can't be plotted "
+                    "onto a PTL calendar (plotting is per-market).\n\n"
+                    "Set a Market, then convert. To convert anyway "
+                    "(publish-only), use Convert (Force)."
+                )
+
+        self._autoapprove_campaign()
 
         # Multi-brand (#93635): every selected brand rides through. The
         # union keeps single-brand submissions working unchanged.
@@ -503,10 +791,19 @@ class DealSubmission(models.Model):
             'name': self.name,
             'brand_id': (self.brand_id or all_brands[:1]).id if all_brands else False,
             'brand_ids': [(6, 0, all_brands.ids)] if all_brands else False,
-            'product_category': self.product_category,
+            'product_category': self._ptl_category_bucket(),
+            'product_category_legacy': self.product_category or False,
             'discount_type': self.discount_type,
             'discount_value': self.discount_value,
             'original_price': self.original_price,
+            'bogo_variant': self.bogo_variant,
+            'bogo_buy_qty': self.bogo_buy_qty,
+            'bogo_get_qty': self.bogo_get_qty,
+            'bogo_get_pct': self.bogo_get_pct,
+            'bundle_tier_ids': [
+                (0, 0, {'sequence': t.sequence, 'qty': t.qty, 'price': t.price})
+                for t in self.bundle_tier_ids
+            ],
             'sales_details': self.sales_details,
             'details_exclusions': self.details_exclusions,
             'store_ids': [(6, 0, self.store_ids.ids)] if self.store_ids else False,
@@ -520,30 +817,45 @@ class DealSubmission(models.Model):
             'explicit_product_ids': [(6, 0, explicit_products.ids)] if explicit_products else False,
             'excluded_brand_ids': [(6, 0, self.excluded_brand_ids.ids)] if self.excluded_brand_ids else False,
             'excluded_skus': self.excluded_skus or False,
-            # Holiday/event info forwarded to the PTL deal (grafted, reconcile 2026-06).
-            'is_holiday': self.is_holiday,
-            'event_name': self.event_name,
         })
         self.write({
-            'state': 'converted',
+            'state': 'scheduled',
             'deal_id': deal.id,
         })
 
-        # Replay any structured plot windows onto the new deal's day_ids.
-        # Falls back to no-op when window_ids is empty (legacy submissions
-        # that only set preferred_start/end use the old free-text path).
+        # Replay structured plot windows onto the new deal's day_ids. When the
+        # submission has no structured windows (legacy / public-form rows that
+        # only set preferred_start/end), synthesise a contiguous window from
+        # those preferred dates so the deal still plots instead of converting to
+        # a zero-day deal that needs manual calendar work (#93723 AC03).
         plotted_count = 0
-        if self.window_ids and self.market_id:
+        window_count = 0
+        dates = []
+        if self.window_ids:
             dates = self.window_ids.all_dates()
-            if dates:
-                day_ids = deal.action_plot_windows(dates, market_id=self.market_id.id)
-                plotted_count = len(day_ids)
+            window_count = len(self.window_ids)
+        elif self.preferred_start_date or self.preferred_end_date:
+            start = self.preferred_start_date or self.preferred_end_date
+            end = self.preferred_end_date or self.preferred_start_date
+            if end < start:
+                start, end = end, start
+            day = start
+            while day <= end:
+                dates.append(day.isoformat())
+                day += timedelta(days=1)
+            window_count = 1
 
-        body = f"Converted to PTL Deal: {deal.name} (id={deal.id})"
+        # market_id is required to plot; without it we leave the deal unplotted
+        # rather than silently picking a market (action_plot_windows would raise).
+        if dates and self.market_id:
+            day_ids = deal.action_plot_windows(dates, market_id=self.market_id.id)
+            plotted_count = len(day_ids)
+
+        body = f"Scheduled — created PTL Deal: {deal.name} (id={deal.id})"
         if plotted_count:
             body += (
                 f" — plotted {plotted_count} day(s) across "
-                f"{len(self.window_ids)} window(s)."
+                f"{window_count} window(s)."
             )
         self.message_post(body=body, message_type='comment')
         return {
@@ -552,3 +864,60 @@ class DealSubmission(models.Model):
             'res_id': deal.id,
             'view_mode': 'form',
         }
+
+    def action_convert_to_deal_force(self):
+        """Convert past both gates — the empty in-stock match (an ahead-of-
+        restock deal whose products aren't in stock yet) and the empty schedule
+        (a deliberate publish-only deal with no PTL calendar placement)."""
+        self.ensure_one()
+        return self.with_context(
+            force_empty_deal=True, force_empty_schedule=True,
+        ).action_convert_to_deal()
+
+    # ─── Run-end lifecycle: Scheduled -> Final Review -> Expired ──────────
+
+    def action_to_final_review(self):
+        """Manually move a scheduled deal into Final Review (closeout)."""
+        self.filtered(lambda s: s.state == 'scheduled').write({
+            'state': 'final_review',
+        })
+
+    def action_expire(self):
+        """Sign off a deal after final review (or end a scheduled one early)."""
+        to_expire = self.filtered(lambda s: s.state in ('scheduled', 'final_review'))
+        to_expire.write({'state': 'expired'})
+        # Pull the discount down from Dutchie too — expiring in Odoo alone left
+        # it running in Dutchie until its own ValidDateTo. Best-effort per
+        # submission so one failure can't block the others' state change.
+        for sub in to_expire:
+            try:
+                sub._dutchie_deactivate()
+            except Exception as e:  # noqa: BLE001 — never block expiry on a Dutchie hiccup
+                _logger.warning('Expire: Dutchie deactivate failed for submission %s: %s', sub.id, e)
+
+    @api.model
+    def _cron_advance_lifecycle(self):
+        """Daily: move Scheduled deals whose run window has ended into Final
+        Review so a human signs off the closeout. Expiry stays manual — Final
+        Review is a deliberate human gate, not an automatic archive."""
+        today = fields.Date.context_today(self)
+        due = self.search([
+            ('state', '=', 'scheduled'),
+            ('run_end_date', '!=', False),
+            ('run_end_date', '<', today),
+        ])
+        if not due:
+            return
+        # Advance state first so the closeout still happens even if chatter
+        # crashes — message_post can blow up on a rogue automation
+        # (TypeError: unhashable list), same guard dutchie_publish uses.
+        due.write({'state': 'final_review'})
+        for sub in due:
+            try:
+                sub.message_post(
+                    body="Run window ended — moved to Final Review for closeout.",
+                    message_type='comment',
+                )
+            except Exception:
+                _logger.exception(
+                    "Lifecycle chatter post failed for submission %s", sub.id)

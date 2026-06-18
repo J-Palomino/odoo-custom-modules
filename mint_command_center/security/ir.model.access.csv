@@ -26,6 +26,11 @@ access_deal_submission_ptl_mgr,mint.deal.submission.ptl_mgr,model_mint_deal_subm
 access_deal_submission_window_viewer,mint.deal.submission.window.viewer,model_mint_deal_submission_window,group_viewer,1,0,0,0
 access_deal_submission_window_vendor_mgr,mint.deal.submission.window.vendor_mgr,model_mint_deal_submission_window,group_vendor_manager,1,1,1,1
 access_deal_submission_window_ptl_mgr,mint.deal.submission.window.ptl_mgr,model_mint_deal_submission_window,group_ptl_manager,1,1,1,1
+access_deal_submission_bundle_tier_viewer,mint.deal.submission.bundle.tier.viewer,model_mint_deal_submission_bundle_tier,group_viewer,1,0,0,0
+access_deal_submission_bundle_tier_vendor_mgr,mint.deal.submission.bundle.tier.vendor_mgr,model_mint_deal_submission_bundle_tier,group_vendor_manager,1,1,1,1
+access_deal_submission_bundle_tier_ptl_mgr,mint.deal.submission.bundle.tier.ptl_mgr,model_mint_deal_submission_bundle_tier,group_ptl_manager,1,1,1,1
+access_ptl_deal_bundle_tier_viewer,mint.ptl.deal.bundle.tier.viewer,model_mint_ptl_deal_bundle_tier,group_viewer,1,0,0,0
+access_ptl_deal_bundle_tier_manager,mint.ptl.deal.bundle.tier.manager,model_mint_ptl_deal_bundle_tier,group_ptl_manager,1,1,1,1
 access_brand_calendar_viewer,mint.brand.calendar.entry.viewer,model_mint_brand_calendar_entry,group_viewer,1,0,0,0
 access_brand_calendar_vendor_mgr,mint.brand.calendar.entry.vendor_mgr,model_mint_brand_calendar_entry,group_vendor_manager,1,1,1,1
 access_brand_calendar_ptl_mgr,mint.brand.calendar.entry.ptl_mgr,model_mint_brand_calendar_entry,group_ptl_manager,1,1,1,1
@@ -33,7 +38,6 @@ access_deal_reject_wizard,mint.deal.reject.wizard,model_mint_deal_reject_wizard,
 access_deal_reject_wizard_vendor,mint.deal.reject.wizard.vendor,model_mint_deal_reject_wizard,group_vendor_manager,1,1,1,1
 access_stock_check_wizard,mint.stock.check.wizard,model_mint_stock_check_wizard,group_ptl_manager,1,1,1,1
 access_text_deals_wizard,mint.ptl.text.deals.wizard,model_mint_ptl_text_deals_wizard,group_ptl_manager,1,1,1,1
-access_force_approve_wizard,mint.deal.force.approve.wizard,model_mint_deal_force_approve_wizard,group_ptl_manager,1,1,1,1
 access_revoke_wizard,mint.deal.revoke.wizard,model_mint_deal_revoke_wizard,group_ptl_manager,1,1,1,1
 access_bulk_revoke_wizard,mint.deal.bulk.revoke.wizard,model_mint_deal_bulk_revoke_wizard,group_ptl_manager,1,1,1,1
 access_revocation_audit_viewer,mint.deal.revocation.audit.log.viewer,model_mint_deal_revocation_audit_log,group_viewer,1,0,0,0
@@ -80,3 +84,4 @@ access_ambassador_vendor_mgr,mint.ambassador.vendor_mgr,model_mint_ambassador,gr
 access_ambassador_shift_viewer,mint.ambassador.shift.viewer,model_mint_ambassador_shift,group_viewer,1,0,0,0
 access_ambassador_shift_operations,mint.ambassador.shift.operations,model_mint_ambassador_shift,group_operations,1,1,1,1
 access_ambassador_shift_vendor_mgr,mint.ambassador.shift.vendor_mgr,model_mint_ambassador_shift,group_vendor_manager,1,1,1,0
+access_dutchie_publish_review,mint.dutchie.publish.review,model_mint_dutchie_publish_review,base.group_user,1,1,1,1

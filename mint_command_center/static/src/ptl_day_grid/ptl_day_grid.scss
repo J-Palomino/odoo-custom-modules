@@ -1,8 +1,8 @@
 .o_ptl_day_grid {
-    max-width: 340px;
+    max-width: 520px;
 
     .o_pdg_month {
-        font-size: 1rem;
+        font-size: 1.25rem;
     }
 
     .o_pdg_table {
@@ -13,15 +13,16 @@
         .o_pdg_wd {
             text-align: center;
             font-weight: 600;
-            font-size: 0.75rem;
+            font-size: 0.9rem;
             color: var(--text-muted, #6c757d);
-            padding: 2px 0;
+            padding: 4px 0;
         }
 
         .o_pdg_cell {
             text-align: center;
             vertical-align: middle;
-            height: 36px;
+            height: 52px;
+            font-size: 1rem;
             cursor: pointer;
             border-radius: 6px;
             user-select: none;

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="mint_knowledge.ArticlePickerDialog">
+        <Dialog title="'Link to article'" size="'md'">
+            <input type="text" class="form-control mb-3"
+                   placeholder="Search articles..."
+                   t-att-value="state.query" t-on-input="onInput"/>
+            <div class="list-group" style="max-height: 320px; overflow-y: auto;">
+                <t t-foreach="state.pages" t-as="page" t-key="page.id">
+                    <button type="button"
+                            class="list-group-item list-group-item-action"
+                            t-on-click="() => this.onSelect(page)">
+                        <t t-esc="page.name"/>
+                        <small class="text-muted" t-if="page.category_id">
+                            — <t t-esc="page.category_id[1]"/>
+                        </small>
+                    </button>
+                </t>
+                <div class="text-muted p-2" t-if="!state.pages.length">
+                    No articles found.
+                </div>
+            </div>
+        </Dialog>
+    </t>
+
+</templates>

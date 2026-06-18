@@ -1,7 +1,13 @@
 # Odoo 19 with Custom Modules
-FROM odoo:19
+# Base PINNED BY DIGEST so a rebuild can't silently inherit a newer odoo:19
+# point release. The `19` tag is mutable and has already drifted the system
+# pyOpenSSL/cryptography out from under us (see the crypto pin below — prod
+# outage 2026-06-13). To take a newer base on purpose: re-resolve the digest
+# (`docker buildx imagetools inspect odoo:19`), update it here, and
+# staging-smoke-test. Digest resolved 2026-06-13 (== what `odoo:19` pointed to).
+FROM odoo:19@sha256:3eede45a6be2a1fe4dc2911b7fc5caa8c6d5999e8f56ed8e3135160d6dc115c7
 
-ARG CACHEBUST=127
+ARG CACHEBUST=129
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -9,16 +15,31 @@ RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
 USER root
 
 # Install git (needed for OCA module cloning), nginx (websocket reverse proxy), and cloudflared (tunnel)
+# cloudflared is PINNED to a specific release — `latest/download` pulls whatever
+# Cloudflare published most recently on every rebuild, so a breaking cloudflared
+# release could kill the tunnel (= all Odoo ingress) on a build that changed no
+# code. Bump deliberately: pick a newer tag from github.com/cloudflare/cloudflared/releases.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git nginx curl \
-    && curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb \
+    && curl -fsSL https://github.com/cloudflare/cloudflared/releases/download/2026.6.0/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb \
     && dpkg -i /tmp/cloudflared.deb \
     && rm -f /tmp/cloudflared.deb \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/nginx /etc/cloudflared
 
-# Install Python dependencies for base_accounting_kit + push notifications + S3 storage
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed openpyxl ofxparse qifparse pywebpush "fsspec[s3]>=2025.3.0" packaging PyJWT redis pynacl cssselect
+# Install Python dependencies for base_accounting_kit + push notifications + S3 storage.
+# ALL pinned to exact versions so a rebuild can't drift. cryptography==42.0.8 is the
+# load-bearing one: pywebpush -> http-ece -> cryptography otherwise pulls the LATEST
+# at build time, and cryptography >=44 dropped the legacy OpenSSL bindings
+# (lib.GEN_EMAIL) the base image's pyopenssl needs, which makes Odoo's `base` module
+# fail to import on a fresh build (prod outage 2026-06-13). The rest were unpinned and
+# silently took "latest" on every rebuild — pinned here to the versions validated on
+# staging 2026-06-13. Bump deliberately + staging-test. (Transitive deps are still
+# unpinned; a requirements.txt lock would close that fully — follow-up.)
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+    "cryptography==42.0.8" "openpyxl==3.1.5" "ofxparse==0.21" "qifparse==0.5" \
+    "pywebpush==2.3.0" "fsspec[s3]==2026.4.0" "packaging==26.2" "PyJWT==2.13.0" \
+    "redis==8.0.0" "pynacl==1.6.2" "cssselect==1.4.0"
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*
@@ -111,8 +132,18 @@ COPY --chown=odoo:odoo mint_survey_company /opt/extra-addons/mint_survey_company
 # ── Link Tracker QR (QR code generator for /r short links) ───────────
 COPY --chown=odoo:odoo mint_link_tracker_qr /opt/extra-addons/mint_link_tracker_qr
 
+# ── Social Publish (Social Media board → posts.agency publishing API) ─
+COPY --chown=odoo:odoo mint_social_publish /opt/extra-addons/mint_social_publish
+
 # ── Flipbook (marketing PDF + page-flip viewer of vendor offerings) ─
 COPY --chown=odoo:odoo mint_flipbook /opt/extra-addons/mint_flipbook
+
+# ── Discuss /here command (insert current page URL in composer) ──────
+COPY --chown=odoo:odoo mint_discuss_here /opt/extra-addons/mint_discuss_here
+
+# ── Knowledge Base (Odoo-19-native wiki; replaces non-installable OCA document_page) ──
+COPY --chown=odoo:odoo mint_knowledge /opt/extra-addons/mint_knowledge
+COPY --chown=odoo:odoo mint_markov_template /opt/extra-addons/mint_markov_template
 
 # ── DROPPED 2026-05-20: OCA Tier Validation / Knowledge / QMS bundle ──
 # 13 OCA modules (base_tier_validation*, document_knowledge, document_page*,

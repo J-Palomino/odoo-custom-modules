@@ -65,3 +65,37 @@ class ResConfigSettings(models.TransientModel):
         help="When enabled, sms.sms records originating from a mass_mailing_sms "
              "campaign are refused. Keep ON — this gateway is transactional-only.",
     )
+
+    # ------------------------------------------------------------------
+    # BlueBubbles iMessage transport (mint.sms.message)
+    # ------------------------------------------------------------------
+    bluebubbles_enabled = fields.Boolean(
+        string="Enable iMessage (BlueBubbles)",
+        config_parameter="mint_sms_telnyx.bluebubbles_enabled",
+        help="When enabled, mint.sms.message records deliver via the BlueBubbles "
+             "iMessage gateway. Same content guardrail + whitelist gate apply.",
+    )
+    bluebubbles_url = fields.Char(
+        string="BlueBubbles URL",
+        config_parameter="mint_sms_telnyx.bluebubbles_url",
+        help="Base URL of the BlueBubbles server, e.g. the public ngrok endpoint.",
+    )
+    bluebubbles_password = fields.Char(
+        string="BlueBubbles Password",
+        config_parameter="mint_sms_telnyx.bluebubbles_password",
+        help="Server password — sent as ?password= on every request.",
+    )
+    bluebubbles_whitelist_category_id = fields.Many2one(
+        "res.partner.category",
+        string="SMS Whitelist Tag",
+        config_parameter="mint_sms_telnyx.whitelist_category_id",
+        help="Only contacts carrying this tag may receive texts. Defaults to the "
+             "'SMS Whitelist' category when left blank.",
+    )
+    bluebubbles_register_secret = fields.Char(
+        string="URL Self-Register Secret",
+        config_parameter="mint_sms_telnyx.bluebubbles_register_secret",
+        help="Shared secret for POST /mint_sms/bluebubbles/register, which lets "
+             "the BlueBubbles host push its new ngrok URL when the tunnel cycles. "
+             "Blank disables the endpoint.",
+    )

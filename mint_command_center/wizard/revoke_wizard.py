@@ -164,6 +164,16 @@ class RevokeDealWizard(models.TransientModel):
             except Exception as e:
                 _logger.warning('Revoke: Redis push failed for discount %s: %s', discount.id, e)
 
+            # Full pull-down (no days remain): also deactivate in Dutchie — the
+            # same one-directional gap that left expired deals running there.
+            # Rescoped (still-published) discounts keep running with new dates
+            # and are intentionally NOT deleted.
+            if not remaining_days:
+                try:
+                    deal._deactivate_in_dutchie_on_expire()
+                except Exception as e:
+                    _logger.warning('Revoke: Dutchie deactivate failed for deal %s: %s', deal.id, e)
+
         # 3. Optional submission re-queue (only when explicitly scoped).
         requeued = False
         if self.scope == 'all_future_with_requeue' and self.submission_id:

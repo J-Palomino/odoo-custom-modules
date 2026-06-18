@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_partner_view_form_sms" model="ir.ui.view">
+        <field name="name">res.partner.form.inherit.mint_sms_telnyx</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Texting" name="mint_sms"
+                      groups="mint_sms_telnyx.group_sms_sender">
+                    <group>
+                        <group string="Consent">
+                            <field name="sms_opt_in"/>
+                            <field name="sms_opt_in_date"
+                                   invisible="not sms_opt_in"/>
+                            <field name="sms_opt_in_source"
+                                   invisible="not sms_opt_in"/>
+                        </group>
+                        <group string="Opt-Out">
+                            <field name="sms_opt_out"/>
+                            <field name="sms_opt_out_date"
+                                   invisible="not sms_opt_out"/>
+                        </group>
+                    </group>
+                    <button name="action_sms_opt_in" type="object"
+                            string="Opt In (Internal)" class="btn-primary"
+                            invisible="sms_opt_in"/>
+                    <button name="action_sms_opt_out" type="object"
+                            string="Opt Out" class="btn-secondary"
+                            invisible="sms_opt_out"/>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint SMS — Telnyx Gateway (Transactional Only)',
-    'version': '19.0.1.1.0',
+    'version': '19.0.3.1.0',
     'category': 'Tools',
-    'summary': 'Transactional SMS via Telnyx — order/pickup/OTP only, with cannabis-content guardrail',
+    'summary': 'Transactional SMS via Telnyx + gated iMessage (BlueBubbles) — cannabis-content guardrail',
     'description': """
         Routes Odoo SMS through Telnyx for TRANSACTIONAL messages only
         (order ready, pickup window, OTP, appointment reminders).
@@ -39,10 +39,13 @@
         'python': ['nacl'],  # PyNaCl for Ed25519 signature verification
     },
     'data': [
+        'security/sms_security.xml',
         'security/ir.model.access.csv',
         'data/ir_config_parameter.xml',
         'views/res_config_settings_views.xml',
         'views/telnyx_message_log_views.xml',
+        'views/mint_sms_message_views.xml',
+        'views/res_partner_views.xml',
     ],
     'installable': True,
     'auto_install': False,

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="daisy_scheduled_job_view_list" model="ir.ui.view">
+        <field name="name">daisy.scheduled.job.list</field>
+        <field name="model">daisy.scheduled.job</field>
+        <field name="arch" type="xml">
+            <list string="Scheduled Jobs">
+                <field name="run_at"/>
+                <field name="agent_id"/>
+                <field name="name"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'done'"
+                       decoration-danger="state == 'failed'"
+                       decoration-info="state == 'scheduled'"
+                       decoration-muted="state == 'canceled'"/>
+                <field name="requested_by_id" optional="hide"/>
+                <field name="executed_at" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="daisy_scheduled_job_view_form" model="ir.ui.view">
+        <field name="name">daisy.scheduled.job.form</field>
+        <field name="model">daisy.scheduled.job</field>
+        <field name="arch" type="xml">
+            <form string="Scheduled Job">
+                <header>
+                    <button name="action_run_now" type="object" string="Run Now"
+                            class="btn-primary" invisible="state != 'scheduled'"/>
+                    <button name="action_cancel" type="object" string="Cancel"
+                            invisible="state != 'scheduled'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="scheduled,done"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="agent_id"/>
+                            <field name="run_at"/>
+                            <field name="session_id"/>
+                        </group>
+                        <group>
+                            <field name="requested_by_id"/>
+                            <field name="executed_at"/>
+                            <field name="error_message" invisible="state != 'failed'"/>
+                        </group>
+                    </group>
+                    <group string="Instruction">
+                        <field name="instruction" nolabel="1"/>
+                    </group>
+                    <group string="Result" invisible="not result">
+                        <field name="result" nolabel="1" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="daisy_scheduled_job_action" model="ir.actions.act_window">
+        <field name="name">Scheduled Jobs</field>
+        <field name="res_model">daisy.scheduled.job</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="menu_digital_employees_scheduled_jobs"
+              name="Scheduled Jobs"
+              parent="menu_digital_employees_root"
+              action="daisy_scheduled_job_action"
+              sequence="45"/>
+</odoo>

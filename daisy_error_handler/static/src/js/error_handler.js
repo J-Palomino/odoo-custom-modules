@@ -53,23 +53,18 @@ let _config = null; // { apiUrl, enabled } once resolved; null until then
 
 async function loadConfig() {
     try {
-        const [apiUrl, enabled] = await Promise.all([
-            rpc("/web/dataset/call_kw", {
-                model: "ir.config_parameter",
-                method: "get_param",
-                args: ["daisy.error_handler_api_url", ""],
-                kwargs: {},
-            }),
-            rpc("/web/dataset/call_kw", {
-                model: "ir.config_parameter",
-                method: "get_param",
-                args: ["daisy.error_handler_enabled", "true"],
-                kwargs: {},
-            }),
-        ]);
+        // ir.config_parameter is admin-only; daisy.error.handler.config
+        // reads it with sudo server-side so non-admin users get the real
+        // values instead of an AccessError (maintenance request #522).
+        const config = await rpc("/web/dataset/call_kw", {
+            model: "daisy.error.handler.config",
+            method: "get_config",
+            args: [],
+            kwargs: {},
+        });
         _config = {
-            apiUrl: apiUrl || DEFAULT_API_URL,
-            enabled: String(enabled).toLowerCase() !== "false",
+            apiUrl: (config && config.api_url) || DEFAULT_API_URL,
+            enabled: !config || config.enabled !== false,
         };
     } catch (_e) {
         _config = { apiUrl: DEFAULT_API_URL, enabled: true };

@@ -65,6 +65,7 @@
                                            decoration-danger="stock_status == 'out_of_stock'"
                                            widget="badge"/>
                                     <field name="is_featured"/>
+                                    <field name="is_available_online" widget="boolean_toggle"/>
                                     <field name="state"
                                            decoration-warning="state == 'pending'"
                                            decoration-success="state == 'live'"
@@ -197,9 +198,9 @@
                     <button name="action_reject" string="Reject"
                             type="object" class="btn-danger"
                             invisible="state != 'pending'"/>
-                    <button name="action_set_live" string="Set Live"
+                    <button name="action_open_publish_review" string="Publish"
                             type="object" class="btn-success"
-                            invisible="state != 'approved'"/>
+                            invisible="state not in ('approved', 'live')"/>
                     <button name="action_expire" string="Expire"
                             type="object"
                             invisible="state not in ('approved', 'live')"/>
@@ -243,8 +244,24 @@
                         <group>
                             <field name="sale_type"/>
                             <field name="discount_type"/>
-                            <field name="discount_value"/>
+                            <field name="discount_value"
+                                   invisible="discount_type in ('bogo', 'bundle') and not discount_value"/>
                             <field name="original_price"/>
+                            <!-- Structured BOGO spec (#93677) -->
+                            <field name="bogo_variant"
+                                   invisible="discount_type != 'bogo'"/>
+                            <label for="bogo_buy_qty" string="Buy / Get"
+                                   invisible="discount_type != 'bogo'"/>
+                            <div class="o_row" invisible="discount_type != 'bogo'">
+                                <field name="bogo_buy_qty" nolabel="1"
+                                       readonly="bogo_variant != 'custom'"/>
+                                <span>buy,</span>
+                                <field name="bogo_get_qty" nolabel="1"
+                                       readonly="bogo_variant != 'custom'"/>
+                                <span>get</span>
+                            </div>
+                            <field name="bogo_get_pct" widget="percentage"
+                                   invisible="discount_type != 'bogo'"/>
                             <field name="display_text" readonly="1"/>
                             <field name="format_key" readonly="1"
                                    help="Blank until the matching product has a Product Line set"/>
@@ -254,8 +271,20 @@
                                 <field name="weight_unit" nolabel="1"/>
                             </div>
                             <field name="is_featured"/>
+                            <field name="is_available_online" widget="boolean_toggle"/>
                             <field name="sequence"/>
                         </group>
+                    </group>
+                    <group string="Bundle Tiers (e.g. 2 for $18 or 3 for $25)"
+                           invisible="discount_type != 'bundle'">
+                        <field name="bundle_tier_ids" nolabel="1" colspan="2">
+                            <list editable="bottom">
+                                <field name="sequence" widget="handle"/>
+                                <field name="qty"/>
+                                <field name="price"/>
+                                <field name="display_text"/>
+                            </list>
+                        </field>
                     </group>
                     <group string="Validity">
                         <group>
@@ -401,6 +430,7 @@
                        decoration-danger="stock_status == 'out_of_stock'"/>
                 <field name="day_count"/>
                 <field name="is_featured"/>
+                <field name="is_available_online" optional="show"/>
                 <field name="state" widget="badge"
                        decoration-warning="state == 'pending'"
                        decoration-success="state == 'live'"
@@ -421,6 +451,8 @@
                 <field name="product_category"/>
                 <field name="market_id"/>
                 <filter name="featured" string="Featured" domain="[('is_featured', '=', True)]"/>
+                <filter name="online" string="Available Online" domain="[('is_available_online', '=', True)]"/>
+                <filter name="pos_only" string="POS / Register-Only" domain="[('is_available_online', '=', False)]"/>
                 <separator/>
                 <filter name="edlp" string="EDLP" domain="[('sale_type', '=', 'edlp')]"/>
                 <filter name="weekly_bundle" string="Weekly Bundle" domain="[('sale_type', '=', 'weekly_bundle')]"/>
