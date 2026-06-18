@@ -61,6 +61,47 @@ def format_bundle_tiers_text(tiers):
     return ' or '.join(parts)
 
 
+# Dutchie discount restriction types. One IsExclusion flag + id list per type;
+# Dutchie applies them as an INTERSECTION (a product must satisfy every
+# populated type). Keep this ordering stable — it mirrors the Backoffice shape.
+DUTCHIE_RESTRICTION_TYPES = ('Strain', 'Weight', 'Category', 'Tag',
+                             'InventoryTag', 'Tier', 'Brand', 'Vendor', 'Product')
+
+
+def build_dutchie_restrictions(brand_ids, exc_brand_ids, prod_inc, prod_exc, cat_ids):
+    """Assemble the Dutchie ``Reward.Restrictions`` dict + warnings from already
+    resolved id lists. Returns ``(restrictions, warnings)``.
+
+    Dutchie AND's restriction types together, so a Product INCLUDE layered on
+    top of a Brand/Category include can only SHRINK eligibility — never what we
+    intend (deal sub 395 "IO Extracts — 2 for $35" published with
+    Brand+Category+239 products applied to 48 products instead of the 233 that
+    Brand+Category alone cover). Send the Product include ONLY when it is the
+    sole scoping signal; otherwise drop it (warn) and keep product EXCLUDES.
+    """
+    restrictions = {k: {'IsExclusion': False, 'RestrictionIds': []}
+                    for k in DUTCHIE_RESTRICTION_TYPES}
+    warnings = []
+    if brand_ids:
+        restrictions['Brand'] = {'IsExclusion': False, 'RestrictionIds': brand_ids}
+    elif exc_brand_ids:
+        restrictions['Brand'] = {'IsExclusion': True, 'RestrictionIds': exc_brand_ids}
+    if prod_inc and not brand_ids and not cat_ids:
+        restrictions['Product'] = {'IsExclusion': False, 'RestrictionIds': prod_inc}
+        if prod_exc:
+            warnings.append("product exclusions dropped (Product slot used by includes)")
+    elif prod_exc:
+        restrictions['Product'] = {'IsExclusion': True, 'RestrictionIds': prod_exc}
+    elif prod_inc:
+        warnings.append(
+            "%d explicit product include(s) dropped — Brand/Category already "
+            "scope this deal; an extra Product include would only shrink "
+            "eligibility (Dutchie intersects restriction types)" % len(prod_inc))
+    if cat_ids:
+        restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': cat_ids}
+    return restrictions, warnings
+
+
 WEIGHT_UNIT_SELECTION = [
     ('g', 'g'),
     ('mg', 'mg'),

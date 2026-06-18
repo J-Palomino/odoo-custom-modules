@@ -31,7 +31,7 @@ from datetime import date as _date, timedelta
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
-from .deal_mixins import format_bundle_tiers_text
+from .deal_mixins import format_bundle_tiers_text, build_dutchie_restrictions
 
 _logger = logging.getLogger(__name__)
 
@@ -559,33 +559,14 @@ class DealSubmissionDutchiePublish(models.Model):
                 m = RE_NFOR.search(self.sales_details or '')
                 threshold_min = int(m.group(1)) if m else 2
 
-        restrictions = {k: {'IsExclusion': False, 'RestrictionIds': []}
-                        for k in ('Strain', 'Weight', 'Category', 'Tag', 'InventoryTag',
-                                  'Tier', 'Brand', 'Vendor', 'Product')}
-        if brand_ids:
-            restrictions['Brand'] = {'IsExclusion': False, 'RestrictionIds': brand_ids}
-        elif exc_brand_ids:
-            restrictions['Brand'] = {'IsExclusion': True, 'RestrictionIds': exc_brand_ids}
-        # Product INCLUDE only when it is the SOLE scoping signal. Dutchie
-        # AND's restriction types together, so a Product include layered on top
-        # of a Brand/Category include can only SHRINK eligibility — never what
-        # we intend. (Deal sub 395 "IO Extracts — 2 for $35" published with
-        # Brand + Category + 239 products → 48 eligible instead of the 233 that
-        # Brand + Category alone cover.) When a Brand or Category already scopes
-        # the deal, drop the redundant include; keep product EXCLUDES if any.
-        if prod_inc and not brand_ids and not cat_ids:
-            restrictions['Product'] = {'IsExclusion': False, 'RestrictionIds': prod_inc}
-            if prod_exc:
-                warnings.append("product exclusions dropped (Product slot used by includes)")
-        elif prod_exc:
-            restrictions['Product'] = {'IsExclusion': True, 'RestrictionIds': prod_exc}
-        elif prod_inc:
-            warnings.append(
-                "%d explicit product include(s) dropped — Brand/Category already "
-                "scope this deal; an extra Product include would only shrink "
-                "eligibility (Dutchie intersects restriction types)" % len(prod_inc))
-        if cat_ids:
-            restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': cat_ids}
+        # Brand/Product/Category restriction assembly lives in a pure helper so
+        # it is unit-testable in isolation (see tests/test_dutchie_restrictions).
+        # The Product include is deliberately dropped when a Brand/Category
+        # already scopes the deal — Dutchie AND's restriction types, so layering
+        # would only shrink eligibility (sub 395: 233 → 48).
+        restrictions, _restr_warns = build_dutchie_restrictions(
+            brand_ids, exc_brand_ids, prod_inc, prod_exc, cat_ids)
+        warnings += _restr_warns
 
         # Refuse a discount with NO restrictions at all — that would apply
         # store-wide (every product, every brand). Reachable when none of the
