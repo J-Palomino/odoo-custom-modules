@@ -294,23 +294,20 @@ class DealSubmissionDutchiePublish(models.Model):
                     ', '.join(active) if active else 'EVERY DAY (no day restriction)'))
                 if not active:
                     warnings.append("Span %d has no day-of-week restriction — Dutchie applies it EVERY day in the range." % gi)
-            lines.append("LSP %s → %d LocId(s): %s" % (lsp, len(loc_ids), ', '.join(map(str, loc_ids)) or 'NONE'))
-            lines.append("Total Dutchie writes: %d discount(s) × %d loc(s) = %d"
-                         % (len(discounts), len(loc_ids), len(discounts) * len(loc_ids)))
+            scope = (discounts[0].get('LocationRestrictions') if discounts else None)
+            lines.append("LSP %s | context loc: %s" % (lsp, loc_ids[0] if loc_ids else 'NONE'))
+            lines.append("Store scope: %s" % (
+                ', '.join(map(str, scope)) if scope else 'LSP-wide (all stores in market)'))
+            lines.append("Total Dutchie writes: %d discount record(s) (one per span; scope set via LocationRestrictions)"
+                         % len(discounts))
             if not loc_ids:
                 warnings.append("No LocIds configured for LSP %s (dutchie.publish.loc_ids) — nothing will publish." % lsp)
-            if self.store_ids:
-                warnings.append("This submission is scoped to %d store(s), but Publish-to-Dutchie writes to ALL %d LocId(s) for the market — store scoping is IGNORED on this path."
-                                % (len(self.store_ids), len(loc_ids)))
             try:
                 prior = json.loads(self.dutchie_publish_loc_ids or '{}')
             except (ValueError, TypeError):
                 prior = {}
             if prior:
-                prior_count = (sum(len(v) for v in prior.values())
-                               if all(isinstance(v, dict) for v in prior.values())
-                               else len(prior))
-                lines.append("Re-publish: %d prior Dutchie id(s) recorded → matching span/loc UPDATE in place (no duplicates)." % prior_count)
+                lines.append("Re-publish: %d prior Dutchie id(s) recorded → matching span UPDATES in place (no duplicates)." % len(prior))
         except Exception as exc:
             blocks.append("Payload build failed — Publish would raise: %s" % exc)
         return mode, is_live, lines, warnings, blocks
@@ -408,6 +405,66 @@ class DealSubmissionDutchiePublish(models.Model):
         if cur:
             groups.append(cur)
         return groups
+
+    @api.model
+    def _dutchie_loc_restrictions(self, stores, warnings):
+        """Resolve a submission's store scope to a Dutchie LocationRestrictions
+        list (array of integer POS LocIds).
+
+        Dutchie discounts are LSP-scoped — a created record comes back LocId=0
+        and applies to EVERY store in the LSP regardless of which loc it was
+        POSTed under. LocationRestrictions is the ONLY way to limit a discount
+        to specific stores: empty list = LSP-wide (all market stores), non-empty
+        = those stores only. Stores without a POS LocId are dropped (with a
+        warning); a store-scoped submission where NONE resolve is an error
+        (publishing [] would silently widen it to the whole market).
+        """
+        if not stores:
+            return []
+        loc_ids = sorted({s.dutchie_pos_location_id
+                          for s in stores if s.dutchie_pos_location_id})
+        missing = [s.display_name for s in stores if not s.dutchie_pos_location_id]
+        if missing:
+            warnings.append(
+                "store(s) without a Dutchie POS LocId, dropped from scope: "
+                + ", ".join(missing))
+        if not loc_ids:
+            raise UserError(
+                "Submission is store-scoped but none of its stores have a "
+                "Dutchie POS LocId (res.company.dutchie_pos_location_id).")
+        return loc_ids
+
+    @api.model
+    def _normalize_published_map(self, raw, ctx_loc, sub_id):
+        """Parse dutchie_publish_loc_ids into the current {externalId: dutchieId}
+        shape, migrating the two legacy shapes so re-publish keeps updating in
+        place instead of creating duplicates:
+
+          * current  {externalId: dutchieId}              -> unchanged
+          * nested    {externalId: {locId: dutchieId}}    -> collapse to one id
+                       (prefer ctx_loc's id, else any) — the extra per-loc
+                       records are LSP-wide dupes removed by the cleanup script
+          * flat      {locId: dutchieId}  (oldest)        -> wrap under lgm_<sub>
+        """
+        try:
+            parsed = json.loads(raw or '{}')
+        except (ValueError, TypeError):
+            parsed = {}
+        if not isinstance(parsed, dict) or not parsed:
+            return {}
+        # Discriminate by KEY, not value type: the current ({ext: int}) and the
+        # oldest-flat ({locId: int}) shapes BOTH have non-dict values, so only
+        # the keys tell them apart — ExternalIds vs numeric LocIds. All-numeric
+        # keys = oldest flat -> wrap under the lone span's ExternalId.
+        if all(str(k).isdigit() for k in parsed):
+            parsed = {f"lgm_{sub_id}": parsed}
+
+        def _one_id(val):
+            if isinstance(val, dict):
+                return int(val.get(str(ctx_loc)) or next(iter(val.values()), 0) or 0)
+            return int(val or 0)
+
+        return {k: _one_id(v) for k, v in parsed.items()}
 
     def _dutchie_build(self):
         """Build {lsp, discount, warnings} for this submission, or raise."""
@@ -591,6 +648,9 @@ class DealSubmissionDutchiePublish(models.Model):
                  else f"{threshold_min} for ${value:g}" if calc == 6
                  else f"${value:g} Off" if calc == 1
                  else f"${value:g}")
+
+        loc_restrictions = self._dutchie_loc_restrictions(self.store_ids, warnings)
+
         # One Dutchie discount per faithful date-group. All non-date fields are
         # shared; only ValidDate*, the day-of-week flags, and ExternalId vary.
         # A single group keeps the historic un-suffixed ExternalId (lgm_<id>)
@@ -616,7 +676,7 @@ class DealSubmissionDutchiePublish(models.Model):
                 'IgnoreNetTax': False,
                 'IsAvailableOnline': True,
                 'IsBundledDiscount': calc == 6,
-                'LocationRestrictions': [],
+                'LocationRestrictions': list(loc_restrictions),
                 'OnlineName': f"{self.vendor_name} — {label}",
                 'PaymentRestrictions': {'PayByBankSignupIncentive': False},
                 'RedemptionLimit': '',
@@ -701,6 +761,11 @@ class DealSubmissionDutchiePublish(models.Model):
         loc_map = json.loads(get_param('dutchie.publish.loc_ids') or '{}')
         loc_ids = loc_map.get(str(lsp)) or []
 
+        # Dutchie discounts are LSP-scoped, so we publish exactly ONE record per
+        # span and let LocationRestrictions (set in _dutchie_build) limit it to
+        # the target stores. loc_ids only supplies a context loc for the request
+        # envelope (auth/catalog); any one valid loc in the LSP works.
+        scope = (discounts[0].get('LocationRestrictions') if discounts else None) or 'LSP-wide (all stores)'
         if mode == 'dry_run':
             spans = "\n".join(
                 f"  span {i}: {d['ValidDateFrom']} → {d['ValidDateTo']} "
@@ -709,7 +774,8 @@ class DealSubmissionDutchiePublish(models.Model):
                 for i, d in enumerate(discounts, 1))
             body = (
                 f"[Dutchie publish — DRY RUN]\n"
-                f"LSP {lsp} | {len(discounts)} discount(s) × LocIds {loc_ids or '(none configured)'}\n"
+                f"LSP {lsp} | {len(discounts)} discount record(s), scope={scope} "
+                f"| context loc {loc_ids[:1] or '(none configured)'}\n"
                 f"{spans}\n"
                 f"Warnings: {'; '.join(warnings) or 'none'}\n"
                 f"Payload (span 1):\n{json.dumps(discounts[0], indent=1) if discounts else '(none)'}"
@@ -717,7 +783,7 @@ class DealSubmissionDutchiePublish(models.Model):
             self.message_post(body=body, message_type='comment')
             for d in discounts:
                 self._deal_audit_log('publish_dry_run', lsp, None, d,
-                                     target_loc_ids=loc_ids)
+                                     scope=scope)
             return
 
         # live
@@ -728,65 +794,60 @@ class DealSubmissionDutchiePublish(models.Model):
             raise UserError("dutchie.publish.api_key is not configured for live mode.")
         if not loc_ids:
             raise UserError(f"dutchie.publish.loc_ids has no LocIds for LSP {lsp}.")
-        # Resolve update-vs-create PER (span, LocId). Each contiguous span is a
-        # distinct Dutchie discount keyed by its ExternalId; each loc within a
-        # span has its OWN Dutchie id. Re-publish UPDATES every (span, loc) in
-        # place instead of duplicating. Recorded map is
-        # {externalId: {locId: dutchieId}}; legacy single-discount deals stored
-        # a flat {locId: dutchieId} — migrate those under the lone span's
-        # ExternalId (lgm_<id>) so they keep updating in place.
-        try:
-            published = json.loads(self.dutchie_publish_loc_ids or '{}')
-        except (ValueError, TypeError):
-            published = {}
-        if published and not all(isinstance(v, dict) for v in published.values()):
-            published = {f"lgm_{self.id}": published}
-        updated = {k: dict(v) for k, v in published.items()}
-        # Per-(span, loc) isolation: one store failing must not hide which
-        # stores DID publish — accumulate every outcome and report them all.
+        ctx_loc = loc_ids[0]
+        # Resolve update-vs-create PER SPAN. Each contiguous span is ONE Dutchie
+        # discount keyed by its ExternalId; store scope lives in the payload's
+        # LocationRestrictions, NOT in separate per-loc records (a created
+        # discount is LSP-wide, so one-per-loc only ever made duplicates). The
+        # recorded map is {externalId: dutchieId}; _normalize_published_map
+        # migrates the two legacy shapes so they keep updating in place. The
+        # duplicate records left by the old one-per-loc path are removed by the
+        # cleanup script (letsgomint-us scripts/dutchie/cleanup-lsp-wide-dupes.mjs).
+        published = self._normalize_published_map(
+            self.dutchie_publish_loc_ids, ctx_loc, self.id)
+        updated = dict(published)
+        # Per-span isolation: one span failing must not hide which spans DID
+        # publish — accumulate every outcome and report them all.
         results, failures = [], 0
         multi = len(discounts) > 1
         for discount in discounts:
             ext = discount['ExternalId']
-            span_prior = published.get(ext, {})
-            span_updated = updated.setdefault(ext, {})
-            for loc_id in loc_ids:
-                existing = int(span_prior.get(str(loc_id)) or 0)
-                discount['Id'] = existing
-                if isinstance(discount.get('DiscountMenuDisplayDetails'), dict):
-                    discount['DiscountMenuDisplayDetails']['DiscountId'] = existing
-                payload = json.dumps({'locId': loc_id, 'lspId': lsp, 'discount': discount}).encode()
-                req = urllib.request.Request(
-                    f"{url}/api/admin/discounts", data=payload,
-                    headers={'Content-Type': 'application/json', 'x-api-key': api_key},
-                    method='POST')
-                tag = (f"{ext} LocId {loc_id}" if multi else f"LocId {loc_id}")
-                try:
-                    with urllib.request.urlopen(req, timeout=60) as resp:
-                        raw = resp.read().decode(errors='replace')
-                        # Record the returned Dutchie id so the NEXT publish
-                        # updates this (span, loc) in place (no duplicates).
-                        try:
-                            rid = json.loads(raw).get('discount_id')
-                            if isinstance(rid, int) and not isinstance(rid, bool) and rid > 0:
-                                span_updated[str(loc_id)] = rid
-                        except (ValueError, TypeError):
-                            pass
-                        results.append(f"{tag}: HTTP {resp.status} {raw[:160]}")
-                        self._deal_audit_log('publish', lsp, loc_id, discount,
-                                             http_status=resp.status,
-                                             response=raw[:160])
-                except Exception as exc:
-                    failures += 1
-                    results.append(f"{tag}: FAILED — {exc}")
-                    self._deal_audit_log('publish_failed', lsp, loc_id, discount,
-                                         error=str(exc))
-        # Persist the {externalId: {locId: id}} map for idempotent re-publish.
+            existing = int(published.get(ext) or 0)
+            discount['Id'] = existing
+            if isinstance(discount.get('DiscountMenuDisplayDetails'), dict):
+                discount['DiscountMenuDisplayDetails']['DiscountId'] = existing
+            payload = json.dumps({'locId': ctx_loc, 'lspId': lsp, 'discount': discount}).encode()
+            req = urllib.request.Request(
+                f"{url}/api/admin/discounts", data=payload,
+                headers={'Content-Type': 'application/json', 'x-api-key': api_key},
+                method='POST')
+            tag = (f"{ext}" if multi else f"LocId {ctx_loc}")
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    raw = resp.read().decode(errors='replace')
+                    # Record the returned Dutchie id so the NEXT publish updates
+                    # this span in place (no duplicates).
+                    try:
+                        rid = json.loads(raw).get('discount_id')
+                        if isinstance(rid, int) and not isinstance(rid, bool) and rid > 0:
+                            updated[ext] = rid
+                    except (ValueError, TypeError):
+                        pass
+                    results.append(f"{tag}: HTTP {resp.status} {raw[:160]}")
+                    self._deal_audit_log('publish', lsp, ctx_loc, discount,
+                                         http_status=resp.status,
+                                         response=raw[:160])
+            except Exception as exc:
+                failures += 1
+                results.append(f"{tag}: FAILED — {exc}")
+                self._deal_audit_log('publish_failed', lsp, ctx_loc, discount,
+                                     error=str(exc))
+        # Persist the {externalId: dutchieId} map for idempotent re-publish.
         if updated != published:
             self.sudo().write({'dutchie_publish_loc_ids': json.dumps(updated)})
         self.message_post(
             body=f"[Dutchie publish — LIVE{' — PARTIAL FAILURE' if failures else ''}]\n"
-                 + (f"{len(discounts)} span(s) × {len(loc_ids)} loc(s):\n" if multi else "")
+                 + (f"{len(discounts)} span(s), scope={scope}:\n" if multi else f"scope={scope}\n")
                  + "\n".join(results)
                  + ("\nWarnings: " + "; ".join(warnings) if warnings else ''),
             message_type='comment')
