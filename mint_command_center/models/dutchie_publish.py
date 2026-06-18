@@ -566,12 +566,24 @@ class DealSubmissionDutchiePublish(models.Model):
             restrictions['Brand'] = {'IsExclusion': False, 'RestrictionIds': brand_ids}
         elif exc_brand_ids:
             restrictions['Brand'] = {'IsExclusion': True, 'RestrictionIds': exc_brand_ids}
-        if prod_inc:
+        # Product INCLUDE only when it is the SOLE scoping signal. Dutchie
+        # AND's restriction types together, so a Product include layered on top
+        # of a Brand/Category include can only SHRINK eligibility — never what
+        # we intend. (Deal sub 395 "IO Extracts — 2 for $35" published with
+        # Brand + Category + 239 products → 48 eligible instead of the 233 that
+        # Brand + Category alone cover.) When a Brand or Category already scopes
+        # the deal, drop the redundant include; keep product EXCLUDES if any.
+        if prod_inc and not brand_ids and not cat_ids:
             restrictions['Product'] = {'IsExclusion': False, 'RestrictionIds': prod_inc}
             if prod_exc:
                 warnings.append("product exclusions dropped (Product slot used by includes)")
         elif prod_exc:
             restrictions['Product'] = {'IsExclusion': True, 'RestrictionIds': prod_exc}
+        elif prod_inc:
+            warnings.append(
+                "%d explicit product include(s) dropped — Brand/Category already "
+                "scope this deal; an extra Product include would only shrink "
+                "eligibility (Dutchie intersects restriction types)" % len(prod_inc))
         if cat_ids:
             restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': cat_ids}
 
