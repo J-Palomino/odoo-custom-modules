@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
+    <!--
+        CAPABILITY GROUPS (noupdate): fine-grained Mint Marketing permissions.
+        Assigned indirectly via the ROLE groups below; never hand-assign one of
+        these to a person unless layering a single extra capability.
+    -->
     <data noupdate="1">
 
         <!-- Viewer: read-only access to all Mint Marketing modules -->
@@ -36,6 +41,110 @@
         <record id="group_compliance" model="res.groups">
             <field name="name">Mint Marketing / Compliance</field>
             <field name="comment">Compliance variance management and regulatory tracking.</field>
+        </record>
+
+        <!-- Push Manager: compose/send push notifications to all subscribers.
+             Adopted into module source (was previously created via the UI as an
+             orphan external id). noupdate=1 leaves the existing record intact. -->
+        <record id="group_push_manager" model="res.groups">
+            <field name="name">Mint Marketing / Push Manager</field>
+            <field name="comment">Can compose and send push notifications to all subscribers.</field>
+        </record>
+
+    </data>
+
+    <!--
+        ROLE GROUPS (updatable): coarse, job-shaped bundles for onboarding.
+        Assign exactly ONE role group per marketing hire; it pulls in the right
+        Mint Marketing capabilities plus the standard Odoo app access the team
+        already uses. implied_ids are maintained here in source (no noupdate) so
+        the bundles can evolve over time. Compliance stays an opt-in add-on
+        (assign mint_command_center.group_compliance on top of any role).
+    -->
+    <data>
+
+        <!-- R1 · Viewer (read-only): interns, cross-dept observers -->
+        <record id="group_role_viewer" model="res.groups">
+            <field name="name">Mint Marketing Role / Viewer (read-only)</field>
+            <field name="comment">Read-only marketing role: internal login + read access to Command Center.</field>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('mint_command_center.group_viewer'),
+            ])]"/>
+        </record>
+
+        <!-- R2 · Marketing Specialist: social, content, campaigns (e.g. Social Media Specialist) -->
+        <record id="group_role_specialist" model="res.groups">
+            <field name="name">Mint Marketing Role / Marketing Specialist</field>
+            <field name="comment">Day-to-day marketing contributor: campaigns, social, content, website edits.</field>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('mint_command_center.group_viewer'),
+                ref('mint_command_center.group_marketing'),
+                ref('mass_mailing.group_mass_mailing_user'),
+                ref('marketing_card.marketing_card_group_manager'),
+                ref('website.group_website_designer'),
+                ref('im_livechat.im_livechat_group_manager'),
+                ref('mail.group_mail_canned_response_admin'),
+                ref('project.group_project_user'),
+                ref('analytic.group_analytic_accounting'),
+            ])]"/>
+        </record>
+
+        <!-- R3 · Creative & Design: builds on Specialist + course/media authoring (e.g. Graphic Designer) -->
+        <record id="group_role_designer" model="res.groups">
+            <field name="name">Mint Marketing Role / Creative &amp; Design</field>
+            <field name="comment">Specialist access plus eLearning/media authoring for graphic/video creatives.</field>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('mint_command_center.group_role_specialist'),
+                ref('website_slides.group_website_slides_manager'),
+            ])]"/>
+        </record>
+
+        <!-- R4 · SEO & Web: site structure, SEO, restricted+designer web editing (e.g. SEO Manager) -->
+        <record id="group_role_seo_web" model="res.groups">
+            <field name="name">Mint Marketing Role / SEO &amp; Web</field>
+            <field name="comment">Web/SEO lead: full website editing, project admin, marketing + operations.</field>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('base.group_allow_export'),
+                ref('mint_command_center.group_viewer'),
+                ref('mint_command_center.group_marketing'),
+                ref('mint_command_center.group_operations'),
+                ref('website.group_website_designer'),
+                ref('website.group_website_restricted_editor'),
+                ref('mass_mailing.group_mass_mailing_user'),
+                ref('project.group_project_manager'),
+                ref('website_slides.group_website_slides_officer'),
+                ref('analytic.group_analytic_accounting'),
+            ])]"/>
+        </record>
+
+        <!-- R5 · Deals & PTL Manager: Specialist + full PTL/Hot Box + push sending -->
+        <record id="group_role_ptl" model="res.groups">
+            <field name="name">Mint Marketing Role / Deals &amp; PTL Manager</field>
+            <field name="comment">Specialist access plus full PTL/Hot Box management and push notification sending.</field>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('mint_command_center.group_role_specialist'),
+                ref('mint_command_center.group_ptl_manager'),
+                ref('mint_command_center.group_push_manager'),
+            ])]"/>
+        </record>
+
+        <!-- R6 · Marketing Manager: team lead / CBO tier — all Command Center capabilities + multi-company -->
+        <record id="group_role_manager" model="res.groups">
+            <field name="name">Mint Marketing Role / Marketing Manager</field>
+            <field name="comment">Department lead: every Mint Marketing capability, project admin, all-company access.</field>
+            <field name="implied_ids" eval="[(6, 0, [
+                ref('mint_command_center.group_role_specialist'),
+                ref('mint_command_center.group_ptl_manager'),
+                ref('mint_command_center.group_push_manager'),
+                ref('mint_command_center.group_operations'),
+                ref('mint_command_center.group_vendor_manager'),
+                ref('project.group_project_manager'),
+                ref('base.group_multi_company'),
+            ])]"/>
         </record>
 
     </data>

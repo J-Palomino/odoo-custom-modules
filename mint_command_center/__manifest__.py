@@ -48,6 +48,13 @@
         'mint_push',
         'mint_banner',
         'mint_api_v2',
+        # required by the marketing ROLE groups in security/security_groups.xml
+        'mass_mailing',
+        'marketing_card',
+        'im_livechat',
+        'project',
+        'website_slides',
+        'analytic',
     ],
     'assets': {
         'web.assets_backend': [
