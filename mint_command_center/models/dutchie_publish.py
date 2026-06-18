@@ -406,6 +406,63 @@ class DealSubmissionDutchiePublish(models.Model):
             groups.append(cur)
         return groups
 
+    @api.model
+    def _dutchie_loc_restrictions(self, stores, warnings):
+        """Resolve a submission's store scope to a Dutchie LocationRestrictions
+        list (array of integer POS LocIds).
+
+        Dutchie discounts are LSP-scoped — a created record comes back LocId=0
+        and applies to EVERY store in the LSP regardless of which loc it was
+        POSTed under. LocationRestrictions is the ONLY way to limit a discount
+        to specific stores: empty list = LSP-wide (all market stores), non-empty
+        = those stores only. Stores without a POS LocId are dropped (with a
+        warning); a store-scoped submission where NONE resolve is an error
+        (publishing [] would silently widen it to the whole market).
+        """
+        if not stores:
+            return []
+        loc_ids = sorted({s.dutchie_pos_location_id
+                          for s in stores if s.dutchie_pos_location_id})
+        missing = [s.display_name for s in stores if not s.dutchie_pos_location_id]
+        if missing:
+            warnings.append(
+                "store(s) without a Dutchie POS LocId, dropped from scope: "
+                + ", ".join(missing))
+        if not loc_ids:
+            raise UserError(
+                "Submission is store-scoped but none of its stores have a "
+                "Dutchie POS LocId (res.company.dutchie_pos_location_id).")
+        return loc_ids
+
+    @api.model
+    def _normalize_published_map(self, raw, ctx_loc, sub_id):
+        """Parse dutchie_publish_loc_ids into the current {externalId: dutchieId}
+        shape, migrating the two legacy shapes so re-publish keeps updating in
+        place instead of creating duplicates:
+
+          * current  {externalId: dutchieId}              -> unchanged
+          * nested    {externalId: {locId: dutchieId}}    -> collapse to one id
+                       (prefer ctx_loc's id, else any) — the extra per-loc
+                       records are LSP-wide dupes removed by the cleanup script
+          * flat      {locId: dutchieId}  (oldest)        -> wrap under lgm_<sub>
+        """
+        try:
+            parsed = json.loads(raw or '{}')
+        except (ValueError, TypeError):
+            parsed = {}
+        if not isinstance(parsed, dict) or not parsed:
+            return {}
+        # Oldest flat {locId: id}: no dict values -> wrap under the lone span id.
+        if not any(isinstance(v, dict) for v in parsed.values()):
+            parsed = {f"lgm_{sub_id}": parsed}
+
+        def _one_id(val):
+            if isinstance(val, dict):
+                return int(val.get(str(ctx_loc)) or next(iter(val.values()), 0) or 0)
+            return int(val or 0)
+
+        return {k: _one_id(v) for k, v in parsed.items()}
+
     def _dutchie_build(self):
         """Build {lsp, discount, warnings} for this submission, or raise."""
         self.ensure_one()
@@ -589,30 +646,7 @@ class DealSubmissionDutchiePublish(models.Model):
                  else f"${value:g} Off" if calc == 1
                  else f"${value:g}")
 
-        # Store scope. Dutchie discounts are LSP-scoped — a created record comes
-        # back LocId=0 and applies to EVERY store in the LSP regardless of which
-        # loc the create was POSTed under. LocationRestrictions (an array of
-        # integer POS LocIds) is the ONLY way to limit a discount to specific
-        # stores: empty = LSP-wide (all market stores), non-empty = those stores
-        # only. When the submission targets a store subset, honor it here instead
-        # of publishing once-per-loc (which only ever produced duplicate LSP-wide
-        # records — see fix/dutchie-lsp-wide-dedup).
-        loc_restrictions = []
-        if self.store_ids:
-            loc_restrictions = sorted({
-                s.dutchie_pos_location_id
-                for s in self.store_ids if s.dutchie_pos_location_id
-            })
-            missing = [s.display_name for s in self.store_ids
-                       if not s.dutchie_pos_location_id]
-            if missing:
-                warnings.append(
-                    "store(s) without a Dutchie POS LocId, dropped from scope: "
-                    + ", ".join(missing))
-            if not loc_restrictions:
-                raise UserError(
-                    "Submission is store-scoped but none of its stores have a "
-                    "Dutchie POS LocId (res.company.dutchie_pos_location_id).")
+        loc_restrictions = self._dutchie_loc_restrictions(self.store_ids, warnings)
 
         # One Dutchie discount per faithful date-group. All non-date fields are
         # shared; only ValidDate*, the day-of-week flags, and ExternalId vary.
@@ -762,25 +796,12 @@ class DealSubmissionDutchiePublish(models.Model):
         # discount keyed by its ExternalId; store scope lives in the payload's
         # LocationRestrictions, NOT in separate per-loc records (a created
         # discount is LSP-wide, so one-per-loc only ever made duplicates). The
-        # recorded map is {externalId: dutchieId}. Migrate the two legacy shapes
-        # so they keep updating in place: {externalId: {locId: id}} (nested,
-        # collapse to one id) and a flat {locId: id} (oldest, wrap under the
-        # lone span's ExternalId). For nested legacy, prefer the context loc's
-        # id, else any id — the remaining duplicate records are removed by the
-        # one-off cleanup script (letsgomint-us scripts/dutchie/cleanup-lsp-wide-dupes.mjs).
-        try:
-            published_raw = json.loads(self.dutchie_publish_loc_ids or '{}')
-        except (ValueError, TypeError):
-            published_raw = {}
-        if published_raw and not all(isinstance(v, dict) for v in published_raw.values()):
-            published_raw = {f"lgm_{self.id}": published_raw}
-
-        def _legacy_id(val):
-            if isinstance(val, dict):
-                return int(val.get(str(ctx_loc)) or next(iter(val.values()), 0) or 0)
-            return int(val or 0)
-
-        published = {k: _legacy_id(v) for k, v in published_raw.items()}
+        # recorded map is {externalId: dutchieId}; _normalize_published_map
+        # migrates the two legacy shapes so they keep updating in place. The
+        # duplicate records left by the old one-per-loc path are removed by the
+        # cleanup script (letsgomint-us scripts/dutchie/cleanup-lsp-wide-dupes.mjs).
+        published = self._normalize_published_map(
+            self.dutchie_publish_loc_ids, ctx_loc, self.id)
         updated = dict(published)
         # Per-span isolation: one span failing must not hide which spans DID
         # publish — accumulate every outcome and report them all.
