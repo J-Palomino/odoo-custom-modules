@@ -452,8 +452,11 @@ class DealSubmissionDutchiePublish(models.Model):
             parsed = {}
         if not isinstance(parsed, dict) or not parsed:
             return {}
-        # Oldest flat {locId: id}: no dict values -> wrap under the lone span id.
-        if not any(isinstance(v, dict) for v in parsed.values()):
+        # Discriminate by KEY, not value type: the current ({ext: int}) and the
+        # oldest-flat ({locId: int}) shapes BOTH have non-dict values, so only
+        # the keys tell them apart — ExternalIds vs numeric LocIds. All-numeric
+        # keys = oldest flat -> wrap under the lone span's ExternalId.
+        if all(str(k).isdigit() for k in parsed):
             parsed = {f"lgm_{sub_id}": parsed}
 
         def _one_id(val):
