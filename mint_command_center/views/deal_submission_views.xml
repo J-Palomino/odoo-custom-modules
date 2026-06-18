@@ -169,13 +169,16 @@
                                        placeholder="Add every in-stock category this deal includes"/>
                                 <field name="product_category"
                                        placeholder="Free text — auto-fills from the In-Stock Categories picks"/>
-                                <label for="weight_value" string="Weight"/>
+                                <label for="weight_min" string="Weight range"/>
                                 <div class="o_row">
-                                    <field name="weight_value" class="oe_inline"
-                                           placeholder="auto from name"/>
+                                    <field name="weight_min" class="oe_inline"
+                                           placeholder="min"/>
+                                    <span class="mx-1">–</span>
+                                    <field name="weight_max" class="oe_inline"
+                                           placeholder="max"/>
                                     <field name="weight_unit" class="oe_inline"/>
                                     <span class="text-muted ms-2">
-                                        Filters Specific Products below to this weight (blank = all sizes, weight-sorted).
+                                        Narrows Specific Products to weights within this range (both blank = all sizes, weight-sorted). Compared across units (mg/g/oz).
                                     </span>
                                 </div>
                                 <label for="publish_match_count" string="In-Stock Products Matched"/>

@@ -4,10 +4,31 @@ from datetime import date as _date, timedelta
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
-from .deal_mixins import format_bundle_tiers_text
+from .deal_mixins import format_bundle_tiers_text, WEIGHT_UNIT_SELECTION
 from .ptl_deal import MASTER_CATEGORY_PATTERNS
 
 _logger = logging.getLogger(__name__)
+
+# Mass-unit → grams, so a weight range expressed in one unit (e.g. g) can be
+# compared against products whose name parses to another (mg/oz). Mirrors
+# dutchie_discount_push.WEIGHT_UNIT_TO_GRAMS. 'ct' is a count, not a mass, so
+# it is normalised on its own dimension (see _norm_weight) and only compared
+# against other counts.
+_UNIT_TO_GRAMS = {'g': 1.0, 'mg': 0.001, 'oz': 28.3495}
+
+
+def _norm_weight(value, unit):
+    """Normalise a (value, unit) weight onto a comparable dimension.
+
+    Returns ('mass', grams) for mass units, ('count', value) for 'ct', or
+    (None, None) when the unit is missing/unknown. Two weights are only
+    comparable when their dimension matches."""
+    grams = _UNIT_TO_GRAMS.get(unit)
+    if grams is not None:
+        return ('mass', value * grams)
+    if unit == 'ct':
+        return ('count', value)
+    return (None, None)
 
 
 class DealSubmission(models.Model):
@@ -16,7 +37,7 @@ class DealSubmission(models.Model):
     _inherit = [
         'mail.thread', 'mail.activity.mixin',
         'mint.discount.core.mixin', 'mint.bogo.spec.mixin',
-        'mint.vendor.funding.mixin', 'mint.weight.parsed.mixin',
+        'mint.vendor.funding.mixin',
     ]
     _order = 'create_date desc'
 
@@ -125,6 +146,30 @@ class DealSubmission(models.Model):
              '0 means the deal would be invisible on the storefront and apply '
              'to nothing at the register — conversion is blocked. -1 means no '
              'product-narrowing restriction (store-wide), handled elsewhere.',
+    )
+    # --- Weight range filter (search aid for the Specific Products picker) ---
+    # A min/max band the reviewer narrows the picker by. Empty (0) = no weight
+    # filter, so the picker shows every in-stock candidate (weight-sorted).
+    # Bounds are expressed in weight_unit and compared across units (mg/g/oz
+    # normalised to grams; ct compared as a count) so a "0.4–0.6 g" range
+    # matches a product whose name says "0.5g". Does NOT affect the published
+    # Dutchie restriction or publish_match_count — purely a picker filter.
+    weight_min = fields.Float(
+        string='Min Weight',
+        help='Lower bound of the weight band used to narrow the Specific '
+             'Products picker. 0 / blank = no lower bound.',
+    )
+    weight_max = fields.Float(
+        string='Max Weight',
+        help='Upper bound of the weight band used to narrow the Specific '
+             'Products picker. 0 / blank = no upper bound.',
+    )
+    weight_unit = fields.Selection(
+        selection=WEIGHT_UNIT_SELECTION,
+        string='Weight Unit',
+        default='g',
+        help='Unit the Min/Max weights are expressed in. Mass units (mg/g/oz) '
+             'are compared in grams; ct (count) is compared as a count.',
     )
     # discount_type / discount_value / original_price come from
     # mint.discount.core.mixin.
@@ -513,26 +558,9 @@ class DealSubmission(models.Model):
         self.ensure_one()
         return self.product_category_ids | self.product_category_id
 
-    # --- Parsed weight (mint.weight.parsed.mixin) -----------------------
-    # The submission auto-derives a weight/unit from its own title and the
-    # vendor's raw product list, the same way mint.ptl.deal and the brand
-    # calendar entry do. The weight then acts as a pre-search filter on the
-    # Specific Products picker below (see _compute_available_product_ids).
-
-    def _weight_source(self):
-        """Parse weight from the deal name first, then the vendor's raw
-        product list ("Products (raw, with weights)"). Manually editable."""
-        self.ensure_one()
-        return (self.name, self.product_list)
-
-    @api.depends('name', 'product_list')
-    def _compute_weight(self):
-        # Thin @api.depends wrapper around the mixin's source-agnostic body.
-        return super()._compute_weight()
-
     @api.depends('brand_id', 'brand_ids', 'product_category_id',
                  'product_category_ids', 'market_id', 'store_ids',
-                 'weight_value', 'weight_unit')
+                 'weight_min', 'weight_max', 'weight_unit')
     def _compute_available_product_ids(self):
         """Products matching every facet, for the Specific Products domain.
 
@@ -544,13 +572,13 @@ class DealSubmission(models.Model):
         market's stores; no stores resolved -> stock anywhere. sudo for the
         same reason as _compute_available_category_ids.
 
-        Weight pre-filter (#weight): when Weight + Unit are set on the
-        submission, candidates are narrowed to products whose name parses to
-        the SAME weight (e.g. 3.5g → only 3.5g products), then the candidate
-        set is ordered by parsed weight (unit, value) so sizes group and
-        ascend. Blank Weight keeps every in-stock candidate, weight-sorted.
-        Products with no parseable weight are dropped only when a weight
-        filter is active; otherwise they sort last.
+        Weight range pre-filter: when Min and/or Max weight are set,
+        candidates are narrowed to products whose name parses to a weight
+        WITHIN the band (compared in grams for mass units, as a count for
+        ct), then ordered by normalised weight so sizes group and ascend.
+        Blank range (both 0) keeps every in-stock candidate, weight-sorted;
+        unparseable weights sort last and are dropped only when the range is
+        active.
         """
         # Lazy import: brand_calendar loads AFTER this module in models/
         # __init__, so a top-level import would fail at load time.
@@ -580,17 +608,29 @@ class DealSubmission(models.Model):
                 domain.append(('x_dutchie_location_id', 'in', uuids))
             variants = Variant.search(domain)
             tmpls = variants.product_tmpl_id
-            # Parse each candidate's weight once: {tmpl_id: (value, unit)}.
-            wmap = {t.id: _parse_weight(t.name) for t in tmpls}
-            want_val, want_unit = sub.weight_value, sub.weight_unit
-            if want_unit and want_val:
-                tmpls = tmpls.filtered(
-                    lambda t: wmap[t.id][1] == want_unit
-                    and abs(wmap[t.id][0] - want_val) < 1e-4
-                )
-            # Sort by (unit, value); unparsed weights (unit False) sort last.
+            # Normalise each candidate's weight once: {id: (dimension, mag)}.
+            nmap = {t.id: _norm_weight(*_parse_weight(t.name)) for t in tmpls}
+
+            # Range bounds, normalised onto the unit's dimension. A 0/blank
+            # bound is open-ended on that side.
+            want_dim, _ = _norm_weight(1.0, sub.weight_unit)
+            lo = _norm_weight(sub.weight_min, sub.weight_unit)[1] if sub.weight_min else None
+            hi = _norm_weight(sub.weight_max, sub.weight_unit)[1] if sub.weight_max else None
+            if want_dim is not None and (lo is not None or hi is not None):
+                def _in_range(t):
+                    dim, mag = nmap[t.id]
+                    if dim != want_dim:
+                        return False
+                    if lo is not None and mag < lo - 1e-9:
+                        return False
+                    if hi is not None and mag > hi + 1e-9:
+                        return False
+                    return True
+                tmpls = tmpls.filtered(_in_range)
+            # Sort by normalised magnitude; unparseable weights sort last.
             ordered = tmpls.sorted(
-                key=lambda t: (wmap[t.id][1] or '￿', wmap[t.id][0])
+                key=lambda t: (0, nmap[t.id][1]) if nmap[t.id][0] is not None
+                else (1, 0.0)
             )
             sub.available_product_ids = [(6, 0, ordered.ids)]
 
