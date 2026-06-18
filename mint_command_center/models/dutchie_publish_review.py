@@ -14,6 +14,7 @@ mint.deal.submission), so this wizard stays generic.
 from markupsafe import Markup, escape
 
 from odoo import fields, models
+from odoo.exceptions import UserError
 
 
 def build_review_html(mode, is_live, lines, warnings, blocks):
@@ -53,10 +54,22 @@ class DutchiePublishReview(models.TransientModel):
     mode = fields.Char(readonly=True)
     is_live = fields.Boolean(readonly=True)
     review_html = fields.Html(readonly=True, sanitize=False)
+    requires_ack = fields.Boolean(
+        readonly=True,
+        help="Set when this deal overlaps an active deal's Dutchie scope — "
+             "the reviewer must explicitly acknowledge before publishing.")
+    overlap_ack = fields.Boolean(
+        string="I reviewed the overlap and want to publish anyway")
 
     def action_confirm(self):
         """Fire the real publish for the originating surface."""
         self.ensure_one()
+        if self.requires_ack and not self.overlap_ack:
+            raise UserError(
+                "This deal overlaps an active deal's Dutchie scope (see the "
+                "alerts above) — publishing will create a duplicate discount "
+                "on the same items. Tick “I reviewed the overlap and want to "
+                "publish anyway” to proceed, or Cancel.")
         record = self.env[self.res_model].browse(self.res_id)
         if self.res_model == 'mint.ptl.deal':
             return record.action_publish()
