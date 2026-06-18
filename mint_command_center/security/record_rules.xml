@@ -66,5 +66,21 @@
             <field name="groups" eval="[(4, ref('base.group_user'))]"/>
         </record>
 
+        <!-- Ambassador Shift: multi-company isolation -->
+        <record id="rule_ambassador_shift_company" model="ir.rule">
+            <field name="name">Ambassador Shift: multi-company</field>
+            <field name="model_id" ref="model_mint_ambassador_shift"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        </record>
+
+        <!-- Placement Inventory: multi-company isolation -->
+        <record id="rule_placement_inventory_company" model="ir.rule">
+            <field name="name">Placement Inventory: multi-company</field>
+            <field name="model_id" ref="model_mint_placement_inventory"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        </record>
+
     </data>
 </odoo>

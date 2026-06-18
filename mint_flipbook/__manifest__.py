@@ -1,6 +1,6 @@
 {
     'name': 'Mint Flipbook',
-    'version': '19.0.3.1.0',
+    'version': '19.0.3.2.0',
     'category': 'Marketing',
     'summary': 'Build shareable PDF + page-flip flipbooks of vendor offerings',
     'description': """
@@ -25,6 +25,7 @@
     ],
     'data': [
         'security/ir.model.access.csv',
+        'security/multicompany_rules.xml',
         'views/mint_flipbook_views.xml',
         'views/menu.xml',
         'views/flipbook_viewer_templates.xml',

@@ -16,5 +16,20 @@
                 ('maintenance_team_id.member_ids', 'in', [user.id])
             ]</field>
         </record>
+
+        <!--
+            Multi-company rule for maintenance requests. The base maintenance
+            module ships NO company rule for maintenance.request, so the company
+            switcher (allowed_company_ids) has no effect — a manager sees every
+            ticket regardless of the selected company. This global rule scopes
+            requests to the active company selection (records with no company
+            stay visible everywhere). Applies to all users including managers.
+        -->
+        <record id="request_company_rule" model="ir.rule">
+            <field name="name">Maintenance Request: multi-company</field>
+            <field name="model_id" ref="maintenance.model_maintenance_request"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
     </data>
 </odoo>

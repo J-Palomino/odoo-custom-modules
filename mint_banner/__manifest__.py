@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Banners',
-    'version': '19.0.1.7.1',
+    'version': '19.0.1.8.0',
     'category': 'Website',
     'summary': 'Admin-managed category banners for MintDeals storefront',
     'description': """MintDeals Banners
@@ -12,6 +12,7 @@
     'depends': ['base'],
     'data': [
         'security/ir.model.access.csv',
+        'security/multicompany_rules.xml',
         'views/banner_views.xml',
     ],
     'installable': True,

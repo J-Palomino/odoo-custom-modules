@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Embeds',
-    'version': '19.0.1.1.0',
+    'version': '19.0.1.2.0',
     'category': 'Website',
     'summary': 'Embeddable widgets for WordPress and third-party sites',
     'description': """MintDeals Embeds
@@ -15,6 +15,7 @@
     'depends': ['base', 'mint_banner'],
     'data': [
         'security/ir.model.access.csv',
+        'security/multicompany_rules.xml',
         'views/embed_views.xml',
     ],
     'installable': True,
