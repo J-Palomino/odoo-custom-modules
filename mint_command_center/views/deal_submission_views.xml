@@ -169,16 +169,17 @@
                                        placeholder="Add every in-stock category this deal includes"/>
                                 <field name="product_category"
                                        placeholder="Free text — auto-fills from the In-Stock Categories picks"/>
-                                <label for="weight_min" string="Weight range"/>
-                                <div class="o_row">
-                                    <field name="weight_min" class="oe_inline"
-                                           placeholder="min"/>
-                                    <span class="mx-1">–</span>
-                                    <field name="weight_max" class="oe_inline"
-                                           placeholder="max"/>
-                                    <field name="weight_unit" class="oe_inline"/>
-                                    <span class="text-muted ms-2">
-                                        Narrows Specific Products to weights within this range (both blank = all sizes, weight-sorted). Compared across units (mg/g/oz).
+                                <label for="weight_keys" string="Weights"/>
+                                <div>
+                                    <field name="available_weight_options" invisible="1"/>
+                                    <field name="weight_keys"
+                                           widget="mdcc_weight_picker"
+                                           nolabel="1"
+                                           options="{'optionsField': 'available_weight_options'}"
+                                           invisible="not brand_id and not brand_ids"
+                                           placeholder="Pick weights — the real in-stock sizes for the brand(s) + categories + market."/>
+                                    <span class="text-muted">
+                                        Narrows Specific Products to the selected weights (none = all sizes, weight-sorted). Weights are the real in-stock sizes; compared across units (mg/g/oz).
                                     </span>
                                 </div>
                                 <label for="publish_match_count" string="In-Stock Products Matched"/>

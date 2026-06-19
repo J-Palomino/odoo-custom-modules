@@ -1,0 +1,17 @@
+.o_mdcc_weight_picker {
+    .o_mdcc_tag_remove {
+        cursor: pointer;
+        opacity: 0.6;
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+}
+
+.o_mdcc_weight_dialog {
+    .o_mdcc_weight_list {
+        max-height: 22rem;
+        overflow-y: auto;
+    }
+}
