@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint Account',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.1.0',
     'category': 'Website',
     'summary': 'Customer account, cart persistence, order lookup for MintDeals frontend',
     'description': """
@@ -28,6 +28,7 @@
     ],
     'data': [
         'security/ir.model.access.csv',
+        'security/multicompany_rules.xml',
     ],
     'installable': True,
     'auto_install': False,
