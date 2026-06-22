@@ -7,7 +7,7 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from .brand_calendar import _brand_lookup_key, _parse_brand_name
-from .deal_mixins import format_bundle_tiers_text
+from .deal_mixins import format_bundle_tiers_text, dutchie_claim_decision
 
 _logger = logging.getLogger(__name__)
 
@@ -54,6 +54,12 @@ class PtlDeal(models.Model):
     _order = 'sequence, id'
 
     name = fields.Char(string='Deal Name', required=True, tracking=True)
+    dutchie_publish_owner = fields.Selection(
+        [('submission', 'Submission convert'), ('ptl', 'PTL publish')],
+        string='Dutchie Publish Owner', copy=False, tracking=True,
+        help="Which publish path owns this deal's live Dutchie discount. Set by "
+             "the first path to publish live; the other path then refuses to "
+             "create a duplicate (#2 cross-path mutex). Clear it to switch paths.")
     brand_id = fields.Many2one(
         'mint.brand',
         string='Brand',
@@ -877,6 +883,18 @@ class PtlDeal(models.Model):
                 'active_ids': self.ids,
             },
         }
+
+    def _dutchie_claim(self, path):
+        """Claim this deal for live Dutchie publishing by ``path``
+        ('submission' | 'ptl'). Returns True if the path may publish (owner
+        unset or already this path) and stamps the owner on first claim; False
+        if the OTHER path already owns it (#2 cross-path mutex). Pure decision
+        in deal_mixins.dutchie_claim_decision."""
+        self.ensure_one()
+        may, to_set = dutchie_claim_decision(self.dutchie_publish_owner, path)
+        if to_set:
+            self.sudo().write({'dutchie_publish_owner': to_set})
+        return may
 
     def action_publish(self):
         """Publish this deal to the storefront (Redis) AND Dutchie POS.

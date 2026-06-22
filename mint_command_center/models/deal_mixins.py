@@ -138,6 +138,23 @@ def weekday_bools_from_days(days, span_from=None, span_to=None, market_id=None):
     return bools
 
 
+def dutchie_claim_decision(owner, path):
+    """Pure cross-path publish mutex (#2). There are two paths that write a
+    deal to Dutchie — the submission convert auto-publish and the PTL Publish
+    button — and they use different ExternalIds/topologies, so both firing
+    creates a DUPLICATE live discount. First live writer wins.
+
+    ``owner`` is the deal's current ``dutchie_publish_owner``
+    ('submission' | 'ptl' | falsy); ``path`` is the path requesting to publish.
+    Returns ``(may_publish, owner_to_set)`` — ``owner_to_set`` is the value to
+    persist (None = leave unchanged). Same-path re-publish is always allowed
+    (idempotent update via that path's own id map); the OTHER path is blocked.
+    """
+    if owner and owner != path:
+        return (False, None)
+    return (True, None if owner else path)
+
+
 WEIGHT_UNIT_SELECTION = [
     ('g', 'g'),
     ('mg', 'mg'),

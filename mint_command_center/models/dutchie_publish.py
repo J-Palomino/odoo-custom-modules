@@ -738,6 +738,22 @@ class DealSubmissionDutchiePublish(models.Model):
             return
 
         # live
+        # Cross-path mutex (#2 stopgap): if this deal's live Dutchie discount is
+        # already owned by the PTL Publish path, do NOT also publish from the
+        # convert path — that creates a duplicate record (different ExternalId
+        # and topology). First live writer wins; same-path re-publish is allowed.
+        # Clear mint.ptl.deal.dutchie_publish_owner to switch paths.
+        if self.deal_id and not self.deal_id._dutchie_claim('submission'):
+            msg = ("Skipped convert-time Dutchie publish: this deal is already "
+                   "published via the PTL path (dutchie_publish_owner='ptl'). "
+                   "Avoids a duplicate discount — republish from the PTL deal, or "
+                   "clear the owner to switch paths.")
+            _logger.info("submission %s: %s", self.id, msg)
+            try:
+                self.message_post(body=msg, message_type='comment')
+            except Exception:
+                pass
+            return
         url = (get_param('dutchie.publish.url')
                or 'https://mintinvsvc-production-6aa5.up.railway.app').rstrip('/')
         api_key = get_param('dutchie.publish.api_key')

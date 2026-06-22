@@ -390,6 +390,27 @@ class PtlDayDutchiePush(models.Model):
             return
 
         for discount in discounts:
+            # Cross-path mutex (#2 stopgap): if this deal's live discount is
+            # already owned by the submission/convert path, skip the PTL live
+            # push to avoid a duplicate record. First live writer wins; same-path
+            # re-publish is allowed. Dry-run never claims/blocks (no live write).
+            if mode == 'live' and discount.ptl_deal_id and \
+                    not discount.ptl_deal_id._dutchie_claim('ptl'):
+                _logger.info(
+                    "Dutchie push: discount %s skipped — deal already published "
+                    "via submission path (dutchie_publish_owner='submission')",
+                    discount.id)
+                Log.create({
+                    'discount_id': discount.id,
+                    'company_id': enabled_stores[:1].id,
+                    'mode': mode,
+                    'success': False,
+                    'error_message': (
+                        "Skipped: deal already published to Dutchie via the "
+                        "submission/convert path (#2 mutex). Republish from the "
+                        "submission, or clear dutchie_publish_owner to switch."),
+                })
+                continue
             # Honor per-discount store filter if set
             target_stores = discount.store_ids & enabled_stores if discount.store_ids \
                             else enabled_stores
