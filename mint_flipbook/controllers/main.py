@@ -56,3 +56,28 @@ class FlipbookViewer(http.Controller):
         response = stream.get_response(as_attachment=False)
         response.headers['Content-Type'] = 'application/pdf'
         return response
+
+    @http.route('/flipbook/<string:access_token>/img/<int:index>', type='http',
+                auth='public', sitemap=False)
+    def flipbook_img(self, access_token, index, **kwargs):
+        """Stream one rasterised page PNG for the HTML-email embed.
+
+        Same public + token + published gate as the viewer; serves the
+        pre-rendered mint.flipbook.render image at ``index`` so email clients
+        load each page as an external image. Cached for a day — renders only
+        change when marketing regenerates the embed.
+        """
+        flipbook = self._get_published(access_token)
+        if not flipbook:
+            return request.not_found()
+        render = request.env['mint.flipbook.render'].sudo().search([
+            ('flipbook_id', '=', flipbook.id),
+            ('sequence', '=', index),
+        ], limit=1)
+        if not render or not render.image:
+            return request.not_found()
+        stream = request.env['ir.binary']._get_stream_from(render, 'image')
+        response = stream.get_response(as_attachment=False)
+        response.headers['Content-Type'] = 'image/png'
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        return response
