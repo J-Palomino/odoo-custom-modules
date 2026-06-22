@@ -155,6 +155,20 @@ def dutchie_claim_decision(owner, path):
     return (True, None if owner else path)
 
 
+def normalize_publish_mode(raw, unset_default='dry_run', valid=('off', 'dry_run', 'live')):
+    """Normalize a ``dutchie.publish.mode`` value (#4 fail-closed).
+
+    Unset/empty -> ``unset_default`` (preserves the historical default). A value
+    that is SET but unrecognized -> 'off', never silently LIVE — path-1 used to
+    treat anything that wasn't 'off'/'dry_run' as live (fail-open); this matches
+    the PTL push path's fail-closed coercion.
+    """
+    if raw is None or str(raw).strip() == '':
+        return unset_default
+    m = str(raw).strip().lower()
+    return m if m in valid else 'off'
+
+
 WEIGHT_UNIT_SELECTION = [
     ('g', 'g'),
     ('mg', 'mg'),

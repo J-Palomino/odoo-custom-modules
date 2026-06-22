@@ -700,6 +700,32 @@ class PtlDayDutchiePush(models.Model):
             })
             return False
 
+        # Resurrection guard (#9): re-publishing (non-delete) a discount that was
+        # deactivated in Dutchie reuses its id and POSTs without IsDeleted,
+        # reviving it. Allow that ONLY when the deal is genuinely active again
+        # (re-approved / live); otherwise a stray push would silently un-delete
+        # an expired/revoked deal. The legitimate reactivation path clears the
+        # flag on its successful publish below.
+        if (not is_delete and mode == 'live' and discount.dutchie_is_deleted
+                and not (discount.ptl_deal_id
+                         and discount.ptl_deal_id.state in ('approved', 'live'))):
+            Log.create({
+                'discount_id': discount.id,
+                'company_id': store.id,
+                'dutchie_loc_id': str(store.dutchie_store_id or ''),
+                'mode': mode,
+                'request_payload': json.dumps(payload, default=str)[:8000],
+                'success': False,
+                'error_message': (
+                    "Skipped: discount is deactivated in Dutchie "
+                    "(dutchie_is_deleted) and its deal is not active — refusing to "
+                    "resurrect it. Re-approve the deal to republish, or clear "
+                    "dutchie_is_deleted manually."),
+            })
+            _logger.info("Dutchie push: discount %s skipped — resurrection guard "
+                         "(deactivated + deal not active)", discount.id)
+            return False
+
         if is_delete:
             # Mark the existing Dutchie discount deleted. Id=0 ⇒ never pushed
             # live to this store ⇒ nothing to deactivate (no-op success).
@@ -774,6 +800,15 @@ class PtlDayDutchiePush(models.Model):
             log_vals['error_message'] = f'{type(e).__name__}: {str(e)[:500]}'
 
         Log.create(log_vals)
+        # #9: a successful live (re)publish reactivates the discount in Dutchie,
+        # so clear the stale deleted flag. The deactivate path sets it True but
+        # nothing cleared it, so Odoo's state drifted from Dutchie's.
+        if not is_delete and log_vals.get('success') and discount.dutchie_is_deleted:
+            try:
+                discount.sudo().write({'dutchie_is_deleted': False})
+            except Exception:
+                _logger.warning('Could not clear dutchie_is_deleted on discount %s',
+                                discount.id)
         # Structured audit line — ships to Grafana Loki via mint_loki_logger.
         # The Log table above is the queryable Odoo audit; this line is the
         # cross-service one (same event name as mintinvsvc dealAudit).

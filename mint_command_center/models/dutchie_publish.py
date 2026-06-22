@@ -34,7 +34,8 @@ from datetime import date as _date, timedelta
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
-from .deal_mixins import format_bundle_tiers_text, build_dutchie_restrictions
+from .deal_mixins import (format_bundle_tiers_text, build_dutchie_restrictions,
+                          normalize_publish_mode)
 
 _logger = logging.getLogger(__name__)
 
@@ -167,8 +168,8 @@ class DealSubmissionDutchiePublish(models.Model):
 
     def action_convert_to_deal(self):
         self.ensure_one()
-        mode = (self.env['ir.config_parameter'].sudo()
-                .get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
+        mode = normalize_publish_mode(self.env['ir.config_parameter'].sudo()
+                                      .get_param('dutchie.publish.mode'))
         # #2 reviewer gate: a deal can't convert (and thus can't publish) with
         # no numeric value. Exemptions: bogo (valid without one), structured
         # bundles (#93677 — pricing lives in bundle_tier_ids, and the
@@ -704,13 +705,33 @@ class DealSubmissionDutchiePublish(models.Model):
     def _dutchie_publish_after_convert(self):
         self.ensure_one()
         get_param = self.env['ir.config_parameter'].sudo().get_param
-        mode = (get_param('dutchie.publish.mode') or 'dry_run').strip().lower()
+        mode = normalize_publish_mode(get_param('dutchie.publish.mode'))
         if mode == 'off':
             return
         built = self._dutchie_build()
         lsp, discounts, warnings = built['lsp'], built['discounts'], built['warnings']
         loc_map = json.loads(get_param('dutchie.publish.loc_ids') or '{}')
         loc_ids = list(dict.fromkeys(int(x) for x in (loc_map.get(str(lsp)) or [])))
+        # #3: honor the submission's selected stores — publish only to the
+        # configured LocIds that map to store_ids. Without this, path-1 published
+        # to EVERY store in the LSP regardless of the deal's scope. If the
+        # selection maps to none, leave loc_ids empty so the live guard below
+        # refuses to publish (never fall back to store-wide).
+        if self.store_ids:
+            want = {int(getattr(s, 'dutchie_pos_location_id', 0) or 0)
+                    for s in self.store_ids
+                    if int(getattr(s, 'dutchie_pos_location_id', 0) or 0)}
+            scoped = [l for l in loc_ids if l in want]
+            if want and not scoped:
+                warnings.append(
+                    "None of the %d selected store(s) map to a configured publish "
+                    "LocId for LSP %s — skipping (no store-wide fallback)."
+                    % (len(self.store_ids), lsp))
+            elif len(scoped) != len(loc_ids):
+                warnings.append(
+                    "Scoped to %d of %d configured LocId(s) by the deal's selected "
+                    "stores." % (len(scoped), len(loc_ids)))
+            loc_ids = scoped
         # One multi-store record per span: every target store rides in
         # LocationRestrictions. Stamp it on each built span so dry-run shows the
         # real payload and the live path posts the consolidated record.
