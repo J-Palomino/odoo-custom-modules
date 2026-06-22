@@ -102,6 +102,42 @@ def build_dutchie_restrictions(brand_ids, exc_brand_ids, prod_inc, prod_exc, cat
     return restrictions, warnings
 
 
+# Dutchie day-of-week field names, Monday-first to match Python's date.weekday()
+# (0=Mon … 6=Sun). NOTE: ALL-FALSE means "active EVERY day" in Dutchie — so a
+# day-scoped deal must never resolve to all-False (see weekday_bools_from_days).
+_WEEKDAY_BY_NUM = {0: 'monday', 1: 'tuesday', 2: 'wednesday', 3: 'thursday',
+                   4: 'friday', 5: 'saturday', 6: 'sunday'}
+DAY_FIELD_NAMES = tuple(_WEEKDAY_BY_NUM[i] for i in range(7))
+
+
+def weekday_bools_from_days(days, span_from=None, span_to=None, market_id=None):
+    """Reduce plotted PTL days to Monday..Sunday booleans.
+
+    ``days`` is an iterable of ``(date, market_id)`` pairs. A weekday flag is
+    True when at least one day falls on it, AFTER filtering to the inclusive
+    span ``[span_from, span_to]`` (when given) and to ``market_id`` (when given,
+    for per-market Dutchie pushes). Returns ``{monday: bool, … sunday: bool}``.
+
+    Bounded by the discount's own validity span — NOT a fixed today+N horizon —
+    so a future-dated deal resolves its real weekdays instead of collapsing to
+    all-False (which Dutchie would read as "every day"). Callers must treat an
+    all-False result for a day-scoped deal as a refuse-to-publish signal, never
+    send it as-is.
+    """
+    bools = {name: False for name in DAY_FIELD_NAMES}
+    for d, mid in days:
+        if d is None:
+            continue
+        if span_from and d < span_from:
+            continue
+        if span_to and d > span_to:
+            continue
+        if market_id is not None and mid != market_id:
+            continue
+        bools[_WEEKDAY_BY_NUM[d.weekday()]] = True
+    return bools
+
+
 WEIGHT_UNIT_SELECTION = [
     ('g', 'g'),
     ('mg', 'mg'),

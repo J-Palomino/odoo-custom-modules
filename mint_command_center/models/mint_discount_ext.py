@@ -1,7 +1,8 @@
 import logging
-from datetime import timedelta
 
 from odoo import api, fields, models
+
+from .deal_mixins import weekday_bools_from_days
 
 _logger = logging.getLogger(__name__)
 
@@ -150,25 +151,31 @@ class MintDiscountPTL(models.Model):
         else:
             _logger.debug('PTL hourly active recompute: no edges')
 
-    def _recompute_day_booleans(self, discount):
-        """Recompute monday-sunday booleans from linked PTL day dates."""
-        deal = discount.ptl_deal_id
+    def _compute_weekday_bools(self, market=None):
+        """Monday..Sunday booleans for THIS discount from its deal's published
+        PTL days, bounded by the discount's own validity span (NOT a fixed
+        today+60 horizon, which made >60-day-out deals collapse to all-False =
+        every-day) and optionally scoped to ``market`` for per-market Dutchie
+        pushes. See deal_mixins.weekday_bools_from_days for the rule."""
+        self.ensure_one()
+        deal = self.ptl_deal_id
         if not deal:
-            return
-
-        today = fields.Date.today()
-        future_cutoff = today + timedelta(days=60)
-
+            return {name: False for name in self.DAY_NAME_MAP.values()}
         days = self.env['mint.ptl.day'].search([
             ('deal_ids', 'in', deal.id),
             ('state', '=', 'published'),
-            ('date', '>=', today),
-            ('date', '<=', future_cutoff),
         ])
+        pairs = [(d.date, d.market_id.id) for d in days]
+        return weekday_bools_from_days(
+            pairs, self.valid_from, self.valid_until,
+            market.id if market else None)
 
-        day_bools = {name: False for name in self.DAY_NAME_MAP.values()}
-        for day_rec in days:
-            weekday_num = day_rec.date.weekday()
-            day_bools[self.DAY_NAME_MAP[weekday_num]] = True
-
-        discount.write(day_bools)
+    def _recompute_day_booleans(self, discount):
+        """Persist monday-sunday booleans from linked PTL day dates — the
+        market-blind union, for the storefront/Redis view. The per-market
+        Dutchie payload computes its OWN market-scoped flags so a deal scheduled
+        in multiple states doesn't leak one market's weekdays into another
+        (see _deal_to_dutchie_payload)."""
+        if not discount.ptl_deal_id:
+            return
+        discount.write(discount._compute_weekday_bools())

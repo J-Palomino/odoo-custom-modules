@@ -261,6 +261,15 @@ class PtlDayDutchiePush(models.Model):
             'Product':  self._resolve_product_restriction(discount),
         }
 
+        # Day-of-week scoped to THIS push's market (self.market_id) and bounded
+        # by the discount's validity span. A deal plotted Mon-in-AZ + Fri-in-MO
+        # publishes Mon only to AZ and Fri only to MO — reading the market-blind
+        # booleans on mint.discount leaked both weekdays into both markets (#7),
+        # and a >60-day-out deal collapsed to all-False = every-day (#6). The
+        # all-False guard in _push_one_discount refuses to send an empty set for
+        # a day-scoped deal.
+        day_bools = discount._compute_weekday_bools(market=self.market_id)
+
         return {
             'Id': existing_int,
             'ApplicationMethodId': 1,  # 1=Automatic; 2=Manual; 3=Code
@@ -315,13 +324,13 @@ class PtlDayDutchiePush(models.Model):
             # Day-of-week. mint.discount stores monday..sunday as separate
             # booleans (set by _recompute_day_booleans from the PTL day binding).
             # If all 7 are False, Dutchie treats the discount as every-day.
-            'Sunday': bool(discount.sunday),
-            'Monday': bool(discount.monday),
-            'Tuesday': bool(discount.tuesday),
-            'Wednesday': bool(discount.wednesday),
-            'Thursday': bool(discount.thursday),
-            'Friday': bool(discount.friday),
-            'Saturday': bool(discount.saturday),
+            'Sunday': day_bools['sunday'],
+            'Monday': day_bools['monday'],
+            'Tuesday': day_bools['tuesday'],
+            'Wednesday': day_bools['wednesday'],
+            'Thursday': day_bools['thursday'],
+            'Friday': day_bools['friday'],
+            'Saturday': day_bools['saturday'],
             'MenuDisplayRank': 0,
             # Customer-facing menu card name. Without DiscountMenuDisplayDetails
             # /MenuDisplayName, Dutchie's online menu falls back to
@@ -638,6 +647,34 @@ class PtlDayDutchiePush(models.Model):
                     f'Skipped: store missing dutchie_pos_location_id ({loc_id}) '
                     f'or dutchie_lsp_id ({lsp_id}). Backfill required before '
                     f'this store can push to Dutchie.'
+                ),
+            })
+            return False
+
+        # All-False day guard (#6): Dutchie reads all-7-days-False as "active
+        # EVERY day". A day-scoped deal (one with plotted days) that resolves to
+        # NO weekday in this market/span is a bug, not an every-day deal — refuse
+        # the write rather than silently running it daily. Continuous deals with
+        # no plotted days legitimately use all-False and are exempt.
+        disc = payload['discount']
+        deal = discount.ptl_deal_id
+        if (not is_delete and deal and deal.day_ids and not any(
+                disc.get(d) for d in ('Sunday', 'Monday', 'Tuesday', 'Wednesday',
+                                      'Thursday', 'Friday', 'Saturday'))):
+            Log.create({
+                'discount_id': discount.id,
+                'company_id': store.id,
+                'dutchie_loc_id': str(store.dutchie_store_id or ''),
+                'mode': mode,
+                'request_payload': json.dumps(payload, default=str)[:8000],
+                'success': False,
+                'error_message': (
+                    'Skipped: day-scoped deal resolved to NO weekday for market '
+                    '%s within [%s, %s]. Sending all-False would make Dutchie run '
+                    'this EVERY day. Check the deal is plotted on published days '
+                    'inside its validity window.' % (
+                        self.market_id.code if self.market_id else '?',
+                        discount.valid_from, discount.valid_until)
                 ),
             })
             return False
