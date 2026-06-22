@@ -10,6 +10,8 @@
                 <header>
                     <button name="action_generate_pdf" string="Generate PDF" type="object"
                             class="oe_highlight" invisible="page_count == 0"/>
+                    <button name="action_generate_email_embed" string="Generate Email Embed" type="object"
+                            invisible="state != 'published' or page_count == 0"/>
                     <button name="action_publish" string="Publish" type="object"
                             invisible="state == 'published'"/>
                     <button name="action_reset_draft" string="Set to Draft" type="object"
@@ -38,6 +40,15 @@
                     </group>
                     <group string="Share" invisible="state != 'published'">
                         <field name="public_url" widget="CopyClipboardChar" readonly="1"/>
+                    </group>
+                    <group string="Email Embed" invisible="not email_embed_html">
+                        <div class="text-muted" colspan="2">
+                            Paste this into your email campaign's HTML / code view —
+                            every page renders inline; the page-flip viewer opens via the link.
+                            Regenerate after changing pages.
+                        </div>
+                        <field name="email_embed_html" widget="CopyClipboardText"
+                               readonly="1" nolabel="1" colspan="2"/>
                     </group>
                     <notebook>
                         <page string="Pages" name="pages">

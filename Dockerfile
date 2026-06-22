@@ -39,7 +39,7 @@ RUN apt-get update \
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
     "cryptography==42.0.8" "openpyxl==3.1.5" "ofxparse==0.21" "qifparse==0.5" \
     "pywebpush==2.3.0" "fsspec[s3]==2026.4.0" "packaging==26.2" "PyJWT==2.13.0" \
-    "redis==8.0.0" "pynacl==1.6.2" "cssselect==1.4.0"
+    "redis==8.0.0" "pynacl==1.6.2" "cssselect==1.4.0" "pymupdf==1.26.7"
 
 # Prepare extra-addons directory
 RUN mkdir -p /opt/extra-addons && rm -rf /opt/extra-addons/*

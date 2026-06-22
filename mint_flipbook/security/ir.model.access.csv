@@ -3,3 +3,5 @@ access_mint_flipbook_marketing,mint.flipbook.marketing,model_mint_flipbook,mint_
 access_mint_flipbook_page_marketing,mint.flipbook.page.marketing,model_mint_flipbook_page,mint_command_center.group_marketing,1,1,1,1
 access_mint_flipbook_viewer,mint.flipbook.viewer,model_mint_flipbook,mint_command_center.group_viewer,1,0,0,0
 access_mint_flipbook_page_viewer,mint.flipbook.page.viewer,model_mint_flipbook_page,mint_command_center.group_viewer,1,0,0,0
+access_mint_flipbook_render_marketing,mint.flipbook.render.marketing,model_mint_flipbook_render,mint_command_center.group_marketing,1,1,1,1
+access_mint_flipbook_render_viewer,mint.flipbook.render.viewer,model_mint_flipbook_render,mint_command_center.group_viewer,1,0,0,0

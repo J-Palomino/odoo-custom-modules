@@ -1,6 +1,6 @@
 {
     'name': 'Mint Flipbook',
-    'version': '19.0.3.2.0',
+    'version': '19.0.4.0.0',
     'category': 'Marketing',
     'summary': 'Build shareable PDF + page-flip flipbooks of vendor offerings',
     'description': """
