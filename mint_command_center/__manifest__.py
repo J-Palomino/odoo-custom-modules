@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.6.50.0',
+    'version': '19.0.6.51.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -61,6 +61,9 @@
             'mint_command_center/static/src/weight_picker/weight_picker.esm.js',
             'mint_command_center/static/src/weight_picker/weight_picker.xml',
             'mint_command_center/static/src/weight_picker/weight_picker.scss',
+            'mint_command_center/static/src/specific_products_picker/specific_products_picker.esm.js',
+            'mint_command_center/static/src/specific_products_picker/specific_products_picker.xml',
+            'mint_command_center/static/src/specific_products_picker/specific_products_picker.scss',
         ],
         'web.assets_frontend_lazy': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',

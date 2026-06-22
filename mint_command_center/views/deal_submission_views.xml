@@ -200,9 +200,9 @@
                                 <field name="available_product_ids" invisible="1"/>
                                 <field name="product_ids"
                                        nolabel="1"
-                                       widget="many2many_tags"
+                                       widget="mdcc_specific_products"
                                        domain="[('id', 'in', available_product_ids)]"
-                                       options="{'no_create': True, 'no_create_edit': True}"
+                                       options="{'scopeField': 'available_product_ids'}"
                                        invisible="not brand_id and not brand_ids"
                                        placeholder="Pick specific products — list is filtered to brand(s) + picked categories + market stores + Weight (above), in stock only."/>
                             </group>
