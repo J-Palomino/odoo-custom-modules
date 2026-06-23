@@ -35,7 +35,7 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 from .deal_mixins import (format_bundle_tiers_text, build_dutchie_restrictions,
-                          normalize_publish_mode)
+                          normalize_publish_mode, dutchie_deal_external_id)
 
 _logger = logging.getLogger(__name__)
 
@@ -609,8 +609,15 @@ class DealSubmissionDutchiePublish(models.Model):
             # python weekday Mon=0; DAY_KEYS starts Sunday (idx 0 -> py 6).
             day_flags = {key: ((i - 1) % 7) in gdows
                          for i, key in enumerate(DAY_KEYS)}
-            external_id = (f"lgm_{self.id}" if n_groups == 1
-                           else f"lgm_{self.id}_w{gidx}")
+            # Unified deal-keyed ExternalId (#2 Stage 2) when a deal exists
+            # (post-conversion / publish). Pre-conversion previews (review wizard,
+            # no deal yet) keep the legacy submission key — cosmetic only.
+            if self.deal_id:
+                external_id = dutchie_deal_external_id(
+                    self.deal_id.id, None if n_groups == 1 else gidx)
+            else:
+                external_id = (f"lgm_{self.id}" if n_groups == 1
+                               else f"lgm_{self.id}_w{gidx}")
             discounts.append({
                 'Id': 0,
                 'ApplicationMethodId': 1,
@@ -798,21 +805,29 @@ class DealSubmissionDutchiePublish(models.Model):
         # per-store duplicates are cleaned up separately (and _dutchie_deactivate
         # still understands the legacy shapes for pull-down).
         owner_loc = loc_ids[0]
-        try:
-            published = json.loads(self.dutchie_publish_loc_ids or '{}')
-        except (ValueError, TypeError):
-            published = {}
-        # Carry forward only NEW-format consolidated ids (externalId → int) so a
-        # span no longer built (windows changed) can still be deactivated later.
-        updated = {k: v for k, v in published.items()
-                   if isinstance(v, int) and not isinstance(v, bool)
-                   and str(k).startswith('lgm_')}
+        # Stage 2 (#2): ids live in the SHARED deal registry keyed by the unified
+        # ExternalId (lgm_deal_<dealid>[_w<k>]) so path-2 updates the SAME record
+        # instead of creating a parallel one. Id resolved local-first with a
+        # Dutchie read-back fallback; a failed read-back ABORTS rather than
+        # blind-creating (sub-395). The legacy submission map is kept only as a
+        # migration source / for legacy deactivate.
+        deal = self.deal_id
         results, failures = [], 0
         multi = len(discounts) > 1
         for discount in discounts:
-            ext = discount['ExternalId']
-            prior = published.get(ext)
-            existing = int(prior) if isinstance(prior, int) and not isinstance(prior, bool) else 0
+            ext = discount['ExternalId']  # unified lgm_deal_<id>[_w<k>] from _dutchie_build
+            tag = (ext if multi else "discount")
+            existing, action = deal._dutchie_resolve_id(ext, owner_loc, lsp)
+            if action == 'abort':
+                failures += 1
+                results.append(f"{tag}: SKIPPED — could not verify existing "
+                               f"Dutchie id (read-back failed); refusing to "
+                               f"blind-create a possible duplicate")
+                self._deal_audit_log('publish_aborted', lsp, owner_loc, discount,
+                                     error='read-back unavailable',
+                                     location_restrictions=loc_ids)
+                continue
+            discount['ExternalId'] = ext
             discount['Id'] = existing
             discount['LocationRestrictions'] = loc_ids
             if isinstance(discount.get('DiscountMenuDisplayDetails'), dict):
@@ -822,22 +837,19 @@ class DealSubmissionDutchiePublish(models.Model):
                 f"{url}/api/admin/discounts", data=payload,
                 headers={'Content-Type': 'application/json', 'x-api-key': api_key},
                 method='POST')
-            tag = (ext if multi else "discount")
             try:
                 with urllib.request.urlopen(req, timeout=60) as resp:
                     raw = resp.read().decode(errors='replace')
-                    # Record the returned Dutchie id so the NEXT publish updates
-                    # this one consolidated discount in place (no duplicates).
                     rid = None
                     try:
                         parsed = json.loads(raw)
                         rid = parsed.get('discount_id') if isinstance(parsed, dict) else None
                     except (ValueError, TypeError):
                         pass
-                    if isinstance(rid, int) and not isinstance(rid, bool) and rid > 0:
-                        updated[ext] = rid
-                    elif existing:
-                        updated[ext] = existing
+                    final_id = rid if (isinstance(rid, int) and not isinstance(rid, bool)
+                                       and rid > 0) else existing
+                    if final_id:
+                        deal._dutchie_registry_set(ext, final_id)
                     results.append(f"{tag}: HTTP {resp.status} (1 record across "
                                    f"{len(loc_ids)} loc) {raw[:160]}")
                     self._deal_audit_log('publish', lsp, owner_loc, discount,
@@ -845,14 +857,9 @@ class DealSubmissionDutchiePublish(models.Model):
                                          location_restrictions=loc_ids)
             except Exception as exc:
                 failures += 1
-                if existing:
-                    updated[ext] = existing
                 results.append(f"{tag}: FAILED — {exc}")
                 self._deal_audit_log('publish_failed', lsp, owner_loc, discount,
                                      error=str(exc), location_restrictions=loc_ids)
-        # Persist the {externalId: dutchieId} map for idempotent re-publish.
-        if updated != published:
-            self.sudo().write({'dutchie_publish_loc_ids': json.dumps(updated)})
         self.message_post(
             body=f"[Dutchie publish — LIVE{' — PARTIAL FAILURE' if failures else ''}]\n"
                  + f"{len(discounts)} discount(s) (one per span), each ONE record "
@@ -892,6 +899,10 @@ class DealSubmissionDutchiePublish(models.Model):
         # maps ({externalId: {locId: id}}) already key by ExternalId.
         if published and all(str(k).lstrip('-').isdigit() for k in published):
             published = {f"lgm_{self.id}": published}
+        # Stage 2 (#2): merge the shared deal registry (unified lgm_deal_<id>
+        # keys) so discounts published via the new scheme are also pulled down.
+        if self.deal_id:
+            published = {**published, **self.deal_id._dutchie_registry()}
         # Anything live to pull? consolidated int id OR a non-empty legacy loc map.
         if not any((isinstance(v, int) and not isinstance(v, bool) and v)
                    or (isinstance(v, dict) and v) for v in published.values()):
