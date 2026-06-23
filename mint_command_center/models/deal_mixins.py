@@ -169,16 +169,18 @@ def normalize_publish_mode(raw, unset_default='dry_run', valid=('off', 'dry_run'
     return m if m in valid else 'off'
 
 
-def dutchie_deal_external_id(deal_id, span_index=None):
-    """Unified deal-keyed Dutchie ExternalId (#2 Stage 2).
+def dutchie_deal_external_id(deal_id, lsp_id, span_index=None):
+    """Unified deal+market-keyed Dutchie ExternalId (#2 Stage 2).
 
-    Both publish paths derive the SAME id for a given deal so neither creates a
-    parallel record. Single span -> ``lgm_deal_<id>``; multi-span ->
-    ``lgm_deal_<id>_w<k>`` (k>=0). Replaces the divergent ``lgm_<submission_id>``
-    (path-1) and ``lgm_<discount_id>`` (path-2) schemes that let one deal become
-    two Dutchie discounts.
+    Both publish paths derive the SAME id for a given (deal, market) so neither
+    creates a parallel record. The LSP is in the key because one deal can publish
+    to several markets — each market is a distinct Dutchie record, so they must
+    NOT collide on one ExternalId. Single span -> ``lgm_deal_<id>_lsp<lsp>``;
+    multi-span -> ``lgm_deal_<id>_lsp<lsp>_w<k>``. Replaces the divergent
+    ``lgm_<submission_id>`` (path-1) and ``lgm_<discount_id>`` (path-2) schemes
+    that let one deal become two Dutchie discounts.
     """
-    base = "lgm_deal_%d" % int(deal_id)
+    base = "lgm_deal_%d_lsp%d" % (int(deal_id), int(lsp_id))
     return base if span_index is None else "%s_w%d" % (base, int(span_index))
 
 

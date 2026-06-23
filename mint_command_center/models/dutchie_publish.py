@@ -614,7 +614,7 @@ class DealSubmissionDutchiePublish(models.Model):
             # no deal yet) keep the legacy submission key — cosmetic only.
             if self.deal_id:
                 external_id = dutchie_deal_external_id(
-                    self.deal_id.id, None if n_groups == 1 else gidx)
+                    self.deal_id.id, lsp, None if n_groups == 1 else gidx)
             else:
                 external_id = (f"lgm_{self.id}" if n_groups == 1
                                else f"lgm_{self.id}_w{gidx}")

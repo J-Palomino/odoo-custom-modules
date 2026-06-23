@@ -23,12 +23,12 @@ from odoo import api, SUPERUSER_ID
 _logger = logging.getLogger(__name__)
 
 
-def _new_key(old_key, sub_id, deal_id):
+def _new_key(old_key, sub_id, deal_id, lsp):
     base = "lgm_%d" % sub_id
     if old_key == base:
-        return "lgm_deal_%d" % deal_id
+        return "lgm_deal_%d_lsp%d" % (deal_id, lsp)
     if old_key.startswith(base + "_w"):
-        return "lgm_deal_%d%s" % (deal_id, old_key[len(base):])  # carries _w<k>
+        return "lgm_deal_%d_lsp%d%s" % (deal_id, lsp, old_key[len(base):])  # carries _w<k>
     return None
 
 
@@ -44,6 +44,12 @@ def migrate(cr, version):
         if not deal:
             continue
         try:
+            lsp = int(sub._dutchie_lsp() or 0)
+        except Exception:
+            lsp = 0
+        if not lsp:
+            continue
+        try:
             old_map = json.loads(sub.dutchie_publish_loc_ids or '{}')
         except (ValueError, TypeError):
             continue
@@ -54,7 +60,7 @@ def migrate(cr, version):
             # maps don't correspond to a single consolidated record).
             if not (isinstance(val, int) and not isinstance(val, bool) and val > 0):
                 continue
-            nk = _new_key(old_key, sub.id, deal.id)
+            nk = _new_key(old_key, sub.id, deal.id, lsp)
             if nk and nk not in reg:
                 reg[nk] = val
                 changed = True

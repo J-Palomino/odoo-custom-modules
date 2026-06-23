@@ -15,9 +15,14 @@ from ..models.deal_mixins import (dutchie_deal_external_id,
 class TestDutchieIdentity(TransactionCase):
 
     def test_external_id_single_and_multispan(self):
-        self.assertEqual(dutchie_deal_external_id(22408), 'lgm_deal_22408')
-        self.assertEqual(dutchie_deal_external_id(22408, 0), 'lgm_deal_22408_w0')
-        self.assertEqual(dutchie_deal_external_id(22408, 2), 'lgm_deal_22408_w2')
+        self.assertEqual(dutchie_deal_external_id(22408, 575), 'lgm_deal_22408_lsp575')
+        self.assertEqual(dutchie_deal_external_id(22408, 575, 1), 'lgm_deal_22408_lsp575_w1')
+        self.assertEqual(dutchie_deal_external_id(22408, 723, 2), 'lgm_deal_22408_lsp723_w2')
+
+    def test_external_id_per_market_distinct(self):
+        # same deal, different markets -> different keys (no collision)
+        self.assertNotEqual(dutchie_deal_external_id(1, 575),
+                            dutchie_deal_external_id(1, 723))
 
     def test_resolve_readback_found_is_authoritative(self):
         # Dutchie says id 999 exists -> update it, even if our local id differs.

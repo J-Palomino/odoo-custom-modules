@@ -30,7 +30,7 @@ from odoo.addons.mint_api_v2.models.discount_canonical import (
     parse_raw_restriction,
 )
 
-from .deal_mixins import coerce_dutchie_ids
+from .deal_mixins import coerce_dutchie_ids, dutchie_deal_external_id
 
 _logger = logging.getLogger(__name__)
 
@@ -411,11 +411,132 @@ class PtlDayDutchiePush(models.Model):
                         "submission, or clear dutchie_publish_owner to switch."),
                 })
                 continue
-            # Honor per-discount store filter if set
+            # Consolidated (#2 Stage 2): ONE Dutchie record for this (deal,
+            # market) across all target stores via LocationRestrictions, keyed by
+            # the unified ExternalId — so the submission path updates the SAME
+            # record instead of creating a duplicate. Per-market keeps #7's
+            # weekday fix (each market is its own record with its own weekdays).
+            deal = discount.ptl_deal_id
             target_stores = discount.store_ids & enabled_stores if discount.store_ids \
                             else enabled_stores
-            for store in target_stores:
-                self._push_one_discount(discount, store, mode, url, api_key, Log)
+            loc_ids = list(dict.fromkeys(
+                int(getattr(s, 'dutchie_pos_location_id', 0) or 0) for s in target_stores
+                if int(getattr(s, 'dutchie_pos_location_id', 0) or 0)))
+            if not deal or not loc_ids:
+                Log.create({
+                    'discount_id': discount.id,
+                    'company_id': (target_stores[:1] or enabled_stores[:1]).id,
+                    'mode': mode, 'success': False,
+                    'error_message': ("Skipped: %s" % (
+                        "discount has no PTL deal (can't use unified registry)"
+                        if not deal else
+                        "no target store has a dutchie_pos_location_id")),
+                })
+                continue
+            lsp = self._resolve_lsp_id(target_stores[0])
+            self._push_consolidated(deal, discount, lsp, loc_ids, mode, url, api_key, Log)
+
+    def _push_consolidated(self, deal, discount, lsp, loc_ids, mode, url, api_key, Log):
+        """Publish ONE consolidated Dutchie discount for (deal, this market):
+        LocId=owner_loc + LocationRestrictions=loc_ids, keyed by the unified
+        ExternalId and resolved against the shared deal registry (#2 Stage 2).
+        Reuses _deal_to_dutchie_payload for all the restriction/calc/day fields,
+        then overrides Id/ExternalId/LocationRestrictions to the consolidated
+        shape. Records the returned id on the deal registry."""
+        owner_loc = loc_ids[0]
+        external_id = dutchie_deal_external_id(deal.id, lsp)
+        owner_store = self.env['res.company'].sudo().search(
+            [('region_id', '=', self.market_id.id),
+             ('dutchie_pos_location_id', '=', owner_loc)], limit=1)
+        # Resurrection guard (#9): don't revive a deactivated discount for a
+        # non-active deal.
+        if (mode == 'live' and discount.dutchie_is_deleted
+                and deal.state not in ('approved', 'live')):
+            Log.create({
+                'discount_id': discount.id, 'company_id': owner_store.id,
+                'mode': mode, 'success': False,
+                'error_message': ("Skipped: discount deactivated in Dutchie and deal "
+                                  "not active — refusing to resurrect (#9)."),
+            })
+            return False
+        existing, action = deal._dutchie_resolve_id(external_id, owner_loc, lsp)
+        if action == 'abort':
+            Log.create({
+                'discount_id': discount.id, 'company_id': owner_store.id,
+                'mode': mode, 'success': False,
+                'error_message': ("Skipped: could not verify existing Dutchie id "
+                                  "(read-back failed) — refusing to blind-create a "
+                                  "possible duplicate (#2)."),
+            })
+            return False
+        disc = self._deal_to_dutchie_payload(discount, owner_store)
+        disc['Id'] = existing
+        disc['ExternalId'] = external_id
+        disc['LocationRestrictions'] = loc_ids
+        if isinstance(disc.get('DiscountMenuDisplayDetails'), dict):
+            disc['DiscountMenuDisplayDetails']['DiscountId'] = existing
+        # All-False day guard (#6) for the consolidated record.
+        if deal.day_ids and not any(disc.get(d) for d in (
+                'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                'Friday', 'Saturday')):
+            Log.create({
+                'discount_id': discount.id, 'company_id': owner_store.id,
+                'mode': mode, 'success': False,
+                'error_message': ("Skipped: day-scoped deal resolved to NO weekday "
+                                  "for this market — refusing all-False (#6)."),
+            })
+            return False
+        payload = {'locId': owner_loc, 'lspId': lsp, 'discount': disc}
+        log_vals = {
+            'discount_id': discount.id, 'company_id': owner_store.id,
+            'dutchie_loc_id': str(owner_store.dutchie_store_id or ''), 'mode': mode,
+            'request_payload': json.dumps(payload, default=str)[:8000], 'success': False,
+        }
+        if mode == 'dry-run':
+            log_vals['success'] = True
+            log_vals['response_body'] = ('(dry-run — consolidated record across %d '
+                                         'loc, no HTTP)' % len(loc_ids))
+            Log.create(log_vals)
+            _logger.info('[dry-run] Dutchie consolidated push %s (%s) across %d loc',
+                         discount.id, external_id, len(loc_ids))
+            return True
+        import time as _t
+        t0 = _t.time()
+        try:
+            req = urllib.request.Request(
+                url, data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json', 'X-API-Key': api_key,
+                         'User-Agent': 'mint-odoo-dutchie-push/1.0'})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                body = resp.read().decode('utf-8', errors='replace')
+                log_vals['elapsed_ms'] = int((_t.time() - t0) * 1000)
+                log_vals['response_body'] = body[:8000]
+                log_vals['success'] = 200 <= resp.status < 300
+                try:
+                    parsed = json.loads(body)
+                    new_id = parsed.get('discount_id') or (parsed.get('dutchie_raw') or {}).get('Data')
+                    if isinstance(new_id, int) and not isinstance(new_id, bool) and new_id > 0:
+                        log_vals['dutchie_discount_id'] = new_id
+                        log_vals['backoffice_url'] = self._build_backoffice_url(new_id, owner_loc, lsp)
+                        deal._dutchie_registry_set(external_id, new_id)
+                    elif existing:
+                        deal._dutchie_registry_set(external_id, existing)
+                    if log_vals['success'] and discount.dutchie_is_deleted:
+                        try:
+                            discount.sudo().write({'dutchie_is_deleted': False})
+                        except Exception:
+                            _logger.warning('Could not clear dutchie_is_deleted on %s', discount.id)
+                except Exception:
+                    pass
+        except urllib.error.HTTPError as e:
+            log_vals['elapsed_ms'] = int((_t.time() - t0) * 1000)
+            log_vals['response_body'] = (e.read().decode('utf-8', errors='replace') or '')[:8000]
+            log_vals['error_message'] = f'HTTP {e.code}: {e.reason}'
+        except Exception as e:
+            log_vals['elapsed_ms'] = int((_t.time() - t0) * 1000)
+            log_vals['error_message'] = f'{type(e).__name__}: {str(e)[:500]}'
+        Log.create(log_vals)
+        return bool(log_vals.get('success'))
 
     # ─── Deactivate (expire / revoke) — the inverse of the push ──────────
 
