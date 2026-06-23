@@ -434,9 +434,21 @@ class PtlDayDutchiePush(models.Model):
                 })
                 continue
             lsp = self._resolve_lsp_id(target_stores[0])
-            self._push_consolidated(deal, discount, lsp, loc_ids, mode, url, api_key, Log)
+            self._push_consolidated(deal, discount, lsp, target_stores, loc_ids,
+                                    mode, url, api_key, Log)
 
-    def _push_consolidated(self, deal, discount, lsp, loc_ids, mode, url, api_key, Log):
+    def _latest_live_push_id(self, discount, store):
+        """The most recent successful LIVE per-store Dutchie discount id for
+        (discount, store), or 0. Used to find legacy per-store records at the
+        consolidated cutover."""
+        row = self.env['mint.dutchie.discount.push.log'].sudo().search([
+            ('discount_id', '=', discount.id), ('company_id', '=', store.id),
+            ('mode', '=', 'live'), ('success', '=', True),
+            ('dutchie_discount_id', '!=', 0)], order='id desc', limit=1)
+        return row.dutchie_discount_id or 0
+
+    def _push_consolidated(self, deal, discount, lsp, target_stores, loc_ids,
+                           mode, url, api_key, Log):
         """Publish ONE consolidated Dutchie discount for (deal, this market):
         LocId=owner_loc + LocationRestrictions=loc_ids, keyed by the unified
         ExternalId and resolved against the shared deal registry (#2 Stage 2).
@@ -459,6 +471,7 @@ class PtlDayDutchiePush(models.Model):
                                   "not active — refusing to resurrect (#9)."),
             })
             return False
+        was_cutover = deal._dutchie_registry().get(external_id, 0) == 0
         existing, action = deal._dutchie_resolve_id(external_id, owner_loc, lsp)
         if action == 'abort':
             Log.create({
@@ -469,6 +482,14 @@ class PtlDayDutchiePush(models.Model):
                                   "possible duplicate (#2)."),
             })
             return False
+        # Path-2 cutover: with no consolidated id yet, ADOPT the owner store's
+        # existing per-store record (update it in place to the consolidated
+        # record) instead of creating a duplicate. The other per-store records
+        # are deactivated after a successful publish (once, at cutover).
+        if existing == 0:
+            owner_legacy = self._latest_live_push_id(discount, owner_store)
+            if owner_legacy:
+                existing = owner_legacy
         disc = self._deal_to_dutchie_payload(discount, owner_store)
         disc['Id'] = existing
         disc['ExternalId'] = external_id
@@ -536,6 +557,21 @@ class PtlDayDutchiePush(models.Model):
             log_vals['elapsed_ms'] = int((_t.time() - t0) * 1000)
             log_vals['error_message'] = f'{type(e).__name__}: {str(e)[:500]}'
         Log.create(log_vals)
+        # Cutover cleanup: on the FIRST consolidated publish (registry was empty)
+        # deactivate the OTHER (non-owner) legacy per-store records for this
+        # market — the owner's record was adopted above as the consolidated one.
+        # Bounded to cutover (was_cutover) so it runs once, not every publish.
+        if was_cutover and log_vals.get('success'):
+            for store in target_stores:
+                if store.id == owner_store.id:
+                    continue
+                if self._latest_live_push_id(discount, store):
+                    try:
+                        self._push_one_discount(discount, store, mode, url, api_key,
+                                                Log, is_delete=True)
+                    except Exception as exc:
+                        _logger.warning("Legacy per-store cleanup failed for discount "
+                                        "%s @ %s: %s", discount.id, store.name, exc)
         return bool(log_vals.get('success'))
 
     # ─── Deactivate (expire / revoke) — the inverse of the push ──────────
