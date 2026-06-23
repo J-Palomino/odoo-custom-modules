@@ -31,5 +31,32 @@
             <field name="perm_unlink" eval="1"/>
         </record>
 
+        <!--
+            READ isolation so the company switcher actually filters the survey
+            list. The original module deliberately left perm_read off; this adds
+            it scoped to the ACTIVE company selection (company_ids), matching the
+            multi-company convention used elsewhere. Global rule (groups =
+            [(5,0,0)]) so it AND-combines with the stock permissive survey read
+            rules. perm_read only — write/unlink stay governed by the rule above.
+
+            Effective behaviour:
+              - base.group_system            -> unrestricted (anti-lockout)
+              - company_id empty (shared)    -> readable by everyone
+              - company_id set               -> readable only when that company
+                                                is in the active switcher set
+            Public answering and assigned /survey/start links run as sudo() and
+            bypass record rules entirely, so the answer flow is unaffected.
+        -->
+        <record id="rule_survey_company_read" model="ir.rule">
+            <field name="name">Survey: read scoped to active companies</field>
+            <field name="model_id" ref="survey.model_survey_survey"/>
+            <field name="domain_force">[(1, '=', 1)] if user.has_group('base.group_system') else ['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+            <field name="groups" eval="[(5, 0, 0)]"/>
+            <field name="perm_read" eval="1"/>
+            <field name="perm_create" eval="0"/>
+            <field name="perm_write" eval="0"/>
+            <field name="perm_unlink" eval="0"/>
+        </record>
+
     </data>
 </odoo>

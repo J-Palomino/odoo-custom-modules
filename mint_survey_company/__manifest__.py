@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Survey Company Ownership',
-    'version': '19.0.1.1.0',
+    'version': '19.0.1.2.0',
     'category': 'Marketing/Surveys',
     'summary': 'Restrict editing of a survey to users of an owner company',
     'description': """MintDeals Survey Company Ownership
