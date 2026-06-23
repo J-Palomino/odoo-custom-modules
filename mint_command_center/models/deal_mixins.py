@@ -169,6 +169,47 @@ def normalize_publish_mode(raw, unset_default='dry_run', valid=('off', 'dry_run'
     return m if m in valid else 'off'
 
 
+def dutchie_deal_external_id(deal_id, span_index=None):
+    """Unified deal-keyed Dutchie ExternalId (#2 Stage 2).
+
+    Both publish paths derive the SAME id for a given deal so neither creates a
+    parallel record. Single span -> ``lgm_deal_<id>``; multi-span ->
+    ``lgm_deal_<id>_w<k>`` (k>=0). Replaces the divergent ``lgm_<submission_id>``
+    (path-1) and ``lgm_<discount_id>`` (path-2) schemes that let one deal become
+    two Dutchie discounts.
+    """
+    base = "lgm_deal_%d" % int(deal_id)
+    return base if span_index is None else "%s_w%d" % (base, int(span_index))
+
+
+def resolve_dutchie_discount_id(existing_local, readback):
+    """Decide create-vs-update for a Dutchie upsert (#2 Stage 2).
+
+    ``existing_local`` = the discount id from OUR records (registry/log), 0 if
+    none. ``readback`` = what a live Dutchie lookup by ExternalId returned:
+    a positive int (found that id), ``0`` (confirmed absent), or ``None`` (the
+    read failed / is unknown).
+
+    Returns ``(id_to_use, action)`` where action is 'update' | 'create' |
+    'abort'. Rules:
+      * Dutchie read is authoritative: a found id -> update it.
+      * Confirmed-absent -> create fresh (Id=0).
+      * Unknown (read failed) -> NEVER blind-create (the empty-map / sub-395
+        lesson): update our known local id if we have one, else abort so the
+        caller skips rather than risking a duplicate.
+    """
+    if isinstance(readback, bool):
+        readback = None  # guard: bool is an int subclass; treat as unknown
+    if isinstance(readback, int) and readback > 0:
+        return (readback, 'update')
+    if readback == 0:
+        return (0, 'create')
+    # readback is None -> unknown / read failed
+    if existing_local and int(existing_local) > 0:
+        return (int(existing_local), 'update')
+    return (0, 'abort')
+
+
 WEIGHT_UNIT_SELECTION = [
     ('g', 'g'),
     ('mg', 'mg'),
