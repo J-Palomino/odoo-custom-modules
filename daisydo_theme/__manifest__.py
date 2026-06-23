@@ -1,6 +1,6 @@
 {
     "name": "DaisyERP Theme",
-    "version": "19.0.1.0.9",
+    "version": "19.0.1.1.0",
     "post_init_hook": "post_init_hook",
     "category": "Theme",
     "summary": "Yellow daisy theme for DaisyERP",

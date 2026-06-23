@@ -93,5 +93,17 @@ class IrHttp(models.AbstractModel):
                 user.sudo().last_company_cids = cookie_cids
         elif user.last_company_cids:
             # Fresh session with no cookie — restore the previous selection so
-            # the web client boots into the same companies as last time.
-            request.future_response.set_cookie("cids", user.last_company_cids)
+            # the web client boots into the same companies as last time. Filter
+            # the stored ids against the companies the user may still access so
+            # a revoked company can't poison the session, and fall back to the
+            # main company if nothing valid remains. (cids is a dash-separated,
+            # main-company-first list, e.g. "2-1-3".)
+            allowed = set(user.company_ids.ids)
+            valid = [
+                cid
+                for cid in user.last_company_cids.split("-")
+                if cid.isdigit() and int(cid) in allowed
+            ]
+            if not valid:
+                valid = [str(user.company_id.id)]
+            request.future_response.set_cookie("cids", "-".join(valid))
