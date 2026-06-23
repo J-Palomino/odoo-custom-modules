@@ -1,0 +1,7 @@
+2026-06-23 08:50:31,394 1 INFO testdb odoo.addons.mint_command_center.tests.test_dutchie_multistore_publish: Starting TestDutchieMultistorePublish.test_post_count_equals_spans_not_stores ... 
+2026-06-23 08:50:31,442 1 ERROR testdb odoo.addons.mint_command_center.tests.test_dutchie_multistore_publish: FAIL: TestDutchieMultistorePublish.test_post_count_equals_spans_not_stores
+AssertionError: 6 != 2 : POST count must equal the number of spans, not stores
+2026-06-23 08:50:31,443 1 INFO testdb odoo.addons.mint_command_center.tests.test_dutchie_multistore_publish: Starting TestDutchieMultistorePublish.test_single_span_one_record_across_all_stores ... 
+2026-06-23 08:50:31,496 1 ERROR testdb odoo.addons.mint_command_center.tests.test_dutchie_multistore_publish: FAIL: TestDutchieMultistorePublish.test_single_span_one_record_across_all_stores
+AssertionError: 3 != 1 : single span must POST exactly one record, not one per store
+2026-06-23 08:50:31,514 1 ERROR testdb odoo.tests.result: 2 failed, 0 error(s) of 2 tests when loading database 'testdb' 
