@@ -434,6 +434,16 @@ class PtlDayDutchiePush(models.Model):
                 })
                 continue
             lsp = self._resolve_lsp_id(target_stores[0])
+            if not lsp:
+                Log.create({
+                    'discount_id': discount.id,
+                    'company_id': target_stores[:1].id,
+                    'mode': mode, 'success': False,
+                    'error_message': ("Skipped: target store has no dutchie_lsp_id "
+                                      "— refusing to publish without an LSP (no "
+                                      "fallback)."),
+                })
+                continue
             self._push_consolidated(deal, discount, lsp, target_stores, loc_ids,
                                     mode, url, api_key, Log)
 
@@ -460,6 +470,17 @@ class PtlDayDutchiePush(models.Model):
         owner_store = self.env['res.company'].sudo().search(
             [('region_id', '=', self.market_id.id),
              ('dutchie_pos_location_id', '=', owner_loc)], limit=1)
+        if not owner_store:
+            # No store resolves to owner_loc — without it the cutover-cleanup
+            # owner-skip can't be trusted (could deactivate the adopted record).
+            # Refuse rather than risk it.
+            Log.create({
+                'discount_id': discount.id, 'company_id': False,
+                'mode': mode, 'success': False,
+                'error_message': ("Skipped: no store maps to owner LocId %s in this "
+                                  "market — cannot safely publish/clean." % owner_loc),
+            })
+            return False
         # Resurrection guard (#9): don't revive a deactivated discount for a
         # non-active deal.
         if (mode == 'live' and discount.dutchie_is_deleted

@@ -39,15 +39,11 @@ from .deal_mixins import (format_bundle_tiers_text, build_dutchie_restrictions,
 
 _logger = logging.getLogger(__name__)
 
-# mint.region name -> Dutchie LSP (tenant). BrandIds/ProductIds are LSP-scoped.
-LSP_BY_REGION = {
-    'arizona': 575,
-    'michigan': 576,
-    'missouri': 723,
-    'illinois': 805,
-    'nevada': 820,
-    'florida': 821,
-}
+# LSP (Dutchie tenant) is read per-store from res.company.dutchie_lsp_id — the
+# authoritative source shared by both publish paths (see _dutchie_lsp). The old
+# region-name -> LSP map was removed: it was a fragile proxy (substring match,
+# incomplete for new markets) and a second source of truth that risked the two
+# paths building divergent ExternalIds.
 
 # submission discount_type -> Dutchie CalculationMethodId (canonical registry)
 CALC_BY_TYPE = {
@@ -333,12 +329,19 @@ class DealSubmissionDutchiePublish(models.Model):
     # ------------------------------------------------------------------
 
     def _dutchie_lsp(self):
+        """Dutchie LSP (tenant) for this submission's market, read from an actual
+        store's ``dutchie_lsp_id`` — the authoritative per-location source, the
+        same one path-2 uses, so both paths build the SAME unified ExternalId.
+        No region-name fallback (#2 review): if no store in the market carries an
+        lsp, return None and the caller refuses to publish rather than guess."""
         self.ensure_one()
-        name = (self.market_id.name or '').strip().lower() if self.market_id else ''
-        for key, lsp in LSP_BY_REGION.items():
-            if key in name:
-                return lsp
-        return None
+        if not self.market_id:
+            return None
+        store = self.env['res.company'].sudo().search([
+            ('region_id', '=', self.market_id.id),
+            ('dutchie_lsp_id', '!=', False),
+        ], limit=1)
+        return int(store.dutchie_lsp_id) if (store and store.dutchie_lsp_id) else None
 
     def _dutchie_brands(self):
         """Brand records this deal targets: brand_id, else alias resolution

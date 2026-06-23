@@ -180,6 +180,10 @@ def dutchie_deal_external_id(deal_id, lsp_id, span_index=None):
     ``lgm_<submission_id>`` (path-1) and ``lgm_<discount_id>`` (path-2) schemes
     that let one deal become two Dutchie discounts.
     """
+    if not lsp_id:
+        raise ValueError(
+            "dutchie_deal_external_id requires a non-zero lsp_id — refusing to "
+            "build an ambiguous key (resolve the store's dutchie_lsp_id first).")
     base = "lgm_deal_%d_lsp%d" % (int(deal_id), int(lsp_id))
     return base if span_index is None else "%s_w%d" % (base, int(span_index))
 

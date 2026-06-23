@@ -24,6 +24,12 @@ class TestDutchieIdentity(TransactionCase):
         self.assertNotEqual(dutchie_deal_external_id(1, 575),
                             dutchie_deal_external_id(1, 723))
 
+    def test_external_id_refuses_falsy_lsp(self):
+        # no fallback: a missing LSP must NOT build an ambiguous key
+        for bad in (0, None, False):
+            with self.assertRaises(ValueError):
+                dutchie_deal_external_id(1, bad)
+
     def test_resolve_readback_found_is_authoritative(self):
         # Dutchie says id 999 exists -> update it, even if our local id differs.
         self.assertEqual(resolve_dutchie_discount_id(0, 999), (999, 'update'))

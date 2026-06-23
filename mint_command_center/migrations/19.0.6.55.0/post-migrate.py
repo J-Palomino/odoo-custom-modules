@@ -39,6 +39,7 @@ def migrate(cr, version):
         ('dutchie_publish_loc_ids', '!=', False),
     ])
     seeded = 0
+    skipped_no_lsp = []
     for sub in subs:
         deal = sub.deal_id
         if not deal:
@@ -48,6 +49,10 @@ def migrate(cr, version):
         except Exception:
             lsp = 0
         if not lsp:
+            # Can't key the registry without an LSP — record WHICH submissions
+            # are skipped so a silent miss (→ dup on first unified publish) is
+            # visible and verifiable before cutover.
+            skipped_no_lsp.append(sub.id)
             continue
         try:
             old_map = json.loads(sub.dutchie_publish_loc_ids or '{}')
@@ -69,3 +74,8 @@ def migrate(cr, version):
             seeded += 1
     _logger.info("Stage 2 migration: seeded dutchie_publish_ids on %d deal(s) "
                  "from %d submission map(s)", seeded, len(subs))
+    if skipped_no_lsp:
+        _logger.warning("Stage 2 migration: %d submission(s) SKIPPED (no LSP "
+                        "resolvable — verify before cutover, these would dup on "
+                        "first unified publish): %s",
+                        len(skipped_no_lsp), skipped_no_lsp)
