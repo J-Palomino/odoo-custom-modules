@@ -15,6 +15,7 @@
     "assets": {
         "web.assets_backend": [
             "daisydo_theme/static/src/scss/theme.scss",
+            "daisydo_theme/static/src/scss/switch_company_menu.scss",
             "daisydo_theme/static/src/js/error_reporter.esm.js",
             "daisydo_theme/static/src/js/switch_company_states.esm.js",
             "daisydo_theme/static/src/xml/switch_company_menu.xml",
