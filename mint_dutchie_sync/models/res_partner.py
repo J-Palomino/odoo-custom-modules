@@ -9,9 +9,10 @@ exposed only through non-stored compute/inverse fields, both gated behind the
 """
 import logging
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+from odoo.exceptions import UserError
 
-from .pii_crypto import decrypt_value, encrypt_value
+from .pii_crypto import decrypt_value, encrypt_value, get_cipher
 
 _logger = logging.getLogger(__name__)
 
@@ -114,17 +115,21 @@ class ResPartner(models.Model):
     x_dutchie_mj_id_expiration = fields.Date(
         string='MMJ ID Expiration', copy=False,
     )
-    x_dutchie_patient_type = fields.Selection(
-        [('medical', 'Medical'), ('recreational', 'Recreational')],
+    # patient_type / gender stored as raw Dutchie strings (passthrough), not a
+    # Selection: the exact enum values are not yet verified against a live
+    # get-customers payload, so a fixed Selection would risk a key mismatch when
+    # the step-2 sync mapper lands. Tighten to a Selection once values are pinned.
+    x_dutchie_patient_type = fields.Char(
         string='Patient Type', copy=False,
+        help='Raw Dutchie patient type (e.g. medical/recreational); passthrough '
+             'pending verification of live values.',
     )
     x_dutchie_patient_status = fields.Char(
         string='Patient Status', copy=False,
     )
-    x_dutchie_gender = fields.Selection(
-        [('male', 'Male'), ('female', 'Female'),
-         ('other', 'Other'), ('unknown', 'Unknown')],
+    x_dutchie_gender = fields.Char(
         string='Gender', copy=False,
+        help='Raw Dutchie gender value; passthrough pending verification.',
     )
     x_dutchie_member_since = fields.Date(
         string='Member Since', copy=False,
@@ -133,9 +138,9 @@ class ResPartner(models.Model):
     # ------------------------------------------------------------------
     # Loyalty
     # ------------------------------------------------------------------
-    x_dutchie_loyalty_id = fields.Char(
-        string='Dutchie Loyalty ID', index=True, copy=False,
-    )
+    # NOTE: x_dutchie_loyalty_id is owned by mint_pos_bridge (pos_partner.py),
+    # which depends on this module — do NOT redeclare it here (duplicate index
+    # on res.partner). Only the balance is new.
     x_dutchie_loyalty_balance = fields.Float(
         string='Loyalty Points Balance', digits=(12, 2), copy=False,
     )
@@ -147,21 +152,43 @@ class ResPartner(models.Model):
 
     @api.depends('x_dutchie_dob_enc', 'x_dutchie_dl_enc', 'x_dutchie_mj_state_id_enc')
     def _compute_dutchie_pii(self):
+        # Resolve the cipher ONCE per recordset, not per record/field.
+        cipher = get_cipher(self.env)
         for rec in self:
-            rec.x_dutchie_dob = decrypt_value(self.env, rec.x_dutchie_dob_enc)
-            rec.x_dutchie_dl = decrypt_value(self.env, rec.x_dutchie_dl_enc)
+            rec.x_dutchie_dob = decrypt_value(self.env, rec.x_dutchie_dob_enc, cipher=cipher)
+            rec.x_dutchie_dl = decrypt_value(self.env, rec.x_dutchie_dl_enc, cipher=cipher)
             rec.x_dutchie_mj_state_id = decrypt_value(
-                self.env, rec.x_dutchie_mj_state_id_enc)
+                self.env, rec.x_dutchie_mj_state_id_enc, cipher=cipher)
+
+    def _store_encrypted_pii(self, plain_field, enc_field):
+        """Encrypt one plaintext PII field into its ``_enc`` column.
+
+        Skips records whose plaintext is unchanged vs. the current ciphertext —
+        this avoids (a) churning the column with a fresh non-deterministic token
+        on every save and (b) the data-loss path where a wrong/rotated key makes
+        decrypt return blank and a re-save would otherwise overwrite good
+        ciphertext with an encryption of the blank value. Raises a clean
+        UserError (not a raw 500) when a real value must be stored but no key is
+        configured.
+        """
+        cipher = get_cipher(self.env)
+        for rec in self:
+            new_plain = rec[plain_field] or False
+            current_plain = decrypt_value(self.env, rec[enc_field], cipher=cipher) or False
+            if new_plain == current_plain:
+                continue  # unchanged (or both blank) → never clobber ciphertext
+            if new_plain and cipher is None:
+                raise UserError(_(
+                    "Dutchie PII encryption key is not configured; cannot store "
+                    "%s. Set the DUTCHIE_PII_FERNET_KEY environment variable."
+                ) % plain_field)
+            rec[enc_field] = encrypt_value(self.env, new_plain, cipher=cipher) if new_plain else False
 
     def _inverse_dutchie_dob(self):
-        for rec in self:
-            rec.x_dutchie_dob_enc = encrypt_value(self.env, rec.x_dutchie_dob)
+        self._store_encrypted_pii('x_dutchie_dob', 'x_dutchie_dob_enc')
 
     def _inverse_dutchie_dl(self):
-        for rec in self:
-            rec.x_dutchie_dl_enc = encrypt_value(self.env, rec.x_dutchie_dl)
+        self._store_encrypted_pii('x_dutchie_dl', 'x_dutchie_dl_enc')
 
     def _inverse_dutchie_mj_state_id(self):
-        for rec in self:
-            rec.x_dutchie_mj_state_id_enc = encrypt_value(
-                self.env, rec.x_dutchie_mj_state_id)
+        self._store_encrypted_pii('x_dutchie_mj_state_id', 'x_dutchie_mj_state_id_enc')

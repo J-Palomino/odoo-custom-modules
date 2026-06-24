@@ -30,7 +30,9 @@
                             <field name="x_dutchie_mj_id_expiration"/>
                         </group>
                         <group string="Loyalty">
-                            <field name="x_dutchie_loyalty_id"/>
+                            <!-- x_dutchie_loyalty_id is owned by mint_pos_bridge,
+                                 which depends on this module; not shown here so
+                                 this module installs standalone. -->
                             <field name="x_dutchie_loyalty_balance"/>
                         </group>
                     </group>

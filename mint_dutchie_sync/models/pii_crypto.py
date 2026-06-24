@@ -3,16 +3,21 @@
 Fernet (AES-128-CBC + HMAC-SHA256) encryption helpers for Dutchie customer PII.
 
 The symmetric key resolves, in order:
-  1. ``DUTCHIE_PII_FERNET_KEY`` environment variable (PRODUCTION — set on the
-     Odoo Railway service; never stored in the database).
-  2. ``mint_dutchie_sync.pii_fernet_key`` system parameter (non-prod / fallback).
+  1. ``DUTCHIE_PII_FERNET_KEY`` environment variable — the PRODUCTION source.
+     Set it on the Odoo Railway service so the key lives in the process
+     environment, NOT in the database alongside the ciphertext it protects.
+  2. ``mint_dutchie_sync.pii_fernet_key`` system parameter — DEV / NON-PROD
+     fallback only. WARNING: this stores the key in ir_config_parameter, i.e.
+     in the same Postgres DB as the encrypted columns, so a DB dump leaks both
+     key and ciphertext. Do not rely on it in production — provision the env var.
 
 Generate a key with::
 
     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
-Encryption FAILS CLOSED: if no key is configured, ``encrypt_value`` raises rather
-than silently persisting DOB / driver's-license / MJ-state-ID as plaintext.
+Encryption FAILS CLOSED: ``encrypt_value`` returns nothing usable without a key.
+Callers in the ORM layer (see res_partner.py) raise a clean UserError rather
+than persisting DOB / driver's-license / MJ-state-ID in the clear.
 """
 import logging
 import os
@@ -32,8 +37,12 @@ ENV_KEY = 'DUTCHIE_PII_FERNET_KEY'
 PARAM_KEY = 'mint_dutchie_sync.pii_fernet_key'
 
 
-def _get_cipher(env):
-    """Return a Fernet cipher, or None if no usable key is configured."""
+def get_cipher(env):
+    """Return a Fernet cipher, or None if no usable key is configured.
+
+    Resolve ONCE per recordset and pass the result to encrypt_value/decrypt_value
+    to avoid rebuilding the cipher (and re-reading the key) per record.
+    """
     key = os.environ.get(ENV_KEY)
     if not key:
         key = env['ir.config_parameter'].sudo().get_param(PARAM_KEY)
@@ -51,15 +60,16 @@ def _get_cipher(env):
         return None
 
 
-def encrypt_value(env, plaintext):
+def encrypt_value(env, plaintext, cipher=None):
     """Encrypt ``plaintext`` to a Fernet token string. Empty -> False.
 
-    Fails closed: raises ValueError when no key is configured so PII is never
-    written to the database in the clear.
+    Fails closed: raises ValueError when no key is available. ORM callers pass a
+    pre-resolved ``cipher`` and surface a UserError before reaching this guard.
     """
     if not plaintext:
         return False
-    cipher = _get_cipher(env)
+    if cipher is None:
+        cipher = get_cipher(env)
     if cipher is None:
         raise ValueError(
             "Dutchie PII encryption key not configured (set the %s env var or "
@@ -69,11 +79,12 @@ def encrypt_value(env, plaintext):
     return cipher.encrypt(str(plaintext).encode()).decode()
 
 
-def decrypt_value(env, ciphertext):
+def decrypt_value(env, ciphertext, cipher=None):
     """Decrypt a Fernet token back to plaintext. Empty/undecryptable -> False."""
     if not ciphertext:
         return False
-    cipher = _get_cipher(env)
+    if cipher is None:
+        cipher = get_cipher(env)
     if cipher is None:
         return False
     try:
