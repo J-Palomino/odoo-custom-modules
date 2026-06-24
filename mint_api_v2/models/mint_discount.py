@@ -241,6 +241,15 @@ class MintDiscount(models.Model):
         ('manual', 'Manual'),
     ], string="Application Method",
        help="How Dutchie applies this discount. Manual discounts are staff-applied (not customer-facing).")
+    # The actual coupon code a budtender (or customer) types at the Dutchie
+    # register when application_method='code'. Pushed verbatim as the Dutchie
+    # `DiscountCode`. DISTINCT from `redemption_code` below, which is an internal
+    # Odoo loyalty-redemption token and is never sent to Dutchie.
+    dutchie_discount_code = fields.Char(
+        string="Dutchie Discount Code", copy=False,
+        help="Code typed at the Dutchie register (ApplicationMethodId=3). Pushed "
+             "verbatim as the Dutchie DiscountCode. Leave blank for "
+             "automatic/manual discounts.")
     require_manager_approval = fields.Boolean(string="Requires Manager Approval", default=False)
     stack_on_other_discounts = fields.Boolean(string="Stacks With Other Discounts", default=False)
     apply_to_only_one_item = fields.Boolean(string="Apply To Only One Item", default=False)

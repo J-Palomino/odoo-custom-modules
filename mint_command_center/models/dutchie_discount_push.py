@@ -24,6 +24,7 @@ import urllib.request
 
 from odoo import api, fields, models
 from odoo.addons.mint_api_v2.models.discount_canonical import (
+    APP_METHOD_ID_BY_ODOO,
     THRESHOLD_TYPE_ID_BY_ODOO,
     calc_method_id_for,
     discount_value_for,
@@ -169,6 +170,24 @@ class PtlDayDutchiePush(models.Model):
             return int(discount.item_group_type_id)
         return self.ITEM_GROUP_TYPE_ID_FALLBACK
 
+    def _resolve_application_method_id(self, discount):
+        # 1=Automatic, 2=Manual, 3=Code. Map the stored Odoo application_method
+        # via the canonical registry; default to Automatic (1) when unset/unknown
+        # so existing automatic PTL deals are unchanged.
+        return APP_METHOD_ID_BY_ODOO.get(discount.application_method) or 1
+
+    def _resolve_redemption_fields(self, discount):
+        # Verified single/limited-use code-coupon shape (live record PHXNTPR
+        # 383481): MaxRedemptions set, RedemptionLimit null, counting mode 0.
+        # Automatic deals keep the historical '' RedemptionLimit and no cap — a
+        # 0/'' MaxRedemptions would otherwise make Dutchie reject the discount.
+        max_uses = int(discount.maximum_usage_count or 0)
+        if max_uses > 0:
+            return {'MaxRedemptions': max_uses, 'RedemptionLimit': None,
+                    'RedemptionLimitCountingMode': 0}
+        return {'MaxRedemptions': None, 'RedemptionLimit': '',
+                'RedemptionLimitCountingMode': 0}
+
     def _build_backoffice_url(self, discount_id, loc_id, lsp_id):
         """Build the Dutchie backoffice review URL for a discount.
 
@@ -270,9 +289,16 @@ class PtlDayDutchiePush(models.Model):
         # a day-scoped deal.
         day_bools = discount._compute_weekday_bools(market=self.market_id)
 
+        # Code-coupon support: application method + register code + usage cap are
+        # read from mint.discount (default to an automatic, code-less, uncapped
+        # deal — unchanged for existing PTL deals).
+        app_method_id = self._resolve_application_method_id(discount)
+        discount_code = discount.dutchie_discount_code or ''
+        redemption = self._resolve_redemption_fields(discount)
+
         return {
             'Id': existing_int,
-            'ApplicationMethodId': 1,  # 1=Automatic; 2=Manual; 3=Code
+            'ApplicationMethodId': app_method_id,  # 1=Automatic; 2=Manual; 3=Code
             'CanStackAutomatically': bool(
                 discount.can_stack_automatically
                 if discount.can_stack_automatically is not None
@@ -293,7 +319,7 @@ class PtlDayDutchiePush(models.Model):
             # unless ops customizes via mint.discount in the future.
             'OnlineName': name,
             'PaymentRestrictions': {'PayByBankSignupIncentive': False},
-            'RedemptionLimit': '',
+            'RedemptionLimit': redemption['RedemptionLimit'],
             'RequireManagerApproval': False,
             'RestrictToGroupIds': [],
             'RestrictToSegmentIds': [],
@@ -318,9 +344,9 @@ class PtlDayDutchiePush(models.Model):
             'SavedWithAdvancedOptions': False,
             'ValidDateFrom': self._format_dutchie_date(discount.valid_from),
             'ValidDateTo': self._format_dutchie_date(discount.valid_until),
-            'DiscountCode': '',
-            'MaxRedemptions': None,
-            'RedemptionLimitCountingMode': 0,
+            'DiscountCode': discount_code,
+            'MaxRedemptions': redemption['MaxRedemptions'],
+            'RedemptionLimitCountingMode': redemption['RedemptionLimitCountingMode'],
             # Day-of-week. mint.discount stores monday..sunday as separate
             # booleans (set by _recompute_day_booleans from the PTL day binding).
             # If all 7 are False, Dutchie treats the discount as every-day.
