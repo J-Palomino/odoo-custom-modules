@@ -64,6 +64,7 @@ COPY --chown=odoo:odoo account_financial_risk /opt/extra-addons/account_financia
 COPY --chown=odoo:odoo purchase_price_precision /opt/extra-addons/purchase_price_precision
 COPY --chown=odoo:odoo mint_push /opt/extra-addons/mint_push
 COPY --chown=odoo:odoo mint_command_center /opt/extra-addons/mint_command_center
+COPY --chown=odoo:odoo mint_decision_board /opt/extra-addons/mint_decision_board
 COPY --chown=odoo:odoo mint_tech_org /opt/extra-addons/mint_tech_org
 COPY --chown=odoo:odoo mint_industry_trends /opt/extra-addons/mint_industry_trends
 COPY --chown=odoo:odoo mint_dutchie_discount_mirror /opt/extra-addons/mint_dutchie_discount_mirror

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <record id="decision_gbp_dispensary" model="mint.decision">
+            <field name="name">THE “DISPENSARY” DECISION</field>
+            <field name="slug">gbp-dispensary</field>
+            <field name="sequence">10</field>
+            <field name="state">open</field>
+            <field name="audience">csuite</field>
+            <field name="kicker">Mint Cannabis · Local SEO Kitchen</field>
+            <field name="subtitle">A prix-fixe look at renaming our Google Business Profiles</field>
+            <field name="question">Mint Cannabis – [City]  →  Mint Cannabis Dispensary – [Locale] ?</field>
+            <field name="ballot_heading">Cast Your Vote</field>
+            <field name="choice_label">Your verdict</field>
+            <field name="comment_label">Reasoning / input</field>
+            <field name="comment_placeholder">What's driving your call? Conditions, concerns, or a different path…</field>
+            <field name="takeaway">The one thing to remember: you do NOT need the word “Dispensary” in the name to appear for “dispensary near me” — the “Cannabis store” primary category does that. This change only chases the secondary name-match boost, so pilot before you commit.</field>
+            <field name="body_html" type="html">
+                <div>
+                    <div class="cols">
+                        <div>
+                            <div class="sec-head pos">The Case For <small>— reasons to order it</small></div>
+                            <div class="item"><div class="row"><span class="name">Name-Match Boost</span><span class="lead"/><span class="price up">+ HIGH</span></div><div class="desc">Keyword-in-name is the <b>#2 local-pack factor</b>. Exact-matches “dispensary near me” &amp; “[locale] dispensary” — the top-volume, top-intent terms.</div></div>
+                            <div class="item"><div class="row"><span class="name">Map-Pack Scanability</span><span class="lead"/><span class="price up">+ MED</span></div><div class="desc">The pin literally says what you are — no click needed when a searcher is comparing three results.</div></div>
+                            <div class="item"><div class="row"><span class="name">Legacy Brand Equity</span><span class="lead"/><span class="price up">+ MED</span></div><div class="desc">Original name was “The Mint Dispensary” — existing citation &amp; search footprint to lean on.</div></div>
+                            <div class="item"><div class="row"><span class="name">Compliant — If DBA-Backed</span><span class="lead"/><span class="price up">+ SAFE*</span></div><div class="desc">With a matching DBA it is a real-world name, not stuffing — the one safe route to the boost.</div></div>
+                            <div class="sec-head neg" style="margin-top:18px;">The Case Against <small>— send it back</small></div>
+                            <div class="item"><div class="row"><span class="name">Marginal vs. Category</span><span class="lead"/><span class="price down">− KEY</span></div><div class="desc"><b>“Cannabis store” category</b> + proximity already ranks you for “dispensary near me.” Name-match is icing, not the cake.</div></div>
+                            <div class="item"><div class="row"><span class="name">Suspension Risk × 34</span><span class="lead"/><span class="price down">− HIGH</span></div><div class="desc">Every rename triggers re-review; a mismatch = multi-week listing blackout. Cannabis = extra scrutiny.</div></div>
+                        </div>
+                        <div>
+                            <div class="facts">
+                                <h4>◈ House Facts (the hard stats)</h4>
+                                <div class="fact"><span class="dot">▸</span><span><b>#1</b> ranking lever = primary category <b>“Cannabis store”</b> — not the name.</span></div>
+                                <div class="fact"><span class="dot">▸</span><span><b>#2</b> lever = keyword in business name (the only thing this change buys).</span></div>
+                                <div class="fact"><span class="dot">▸</span><span>Singular <b>“dispensary near me” ≈ 10×</b> the plural — never use “Dispensaries.”</span></div>
+                                <div class="fact"><span class="dot">▸</span><span>You <b>already appear</b> for “dispensary near me” today via category + proximity.</span></div>
+                            </div>
+                            <div class="sec-head neg" style="margin-top:2px;">…continued <small>— more cons</small></div>
+                            <div class="item"><div class="row"><span class="name">6-State DBA Overhead</span><span class="lead"/><span class="price down">− MED</span></div><div class="desc">Must file/maintain a matching DBA in AZ · FL · MI · MO · NV · IL — real legal &amp; admin cost.</div></div>
+                            <div class="item"><div class="row"><span class="name">NAP Rollout Turbulence</span><span class="lead"/><span class="price down">− MED</span></div><div class="desc">Must re-sync 34 signs + website + every citation (Leafly/Dutchie/Yelp). Mid-switch mismatch hurts rank.</div></div>
+                            <div class="pick" style="margin-top:14px;">
+                                <span class="ribbon">Chef’s Recommendation</span>
+                                <h4>Don’t flip 34 — <span>plate a tasting first.</span></h4>
+                                <p><b>Net:</b> low-to-moderate upside, real operational downside. Run it as an experiment: restore GBP access, file a matching DBA, convert <b>2–3 priority stores</b>, then measure 60–90 days vs. unchanged sister stores.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </field>
+        </record>
+
+        <record id="decision_gbp_opt_pilot" model="mint.decision.option">
+            <field name="decision_id" ref="decision_gbp_dispensary"/>
+            <field name="sequence">10</field>
+            <field name="name">Pilot 2–3 stores first (Chef's pick)</field>
+            <field name="description">File a DBA, convert a few priority stores, measure 60–90 days.</field>
+        </record>
+        <record id="decision_gbp_opt_flip" model="mint.decision.option">
+            <field name="decision_id" ref="decision_gbp_dispensary"/>
+            <field name="sequence">20</field>
+            <field name="name">Flip all 34 GBPs now</field>
+            <field name="description">Commit to the full rename across every location.</field>
+        </record>
+        <record id="decision_gbp_opt_hold" model="mint.decision.option">
+            <field name="decision_id" ref="decision_gbp_dispensary"/>
+            <field name="sequence">30</field>
+            <field name="name">Hold — keep current names</field>
+            <field name="description">Category already wins the “dispensary” traffic.</field>
+        </record>
+        <record id="decision_gbp_opt_discuss" model="mint.decision.option">
+            <field name="decision_id" ref="decision_gbp_dispensary"/>
+            <field name="sequence">40</field>
+            <field name="name">Need more discussion</field>
+            <field name="description">Not enough to decide yet — let's talk it through.</field>
+        </record>
+
+    </data>
+</odoo>
