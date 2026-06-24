@@ -38,6 +38,15 @@ class DaisyAgent(models.Model):
         help="Employee this agent assists. Set by the create-agent-for-user wizard.",
     )
     active = fields.Boolean(default=True)
+    bot_identity = fields.Boolean(
+        string="Bot Identity",
+        default=False,
+        tracking=True,
+        help="Must be True for this agent to auto-reply in Discuss/email. Default-deny: "
+             "leave False for any agent bound to a real person's account. A False value "
+             "makes the agent structurally incapable of answering messages, so no agent "
+             "can ever auto-reply AS a human.",
+    )
 
     # --- MCP credentials (set by create-agent-for-user wizard) ---
     mcp_odoo_url = fields.Char(string="MCP Odoo URL")
@@ -341,6 +350,17 @@ class DaisyAgent(models.Model):
         churn — into a single AI reply.
         """
         self.ensure_one()
+        # Default-deny guard: only an explicitly-blessed bot identity may auto-reply.
+        # This is the single chokepoint every responder (discuss_channel, mail_thread)
+        # funnels through, so a False flag makes it structurally impossible to answer
+        # a message AS a real human — agents bound to a person's account are never
+        # bot_identity=True and therefore never enqueue a reply.
+        if not self.bot_identity:
+            _logger.info(
+                "daisy.agent %s (%s) is not a bot identity; suppressing auto-reply "
+                "so it cannot respond as a human.", self.id, self.name,
+            )
+            return
         Job = self.env["daisy.agent.job"].sudo()
         # Match on the full content of the enqueue, not just the text: the
         # genuine double-fire of one event carries identical session/context,
