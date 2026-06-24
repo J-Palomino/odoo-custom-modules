@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint Account',
-    'version': '19.0.1.2.1',
+    'version': '19.0.1.3.0',
     'category': 'Website',
     'summary': 'Customer account, cart persistence, order lookup for MintDeals frontend',
     'description': """
