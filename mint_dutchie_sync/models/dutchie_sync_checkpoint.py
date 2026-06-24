@@ -13,6 +13,14 @@ per-process cache, no cross-instance paging hazard). The per-store fetch is the
 only fragile call (Dutchie 502/timeout); on failure the store goes to 'error'
 and is retried on the next tick.
 
+⚠️ Known limitation: a large store (e.g. Tempe ~365K rows) is one cron fire that
+holds its checkpoint row's FOR UPDATE lock and an OPEN transaction for the whole
+multi-minute stream. On the 2-worker prod Odoo this can pin a worker and lag
+autovacuum for that window, so run the initial backfill OFF-HOURS. Bounding the
+transaction via per-batch commits is deferred: committing mid-cron can release
+the ir.cron job lock in Odoo, so that change needs validation against v19
+cron-lock semantics before it is made.
+
 Identity model
 --------------
 report-125 ``Id`` is a PER-LOCATION row id (no cross-store overlap), so it is
@@ -217,6 +225,7 @@ class DutchieSyncCheckpoint(models.Model):
 
         batch_size = self.batch_size or 500
         processed = 0
+        seen = 0
         batch = []
         with requests.get(
             base + '/dutchie/customer-roster',
@@ -230,17 +239,27 @@ class DutchieSyncCheckpoint(models.Model):
             for line in resp.iter_lines(decode_unicode=True):
                 if not line:
                     continue
+                seen += 1
                 batch.append(json.loads(line))
                 if len(batch) >= batch_size:
                     processed += self._upsert_rows(batch, cipher)
                     batch = []
                     # Persist this batch and release ORM cache memory (no commit
-                    # → the FOR UPDATE checkpoint lock is retained).
+                    # → the FOR UPDATE checkpoint lock is retained for this store).
                     self.env.cr.flush()
                     self.env.invalidate_all()
             if batch:
                 processed += self._upsert_rows(batch, cipher)
-        return (total or processed), processed
+        # Integrity: a stream truncated on a clean newline boundary parses fine
+        # but drops the tail. Refuse to mark 'done' if fewer rows arrived than the
+        # endpoint promised — raise so the store is retried in full next tick.
+        if total and seen < total:
+            raise ValueError(
+                "Roster stream truncated for loc %s: received %d of %d rows."
+                % (self.loc_id, seen, total))
+        # rows_total = raw rows streamed (seen); rows_done = upserted-after-dedup
+        # (processed). They legitimately differ by identity-key dedup attrition.
+        return (total or seen), processed
 
     # ------------------------------------------------------------------
     # Deterministic dedup + batched encrypted upsert
