@@ -428,6 +428,22 @@ try:
             cur.execute(f"ALTER TABLE res_config_settings ADD COLUMN {col} VARCHAR")
             print(f"=== Pre-created column res_config_settings.{col} ===")
 
+    # MR#680: pre-create res.partner email/call consent columns (consent-first).
+    # Done here (entrypoint, runs every boot) NOT via -u — -u is unreliable on
+    # this prod and broke res.partner.create twice when the field code loaded
+    # before the column existed. Field DEFINITIONS live in mint_account.
+    for col, coltype in (
+        ('email_opt_in', 'boolean'), ('email_opt_in_date', 'timestamp'), ('email_opt_in_source', 'varchar'),
+        ('call_opt_in', 'boolean'), ('call_opt_in_date', 'timestamp'), ('call_opt_in_source', 'varchar'),
+    ):
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'res_partner' AND column_name = %s
+        """, (col,))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE res_partner ADD COLUMN {col} {coltype}")
+            print(f"=== Pre-created column res_partner.{col} ===")
+
     cur.close()
     conn.close()
 except Exception as e:
