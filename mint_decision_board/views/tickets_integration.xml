@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Add a C-Suite-only "Decisions" entry point to the /tickets header. -->
+    <template id="request_list_csuite_tab"
+              inherit_id="mint_maintenance_form.request_list"
+              name="Tickets: C-Suite Decisions tab">
+        <xpath expr="//a[@href='/fixit']" position="before">
+            <t t-if="request.env['mint.decision']._is_csuite(request.env.user)">
+                <a href="/tickets/decisions" class="btn btn-outline-success me-2">
+                    C-Suite Decisions
+                </a>
+            </t>
+        </xpath>
+    </template>
+
+    <!-- Alternate view rendered in the same /tickets chrome (website.layout). -->
+    <template id="decisions_tickets_list" name="C-Suite Decisions">
+        <t t-call="website.layout">
+            <div id="wrap" class="oe_structure">
+                <div class="container py-5">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h1 class="mb-0">C-Suite Decisions</h1>
+                        <a href="/tickets" class="btn btn-outline-secondary">← Back to Tickets</a>
+                    </div>
+
+                    <t t-if="not decisions">
+                        <div class="alert alert-info">No decisions on the table right now.</div>
+                    </t>
+
+                    <t t-if="decisions">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Decision</th>
+                                        <th>Audience</th>
+                                        <th>Status</th>
+                                        <th class="text-end">Votes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="decisions" t-as="d">
+                                        <tr style="cursor:pointer"
+                                            t-attf-onclick="window.location='/decision/#{d.slug}'">
+                                            <td>
+                                                <a t-attf-href="/decision/#{d.slug}" class="text-decoration-none">
+                                                    <strong><t t-esc="d.name"/></strong>
+                                                </a>
+                                                <t t-if="d.question">
+                                                    <div class="text-muted small"><t t-esc="d.question"/></div>
+                                                </t>
+                                            </td>
+                                            <td>
+                                                <t t-if="d.audience == 'csuite'">
+                                                    <span class="badge bg-dark">C-Suite</span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="badge bg-secondary">All staff</span>
+                                                </t>
+                                            </td>
+                                            <td>
+                                                <t t-if="d.state == 'open'">
+                                                    <span class="badge bg-success">Open</span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="badge bg-secondary">Closed</span>
+                                                </t>
+                                            </td>
+                                            <td class="text-end"><t t-esc="d.vote_count"/></td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+
+</odoo>
