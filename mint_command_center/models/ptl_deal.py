@@ -1,4 +1,6 @@
+import json
 import logging
+import urllib.request
 from datetime import timedelta
 
 from markupsafe import Markup
@@ -7,7 +9,8 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from .brand_calendar import _brand_lookup_key, _parse_brand_name
-from .deal_mixins import format_bundle_tiers_text, dutchie_claim_decision
+from .deal_mixins import (format_bundle_tiers_text, dutchie_claim_decision,
+                          dutchie_deal_external_id, resolve_dutchie_discount_id)
 
 _logger = logging.getLogger(__name__)
 
@@ -60,6 +63,11 @@ class PtlDeal(models.Model):
         help="Which publish path owns this deal's live Dutchie discount. Set by "
              "the first path to publish live; the other path then refuses to "
              "create a duplicate (#2 cross-path mutex). Clear it to switch paths.")
+    dutchie_publish_ids = fields.Text(
+        string='Dutchie ExternalId→DiscountId (JSON)', copy=False,
+        help="Shared deal-keyed registry of published Dutchie discount ids "
+             "{external_id: dutchie_id}, used by BOTH publish paths so neither "
+             "creates a duplicate (#2 Stage 2). external_id = lgm_deal_<id>[_w<k>].")
     brand_id = fields.Many2one(
         'mint.brand',
         string='Brand',
@@ -895,6 +903,66 @@ class PtlDeal(models.Model):
         if to_set:
             self.sudo().write({'dutchie_publish_owner': to_set})
         return may
+
+    # ── Stage 2: shared deal-keyed Dutchie discount registry (#2) ─────────
+    # Both publish paths resolve/record ids here keyed by the unified
+    # external_id (dutchie_deal_external_id) so neither creates a duplicate.
+
+    def _dutchie_registry(self):
+        """Return {external_id: dutchie_id(int)} for this deal (sane on junk)."""
+        self.ensure_one()
+        try:
+            m = json.loads(self.dutchie_publish_ids or '{}')
+        except (ValueError, TypeError):
+            return {}
+        return {k: int(v) for k, v in m.items()
+                if isinstance(v, int) and not isinstance(v, bool) and int(v) > 0}
+
+    def _dutchie_registry_set(self, external_id, dutchie_id):
+        self.ensure_one()
+        m = self._dutchie_registry()
+        m[external_id] = int(dutchie_id)
+        self.sudo().write({'dutchie_publish_ids': json.dumps(m)})
+
+    def _dutchie_readback_id(self, external_id, loc_id, lsp_id):
+        """Read-back-as-verify: find an existing Dutchie discount by ExternalId
+        at (loc, lsp) via invsvc. int>0 = found, 0 = confirmed absent, None =
+        read failed/unknown (caller must NOT blind-create — sub-395 lesson)."""
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        url = (get_param('dutchie.publish.url')
+               or 'https://mintinvsvc-production-6aa5.up.railway.app').rstrip('/')
+        api_key = get_param('dutchie.publish.api_key')
+        if not api_key or not loc_id or not lsp_id:
+            return None
+        try:
+            req = urllib.request.Request(
+                "%s/api/admin/dutchie-discounts?locId=%d&lspId=%d"
+                % (url, int(loc_id), int(lsp_id)),
+                headers={'x-api-key': api_key}, method='GET')
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode(errors='replace'))
+            if not data.get('ok'):
+                return None
+            for d in (data.get('discounts') or []):
+                if str(d.get('ExternalId') or '') == external_id:
+                    did = d.get('Id')
+                    return int(did) if isinstance(did, int) and did > 0 else 0
+            return 0  # endpoint answered, no match → confirmed absent
+        except Exception as exc:
+            _logger.warning("Dutchie read-back failed for %s @ loc %s: %s",
+                            external_id, loc_id, exc)
+            return None
+
+    def _dutchie_resolve_id(self, external_id, loc_id, lsp_id):
+        """Local-registry-first create-vs-update resolution (#2 Stage 2).
+        Returns (id, action) in {'update','create','abort'}. Only hits the
+        Dutchie read-back when the local registry has no id."""
+        self.ensure_one()
+        local = self._dutchie_registry().get(external_id, 0)
+        if local > 0:
+            return (local, 'update')
+        return resolve_dutchie_discount_id(
+            0, self._dutchie_readback_id(external_id, loc_id, lsp_id))
 
     def action_publish(self):
         """Publish this deal to the storefront (Redis) AND Dutchie POS.
