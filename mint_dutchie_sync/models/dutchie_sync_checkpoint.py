@@ -9,30 +9,40 @@ one store), advances the checkpoint, and stops — so the multi-million-row
 roster imports persistently across many short, retry-safe ticks rather than one
 long call that would hit Dutchie's export 502/timeout limits.
 
-Layering:
-  * ``_fetch_roster_page`` is an integration SEAM (step 2b) — it must return one
-    page of Patient Contact Report (ReportId 125) rows for a LocId. Re-implement
-    it against the proven Dutchie Backoffice client; everything below it is
-    deterministic and verified.
-  * ``_identity_key`` / ``_upsert_partner`` are the dedup + encrypted-upsert
-    logic proven in the V1 verification run.
+Identity model
+--------------
+report-125 ``Id`` is a PER-LOCATION row id (no cross-store overlap), so it is
+NOT a valid dedup key. The same human at N stores has N different ``Id`` values.
+Dedup + upsert therefore key on a normalized identity (``x_dutchie_identity_key``
+= DL > MJ state ID > Name+DOB > phone), matched via a DB search so dedup works
+across pages AND stores — not just within one page. ``x_dutchie_customer_id`` is
+recorded first-seen only (never churned) as a reference.
 
-The report-125 column names below were confirmed present on a live run-report
-response (per CLAUDE.md: external field names used verbatim from a real call).
+  ⚠️ OPEN (step 2b): whether Dutchie exposes a stable GLOBAL customer id (vs the
+  per-location report-125 ``Id``), and how this reconciles with mint_pos_bridge's
+  existing match-on-customer_id flow, must be confirmed with a live get-customers
+  call before this is wired live. Until then the identity hash is authoritative.
+
+Column names
+------------
+The ROSTER_COLS keys below are PROVISIONAL and MUST be confirmed verbatim against
+a live report-125 response when ``_fetch_roster_page`` is implemented in step 2b
+(CLAUDE.md: verify external API field names from a real call; never rely on
+analogy). A mismatched key makes ``row.get`` return None and silently imports
+blank data.
 """
 import logging
 
 from odoo import _, api, fields, models
 
-from .pii_crypto import get_cipher
+from .pii_crypto import encrypt_value, get_cipher
 
 _logger = logging.getLogger(__name__)
 
-# Verified Patient Contact Report (ReportId 125) column -> res.partner mapping.
-# Plaintext demographics + identifiers; PII (DOB/DL/MJ) is routed through the
-# encrypted compute/inverse fields, not written here as plaintext columns.
+# PROVISIONAL Patient Contact Report (ReportId 125) column -> handling.
+# CONFIRM against a live response in step 2b before enabling the cron.
 ROSTER_COLS = {
-    'id': 'Id',                      # -> x_dutchie_customer_id (per-location row id)
+    'id': 'Id',                      # -> x_dutchie_customer_id (per-location id)
     'name': 'Accts_Name',
     'dob': 'PatientDOB',             # -> x_dutchie_dob (encrypted)
     'dl': 'DriversLicense',          # -> x_dutchie_dl (encrypted)
@@ -50,18 +60,17 @@ ROSTER_COLS = {
     'email': 'Email',
 }
 
-_DATE_FORMATS = ('%m/%d/%Y', '%Y-%m-%d', '%m/%d/%y', '%Y-%m-%dT%H:%M:%S')
-
 
 def _parse_date(value):
     """Best-effort parse of a Dutchie date string into a date; False on failure."""
     if not value:
         return False
     from datetime import datetime
-    text = str(value).strip()
-    for fmt in _DATE_FORMATS:
+    # Drop any time component, then match the whole remaining token exactly.
+    text = str(value).strip().split('T')[0].split(' ')[0]
+    for fmt in ('%m/%d/%Y', '%Y-%m-%d', '%m/%d/%y'):
         try:
-            return datetime.strptime(text[:len(fmt) + 4], fmt).date()
+            return datetime.strptime(text, fmt).date()
         except (ValueError, TypeError):
             continue
     return False
@@ -98,28 +107,42 @@ class DutchieSyncCheckpoint(models.Model):
             rec.name = '%s (%s)' % (rec.company_id.name or 'Store', rec.loc_id or '?')
 
     # ------------------------------------------------------------------
-    # Cron entry — one bounded chunk per fire
+    # Cron entry — claim one store atomically, process one page
     # ------------------------------------------------------------------
     @api.model
     def _cron_sync_roster(self):
-        """Pick the most-stale unfinished store and process one page.
+        """Claim the most-stale unfinished store and process one page.
 
-        Priority: stores still in pending/running/error (least-recently-run
-        first). When every store is done, re-arm the most-stale done store so
-        the roster stays current.
+        Uses SELECT ... FOR UPDATE SKIP LOCKED so two overlapping fires (or
+        workers) never process the same checkpoint: an actively-running row is
+        row-locked and skipped, while a row left 'running' by a crash has its
+        lock released and is reclaimable. NULLS FIRST so never-run stores are
+        picked before already-run ones.
         """
-        cp = self.search(
-            [('active', '=', True), ('state', 'in', ('pending', 'running', 'error'))],
-            order='last_run asc, id asc', limit=1,
+        table = self._table
+        self.env.cr.execute(
+            "SELECT id FROM %s "
+            "WHERE active = TRUE AND state IN ('pending', 'running', 'error') "
+            "ORDER BY last_run ASC NULLS FIRST, id ASC "
+            "LIMIT 1 FOR UPDATE SKIP LOCKED" % table
         )
-        if not cp:
-            cp = self.search(
-                [('active', '=', True), ('state', '=', 'done')],
-                order='last_run asc, id asc', limit=1,
+        res = self.env.cr.fetchone()
+        if res:
+            cp = self.browse(res[0])
+        else:
+            # All stores done → re-arm the stalest for a refresh pass.
+            self.env.cr.execute(
+                "SELECT id FROM %s "
+                "WHERE active = TRUE AND state = 'done' "
+                "ORDER BY last_run ASC NULLS FIRST, id ASC "
+                "LIMIT 1 FOR UPDATE SKIP LOCKED" % table
             )
-            if not cp:
+            res = self.env.cr.fetchone()
+            if not res:
                 return
-            cp.write({'state': 'pending', 'next_page': 0})
+            cp = self.browse(res[0])
+            cp.write({'state': 'pending', 'next_page': 0, 'rows_done': 0})
+        cp.state = 'running'  # cosmetic; the row lock above is the real guard
         cp._run_chunk()
 
     def _run_chunk(self):
@@ -145,16 +168,7 @@ class DutchieSyncCheckpoint(models.Model):
             })
             return
 
-        Partner = self.env['res.partner'].sudo()
-        seen = set()
-        processed = 0
-        for row in rows:
-            key = self._identity_key(row)
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            self._upsert_partner(Partner, row, cipher)
-            processed += 1
+        processed = self._upsert_rows(rows, cipher)
 
         vals = {
             'rows_done': self.rows_done + processed,
@@ -175,9 +189,9 @@ class DutchieSyncCheckpoint(models.Model):
         """Return ``(rows, has_more, total)`` for one page of report 125.
 
         ``rows`` is a list of dicts keyed by the report-125 column names in
-        ROSTER_COLS. Implement against the proven Dutchie Backoffice client
-        (mintinvsvc) — see step 2b. Must be retry-safe on 502/timeout (raising
-        is fine; the caller records the error and retries on the next tick).
+        ROSTER_COLS. Step 2b wires this to the proven Dutchie Backoffice client
+        (an mintinvsvc endpoint). Must be retry-safe on 502/timeout — raising is
+        fine; the caller records the error and retries on the next tick.
         """
         raise NotImplementedError(
             "Dutchie roster fetch not wired yet (step 2b). "
@@ -185,57 +199,111 @@ class DutchieSyncCheckpoint(models.Model):
         )
 
     # ------------------------------------------------------------------
-    # Deterministic dedup + encrypted upsert (verified in V1)
+    # Deterministic dedup + batched encrypted upsert
     # ------------------------------------------------------------------
     @staticmethod
     def _identity_key(row):
-        """Stable cross-store identity: DL -> MJStateID -> Name+DOB -> phone.
+        """Stable cross-store identity string: DL > MJ state id > Name+DOB > phone.
 
-        report-125 ``Id`` is a PER-LOCATION row id (no cross-store overlap), so
-        it is NOT a valid dedup key — use the identity attributes instead.
+        Returns None for rows with no stable identifier (skipped, not imported).
         """
         get = row.get
         dl = (get(ROSTER_COLS['dl']) or '').strip()
         if dl:
-            return ('dl', dl.upper())
+            return 'dl:' + dl.upper()
         mj = (get(ROSTER_COLS['mj_state_id']) or '').strip()
         if mj:
-            return ('mj', mj.upper())
+            return 'mj:' + mj.upper()
         name = (get(ROSTER_COLS['name']) or '').strip().upper()
         dob = (get(ROSTER_COLS['dob']) or '').strip()
         if name and dob:
-            return ('namedob', name, dob)
+            return 'nd:%s|%s' % (name, dob)
         phone = (get(ROSTER_COLS['phone']) or get(ROSTER_COLS['cellphone']) or '').strip()
         if phone:
-            return ('phone', phone)
+            return 'ph:' + phone
         return None
 
-    def _upsert_partner(self, Partner, row, cipher):
-        """Create or update a res.partner from one report-125 row.
+    def _upsert_rows(self, rows, cipher):
+        """Batch-upsert one page of report-125 rows; return processed count.
 
-        Matches on x_dutchie_customer_id. PII (DOB/DL/MJ) is written through the
-        encrypted plaintext fields, whose inverse encrypts via ``cipher``.
+        Dedups within the page by identity (later row wins), then resolves
+        existing partners in TWO bulk searches (by identity key, and by
+        per-location customer id as a fallback so the ~83K already-linked
+        partners are matched and back-filled rather than duplicated). Each row's
+        write/create is wrapped in a savepoint so one bad row (e.g. a UNIQUE
+        customer_id collision) cannot abort the whole chunk.
+        """
+        Partner = self.env['res.partner'].sudo()
+        keyed = {}
+        for row in rows:
+            key = self._identity_key(row)
+            if key:
+                keyed[key] = row  # in-page dedup, later wins
+        if not keyed:
+            return 0
+
+        keys = list(keyed)
+        cust_ids = [
+            str(row.get(ROSTER_COLS['id']))
+            for row in keyed.values() if row.get(ROSTER_COLS['id'])
+        ]
+        by_identity = {
+            p['x_dutchie_identity_key']: p['id']
+            for p in Partner.search_read(
+                [('x_dutchie_identity_key', 'in', keys)], ['id', 'x_dutchie_identity_key'])
+        }
+        by_custid = {}
+        if cust_ids:
+            by_custid = {
+                p['x_dutchie_customer_id']: p['id']
+                for p in Partner.search_read(
+                    [('x_dutchie_customer_id', 'in', cust_ids)], ['id', 'x_dutchie_customer_id'])
+            }
+
+        processed = 0
+        for key, row in keyed.items():
+            cust_id = str(row.get(ROSTER_COLS['id']) or '') or False
+            pid = by_identity.get(key) or (by_custid.get(cust_id) if cust_id else None)
+            try:
+                with self.env.cr.savepoint():
+                    if pid:
+                        Partner.browse(pid).write(self._row_to_vals(row, key, cipher, False))
+                    else:
+                        new = Partner.create(self._row_to_vals(row, key, cipher, True))
+                        by_identity[key] = new.id
+                        if cust_id:
+                            by_custid[cust_id] = new.id
+                processed += 1
+            except Exception:
+                _logger.exception(
+                    "Roster upsert failed (loc %s, identity %s)", self.loc_id, key)
+        return processed
+
+    def _row_to_vals(self, row, identity_key, cipher, is_create):
+        """Map a report-125 row to res.partner vals.
+
+        PII is written directly to the encrypted ``*_enc`` columns using the
+        page-resolved ``cipher`` (one encrypt per non-empty field, no per-record
+        cipher rebuild / decrypt — the inverse path is bypassed for bulk).
+        Contact fields are only set when present, never blanking existing data.
+        ``x_dutchie_customer_id`` is set on CREATE only (first-seen, never churned).
         """
         get = row.get
-        cust_id = get(ROSTER_COLS['id'])
-        if not cust_id:
-            return
-        cust_id = str(cust_id)
-
         vals = {
-            'x_dutchie_customer_id': cust_id,
+            'x_dutchie_identity_key': identity_key,
             'x_dutchie_patient_type': get(ROSTER_COLS['patient_type']) or False,
             'x_dutchie_patient_status': get(ROSTER_COLS['patient_status']) or False,
             'x_dutchie_gender': get(ROSTER_COLS['gender']) or False,
             'x_dutchie_mj_id_expiration': _parse_date(get(ROSTER_COLS['mj_expiration'])),
             'x_dutchie_member_since': _parse_date(get(ROSTER_COLS['member_since'])),
             'x_dutchie_last_sync': fields.Datetime.now(),
-            # encrypted PII (routed through inverse)
-            'x_dutchie_dob': (get(ROSTER_COLS['dob']) or '').strip() or False,
-            'x_dutchie_dl': (get(ROSTER_COLS['dl']) or '').strip() or False,
-            'x_dutchie_mj_state_id': (get(ROSTER_COLS['mj_state_id']) or '').strip() or False,
+            'x_dutchie_dob_enc': encrypt_value(
+                self.env, (get(ROSTER_COLS['dob']) or '').strip(), cipher=cipher),
+            'x_dutchie_dl_enc': encrypt_value(
+                self.env, (get(ROSTER_COLS['dl']) or '').strip(), cipher=cipher),
+            'x_dutchie_mj_state_id_enc': encrypt_value(
+                self.env, (get(ROSTER_COLS['mj_state_id']) or '').strip(), cipher=cipher),
         }
-        # Contact fields: only set when present, never blank out existing data.
         name = (get(ROSTER_COLS['name']) or '').strip()
         if name:
             vals['name'] = name
@@ -251,11 +319,10 @@ class DutchieSyncCheckpoint(models.Model):
             vals['email'] = email
         if self.company_id:
             vals['x_home_store_id'] = self.company_id.id
-
-        partner = Partner.search([('x_dutchie_customer_id', '=', cust_id)], limit=1)
-        if partner:
-            partner.write(vals)
-        else:
-            vals.setdefault('name', _('Dutchie Customer %s') % cust_id)
+        if is_create:
+            cust_id = str(get(ROSTER_COLS['id']) or '') or False
+            if cust_id:
+                vals['x_dutchie_customer_id'] = cust_id
+            vals.setdefault('name', _('Dutchie Customer %s') % (cust_id or identity_key))
             vals['customer_rank'] = 1
-            Partner.create(vals)
+        return vals

@@ -35,6 +35,16 @@ class ResPartner(models.Model):
         copy=False,
         help='Customer code from Dutchie (e.g., state ID or patient number).',
     )
+    x_dutchie_identity_key = fields.Char(
+        string='Dutchie Identity Key',
+        index=True,
+        copy=False,
+        help='Normalized cross-store identity (DL > MJ state ID > Name+DOB > '
+             'phone) used to dedup the SAME person across stores. This is the '
+             'roster-sync match key — NOT the per-location customer id. No DB '
+             'UNIQUE constraint: the sync searches then upserts so a collision '
+             'never aborts a chunk.',
+    )
 
     # Home store assignment
     x_home_store_id = fields.Many2one(

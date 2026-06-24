@@ -12,6 +12,7 @@
                         <group string="Dutchie Identification">
                             <field name="x_dutchie_customer_id"/>
                             <field name="x_dutchie_customer_code"/>
+                            <field name="x_dutchie_identity_key"/>
                             <field name="x_home_store_id"/>
                         </group>
                         <group string="Dutchie Stats">
