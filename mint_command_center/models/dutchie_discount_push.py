@@ -24,11 +24,12 @@ import urllib.request
 
 from odoo import api, fields, models
 from odoo.addons.mint_api_v2.models.discount_canonical import (
-    APP_METHOD_ID_BY_ODOO,
     THRESHOLD_TYPE_ID_BY_ODOO,
+    application_method_id_for,
     calc_method_id_for,
     discount_value_for,
     parse_raw_restriction,
+    redemption_fields_for,
 )
 
 from .deal_mixins import coerce_dutchie_ids
@@ -171,22 +172,14 @@ class PtlDayDutchiePush(models.Model):
         return self.ITEM_GROUP_TYPE_ID_FALLBACK
 
     def _resolve_application_method_id(self, discount):
-        # 1=Automatic, 2=Manual, 3=Code. Map the stored Odoo application_method
-        # via the canonical registry; default to Automatic (1) when unset/unknown
-        # so existing automatic PTL deals are unchanged.
-        return APP_METHOD_ID_BY_ODOO.get(discount.application_method) or 1
+        # Single source of truth in discount_canonical (shared with the
+        # submission publish path in dutchie_publish.py).
+        return application_method_id_for(discount.application_method)
 
     def _resolve_redemption_fields(self, discount):
-        # Verified single/limited-use code-coupon shape (live record PHXNTPR
-        # 383481): MaxRedemptions set, RedemptionLimit null, counting mode 0.
-        # Automatic deals keep the historical '' RedemptionLimit and no cap — a
-        # 0/'' MaxRedemptions would otherwise make Dutchie reject the discount.
-        max_uses = int(discount.maximum_usage_count or 0)
-        if max_uses > 0:
-            return {'MaxRedemptions': max_uses, 'RedemptionLimit': None,
-                    'RedemptionLimitCountingMode': 0}
-        return {'MaxRedemptions': None, 'RedemptionLimit': '',
-                'RedemptionLimitCountingMode': 0}
+        # Single source of truth in discount_canonical. Verified single-use
+        # shape comes from there; see redemption_fields_for().
+        return redemption_fields_for(discount.maximum_usage_count)
 
     def _build_backoffice_url(self, discount_id, loc_id, lsp_id):
         """Build the Dutchie backoffice review URL for a discount.

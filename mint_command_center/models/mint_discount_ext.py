@@ -1,6 +1,7 @@
 import logging
 
-from odoo import api, fields, models
+from odoo import api, fields, models, _
+from odoo.exceptions import ValidationError
 
 from .deal_mixins import weekday_bools_from_days
 
@@ -39,6 +40,28 @@ class MintDiscountPTL(models.Model):
         string="PTL Deal",
         ondelete='set null',
     )
+
+    @api.constrains('application_method', 'dutchie_discount_code', 'source')
+    def _check_code_method_has_code(self):
+        """A code-method discount we author must carry the register code it is
+        published with. Without it the Dutchie push emits ApplicationMethodId=3
+        + an empty DiscountCode — an invalid coupon Dutchie rejects (or, worse,
+        one redeemable with a blank code).
+
+        Scoped to source != 'dutchie': Dutchie-mirrored discounts legitimately
+        carry application_method='code' without our dutchie_discount_code field
+        populated, and the read-sync must write them without tripping this
+        guard. Only Odoo-authored discounts (PTL / welcome coupons) are held to
+        the rule.
+        """
+        for rec in self:
+            if (rec.source != 'dutchie'
+                    and rec.application_method == 'code'
+                    and not (rec.dutchie_discount_code or '').strip()):
+                raise ValidationError(_(
+                    "A discount with Application Method 'Code' requires a "
+                    "Dutchie Discount Code (the code typed at the register)."
+                ))
 
     # ── Override is_active as stored compute ─────────────────────────────
     is_active = fields.Boolean(
