@@ -39,35 +39,46 @@ from .pii_crypto import encrypt_value, get_cipher
 
 _logger = logging.getLogger(__name__)
 
-# PROVISIONAL Patient Contact Report (ReportId 125) column -> handling.
-# CONFIRM against a live response in step 2b before enabling the cron.
+# Patient Contact Report (ReportId 125) column -> handling. Keys confirmed
+# VERBATIM against a live run-report response (Riverview, 2026-06-24). Two keys
+# contain spaces and must be bracket-accessed. ``Id`` is a per-location row PK
+# (no cross-store overlap) — used as a reference id only, NOT the dedup key.
 ROSTER_COLS = {
     'id': 'Id',                      # -> x_dutchie_customer_id (per-location id)
     'name': 'Accts_Name',
     'dob': 'PatientDOB',             # -> x_dutchie_dob (encrypted)
     'dl': 'DriversLicense',          # -> x_dutchie_dl (encrypted)
     'mj_state_id': 'MJStateIDNo',    # -> x_dutchie_mj_state_id (encrypted)
-    'mj_expiration': 'MMJExpiration',
+    'mj_expiration': 'MMJ ID Expiration Date',
     'patient_type': 'patientType',
     'patient_status': 'PatientStatus',
     'gender': 'Gender',
-    'member_since': 'MemberSince',
+    'member_since': 'Member Since',
     'street': 'Accts_Addr1',
-    'city': 'City',
+    'city': 'Accts_City',
     'zip': 'PostalCode',
     'phone': 'PatientPhone',
     'cellphone': 'CellPhone',
     'email': 'Email',
 }
 
+# Dutchie returns empty datetimes as this sentinel rather than null/blank.
+_EMPTY_DATE_SENTINELS = ('0001-01-01', '1/1/0001', '01/01/0001')
+
 
 def _parse_date(value):
-    """Best-effort parse of a Dutchie date string into a date; False on failure."""
+    """Best-effort parse of a Dutchie date string into a date; False on failure.
+
+    Treats Dutchie's empty-datetime sentinel (0001-01-01...) as no value.
+    """
     if not value:
         return False
     from datetime import datetime
+    raw = str(value).strip()
+    if any(raw.startswith(s) for s in _EMPTY_DATE_SENTINELS):
+        return False
     # Drop any time component, then match the whole remaining token exactly.
-    text = str(value).strip().split('T')[0].split(' ')[0]
+    text = raw.split('T')[0].split(' ')[0]
     for fmt in ('%m/%d/%Y', '%Y-%m-%d', '%m/%d/%y'):
         try:
             return datetime.strptime(text, fmt).date()
@@ -84,6 +95,10 @@ class DutchieSyncCheckpoint(models.Model):
     name = fields.Char(compute='_compute_name', store=True)
     company_id = fields.Many2one('res.company', string='Store', index=True)
     loc_id = fields.Char(string='Dutchie LocId', required=True, index=True, copy=False)
+    lsp_id = fields.Char(
+        string='Dutchie LspId', copy=False,
+        help='Per-store Dutchie LSP id, required by the report-125 run-report call.',
+    )
     state = fields.Selection(
         [('pending', 'Pending'), ('running', 'Running'),
          ('done', 'Done'), ('error', 'Error')],
@@ -188,15 +203,39 @@ class DutchieSyncCheckpoint(models.Model):
     def _fetch_roster_page(self, loc_id, page, page_size):
         """Return ``(rows, has_more, total)`` for one page of report 125.
 
-        ``rows`` is a list of dicts keyed by the report-125 column names in
-        ROSTER_COLS. Step 2b wires this to the proven Dutchie Backoffice client
-        (an mintinvsvc endpoint). Must be retry-safe on 502/timeout — raising is
-        fine; the caller records the error and retries on the next tick.
+        Calls the mintinvsvc customer-roster endpoint, which runs report 125 via
+        the proven Dutchie Backoffice client, caches the per-store roster
+        (sorted by Id for stable offset paging), and serves offset/limit slices.
+        ``rows`` are dicts keyed by the ROSTER_COLS report-125 column names.
+        Raising on failure is fine — the caller records the error and retries.
         """
-        raise NotImplementedError(
-            "Dutchie roster fetch not wired yet (step 2b). "
-            "Implement _fetch_roster_page for loc_id=%s." % loc_id
+        import requests
+
+        ICP = self.env['ir.config_parameter'].sudo()
+        base = (ICP.get_param('mint_dutchie_sync.invsvc_url') or '').rstrip('/')
+        api_key = ICP.get_param('mint_dutchie_sync.invsvc_api_key') or ''
+        if not base:
+            raise UserError(_(
+                "Inventory-service URL not configured "
+                "(mint_dutchie_sync.invsvc_url)."))
+        offset = page * page_size
+        resp = requests.get(
+            base + '/dutchie/customer-roster',
+            params={
+                'locId': loc_id,
+                'lspId': self.lsp_id or '',
+                'offset': offset,
+                'limit': page_size,
+            },
+            headers={'X-Api-Key': api_key},
+            timeout=180,
         )
+        resp.raise_for_status()
+        payload = resp.json()
+        rows = payload.get('rows') or []
+        total = payload.get('total') or 0
+        has_more = bool(payload.get('hasMore'))
+        return rows, has_more, total
 
     # ------------------------------------------------------------------
     # Deterministic dedup + batched encrypted upsert

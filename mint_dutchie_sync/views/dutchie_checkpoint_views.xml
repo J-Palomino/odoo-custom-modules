@@ -10,6 +10,7 @@
                   decoration-info="state == 'running'">
                 <field name="company_id"/>
                 <field name="loc_id"/>
+                <field name="lsp_id"/>
                 <field name="state"/>
                 <field name="next_page"/>
                 <field name="rows_done"/>
@@ -31,6 +32,7 @@
                         <group>
                             <field name="company_id"/>
                             <field name="loc_id"/>
+                            <field name="lsp_id"/>
                             <field name="state"/>
                             <field name="active"/>
                         </group>
