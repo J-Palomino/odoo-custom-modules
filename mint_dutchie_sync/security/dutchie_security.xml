@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <data>
+        <!--
+            Field-level gate for sensitive Dutchie PII (DOB, driver's license,
+            MJ state ID). The encrypted/plaintext field pairs carry
+            groups="mint_dutchie_sync.group_dutchie_pii"; only members can read
+            (decrypt) or write them. Grant deliberately and sparingly. NOTE:
+            Odoo 19 res.groups has no category_id field — do not add one.
+        -->
+        <record id="group_dutchie_pii" model="res.groups">
+            <field name="name">Dutchie Customer PII</field>
+            <field name="comment">Members may view and decrypt sensitive Dutchie customer PII (date of birth, driver's license, MJ state ID). This data is government/medical PII encrypted at rest; assign only to roles with a lawful need.</field>
+        </record>
+    </data>
+
     <data noupdate="1">
         <!-- Portal users can only see their own purchase records -->
         <record id="rule_dutchie_purchase_portal" model="ir.rule">

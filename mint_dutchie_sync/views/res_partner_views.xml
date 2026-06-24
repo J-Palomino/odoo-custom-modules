@@ -18,8 +18,27 @@
                             <field name="x_dutchie_total_spend"/>
                             <field name="x_dutchie_visit_count"/>
                             <field name="x_dutchie_first_visit"/>
+                            <field name="x_dutchie_member_since"/>
                             <field name="x_dutchie_last_sync"/>
                         </group>
+                    </group>
+                    <group>
+                        <group string="Demographics">
+                            <field name="x_dutchie_patient_type"/>
+                            <field name="x_dutchie_patient_status"/>
+                            <field name="x_dutchie_gender"/>
+                            <field name="x_dutchie_mj_id_expiration"/>
+                        </group>
+                        <group string="Loyalty">
+                            <field name="x_dutchie_loyalty_id"/>
+                            <field name="x_dutchie_loyalty_balance"/>
+                        </group>
+                    </group>
+                    <group string="Sensitive PII (restricted)"
+                           groups="mint_dutchie_sync.group_dutchie_pii">
+                        <field name="x_dutchie_dob"/>
+                        <field name="x_dutchie_dl"/>
+                        <field name="x_dutchie_mj_state_id"/>
                     </group>
                     <field name="x_dutchie_purchase_ids">
                         <list string="Purchase History" editable="bottom" create="false" delete="false">
