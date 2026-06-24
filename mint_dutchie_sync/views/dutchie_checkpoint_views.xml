@@ -12,7 +12,6 @@
                 <field name="loc_id"/>
                 <field name="lsp_id"/>
                 <field name="state"/>
-                <field name="next_page"/>
                 <field name="rows_done"/>
                 <field name="rows_total"/>
                 <field name="last_run"/>
@@ -37,8 +36,7 @@
                             <field name="active"/>
                         </group>
                         <group>
-                            <field name="page_size"/>
-                            <field name="next_page"/>
+                            <field name="batch_size"/>
                             <field name="rows_done"/>
                             <field name="rows_total"/>
                             <field name="last_run"/>
