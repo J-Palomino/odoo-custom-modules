@@ -32,6 +32,7 @@
         <field name="arch" type="xml">
             <field name="user_id" position="after">
                 <field name="x_intake_channel" optional="show"/>
+                <field name="x_time_to_close" optional="show"/>
             </field>
         </field>
     </record>
@@ -48,7 +49,11 @@
                 <filter string="Phone" name="channel_phone" domain="[('x_intake_channel', '=', 'phone')]"/>
                 <filter string="SMS" name="channel_sms" domain="[('x_intake_channel', '=', 'sms')]"/>
                 <filter string="Web Form" name="channel_web" domain="[('x_intake_channel', '=', 'web')]"/>
+                <separator/>
+                <filter string="Closed" name="closed" domain="[('close_date', '!=', False)]"/>
+                <filter string="Open" name="open" domain="[('close_date', '=', False)]"/>
                 <filter string="Group by Intake Channel" name="group_intake_channel" context="{'group_by': 'x_intake_channel'}"/>
+                <filter string="Group by Team" name="group_team" context="{'group_by': 'maintenance_team_id'}"/>
             </field>
         </field>
     </record>
@@ -76,9 +81,60 @@
                 <filter string="IT" name="filter_it" domain="[('maintenance_team_id', '=', 2)]"/>
                 <filter string="Engineering" name="filter_engineering" domain="[('maintenance_team_id', '=', 4)]"/>
                 <filter string="Facilities" name="filter_facilities" domain="[('maintenance_team_id', '=', 1)]"/>
-                <filter string="Graphics" name="filter_graphics" domain="[('maintenance_team_id', '=', 3)]"/>
+                <filter string="Graphics" name="filter_graphics" domain="[('maintenance_team_id', '=', 12)]"/>
                 <filter string="Group by Team" name="group_team" context="{'group_by': 'maintenance_team_id'}"/>
             </field>
         </field>
     </record>
+
+    <!-- ====================================================================
+         "Time to Close" report — one-click avg days-to-close by team.
+         Counts only tickets that reached a closing (Close Date set) stage.
+         ==================================================================== -->
+    <record id="maintenance_request_ttc_pivot" model="ir.ui.view">
+        <field name="name">maintenance.request.ttc.pivot</field>
+        <field name="model">maintenance.request</field>
+        <field name="arch" type="xml">
+            <pivot string="Time to Close" sample="1">
+                <field name="maintenance_team_id" type="row"/>
+                <field name="x_time_to_close" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="maintenance_request_ttc_graph" model="ir.ui.view">
+        <field name="name">maintenance.request.ttc.graph</field>
+        <field name="model">maintenance.request</field>
+        <field name="arch" type="xml">
+            <graph string="Time to Close" type="bar" sample="1">
+                <field name="maintenance_team_id"/>
+                <field name="x_time_to_close" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="action_maintenance_request_ttc" model="ir.actions.act_window">
+        <field name="name">Time to Close</field>
+        <field name="res_model">maintenance.request</field>
+        <field name="view_mode">graph,pivot,list</field>
+        <field name="domain">[('close_date', '!=', False)]</field>
+        <field name="context">{'search_default_group_team': 1}</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'graph', 'view_id': ref('maintenance_request_ttc_graph')}),
+            (0, 0, {'view_mode': 'pivot', 'view_id': ref('maintenance_request_ttc_pivot')})]"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No closed tickets yet</p>
+            <p>
+                Average number of days each team takes to close a ticket.
+                Only tickets that have reached a closing stage (with a Close
+                Date) are counted, so still-open tickets never skew the average.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_maintenance_request_ttc"
+        name="Time to Close"
+        parent="maintenance.menu_m_reports"
+        action="action_maintenance_request_ttc"
+        sequence="15"/>
 </odoo>
