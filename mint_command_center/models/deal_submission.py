@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import date as _date, timedelta
 
 from odoo import api, fields, models
@@ -8,6 +9,63 @@ from .deal_mixins import format_bundle_tiers_text
 from .ptl_deal import MASTER_CATEGORY_PATTERNS
 
 _logger = logging.getLogger(__name__)
+
+# Gram tolerance for matching a product's net weight against a selected
+# mint.discount.weight value. Mirrors mint_api_v2's mint.discount
+# (_WEIGHT_TOLERANCE_G = 0.01) so the picker/gate narrow the SAME products the
+# Dutchie Reward.Restrictions.Weight will match downstream.
+_WEIGHT_TOLERANCE_G = 0.01
+
+_WEIGHT_CHAR_RE = re.compile(r'([0-9]+(?:\.[0-9]+)?)')
+
+
+def _product_weight_g(template):
+    """Net weight in grams for a product.template, or None if unresolved.
+
+    Prefers x_weight_grams (Studio Float, populated by the Dutchie sync from
+    NetWeight), falling back to parsing the legacy x_weight Char ('14.0g',
+    '3.5 g'). x_weight_grams defaults to 0.0 on unsynced rows, so >0 is treated
+    as authoritative and 0/None/False drops through to the legacy Char. A
+    product with no resolvable positive weight returns None and is excluded
+    when a weight facet is active -- identical policy to mint.discount
+    inclusions, so the picker can never offer a product the published discount
+    would then filter out.
+    """
+    val = getattr(template, 'x_weight_grams', None)
+    if val not in (None, False):
+        try:
+            fv = float(val)
+            if fv > 0:
+                return fv
+        except (TypeError, ValueError):
+            pass
+    raw = getattr(template, 'x_weight', None)
+    if raw:
+        m = _WEIGHT_CHAR_RE.search(str(raw))
+        if m:
+            try:
+                fv = float(m.group(1))
+                if fv > 0:
+                    return fv
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def _weight_filter_templates(templates, weight_ids):
+    """Keep only templates whose net weight is within tolerance of any selected
+    mint.discount.weight value. No-op when weight_ids is empty."""
+    if not weight_ids:
+        return templates
+    targets = [w.value for w in weight_ids]
+    kept = templates.browse()
+    for tmpl in templates:
+        pw = _product_weight_g(tmpl)
+        if pw is None:
+            continue
+        if any(abs(pw - t) <= _WEIGHT_TOLERANCE_G for t in targets):
+            kept |= tmpl
+    return kept
 
 
 class DealSubmission(models.Model):
@@ -69,6 +127,21 @@ class DealSubmission(models.Model):
              'products and ignores the implicit brand+category widening. '
              'Leave empty to keep today\'s "all-of-brand-and-category" '
              'fallback. Picker is brand-scoped via the view domain.',
+    )
+    weight_ids = fields.Many2many(
+        'mint.discount.weight',
+        'mint_deal_submission_weight_rel',
+        'submission_id',
+        'weight_id',
+        string='Weights',
+        help='Restrict the deal to products of these net weights (grams). '
+             'When set, the Available Products picker and the convert-gate '
+             'match count keep ONLY products whose net weight '
+             '(product.template.x_weight_grams, synced from Dutchie NetWeight; '
+             'legacy x_weight Char as fallback) is within '
+             '0.01g of a selected value. Leave empty to ignore weight. '
+             'Same canonical catalog Dutchie uses for '
+             'Reward.Restrictions.Weight (0.5, 1.0, 3.5, 7.0, 14.0, 28.0 ...).',
     )
 
     # --- Vendor funding terms ---
@@ -529,7 +602,7 @@ class DealSubmission(models.Model):
         return self.product_category_ids | self.product_category_id
 
     @api.depends('brand_id', 'brand_ids', 'product_category_id',
-                 'product_category_ids', 'market_id', 'store_ids')
+                 'product_category_ids', 'market_id', 'store_ids', 'weight_ids')
     def _compute_available_product_ids(self):
         """Products matching every facet, for the Specific Products domain.
 
@@ -565,9 +638,10 @@ class DealSubmission(models.Model):
             if uuids:
                 domain.append(('x_dutchie_location_id', 'in', uuids))
             variants = Variant.search(domain)
-            sub.available_product_ids = [
-                (6, 0, variants.product_tmpl_id.ids)
-            ]
+            templates = _weight_filter_templates(
+                variants.product_tmpl_id, sub.weight_ids
+            )
+            sub.available_product_ids = [(6, 0, templates.ids)]
 
     def _resolve_publish_match_count(self):
         """Count the IN-STOCK products this deal's restriction set actually
@@ -576,6 +650,10 @@ class DealSubmission(models.Model):
 
         Mirrors the published restriction precedence: explicit Specific
         Products are authoritative; otherwise brand(s) ∩ picked categor(ies).
+        When a Weights facet is set, the result is further narrowed to
+        products whose net weight matches (same gram tolerance the Dutchie
+        Weight restriction uses), so the gate count reflects the Product ∩
+        Weight intersection the register will actually apply.
         Scoped to the requested stores (else the market's stores) and to
         on-hand stock (x_quantity_available > 0, the same Dutchie-synced
         signal the FE inventory cache is built from). Searched on
@@ -612,11 +690,14 @@ class DealSubmission(models.Model):
         if uuids:
             domain.append(('x_dutchie_location_id', 'in', uuids))
         variants = Variant.search(domain)
-        return len(set(variants.product_tmpl_id.ids))
+        templates = _weight_filter_templates(
+            variants.product_tmpl_id, self.weight_ids
+        )
+        return len(set(templates.ids))
 
     @api.depends('brand_id', 'brand_ids', 'product_ids',
                  'product_category_id', 'product_category_ids',
-                 'market_id', 'store_ids')
+                 'market_id', 'store_ids', 'weight_ids')
     def _compute_publish_match_count(self):
         """Surfaced on the form so the approver sees how many in-stock
         products the deal will hit BEFORE converting (the resolve-and-gate
