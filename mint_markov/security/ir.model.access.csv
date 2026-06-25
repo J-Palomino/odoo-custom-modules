@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_markov_snapshot_user,mint.markov.snapshot.user,model_mint_markov_snapshot,base.group_user,1,0,0,0
+access_mint_markov_snapshot_admin,mint.markov.snapshot.admin,model_mint_markov_snapshot,base.group_system,1,1,1,1
+access_mint_markov_transition_user,mint.markov.transition.user,model_mint_markov_transition,base.group_user,1,0,0,0
+access_mint_markov_transition_admin,mint.markov.transition.admin,model_mint_markov_transition,base.group_system,1,1,1,1
