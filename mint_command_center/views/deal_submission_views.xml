@@ -149,10 +149,18 @@
                                     <field name="day_count" readonly="1"/>
                                 </list>
                             </field>
-                            <group string="Legacy vendor preferences (read-only)"
-                                   class="o_mdcc_legacy_prefs">
-                                <field name="preferred_start_date" readonly="1"/>
-                                <field name="preferred_end_date" readonly="1"/>
+                            <!-- Legacy preferred dates are auto-promoted to the
+                                 Plot Windows above (_sync_legacy_window), so they
+                                 are no longer shown as a separate schedule input.
+                                 Kept invisible: the model fields are still the raw
+                                 vendor-form echo and feed the convert-button
+                                 visibility domains. preferred_days has no window
+                                 equivalent, so it stays visible for staff. -->
+                            <field name="preferred_start_date" invisible="1"/>
+                            <field name="preferred_end_date" invisible="1"/>
+                            <group string="Vendor preferred days"
+                                   class="o_mdcc_legacy_prefs"
+                                   invisible="not preferred_days">
                                 <field name="preferred_days" readonly="1"/>
                             </group>
                         </page>
