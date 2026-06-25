@@ -255,29 +255,44 @@ class DealSubmission(models.Model):
         store=True,
     )
 
-    @api.depends('window_ids.date_start', 'window_ids.date_end')
+    @staticmethod
+    def _format_date_range(start, end):
+        """Render one date range like 'Jun 1', 'Jun 1–7', or 'Jun 1–Jul 3'.
+        Returns '' when either bound is missing."""
+        if not start or not end:
+            return ''
+        if start == end:
+            return start.strftime('%b %-d')
+        same_year = start.year == end.year
+        same_month = same_year and start.month == end.month
+        if same_month:
+            return f"{start.strftime('%b %-d')}–{end.strftime('%-d')}"
+        return f"{start.strftime('%b %-d')}–{end.strftime('%b %-d')}"
+
+    @api.depends(
+        'window_ids.date_start', 'window_ids.date_end',
+        'preferred_start_date', 'preferred_end_date',
+    )
     def _compute_windows_summary(self):
         for rec in self:
-            parts = []
-            for w in rec.window_ids:
-                if not w.date_start or not w.date_end:
-                    continue
-                if w.date_start == w.date_end:
-                    parts.append(w.date_start.strftime('%b %-d'))
-                else:
-                    same_year = w.date_start.year == w.date_end.year
-                    same_month = same_year and w.date_start.month == w.date_end.month
-                    if same_month:
-                        parts.append(
-                            f"{w.date_start.strftime('%b %-d')}–"
-                            f"{w.date_end.strftime('%-d')}"
-                        )
-                    else:
-                        parts.append(
-                            f"{w.date_start.strftime('%b %-d')}–"
-                            f"{w.date_end.strftime('%b %-d')}"
-                        )
-            rec.windows_summary = ', '.join(parts) or False
+            if rec.window_ids:
+                # Structured Plot Windows are authoritative when present.
+                parts = [
+                    self._format_date_range(w.date_start, w.date_end)
+                    for w in rec.window_ids
+                ]
+                rec.windows_summary = ', '.join(p for p in parts if p) or False
+                continue
+            # Fallback: agents/public-form rows often fill the legacy
+            # preferred_start/end instead of building Plot Windows. Mirror
+            # those into the summary (as run_end_date and action_convert_to_deal
+            # already do) so the Schedule Summary is never blank for a
+            # legacy-scheduled deal. Flagged so reviewers know it came from
+            # vendor preferences, not confirmed windows.
+            start = rec.preferred_start_date or rec.preferred_end_date
+            end = rec.preferred_end_date or rec.preferred_start_date
+            legacy = self._format_date_range(start, end)
+            rec.windows_summary = f"{legacy} (vendor pref)" if legacy else False
 
     # --- State machine ---
     # Board lifecycle: New -> Under Review -> [Approved] -> Scheduled ->
