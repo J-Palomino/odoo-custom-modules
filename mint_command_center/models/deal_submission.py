@@ -218,6 +218,27 @@ class DealSubmission(models.Model):
         help='SKUs to exclude (one per line or comma-separated). Forwarded to '
              'the PTL deal (mint.ptl.deal.excluded_skus) on conversion.',
     )
+    excluded_category_ids = fields.Many2many(
+        'product.category',
+        'mint_deal_submission_excluded_categ_rel',
+        'submission_id',
+        'categ_id',
+        string='Excluded Categories',
+        help='Categories to exclude from this deal — mirrors the In-Stock '
+             'Categories inclusion picker. Forwarded to the PTL deal '
+             '(mint.ptl.deal.excluded_category_ids) on conversion.',
+    )
+    excluded_weight_keys = fields.Json(
+        string='Excluded Weights',
+        default=list,
+        help='Weights to exclude (canonical "<value>:<unit>" keys), mirroring '
+             'the inclusion Weights picker. Options come from '
+             'available_weight_options; like the inclusion picker it narrows '
+             'the Specific Products list (drops products of these sizes). '
+             'Forwarded to the PTL deal (mint.ptl.deal.excluded_weight_keys) '
+             'on conversion. Not emitted as a discount/Dutchie weight '
+             'restriction — Dutchie weight scope is inclusion-only.',
+    )
 
     # --- Targeting ---
     market_id = fields.Many2one(
@@ -590,7 +611,7 @@ class DealSubmission(models.Model):
 
     @api.depends('brand_id', 'brand_ids', 'product_category_id',
                  'product_category_ids', 'market_id', 'store_ids',
-                 'weight_keys')
+                 'weight_keys', 'excluded_weight_keys')
     def _compute_available_product_ids(self):
         """Products matching every facet, for the Specific Products domain,
         plus the discrete weight options that feed the weight picker.
@@ -679,6 +700,15 @@ class DealSubmission(models.Model):
             if picked:
                 tmpls = tmpls.filtered(
                     lambda t: _weight_key(*pmap[t.id]) in picked
+                )
+            # Drop the reviewer's excluded weights — symmetric with the
+            # inclusion filter above. Picker-only, exactly like weight_keys:
+            # neither weight pick is emitted as a discount weight restriction
+            # (Dutchie weight is inclusion-only via ptl.deal.weight_value).
+            excluded = set(sub.excluded_weight_keys or [])
+            if excluded:
+                tmpls = tmpls.filtered(
+                    lambda t: _weight_key(*pmap[t.id]) not in excluded
                 )
             # Sort by normalised magnitude; unparseable weights sort last.
             ordered = tmpls.sorted(
@@ -983,7 +1013,9 @@ class DealSubmission(models.Model):
             'campaign_id': self.campaign_id.id if self.campaign_id else False,
             'explicit_product_ids': [(6, 0, explicit_products.ids)] if explicit_products else False,
             'excluded_brand_ids': [(6, 0, self.excluded_brand_ids.ids)] if self.excluded_brand_ids else False,
+            'excluded_category_ids': [(6, 0, self.excluded_category_ids.ids)] if self.excluded_category_ids else False,
             'excluded_skus': self.excluded_skus or False,
+            'excluded_weight_keys': self.excluded_weight_keys or [],
         })
         self.write({
             'state': 'scheduled',
