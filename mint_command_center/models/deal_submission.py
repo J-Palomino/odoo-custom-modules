@@ -707,15 +707,49 @@ class DealSubmission(models.Model):
         if names:
             vals['product_category'] = ', '.join(names)
 
+    def _sync_legacy_window(self):
+        """Promote the legacy preferred_start/end into a structured Plot Window
+        for rows that have dates but no windows yet — chiefly public
+        vendor-form submissions, which collect a simple start/end/days. This
+        keeps window_ids the single source of truth across every intake path
+        (public form, agent/RPC, internal board). Idempotent: rows that
+        already have windows are left untouched. A reversed range (end before
+        start) is skipped rather than created, so a bad public-form entry can't
+        trip the window's date constraint and reject the submission. Mirrors
+        the one-time backfill in migrations/19.0.6.56.0 for the live path."""
+        Window = self.env['mint.deal.submission.window']
+        for rec in self:
+            if rec.window_ids:
+                continue
+            start = rec.preferred_start_date or rec.preferred_end_date
+            end = rec.preferred_end_date or rec.preferred_start_date
+            if not (start and end) or start > end:
+                continue
+            Window.create({
+                'submission_id': rec.id,
+                'sequence': 10,
+                'date_start': start,
+                'date_end': end,
+            })
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
             self._mirror_category_text(vals)
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        records._sync_legacy_window()
+        return records
 
     def write(self, vals):
         self._mirror_category_text(vals)
-        return super().write(vals)
+        res = super().write(vals)
+        # Re-promote when the legacy dates were just set/changed and the row
+        # still has no structured windows. Don't touch rows whose windows are
+        # being managed directly (window_ids in vals) — those are authoritative.
+        if ('preferred_start_date' in vals or 'preferred_end_date' in vals) \
+                and 'window_ids' not in vals:
+            self._sync_legacy_window()
+        return res
 
     @api.onchange('market_id')
     def _onchange_market_fill_stores(self):
