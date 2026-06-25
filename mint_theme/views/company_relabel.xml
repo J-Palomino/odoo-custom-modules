@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Relabel the multi-company selector from "Companies" to "Locations".
+        Each res.company is a Mint store branch, so "Locations" reads more
+        naturally than "Companies" in the navbar/menu and breadcrumbs.
+        Targets the core menu item and its window action title.
+    -->
+    <record id="base.action_res_company_form" model="ir.actions.act_window">
+        <field name="name">Locations</field>
+    </record>
+
+    <record id="base.menu_action_res_company_form" model="ir.ui.menu">
+        <field name="name">Locations</field>
+    </record>
+</odoo>
