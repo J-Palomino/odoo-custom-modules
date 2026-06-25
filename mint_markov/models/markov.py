@@ -13,6 +13,13 @@ _logger = logging.getLogger(__name__)
 # excluded. See mint.pos.order.order_source distribution.
 DEFAULT_ONLINE_SOURCES = ('Dutchie', 'Leafly', 'Weedmaps')
 
+# Terminal order states. Mirrors mint_pos_bridge._TERMINAL_STATES; a fulfilled
+# order can land in any SUCCESS_STATES value (not just 'completed'), so all of
+# them must count as a completion or P(completed) is understated and historical
+# terminal orders leave a permanent fake "in_progress" residual.
+SUCCESS_STATES = ('completed', 'picked_up', 'delivery_completed')
+CANCELLED_STATES = ('cancelled',)
+
 # Reused intent transition-matrix query (mirrors PostHog insight uoond6vO).
 INTENT_HOGQL = """
 WITH shopping AS (
@@ -172,8 +179,8 @@ class MintMarkovSnapshot(models.Model):
         if not total:
             return [], 0
 
-        completed = by_state.get('completed', 0)
-        cancelled = by_state.get('cancelled', 0)
+        completed = sum(by_state.get(s, 0) for s in SUCCESS_STATES)
+        cancelled = sum(by_state.get(s, 0) for s in CANCELLED_STATES)
         other = total - completed - cancelled
 
         out = []
@@ -198,11 +205,15 @@ class MintMarkovSnapshot(models.Model):
                 JOIN mint_pos_order o ON o.id = l.order_id
                 WHERE o.create_date >= %(since)s
                   AND o.order_source IN %(sources)s
+                  AND o.state IN %(success)s
                   AND l.return_date IS NOT NULL
                 """,
-                {'since': since, 'sources': tuple(sources)},
+                {'since': since, 'sources': tuple(sources),
+                 'success': SUCCESS_STATES},
             )
             returned = cr.fetchone()[0] or 0
+            # numerator and denominator now share the success population,
+            # so this is a true P(returned | completed) bounded at 1.0.
             add('completed', 'returned', returned, completed)
         except Exception:  # noqa: BLE001
             _logger.warning('mint_markov: returns sub-query skipped', exc_info=True)
@@ -273,4 +284,6 @@ class MintMarkovTransition(models.Model):
     to_state = fields.Char(required=True, index=True)
     observations = fields.Integer(help='Transition count behind the probability.')
     probability = fields.Float(
-        digits=(12, 4), help='P(to_state | from_state) within this phase.')
+        digits=(12, 4), aggregator='avg',
+        help='P(to_state | from_state) within this phase. Averaged (not summed) '
+             'in pivots so cells stay in [0,1] when multiple snapshots overlap.')

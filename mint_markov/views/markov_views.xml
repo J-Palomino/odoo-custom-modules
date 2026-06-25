@@ -24,6 +24,7 @@
                 <field name="from_state" type="row"/>
                 <field name="to_state" type="col"/>
                 <field name="probability" type="measure"/>
+                <field name="observations" type="measure"/>
             </pivot>
         </field>
     </record>
@@ -110,7 +111,9 @@
     </record>
 
     <!-- Menus -->
-    <menuitem id="menu_markov_root" name="Markov" sequence="95"/>
+    <!-- Restricted to admins for now (dev-stage); aggregates only, no PII. -->
+    <menuitem id="menu_markov_root" name="Markov" sequence="95"
+              groups="base.group_system"/>
     <menuitem id="menu_markov_snapshots" name="Snapshots"
               parent="menu_markov_root" action="action_markov_snapshot" sequence="10"/>
     <menuitem id="menu_markov_transitions" name="Transition Matrix"
