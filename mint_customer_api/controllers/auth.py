@@ -7,7 +7,7 @@ All endpoints return JSON, use auth='none' since we handle auth via JWT.
 import json
 import logging
 
-from odoo import http
+from odoo import http, fields
 from odoo.http import request, Response
 from odoo.exceptions import AccessDenied, UserError
 
@@ -189,8 +189,18 @@ class MintCustomerAuth(http.Controller):
         if existing:
             return error_response('An account with this email already exists', 409)
 
+        # Verification method: the FE sends 'id_scanned' when the IdScanner
+        # captured a document, else the typed DOB is self-attested.
+        method = (data.get('verificationMethod')
+                  or data.get('verification_method') or 'self_attested')
+        if method not in ('self_attested', 'id_scanned'):
+            method = 'self_attested'
+
         try:
-            user = self._create_web_user(email=email, name=name, phone=phone)
+            user = self._create_web_user(
+                email=email, name=name, phone=phone,
+                web_dob=dob, age_method=method, age_source='web_register',
+            )
             user.with_context(
                 no_reset_password=True,
                 tracking_disable=True,
@@ -340,7 +350,8 @@ class MintCustomerAuth(http.Controller):
         except Exception:
             return False
 
-    def _create_web_user(self, email, name, phone=''):
+    def _create_web_user(self, email, name, phone='', web_dob=None,
+                         age_method=None, age_source=None):
         """Create a fresh partner + portal user for a web-site signup.
 
         Always creates a NEW res.partner (doesn't reuse an existing one that
@@ -350,23 +361,38 @@ class MintCustomerAuth(http.Controller):
         Uses login = 'web:<email>' so web users never collide with internal
         user accounts (login = plain email) and sets is_web_customer=True
         so record rules restrict PII to privileged groups.
+
+        When ``web_dob`` (a datetime.date) is supplied, the partner is stamped
+        with the web-side age-verification ledger fields so the 21+ check is
+        provable and linkable to Dutchie. Callers without a DOB (e.g. Google
+        OAuth) leave the account age_verified=False on purpose.
         """
         main_company = request.env['res.company'].sudo().browse(1)
         login = _web_login(email)
 
-        partner = request.env['res.partner'].sudo().with_context(
-            mail_create_nosubscribe=True,
-            mail_create_nolog=True,
-            tracking_disable=True,
-            mail_notrack=True,
-        ).create({
+        partner_vals = {
             'name': name,
             'email': email,
             'phone': phone or False,
             'customer_rank': 1,
             'company_id': main_company.id,
             'is_web_customer': True,
-        })
+        }
+        if web_dob:
+            partner_vals.update({
+                'web_date_of_birth': web_dob,
+                'age_verified': True,
+                'age_verified_at': fields.Datetime.now(),
+                'age_verification_method': age_method or 'self_attested',
+                'age_verification_source': age_source or 'web_register',
+            })
+
+        partner = request.env['res.partner'].sudo().with_context(
+            mail_create_nosubscribe=True,
+            mail_create_nolog=True,
+            tracking_disable=True,
+            mail_notrack=True,
+        ).create(partner_vals)
         request.env.cr.flush()
 
         # Raw INSERT to bypass signup/mail hooks that conflict with the
