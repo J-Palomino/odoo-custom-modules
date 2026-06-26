@@ -189,12 +189,14 @@ class MintCustomerAuth(http.Controller):
         if existing:
             return error_response('An account with this email already exists', 409)
 
-        # Verification method: the FE sends 'id_scanned' when the IdScanner
-        # captured a document, else the typed DOB is self-attested.
-        method = (data.get('verificationMethod')
-                  or data.get('verification_method') or 'self_attested')
-        if method not in ('self_attested', 'id_scanned'):
-            method = 'self_attested'
+        # Age-verification method. The web DOB is self-attested. We deliberately
+        # do NOT honor a client-supplied 'id_scanned' claim: nothing server-side
+        # has validated that an ID document was actually scanned, so trusting the
+        # request body would overstate rigor in what is meant to be a provable
+        # compliance record. Until the IdScanner backend issues a server-
+        # verifiable scan token (then verify it here before upgrading the
+        # method), every web signup is recorded as self_attested.
+        method = 'self_attested'
 
         try:
             user = self._create_web_user(
