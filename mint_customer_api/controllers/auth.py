@@ -24,6 +24,37 @@ def _web_login(email):
     return WEB_LOGIN_PREFIX + (email or '').strip().lower()
 
 
+# Comma-separated email domains whose Google sign-ins are treated as
+# employees (mapped to a linked-but-separate customer contact). Stored as an
+# ir.config_parameter so ops can edit it without a code change.
+STAFF_DOMAINS_PARAM = 'mint_customer_api.staff_email_domains'
+_DEFAULT_STAFF_DOMAINS = 'brightroot.com,letsgomint.com,themintdispensary.com'
+
+
+def _staff_domains(env):
+    raw = env['ir.config_parameter'].sudo().get_param(
+        STAFF_DOMAINS_PARAM, _DEFAULT_STAFF_DOMAINS)
+    return {d.strip().lower() for d in (raw or '').split(',') if d.strip()}
+
+
+def _email_domain(email):
+    email = (email or '').strip().lower()
+    return email.rsplit('@', 1)[-1] if '@' in email else ''
+
+
+def _find_staff_user(env, email):
+    """The internal (share=False) staff user for this email, if any.
+
+    Staff logins are the plain email (web customers are 'web:'-prefixed), so a
+    company-domain sign-in resolves to the employee's internal user here.
+    """
+    return env['res.users'].sudo().search([
+        ('login', '=', (email or '').strip().lower()),
+        ('share', '=', False),
+        ('active', '=', True),
+    ], limit=1)
+
+
 def json_response(data, status=200):
     """JSON response with CORS headers."""
     return Response(
@@ -298,12 +329,27 @@ class MintCustomerAuth(http.Controller):
             limit=1,
         )
 
+        # Employee recognition: a company-domain Google sign-in maps to a
+        # linked-but-separate customer contact. Resolve the internal staff
+        # user (login = plain email, share=False) and stamp employee_user_id
+        # on the customer partner — the customer record stays distinct from
+        # the staff partner; this is only the join.
+        staff_user = None
+        if _email_domain(email) in _staff_domains(request.env):
+            staff_user = _find_staff_user(request.env, email)
+
         if not user:
             try:
-                user = self._create_web_user(email=email, name=name)
+                user = self._create_web_user(
+                    email=email, name=name,
+                    employee_user_id=staff_user.id if staff_user else None,
+                )
             except Exception as e:
                 _logger.exception('Google OAuth account creation failed: %s', e)
                 return error_response('Could not create account', 500)
+        elif staff_user and not user.partner_id.employee_user_id:
+            # Existing web customer we can now link to its staff user.
+            user.partner_id.sudo().write({'employee_user_id': staff_user.id})
 
         token = user._generate_jwt()
         return json_response({
@@ -340,7 +386,7 @@ class MintCustomerAuth(http.Controller):
         except Exception:
             return False
 
-    def _create_web_user(self, email, name, phone=''):
+    def _create_web_user(self, email, name, phone='', employee_user_id=None):
         """Create a fresh partner + portal user for a web-site signup.
 
         Always creates a NEW res.partner (doesn't reuse an existing one that
@@ -366,6 +412,7 @@ class MintCustomerAuth(http.Controller):
             'customer_rank': 1,
             'company_id': main_company.id,
             'is_web_customer': True,
+            'employee_user_id': employee_user_id or False,
         })
         request.env.cr.flush()
 
