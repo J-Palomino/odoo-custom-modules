@@ -214,11 +214,16 @@ class MintCustomerAuth(http.Controller):
             # source. Defensive hasattr so signup never breaks if a consent
             # module is absent; wrapped so a consent error can't fail the
             # account creation. Transactional email/SMS is exempt and unaffected.
+            def _opted_in(v):
+                # Strict coercion: a provable consent record must not opt a
+                # user in on a stringy "false"/"0" that is merely truthy.
+                return v is True or str(v).strip().lower() in ('true', '1', 'yes', 'on')
+
             try:
                 partner = user.partner_id.sudo()
-                if data.get('emailOptIn') and hasattr(partner, 'set_email_opt_in'):
+                if _opted_in(data.get('emailOptIn')) and hasattr(partner, 'set_email_opt_in'):
                     partner.set_email_opt_in(source='external_web')
-                if data.get('smsOptIn') and hasattr(partner, 'set_sms_opt_in'):
+                if _opted_in(data.get('smsOptIn')) and hasattr(partner, 'set_sms_opt_in'):
                     partner.set_sms_opt_in(source='external_web')
             except Exception:
                 _logger.exception('Consent capture failed for %s', email)
