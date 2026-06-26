@@ -208,6 +208,21 @@ class MintCustomerAuth(http.Controller):
                 tracking_disable=True,
             ).write({'password': password})
 
+            # Provable marketing consent (opt-in, OFF by default). Reuses the
+            # canonical consent ledgers: set_email_opt_in (mint_account) and
+            # set_sms_opt_in (mint_sms_telnyx), both of which stamp date +
+            # source. Defensive hasattr so signup never breaks if a consent
+            # module is absent; wrapped so a consent error can't fail the
+            # account creation. Transactional email/SMS is exempt and unaffected.
+            try:
+                partner = user.partner_id.sudo()
+                if data.get('emailOptIn') and hasattr(partner, 'set_email_opt_in'):
+                    partner.set_email_opt_in(source='external_web')
+                if data.get('smsOptIn') and hasattr(partner, 'set_sms_opt_in'):
+                    partner.set_sms_opt_in(source='external_web')
+            except Exception:
+                _logger.exception('Consent capture failed for %s', email)
+
             token = user._generate_jwt()
 
             return json_response({
