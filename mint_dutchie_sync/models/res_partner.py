@@ -58,6 +58,21 @@ class ResPartner(models.Model):
         string='Dutchie Purchases',
     )
 
+    # --- Onboarding: 21+ verification (Odoo #101243) ---
+    # Persisted at web signup from the ID scan. We store only the age-verified
+    # flag + DOB — NOT the license number/image (PII-minimization; ticket
+    # decision #3). The driver's-license fields from the earlier signup-v2
+    # attempt (0bd7454) were removed as Odoo-19 schema casualties and are
+    # intentionally not reintroduced.
+    x_age_verified = fields.Boolean(
+        string='Age Verified (21+)',
+        help='Set when a scanned government ID confirmed the customer is 21 or older.',
+    )
+    x_date_of_birth = fields.Date(
+        string='Date of Birth',
+        help='Customer DOB captured at web signup (ID scan), used for 21+ verification.',
+    )
+
     _dutchie_customer_id_unique = models.Constraint(
         'UNIQUE(x_dutchie_customer_id)',
         'Dutchie Customer ID must be unique.',
