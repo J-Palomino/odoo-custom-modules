@@ -2,3 +2,5 @@ id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_dutchie_purchase_admin,mint.dutchie.purchase.admin,model_mint_dutchie_purchase,base.group_system,1,1,1,1
 access_dutchie_purchase_user,mint.dutchie.purchase.user,model_mint_dutchie_purchase,base.group_user,1,0,0,0
 access_dutchie_purchase_portal,mint.dutchie.purchase.portal,model_mint_dutchie_purchase,base.group_portal,1,0,0,0
+access_dutchie_checkpoint_admin,mint.dutchie.sync.checkpoint.admin,model_mint_dutchie_sync_checkpoint,base.group_system,1,1,1,1
+access_dutchie_checkpoint_user,mint.dutchie.sync.checkpoint.user,model_mint_dutchie_sync_checkpoint,base.group_user,1,0,0,0
