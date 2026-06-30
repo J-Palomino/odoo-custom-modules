@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Transition: list / pivot / search -->
+    <record id="view_markov_transition_list" model="ir.ui.view">
+        <field name="name">mint.markov.transition.list</field>
+        <field name="model">mint.markov.transition</field>
+        <field name="arch" type="xml">
+            <list string="Transitions">
+                <field name="phase"/>
+                <field name="from_state"/>
+                <field name="to_state"/>
+                <field name="observations" sum="observations"/>
+                <field name="probability"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_markov_transition_pivot" model="ir.ui.view">
+        <field name="name">mint.markov.transition.pivot</field>
+        <field name="model">mint.markov.transition</field>
+        <field name="arch" type="xml">
+            <pivot string="Transition matrix">
+                <field name="from_state" type="row"/>
+                <field name="to_state" type="col"/>
+                <field name="probability" type="measure"/>
+                <field name="observations" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_markov_transition_search" model="ir.ui.view">
+        <field name="name">mint.markov.transition.search</field>
+        <field name="model">mint.markov.transition</field>
+        <field name="arch" type="xml">
+            <search string="Transitions">
+                <field name="from_state"/>
+                <field name="to_state"/>
+                <filter name="f_intent" string="Intent" domain="[('phase','=','intent')]"/>
+                <filter name="f_buying" string="Buying" domain="[('phase','=','buying')]"/>
+                <filter name="f_bridge" string="Bridge" domain="[('phase','=','bridge')]"/>
+                <filter name="g_phase" string="Phase" context="{'group_by':'phase'}"/>
+                <filter name="g_from" string="From state" context="{'group_by':'from_state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Snapshot: list / form -->
+    <record id="view_markov_snapshot_list" model="ir.ui.view">
+        <field name="name">mint.markov.snapshot.list</field>
+        <field name="model">mint.markov.snapshot</field>
+        <field name="arch" type="xml">
+            <list string="Markov snapshots">
+                <field name="collected_at"/>
+                <field name="name"/>
+                <field name="window_days"/>
+                <field name="intent_source_ok"/>
+                <field name="n_intent"/>
+                <field name="n_buying"/>
+                <field name="n_bridge"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_markov_snapshot_form" model="ir.ui.view">
+        <field name="name">mint.markov.snapshot.form</field>
+        <field name="model">mint.markov.snapshot</field>
+        <field name="arch" type="xml">
+            <form string="Markov snapshot">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="collected_at"/>
+                            <field name="window_days"/>
+                        </group>
+                        <group>
+                            <field name="intent_source_ok"/>
+                            <field name="n_intent"/>
+                            <field name="n_buying"/>
+                            <field name="n_bridge"/>
+                        </group>
+                    </group>
+                    <field name="note" readonly="1"/>
+                    <field name="transition_ids">
+                        <list>
+                            <field name="phase"/>
+                            <field name="from_state"/>
+                            <field name="to_state"/>
+                            <field name="observations"/>
+                            <field name="probability"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Actions -->
+    <record id="action_markov_snapshot" model="ir.actions.act_window">
+        <field name="name">Markov Snapshots</field>
+        <field name="res_model">mint.markov.snapshot</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_markov_transition" model="ir.actions.act_window">
+        <field name="name">Markov Transitions</field>
+        <field name="res_model">mint.markov.transition</field>
+        <field name="view_mode">pivot,list</field>
+        <field name="search_view_id" ref="view_markov_transition_search"/>
+    </record>
+
+    <!-- Menus -->
+    <!-- Restricted to admins for now (dev-stage); aggregates only, no PII. -->
+    <menuitem id="menu_markov_root" name="Markov" sequence="95"
+              groups="base.group_system"/>
+    <menuitem id="menu_markov_snapshots" name="Snapshots"
+              parent="menu_markov_root" action="action_markov_snapshot" sequence="10"/>
+    <menuitem id="menu_markov_transitions" name="Transition Matrix"
+              parent="menu_markov_root" action="action_markov_transition" sequence="20"/>
+
+</odoo>
