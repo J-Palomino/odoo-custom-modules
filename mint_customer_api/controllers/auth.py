@@ -35,7 +35,7 @@ def _enqueue_dutchie_create(payload):
             headers={'Content-Type': 'application/json', 'x-api-key': api_key},
             method='POST',
         )
-        urllib.request.urlopen(req, timeout=5)
+        urllib.request.urlopen(req, timeout=3)
     except Exception as e:
         _logger.warning('Dutchie enqueue failed for partner %s: %s',
                         payload.get('partner_id'), e)
@@ -233,19 +233,34 @@ class MintCustomerAuth(http.Controller):
         # the only ID-scan PII we persist (no license number/image; decision #3).
         now = fields.Datetime.now()
         SRC = 'external_web'
-        extra_vals = {'x_date_of_birth': dob, 'x_age_verified': True}
-        # Persist each opt-in only if the field exists on this instance. The
-        # email/call consent fields live in mint_account (deal-chatter branch),
-        # not yet merged to staging — guarding avoids an -u crash on a missing
-        # column and auto-activates the moment those fields land. sms_opt_in
-        # (mint_sms_telnyx) + the x_ fields (mint_dutchie_sync) are present here.
+        # Write only fields that exist on this instance. The x_ fields
+        # (mint_dutchie_sync) and email/call consent (mint_account, deal-chatter,
+        # not yet on staging) may be absent depending on deploy state, so every
+        # write is field-guarded to avoid an -u/runtime crash on a missing column.
         pf = request.env['res.partner']._fields
-        if email_opt and 'email_opt_in' in pf:
-            extra_vals.update(email_opt_in=True, email_opt_in_date=now, email_opt_in_source=SRC)
-        if call_opt and 'call_opt_in' in pf:
-            extra_vals.update(call_opt_in=True, call_opt_in_date=now, call_opt_in_source=SRC)
-        if sms_opt and 'sms_opt_in' in pf:
-            extra_vals.update(sms_opt_in=True, sms_opt_in_date=now, sms_opt_in_source=SRC)
+        extra_vals = {}
+        if 'x_date_of_birth' in pf:
+            extra_vals['x_date_of_birth'] = dob
+        if 'x_age_verified' in pf:
+            extra_vals['x_age_verified'] = True
+
+        def _consent_vals(channel):
+            # Build opt-in vals, including only columns that actually exist — a
+            # partial mint_account merge could define <chan>_opt_in without its
+            # _date/_source companions; guard each individually.
+            out = {}
+            for suffix, val in (('', True), ('_date', now), ('_source', SRC)):
+                f = '%s_opt_in%s' % (channel, suffix)
+                if f in pf:
+                    out[f] = val
+            return out
+        if email_opt:
+            extra_vals.update(_consent_vals('email'))
+        if call_opt:
+            extra_vals.update(_consent_vals('call'))
+        # SMS consent is granted post-create via set_sms_opt_in() so the partner
+        # also gets the SMS whitelist category tag — writing sms_opt_in directly
+        # would skip the tag and every text would be blocked by _check_sendable().
         home_store_id = int(data.get('home_store_id') or 0) or False
         if home_store_id and 'x_home_store_id' in pf:
             extra_vals['x_home_store_id'] = home_store_id
@@ -267,14 +282,25 @@ class MintCustomerAuth(http.Controller):
                 tracking_disable=True,
             ).write({'password': password})
 
-            # Convert the pre-account visitor lead into this contact (#101243).
+            # SMS consent via the helper so the partner also gets the whitelist
+            # category tag (a direct sms_opt_in write would skip it → texts blocked).
+            if sms_opt and 'sms_opt_in' in pf:
+                user.partner_id.set_sms_opt_in(source=SRC)
+
+            # Link the pre-account visitor lead to this new contact (#101243) —
+            # ONLY when the lead belongs to this email, so a registrant can't
+            # repoint an arbitrary lead's partner_id (IDOR).
             lead_id = int(data.get('lead_id') or 0) or False
             if lead_id:
                 lead = request.env['crm.lead'].sudo().browse(lead_id)
-                if lead.exists():
+                if lead.exists() and (lead.email_from or '').strip().lower() == email:
                     lead.write({'partner_id': user.partner_id.id, 'date_conversion': now})
 
-            # Fire-and-forget Dutchie customer create (v1 — #101243).
+            token = user._generate_jwt()
+
+            # Dutchie customer create — best-effort, fired LAST (after all
+            # fallible work) to shrink the window where it POSTs for a signup
+            # that then rolls back. Short timeout; never raises (see helper).
             _enqueue_dutchie_create({
                 'partner_id': user.partner_id.id,
                 'name': name,
@@ -284,8 +310,6 @@ class MintCustomerAuth(http.Controller):
                 'home_store_id': home_store_id or None,
                 'dutchie_location_id': (data.get('dutchie_location_id') or '').strip() or None,
             })
-
-            token = user._generate_jwt()
 
             return json_response({
                 'token': token,
@@ -538,7 +562,11 @@ class MintCustomerAuth(http.Controller):
         except (json.JSONDecodeError, TypeError):
             return error_response('Invalid JSON body')
         lead = request.env['crm.lead'].sudo().browse(lead_id)
-        if not lead.exists():
+        # Ownership binding: the caller must prove the lead is theirs by passing
+        # the matching email. Without this, any id could be archived (IDOR).
+        # 404 (not 403) so the endpoint doesn't confirm which ids exist.
+        email = (data.get('email') or '').strip().lower()
+        if not lead.exists() or not email or (lead.email_from or '').strip().lower() != email:
             return error_response('Lead not found', 404)
         from datetime import date
         dob_raw = (data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
@@ -549,11 +577,11 @@ class MintCustomerAuth(http.Controller):
         today = date.today()
         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         if age < 21:
-            vals = {'active': False}
-            reason = request.env['crm.lost.reason'].sudo().search([], limit=1)
-            if reason:
-                vals['lost_reason_id'] = reason.id
-            lead.write(vals)
+            # Disqualify with an age-specific lost reason (not an arbitrary one).
+            Reason = request.env['crm.lost.reason'].sudo()
+            reason = Reason.search([('name', '=', 'Under 21')], limit=1) \
+                or Reason.create({'name': 'Under 21'})
+            lead.write({'active': False, 'lost_reason_id': reason.id})
             return error_response('You must be 21 or older', 403)
         lead.write({'description': (lead.description or '')
                     + '\nage_verified=true dob=%s' % dob.isoformat()})
