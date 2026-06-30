@@ -574,10 +574,21 @@ class MintPosOrderAPI(http.Controller):
         if not company:
             return _error('Store not found', 404)
 
-        # Resolve customer
-        partner = _find_or_upgrade_partner(
-            data.get('customer'), origin='web_checkout',
-        )
+        # Resolve customer. An authenticated web checkout sends the
+        # JWT-verified partner_id — honor it directly so the order links to the
+        # SAME partner that /api/v1/pos/orders (list) filters on. Otherwise
+        # _find_or_upgrade_partner re-derives by phone/email and can attach the
+        # order to a different (e.g. Dutchie-imported) partner, leaving the
+        # signed-in customer's order history empty. Guests fall back to matching.
+        partner = None
+        auth_partner_id = data.get('partner_id')
+        if auth_partner_id:
+            partner = request.env['res.partner'].sudo().browse(
+                int(auth_partner_id)).exists()
+        if not partner:
+            partner = _find_or_upgrade_partner(
+                data.get('customer'), origin='web_checkout',
+            )
 
         # Map order type
         raw_type = data.get('order_type', 'pickup')
