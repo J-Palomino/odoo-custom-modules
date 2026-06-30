@@ -330,6 +330,59 @@ class MintCustomerAuth(http.Controller):
             return error_response('Unauthorized', 401)
         return None
 
+    @http.route('/api/v1/auth/verify-internal', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def verify_internal(self, **kw):
+        """Confirm an email maps to an ACTIVE INTERNAL Odoo user (share=False).
+
+        Used by the Mint Tools Chrome extension to gate the side panel to
+        internal staff only. Called server-to-server by the Astro edge
+        endpoint AFTER it has verified the Google id_token; trust on the Odoo
+        side relies on X-Api-Key (only the frontend server holds it). This is
+        the inverse of google_auth: here we REQUIRE share=False and never
+        create or mutate anything.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        api_key = request.httprequest.headers.get('X-Api-Key', '')
+        if not api_key or not self._verify_fe_api_key(api_key):
+            return error_response('Unauthorized', 401)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        email = (data.get('email') or '').strip().lower()
+        if not email:
+            return error_response('email is required')
+
+        # Internal employees have login = plain email and share=False. The
+        # web-customer accounts (share=True, login='web:<email>') are
+        # explicitly excluded, so a customer Google account can never unlock
+        # the extension.
+        user = request.env['res.users'].sudo().search(
+            [
+                ('login', '=', email),
+                ('share', '=', False),
+                ('active', '=', True),
+            ],
+            limit=1,
+        )
+        if not user:
+            return json_response({'ok': False}, status=403)
+
+        return json_response({
+            'ok': True,
+            'user': {
+                'id': user.id,
+                'name': user.partner_id.name or user.name,
+                'login': user.login,
+                'email': user.partner_id.email or user.login,
+            },
+        })
+
     def _verify_fe_api_key(self, key):
         """Verify X-Api-Key against Odoo's res.users.apikeys store."""
         try:
