@@ -402,10 +402,13 @@ class MaintenanceFormController(http.Controller):
 
         if equipment_id:
             equip = request.env["maintenance.equipment"].sudo().browse(equipment_id)
-            # Ensure equipment company matches the request company to avoid
-            # multi-company constraint violations.  Shared equipment (company_id
-            # = False) is safe; a mismatch must be resolved before linking.
-            if equip.company_id and filing_company_id and equip.company_id.id != filing_company_id:
+            # Match equipment against the selected STORE (not the parent filing
+            # company): store-scoped equipment belongs to the store the user
+            # picked, so it should still link even though the request is filed
+            # on the parent company for visibility. Shared equipment (company_id
+            # = False) always links. (maintenance.request has no check_company on
+            # equipment_id, so a store-equipment / parent-ticket pair is allowed.)
+            if equip.company_id and company_id and equip.company_id.id != int(company_id):
                 # Equipment belongs to a different company — clear it so
                 # the request is created without the equipment link.
                 _logger.info(
