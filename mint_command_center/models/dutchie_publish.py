@@ -850,6 +850,34 @@ class DealSubmissionDutchiePublish(models.Model):
                 results.append(f"{tag}: FAILED — {exc}")
                 self._deal_audit_log('publish_failed', lsp, owner_loc, discount,
                                      error=str(exc), location_restrictions=loc_ids)
+        # H1/M1 — retire orphans the current build no longer owns, so a
+        # re-publish never leaves an old discount firing next to the new one:
+        #   * legacy per-loc records (flat {locId:id} or nested {ext:{locId:id}})
+        #     superseded by the consolidated records just published above, and
+        #   * NEW-format spans (ext→int) dropped because the deal's schedule
+        #     shrank (the span is no longer built).
+        # Done AFTER the new records are live so there is never a coverage gap.
+        built_exts = {d['ExternalId'] for d in discounts}
+        retire = {}
+        if published and all(str(k).lstrip('-').isdigit() for k in published):
+            # whole flat-legacy {locId:id} map = one superseded span
+            retire = {f"lgm_{self.id}": published}
+        else:
+            for _ext, _rec in published.items():
+                if isinstance(_rec, dict):
+                    retire[_ext] = _rec                      # nested legacy per-loc → always superseded
+                elif (isinstance(_rec, int) and not isinstance(_rec, bool)
+                      and _ext not in built_exts):
+                    retire[_ext] = _rec                      # span no longer built → window-shrink orphan
+        if retire:
+            r_results, r_fail, retired = self._dutchie_retire_orphans(
+                retire, lsp, loc_ids, url, api_key,
+                template=discounts[0] if discounts else None)
+            results.extend(r_results)
+            failures += r_fail
+            for _ext in retired:
+                updated.pop(_ext, None)
+
         # Persist the {externalId: dutchieId} map for idempotent re-publish.
         if updated != published:
             self.sudo().write({'dutchie_publish_loc_ids': json.dumps(updated)})
@@ -860,6 +888,83 @@ class DealSubmissionDutchiePublish(models.Model):
                  + "\n".join(results)
                  + ("\nWarnings: " + "; ".join(warnings) if warnings else ''),
             message_type='comment')
+
+    def _dutchie_retire_orphans(self, retire, lsp, loc_ids, url, api_key, template):
+        """POST IsDeleted=True for previously-published Dutchie discounts the
+        current build no longer owns — legacy per-loc records superseded by the
+        consolidated record, and spans dropped when a deal's schedule shrank.
+
+        LIVE-only: called from _dutchie_publish_after_convert AFTER the new
+        records are live, so there is never a coverage gap. `retire` is a
+        {ExternalId: int | {locId:id}} subset of dutchie_publish_loc_ids;
+        `template` is a freshly-built span used as the Discount payload base
+        (Dutchie's update-discount-item needs a full object, not bare {Id}).
+        Returns (results, failures, retired_ext_ids).
+        """
+        self.ensure_one()
+        results, failures, retired = [], 0, set()
+        if not template:
+            results.append("orphan-retire SKIPPED — no built span to template the IsDeleted payload")
+            return results, failures, retired
+
+        def _post(discount, post_loc, tag):
+            payload = json.dumps({'locId': int(post_loc), 'lspId': lsp, 'discount': discount}).encode()
+            req = urllib.request.Request(
+                f"{url}/api/admin/discounts", data=payload,
+                headers={'Content-Type': 'application/json', 'x-api-key': api_key},
+                method='POST')
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    raw = resp.read().decode(errors='replace')
+                    ok = 200 <= resp.status < 300
+                    results.append(f"retire {tag}: HTTP {resp.status} {raw[:120]}")
+                    self._deal_audit_log('retire' if ok else 'retire_failed', lsp,
+                                         int(post_loc), discount, http_status=resp.status,
+                                         response=raw[:120])
+                    return ok
+            except Exception as exc:
+                results.append(f"retire {tag}: FAILED — {exc}")
+                self._deal_audit_log('retire_failed', lsp, int(post_loc), discount, error=str(exc))
+                return False
+
+        for ext, recorded in retire.items():
+            base = dict(template)
+            base['ExternalId'] = ext
+            base['IsDeleted'] = True
+            if isinstance(base.get('DiscountMenuDisplayDetails'), dict):
+                base['DiscountMenuDisplayDetails'] = dict(base['DiscountMenuDisplayDetails'])
+            # NEW consolidated id → one IsDeleted POST under the owning loc.
+            if isinstance(recorded, int) and not isinstance(recorded, bool):
+                if not recorded or not loc_ids:
+                    continue
+                d = dict(base)
+                d['Id'] = recorded
+                d['LocationRestrictions'] = loc_ids
+                if isinstance(d.get('DiscountMenuDisplayDetails'), dict):
+                    d['DiscountMenuDisplayDetails']['DiscountId'] = recorded
+                if _post(d, loc_ids[0], f"{ext} (consolidated {recorded})"):
+                    retired.add(ext)
+                else:
+                    failures += 1
+            # LEGACY per-loc {locId: id} → IsDeleted each separately.
+            elif isinstance(recorded, dict):
+                ok_all = True
+                for loc_id, did in recorded.items():
+                    existing = int(did or 0)
+                    if not existing:
+                        continue
+                    d = dict(base)
+                    d['Id'] = existing
+                    d['LocationRestrictions'] = []
+                    if isinstance(d.get('DiscountMenuDisplayDetails'), dict):
+                        d['DiscountMenuDisplayDetails']['DiscountId'] = existing
+                    if not _post(d, int(loc_id), f"{ext} LocId {loc_id}"):
+                        ok_all = False
+                if ok_all:
+                    retired.add(ext)
+                else:
+                    failures += 1
+        return results, failures, retired
 
     def _dutchie_deactivate(self):
         """Mark this submission's published Dutchie discounts deleted (IsDeleted=True).
