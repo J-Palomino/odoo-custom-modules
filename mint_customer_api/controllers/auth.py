@@ -4,6 +4,8 @@ Customer authentication endpoints for MintDeals frontend.
 
 All endpoints return JSON, use auth='none' since we handle auth via JWT.
 """
+import hashlib
+import hmac
 import json
 import logging
 
@@ -12,6 +14,20 @@ from odoo.http import request, Response
 from odoo.exceptions import AccessDenied, UserError
 
 _logger = logging.getLogger(__name__)
+
+
+def _lead_token(lead_id):
+    """Server-issued capability token binding a caller to a specific crm.lead.
+
+    HMAC of the lead id under the instance's database.secret — unguessable, so
+    holding a lead_id alone (or knowing the signup email) is NOT enough to verify
+    or convert it; the caller must present the token returned by create_lead.
+    No new schema needed.
+    """
+    secret = (request.env['ir.config_parameter'].sudo()
+              .get_param('database.secret', '') or '')
+    return hmac.new(secret.encode('utf-8'), str(lead_id).encode('utf-8'),
+                    hashlib.sha256).hexdigest()
 
 
 def _enqueue_dutchie_create(payload):
@@ -209,24 +225,34 @@ class MintCustomerAuth(http.Controller):
 
         # --- Per-channel consent + employee gating (Odoo #101243) ---
         # Employees (by configurable email domain) must opt in to all three
-        # channels; everyone else must opt in to at least one. Enforced here
-        # server-side so a manipulated client can't bypass it.
+        # channels; everyone else to at least one. Gate on PERSISTABLE consents
+        # (field must exist on this instance) so we never return 201 for a signup
+        # whose requested consent couldn't actually be recorded (silent-drop bug).
+        # Enforced server-side so a manipulated client can't bypass it.
         email_opt = bool(data.get('email_opt_in'))
         call_opt = bool(data.get('call_opt_in'))
         sms_opt = bool(data.get('sms_opt_in'))
+        pf = request.env['res.partner']._fields
+        email_can = 'email_opt_in' in pf
+        call_can = 'call_opt_in' in pf
+        sms_can = 'sms_opt_in' in pf
         ICP = request.env['ir.config_parameter'].sudo()
         emp_domains = [x.strip().lower() for x in
                        (ICP.get_param('mint.employee_email_domains', '') or '').split(',')
                        if x.strip()]
         domain = email.split('@')[-1] if '@' in email else ''
         is_employee = domain in emp_domains
-        consents = [email_opt, call_opt, sms_opt]
-        if is_employee and not all(consents):
+        persistable = [email_opt and email_can, call_opt and call_can, sms_opt and sms_can]
+        if is_employee:
+            if not (email_opt and call_opt and sms_opt):
+                return error_response(
+                    'Employees must opt in to text, call, and email to create an account', 403)
+            if not (email_can and call_can and sms_can):
+                return error_response(
+                    'Consent channels are not all available on this environment yet', 503)
+        elif not any(persistable):
             return error_response(
-                'Employees must opt in to text, call, and email to create an account', 403)
-        if not is_employee and not any(consents):
-            return error_response(
-                'Please opt in to at least one of text, call, or email', 400)
+                'Please opt in to at least one available channel (text, call, or email)', 400)
 
         # Build the consent + 21+ partner values. opt_in source must be a valid
         # selection — 'external_web' (Customer Web Form). DOB + age_verified are
@@ -237,7 +263,6 @@ class MintCustomerAuth(http.Controller):
         # (mint_dutchie_sync) and email/call consent (mint_account, deal-chatter,
         # not yet on staging) may be absent depending on deploy state, so every
         # write is field-guarded to avoid an -u/runtime crash on a missing column.
-        pf = request.env['res.partner']._fields
         extra_vals = {}
         if 'x_date_of_birth' in pf:
             extra_vals['x_date_of_birth'] = dob
@@ -284,16 +309,25 @@ class MintCustomerAuth(http.Controller):
 
             # SMS consent via the helper so the partner also gets the whitelist
             # category tag (a direct sms_opt_in write would skip it → texts blocked).
-            if sms_opt and 'sms_opt_in' in pf:
-                user.partner_id.set_sms_opt_in(source=SRC)
+            # Isolated try + tracking_disable: a whitelist/category hiccup must
+            # degrade to "no SMS consent", never roll back the whole signup.
+            if sms_opt and sms_can:
+                try:
+                    user.partner_id.with_context(
+                        tracking_disable=True, mail_notrack=True
+                    ).set_sms_opt_in(source=SRC)
+                except Exception as e:
+                    _logger.warning('set_sms_opt_in failed for partner %s: %s',
+                                    user.partner_id.id, e)
 
             # Link the pre-account visitor lead to this new contact (#101243) —
             # ONLY when the lead belongs to this email, so a registrant can't
             # repoint an arbitrary lead's partner_id (IDOR).
             lead_id = int(data.get('lead_id') or 0) or False
-            if lead_id:
+            lead_token = (data.get('lead_token') or '').strip()
+            if lead_id and lead_token:
                 lead = request.env['crm.lead'].sudo().browse(lead_id)
-                if lead.exists() and (lead.email_from or '').strip().lower() == email:
+                if lead.exists() and hmac.compare_digest(lead_token, _lead_token(lead_id)):
                     lead.write({'partner_id': user.partner_id.id, 'date_conversion': now})
 
             token = user._generate_jwt()
@@ -545,7 +579,8 @@ class MintCustomerAuth(http.Controller):
                            'consent_proof: ts=%s source=external_web ip=%s ua=%s'
                            % (fields.Datetime.now(), ip, ua)),
         })
-        return json_response({'lead_id': lead.id}, status=201)
+        return json_response(
+            {'lead_id': lead.id, 'lead_token': _lead_token(lead.id)}, status=201)
 
     @http.route('/api/v1/leads/<int:lead_id>/verify', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
@@ -562,11 +597,12 @@ class MintCustomerAuth(http.Controller):
         except (json.JSONDecodeError, TypeError):
             return error_response('Invalid JSON body')
         lead = request.env['crm.lead'].sudo().browse(lead_id)
-        # Ownership binding: the caller must prove the lead is theirs by passing
-        # the matching email. Without this, any id could be archived (IDOR).
-        # 404 (not 403) so the endpoint doesn't confirm which ids exist.
-        email = (data.get('email') or '').strip().lower()
-        if not lead.exists() or not email or (lead.email_from or '').strip().lower() != email:
+        # Ownership binding: the caller must present the server-issued token from
+        # create_lead (HMAC of the id). email_from is guessable, so a token — not
+        # the email — is the authorization boundary, closing the IDOR. 404 (not
+        # 403) on mismatch so the endpoint doesn't confirm which ids exist.
+        token = (data.get('lead_token') or '').strip()
+        if not lead.exists() or not token or not hmac.compare_digest(token, _lead_token(lead_id)):
             return error_response('Lead not found', 404)
         from datetime import date
         dob_raw = (data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
