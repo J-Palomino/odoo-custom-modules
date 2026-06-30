@@ -235,7 +235,7 @@
 
     <menuitem id="menu_mint_embed_root"
               name="Embeds"
-              parent="mint_banner.menu_mint_marketing_cms"
+              parent="mint_banner.menu_mint_banner_root"
               sequence="30"/>
 
     <menuitem id="menu_mint_embed_config"
