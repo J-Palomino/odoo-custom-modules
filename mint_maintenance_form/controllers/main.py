@@ -328,13 +328,22 @@ class MaintenanceFormController(http.Controller):
             ctx["error"] = "Please select a category."
             return request.render(template, ctx)
 
-        # Resolve store name
+        # Resolve store name + the company the ticket is FILED under.
+        # The selected company_id is the specific store (a sub-company). We keep
+        # that store name in the title/description, but file the ticket on the
+        # PARENT (group) company so the requester — who typically only has access
+        # to the parent company — can actually see their own ticket. Filing on the
+        # store sub-company made requesters lose visibility of their tickets via
+        # the multi-company record rules.
         company_id = post.get("company_id")
         store_name = ""
+        filing_company_id = int(company_id) if company_id else False
         if company_id:
             company = request.env["res.company"].sudo().browse(int(company_id))
             if company.exists():
                 store_name = company.name
+                if company.parent_id:
+                    filing_company_id = company.parent_id.id
 
         # Resolve equipment
         equipment_id, equipment_label = self._resolve_equipment(
@@ -388,15 +397,15 @@ class MaintenanceFormController(http.Controller):
             "email_cc": submitter_email,
         }
 
-        if company_id:
-            vals["company_id"] = int(company_id)
+        if filing_company_id:
+            vals["company_id"] = filing_company_id
 
         if equipment_id:
             equip = request.env["maintenance.equipment"].sudo().browse(equipment_id)
             # Ensure equipment company matches the request company to avoid
             # multi-company constraint violations.  Shared equipment (company_id
             # = False) is safe; a mismatch must be resolved before linking.
-            if equip.company_id and company_id and equip.company_id.id != int(company_id):
+            if equip.company_id and filing_company_id and equip.company_id.id != filing_company_id:
                 # Equipment belongs to a different company — clear it so
                 # the request is created without the equipment link.
                 _logger.info(
