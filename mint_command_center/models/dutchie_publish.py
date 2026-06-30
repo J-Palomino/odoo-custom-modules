@@ -875,8 +875,13 @@ class DealSubmissionDutchiePublish(models.Model):
                 template=discounts[0] if discounts else None)
             results.extend(r_results)
             failures += r_fail
+            # Only drop retired exts the new build does NOT own. The flat-legacy
+            # case retires under the synthetic key lgm_<id>, which collides with
+            # the consolidated span's ExternalId just (re)created — popping it
+            # would discard the new record's id and re-duplicate next publish.
             for _ext in retired:
-                updated.pop(_ext, None)
+                if _ext not in built_exts:
+                    updated.pop(_ext, None)
 
         # Persist the {externalId: dutchieId} map for idempotent re-publish.
         if updated != published:
