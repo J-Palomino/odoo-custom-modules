@@ -265,10 +265,13 @@
                             <field name="display_text" readonly="1"/>
                             <field name="format_key" readonly="1"
                                    help="Blank until the matching product has a Product Line set"/>
-                            <label for="weight_value" string="Weight"/>
+                            <field name="weight_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"
+                                   placeholder="Net weights (grams) — drives the Dutchie Weight restriction"/>
+                            <label for="weight_value" string="Weight (derived)"/>
                             <div class="o_row">
-                                <field name="weight_value" nolabel="1"/>
-                                <field name="weight_unit" nolabel="1"/>
+                                <field name="weight_value" nolabel="1" readonly="1"/>
+                                <field name="weight_unit" nolabel="1" readonly="1"/>
                             </div>
                             <field name="is_featured"/>
                             <field name="is_available_online" widget="boolean_toggle"/>

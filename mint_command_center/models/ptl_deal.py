@@ -323,6 +323,20 @@ class PtlDeal(models.Model):
              'discount restricts at the SKU level. Empty = use today\'s '
              'brand+category+excluded_skus fallback.',
     )
+    weight_ids = fields.Many2many(
+        'mint.discount.weight',
+        'mint_ptl_deal_weight_rel',
+        'deal_id',
+        'weight_id',
+        string='Weights',
+        tracking=True,
+        help='Net weights (grams) this deal restricts to, by ID — carried '
+             'from the submission and forwarded to mint.discount.weight_ids, '
+             'which builds the Dutchie Reward.Restrictions.Weight payload. '
+             'This is the single source of truth for the deal weight: '
+             'weight_value / weight_unit are derived from the smallest '
+             'selected value (no name parsing).',
+    )
 
     # --- Validity range ---
     date_start = fields.Date(
@@ -584,14 +598,22 @@ class PtlDeal(models.Model):
         self.sudo().store_ids = [(6, 0, stores.ids)]
         return True
 
-    def _weight_source(self):
-        return (self.name, self.sales_details)
-
-    @api.depends('name', 'sales_details')
+    @api.depends('weight_ids')
     def _compute_weight(self):
-        # Source fields + deps are PTL-specific; the parse/assign body lives in
-        # mint.weight.parsed.mixin.
-        return super()._compute_weight()
+        # ID-based, NOT regex: the deal weight is whatever weight_ids the
+        # operator selected (mint.discount.weight stores grams). We override the
+        # mixin's name-parsing compute entirely so a deal's weight can never be
+        # silently mis-derived from its title. weight_value/weight_unit are kept
+        # as derived scalars for format_key, promos_api, and the PTL calendar;
+        # the smallest selected value wins when more than one weight is picked.
+        for rec in self:
+            weights = rec.weight_ids.sorted('value')
+            if weights:
+                rec.weight_value = weights[0].value
+                rec.weight_unit = 'g'
+            else:
+                rec.weight_value = 0.0
+                rec.weight_unit = False
 
     @api.depends('name')
     def _compute_brand_id(self):

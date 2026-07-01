@@ -1,5 +1,4 @@
 import logging
-import re
 from datetime import date as _date, timedelta
 
 from odoo import api, fields, models
@@ -16,18 +15,15 @@ _logger = logging.getLogger(__name__)
 # Dutchie Reward.Restrictions.Weight will match downstream.
 _WEIGHT_TOLERANCE_G = 0.01
 
-_WEIGHT_CHAR_RE = re.compile(r'([0-9]+(?:\.[0-9]+)?)')
-
 
 def _product_weight_g(template):
     """Net weight in grams for a product.template, or None if unresolved.
 
-    Prefers x_weight_grams (Studio Float, populated by the Dutchie sync from
-    NetWeight), falling back to parsing the legacy x_weight Char ('14.0g',
-    '3.5 g'). x_weight_grams defaults to 0.0 on unsynced rows, so >0 is treated
-    as authoritative and 0/None/False drops through to the legacy Char. A
-    product with no resolvable positive weight returns None and is excluded
-    when a weight facet is active -- identical policy to mint.discount
+    ID/value matching only -- reads the numeric x_weight_grams (Studio Float,
+    populated by the Dutchie sync from NetWeight). No name/Char parsing: the
+    field defaults to 0.0 on unsynced rows, so >0 is authoritative and
+    0/None/False resolves to None. A product with no positive synced weight is
+    excluded when a weight facet is active -- identical policy to mint.discount
     inclusions, so the picker can never offer a product the published discount
     would then filter out.
     """
@@ -39,16 +35,6 @@ def _product_weight_g(template):
                 return fv
         except (TypeError, ValueError):
             pass
-    raw = getattr(template, 'x_weight', None)
-    if raw:
-        m = _WEIGHT_CHAR_RE.search(str(raw))
-        if m:
-            try:
-                fv = float(m.group(1))
-                if fv > 0:
-                    return fv
-            except (TypeError, ValueError):
-                pass
     return None
 
 
@@ -143,6 +129,27 @@ class DealSubmission(models.Model):
              'Same canonical catalog Dutchie uses for '
              'Reward.Restrictions.Weight (0.5, 1.0, 3.5, 7.0, 14.0, 28.0 ...).',
     )
+    weight_value = fields.Float(
+        string='Weight',
+        compute='_compute_weight_scalar',
+        store=True,
+        help='Smallest selected weight (grams), derived from Weights. Kept as '
+             'a scalar for the promos conflict API; the picker (weight_ids) is '
+             'the source of truth — never parsed from the deal name.',
+    )
+    weight_unit = fields.Char(
+        string='Weight Unit',
+        compute='_compute_weight_scalar',
+        store=True,
+        help="Always 'g' when a weight is selected (the catalog is in grams).",
+    )
+
+    @api.depends('weight_ids')
+    def _compute_weight_scalar(self):
+        for sub in self:
+            weights = sub.weight_ids.sorted('value')
+            sub.weight_value = weights[0].value if weights else 0.0
+            sub.weight_unit = 'g' if weights else False
 
     # --- Vendor funding terms ---
     # vendor_funding_amount / vendor_funding_percent / currency_id come from
@@ -911,6 +918,7 @@ class DealSubmission(models.Model):
             'vendor_funding_percent': self.vendor_funding_percent,
             'campaign_id': self.campaign_id.id if self.campaign_id else False,
             'explicit_product_ids': [(6, 0, explicit_products.ids)] if explicit_products else False,
+            'weight_ids': [(6, 0, self.weight_ids.ids)] if self.weight_ids else False,
             'excluded_brand_ids': [(6, 0, self.excluded_brand_ids.ids)] if self.excluded_brand_ids else False,
             'excluded_skus': self.excluded_skus or False,
         })

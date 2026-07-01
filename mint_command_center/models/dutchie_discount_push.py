@@ -541,33 +541,23 @@ class PtlDayDutchiePush(models.Model):
     # Conversion factors to grams (Dutchie Reward.Restrictions.Weight.RestrictionIds
     # expects gram floats, per __tests__/fixtures/discount-381839.json + test at
     # discountSyncTransform.test.js:687 (RestrictionIds: [1.0] = 1 gram).
-    WEIGHT_UNIT_TO_GRAMS = {
-        'g':  1.0,
-        'mg': 0.001,
-        'oz': 28.3495,
-        # 'ct' = count, NOT a weight — produces no Weight restriction
-    }
 
     def _resolve_weight_restriction(self, discount):
         """{IsExclusion, RestrictionIds:[<gram_float>]} for Reward.Restrictions.Weight.
 
-        Reads weight_value + weight_unit from the linked mint.ptl.deal (the
-        weight feature is on ptl.deal, not mint.discount — landed in commit
-        bdeb5d1). Returns empty default when unit is 'ct' (count, not weight)
-        or fields are unpopulated.
+        ID-based only: reads mint.discount.weight_ids (each a gram value in the
+        canonical mint.discount.weight catalog) — NO name/regex parsing. The
+        catalog stores grams already, so the RestrictionIds are the selected
+        values de-duplicated and rounded to 4 decimals (Dutchie's canonical
+        precision, avoids 0.99999999 vs 1.0 drift). Empty weight_ids → no
+        Weight restriction.
         """
-        deal = discount.ptl_deal_id
-        if not deal:
-            return {'IsExclusion': False, 'RestrictionIds': []}
-        value = getattr(deal, 'weight_value', 0) or 0
-        unit = getattr(deal, 'weight_unit', '') or ''
-        if not value or unit not in self.WEIGHT_UNIT_TO_GRAMS:
-            return {'IsExclusion': False, 'RestrictionIds': []}
-        grams = float(value) * self.WEIGHT_UNIT_TO_GRAMS[unit]
-        # Dutchie expects float grams with reasonable precision (3.5, 7.0, etc.)
-        # Round to 4 decimals to avoid 0.99999999 vs 1.0 mismatches with their
-        # canonical enum.
-        return {'IsExclusion': False, 'RestrictionIds': [round(grams, 4)]}
+        ids = sorted({
+            round(float(w.value), 4)
+            for w in discount.weight_ids
+            if w.value and w.value > 0
+        })
+        return {'IsExclusion': False, 'RestrictionIds': ids}
 
     def _resolve_dutchie_amount(self, discount):
         """Compute the Amount Dutchie expects for this discount's Reward.
