@@ -13,5 +13,6 @@ from . import mail_message
 from . import mail_thread
 from . import project_task
 from . import project_project
+from . import res_partner
 from . import daisy_orchestrator_command
 from . import res_config_settings

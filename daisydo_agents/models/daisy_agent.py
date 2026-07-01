@@ -37,6 +37,13 @@ class DaisyAgent(models.Model):
         string="Reports To",
         help="Employee this agent assists. Set by the create-agent-for-user wizard.",
     )
+    x_private_owner_id = fields.Many2one(
+        "res.users",
+        string="Private To (owner)",
+        help="When set, this agent is PRIVATE: it only auto-replies to this "
+             "user's messages, and it is hidden from Discuss @mention / new-DM "
+             "suggestions for everyone else. Leave empty for a normal shared agent.",
+    )
     active = fields.Boolean(default=True)
 
     # --- MCP credentials (set by create-agent-for-user wizard) ---

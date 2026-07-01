@@ -53,6 +53,7 @@
                             <field name="code"/>
                             <field name="email"/>
                             <field name="manager_id"/>
+                            <field name="x_private_owner_id"/>
                             <field name="mail_project_id" invisible="state == 'draft'"/>
                             <field name="user_id" readonly="1"/>
                         </group>
