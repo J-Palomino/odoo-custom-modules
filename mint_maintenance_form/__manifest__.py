@@ -1,6 +1,6 @@
 {
     "name": "Mint Service Request Forms",
-    "version": "19.0.9.5.0",
+    "version": "19.0.9.6.0",
     "category": "Maintenance",
     "summary": "Website forms for Mint Technology, Facilities, Graphics, and Vendor service requests",
     "author": "Mint Cannabis",
