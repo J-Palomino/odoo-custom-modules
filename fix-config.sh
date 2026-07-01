@@ -712,5 +712,46 @@ PYREDIS
     fi
 fi
 
+# ── MR#680: pre-create res.partner email/call consent columns ───────────────
+# Self-contained block with its OWN connection on the correct DB port
+# (ODOO_DB_PORT=5432). The older PYCLEAN/PYFIX blocks connect via $PORT (=8080,
+# the web port) and fail "Connection refused" — and they also run dormant
+# destructive ops, so we do NOT reuse them. -u is unreliable on this prod and
+# broke res.partner.create twice; this raw idempotent ALTER (runs every boot,
+# before Odoo) guarantees the column exists before the mint_account field code
+# loads. Field DEFINITIONS live in mint_account (phase 2).
+echo "=== MR#680: pre-creating res.partner consent columns ==="
+python3 << 'PYCONSENT' 2>&1
+import os, sys
+try:
+    import psycopg2
+except ImportError:
+    print("psycopg2 not available, skipping consent column pre-create"); sys.exit(0)
+host = os.environ.get("ODOO_DB_HOST") or os.environ.get("HOST", "localhost")
+port = os.environ.get("ODOO_DB_PORT") or "5432"
+user = os.environ.get("ODOO_DB_USER") or os.environ.get("USER", "odoo")
+password = os.environ.get("ODOO_DB_PASSWORD") or os.environ.get("PASSWORD", "")
+dbname = os.environ.get("ODOO_DB_NAME", "odoo")
+try:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+    conn.autocommit = True
+    cur = conn.cursor()
+    for col, coltype in (
+        ('email_opt_in', 'boolean'), ('email_opt_in_date', 'timestamp'), ('email_opt_in_source', 'varchar'),
+        ('call_opt_in', 'boolean'), ('call_opt_in_date', 'timestamp'), ('call_opt_in_source', 'varchar'),
+    ):
+        cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name='res_partner' AND column_name=%s", (col,))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE res_partner ADD COLUMN {col} {coltype}")
+            print(f"=== Pre-created column res_partner.{col} ===")
+        else:
+            print(f"=== res_partner.{col} already exists ===")
+    cur.close()
+    conn.close()
+    print("=== MR#680 consent columns OK ===")
+except Exception as e:
+    print(f"=== WARNING: consent column pre-create failed: {e} ===")
+PYCONSENT
+
 # Execute the original entrypoint
 exec /entrypoint.sh "$@" $EXTRA_ARGS
