@@ -8,6 +8,27 @@ _logger = logging.getLogger(__name__)
 class MailThread(models.AbstractModel):
     _inherit = "mail.thread"
 
+    def _daisy_requester_context(self, message):
+        """One-line identity of the person the agent is replying to (the active
+        user), so the agent can address them by name and act on their behalf.
+        Inherited by discuss.channel too. Returns '' when the author is unknown."""
+        partner = message.author_id
+        if not partner:
+            return ""
+        user = partner.user_ids[:1]
+        who = partner.name or (user.name if user else "") or "a user"
+        login = (user.login if user else "") or partner.email or ""
+        ctx = f"[You are assisting: {who}"
+        if login:
+            ctx += f" <{login}>"
+        if user:
+            ctx += f" — internal Odoo user (company: {user.company_id.name or 'n/a'})"
+        else:
+            ctx += " — external contact (no Odoo login)"
+        ctx += ". Address them by name and act on their behalf, within what they "
+        ctx += "are permitted to see.]\n"
+        return ctx
+
     def _message_post_after_hook(self, message, msg_vals):
         """Auto-respond with AI when a document follower is an agent."""
         result = super()._message_post_after_hook(message, msg_vals)
@@ -77,6 +98,12 @@ class MailThread(models.AbstractModel):
         if doc_desc:
             context_prefix += f" | {doc_desc}"
         context_prefix += "]\n\n"
+
+        # Tell the agent WHO it is assisting (active user) so it can address them
+        # by name and act on their behalf / within what they are permitted to see.
+        requester_prefix = self._daisy_requester_context(message)
+        if requester_prefix:
+            context_prefix = requester_prefix + context_prefix
 
         # Enqueue AI response job (processed by cron worker)
         user_text = html2plaintext(message.body) if message.body else ""
