@@ -26,6 +26,11 @@ def _lead_token(lead_id):
     """
     secret = (request.env['ir.config_parameter'].sudo()
               .get_param('database.secret', '') or '')
+    if not secret:
+        # Fail closed (review #10): never mint an empty-key HMAC — that would
+        # make every lead token forgeable. database.secret is always present on
+        # a real Odoo instance, so this only guards a misconfigured DB.
+        raise UserError('Signing secret unavailable; cannot issue lead token')
     return hmac.new(secret.encode('utf-8'), str(lead_id).encode('utf-8'),
                     hashlib.sha256).hexdigest()
 
@@ -37,6 +42,7 @@ def _enqueue_dutchie_create(payload):
     nightly Dutchie sync reconciles the customer either way. Sends only
     non-sensitive fields — NOT the driver's-license number (PII; Odoo #101243).
     """
+    import threading
     import urllib.request
     ICP = request.env['ir.config_parameter'].sudo()
     base = (ICP.get_param('mint.inventory_service_url', '') or '').rstrip('/')
@@ -44,17 +50,26 @@ def _enqueue_dutchie_create(payload):
         _logger.info('mint.inventory_service_url not set; skipping Dutchie enqueue')
         return
     api_key = ICP.get_param('mint.inventory_service.api_key', '') or ''
-    try:
-        req = urllib.request.Request(
-            '%s/jobs/dutchie-customer-create' % base,
-            data=json.dumps(payload).encode('utf-8'),
-            headers={'Content-Type': 'application/json', 'x-api-key': api_key},
-            method='POST',
-        )
-        urllib.request.urlopen(req, timeout=3)
-    except Exception as e:
-        _logger.warning('Dutchie enqueue failed for partner %s: %s',
-                        payload.get('partner_id'), e)
+    url = '%s/jobs/dutchie-customer-create' % base
+    body = json.dumps(payload).encode('utf-8')
+
+    # Truly fire-and-forget (review #8): run the network call on a daemon thread
+    # so a slow/unreachable inventory service never blocks the signup response.
+    # The thread touches NO Odoo env (env is not thread-safe) — only urllib and
+    # values captured here — so it is safe to detach.
+    def _post():
+        try:
+            req = urllib.request.Request(
+                url, data=body,
+                headers={'Content-Type': 'application/json', 'x-api-key': api_key},
+                method='POST',
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            _logger.warning('Dutchie enqueue failed for partner %s: %s',
+                            payload.get('partner_id'), e)
+
+    threading.Thread(target=_post, name='dutchie-enqueue', daemon=True).start()
 
 
 # Web-signup user logins are prefixed with "web:" to isolate them from
@@ -251,9 +266,16 @@ class MintCustomerAuth(http.Controller):
             if not (email_can and call_can and sms_can):
                 return error_response(
                     'Consent channels are not all available on this environment yet', 503)
-        elif not any(persistable):
+        elif not (email_opt or call_opt or sms_opt):
             return error_response(
                 'Please opt in to at least one available channel (text, call, or email)', 400)
+        elif not any(persistable):
+            # They DID opt in, but none of the requested channels' columns are
+            # deployed on this instance yet (review #4). Surface an env-readiness
+            # 503 rather than a misleading 400 that implies they never consented —
+            # and never a false 201 that silently drops the consent.
+            return error_response(
+                'Consent channels are not available on this environment yet', 503)
 
         # Build the consent + 21+ partner values. opt_in source must be a valid
         # selection — 'external_web' (Customer Web Form). DOB + age_verified are
@@ -287,7 +309,12 @@ class MintCustomerAuth(http.Controller):
         # SMS consent is granted post-create via set_sms_opt_in() so the partner
         # also gets the SMS whitelist category tag — writing sms_opt_in directly
         # would skip the tag and every text would be blocked by _check_sendable().
-        home_store_id = int(data.get('home_store_id') or 0) or False
+        try:
+            home_store_id = int(data.get('home_store_id') or 0) or False
+        except (TypeError, ValueError):
+            # A non-numeric home_store_id must not 500 the signup (review #3);
+            # this parse sits outside the try/except below.
+            home_store_id = False
         if home_store_id and 'x_home_store_id' in pf:
             extra_vals['x_home_store_id'] = home_store_id
 
@@ -320,16 +347,36 @@ class MintCustomerAuth(http.Controller):
                 except Exception as e:
                     _logger.warning('set_sms_opt_in failed for partner %s: %s',
                                     user.partner_id.id, e)
+                # Employees are REQUIRED to consent to all three channels; a
+                # silently-dropped SMS consent for one is a compliance gap
+                # (review #5). Log loudly so it is caught. The full fix (make
+                # employee consent transactional / roll back on failure) is part
+                # of the signup-race rework tracked with review #1/#2.
+                if is_employee and not user.partner_id.sms_opt_in:
+                    _logger.error(
+                        'Employee partner %s registered WITHOUT recorded SMS '
+                        'consent (all 3 channels required)', user.partner_id.id)
 
             # Link the pre-account visitor lead to this new contact (#101243) —
             # ONLY when the lead belongs to this email, so a registrant can't
             # repoint an arbitrary lead's partner_id (IDOR).
-            lead_id = int(data.get('lead_id') or 0) or False
+            try:
+                lead_id = int(data.get('lead_id') or 0) or False
+            except (TypeError, ValueError):
+                lead_id = False
             lead_token = (data.get('lead_token') or '').strip()
             if lead_id and lead_token:
-                lead = request.env['crm.lead'].sudo().browse(lead_id)
-                if lead.exists() and hmac.compare_digest(lead_token, _lead_token(lead_id)):
-                    lead.write({'partner_id': user.partner_id.id, 'date_conversion': now})
+                # Isolated (review #6): the account already exists + committed at
+                # this point, so a crm.lead hook failure (e.g. the v19 message_post
+                # unhashable-list crash) must NOT turn a successful signup into a
+                # 500 that then locks the user out on retry via the 409 guard.
+                try:
+                    lead = request.env['crm.lead'].sudo().browse(lead_id)
+                    if lead.exists() and hmac.compare_digest(lead_token, _lead_token(lead_id)):
+                        lead.write({'partner_id': user.partner_id.id, 'date_conversion': now})
+                except Exception as e:
+                    _logger.warning('Lead link failed (lead %s -> partner %s): %s',
+                                    lead_id, user.partner_id.id, e)
 
             token = user._generate_jwt()
 
@@ -512,16 +559,23 @@ class MintCustomerAuth(http.Controller):
         ip = request.httprequest.headers.get(
             'X-Forwarded-For', request.httprequest.remote_addr or '')
         ua = request.httprequest.headers.get('User-Agent', '')[:200]
-        lead = request.env['crm.lead'].sudo().create({
-            'name': 'Web signup: %s' % email,
-            'contact_name': (data.get('name') or '').strip() or False,
-            'email_from': email,
-            'phone': (data.get('phone') or '').strip() or False,
-            'type': 'lead',
-            'description': ('Web onboarding lead. age_verified=false. '
-                           'consent_proof: ts=%s source=external_web ip=%s ua=%s'
-                           % (fields.Datetime.now(), ip, ua)),
-        })
+        # Guard the cross-module crm.lead create (review #7): a required field,
+        # automation, or record rule from another crm-extending module must
+        # return a clean JSON error, not an uncaught 500.
+        try:
+            lead = request.env['crm.lead'].sudo().create({
+                'name': 'Web signup: %s' % email,
+                'contact_name': (data.get('name') or '').strip() or False,
+                'email_from': email,
+                'phone': (data.get('phone') or '').strip() or False,
+                'type': 'lead',
+                'description': ('Web onboarding lead. age_verified=false. '
+                               'consent_proof: ts=%s source=external_web ip=%s ua=%s'
+                               % (fields.Datetime.now(), ip, ua)),
+            })
+        except Exception as e:
+            _logger.exception('create_lead failed for %s: %s', email, e)
+            return error_response('Could not create lead', 500)
         return json_response(
             {'lead_id': lead.id, 'lead_token': _lead_token(lead.id)}, status=201)
 
