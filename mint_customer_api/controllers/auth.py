@@ -28,9 +28,12 @@ def _lead_token(lead_id):
               .get_param('database.secret', '') or '')
     if not secret:
         # Fail closed (review #10): never mint an empty-key HMAC — that would
-        # make every lead token forgeable. database.secret is always present on
-        # a real Odoo instance, so this only guards a misconfigured DB.
-        raise UserError('Signing secret unavailable; cannot issue lead token')
+        # make every lead token forgeable. Return None (not raise) so callers
+        # turn it into a clean JSON error / 404, never an uncaught 500.
+        # database.secret is always present on a real Odoo instance; this only
+        # guards a misconfigured DB.
+        _logger.error('database.secret unavailable; cannot issue/verify lead token')
+        return None
     return hmac.new(secret.encode('utf-8'), str(lead_id).encode('utf-8'),
                     hashlib.sha256).hexdigest()
 
@@ -372,7 +375,8 @@ class MintCustomerAuth(http.Controller):
                 # 500 that then locks the user out on retry via the 409 guard.
                 try:
                     lead = request.env['crm.lead'].sudo().browse(lead_id)
-                    if lead.exists() and hmac.compare_digest(lead_token, _lead_token(lead_id)):
+                    expected = _lead_token(lead_id)
+                    if lead.exists() and expected and hmac.compare_digest(lead_token, expected):
                         lead.write({'partner_id': user.partner_id.id, 'date_conversion': now})
                 except Exception as e:
                     _logger.warning('Lead link failed (lead %s -> partner %s): %s',
@@ -408,7 +412,9 @@ class MintCustomerAuth(http.Controller):
             return error_response(str(e))
         except Exception as e:
             _logger.exception('Registration failed: %s', e)
-            return error_response('Registration failed: %s' % str(e), 500)
+            # Don't echo the raw internal exception to the client (review):
+            # it can leak SQL/field/constraint details. Full detail is logged.
+            return error_response('Registration failed', 500)
 
     @http.route('/api/v1/auth/forgot-password', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
@@ -576,8 +582,13 @@ class MintCustomerAuth(http.Controller):
         except Exception as e:
             _logger.exception('create_lead failed for %s: %s', email, e)
             return error_response('Could not create lead', 500)
+        tok = _lead_token(lead.id)
+        if not tok:
+            # Signing secret unavailable — can't hand out a usable token, so
+            # don't pretend the lead is verifiable. Clean JSON, not a 500.
+            return error_response('Unable to issue lead token', 503)
         return json_response(
-            {'lead_id': lead.id, 'lead_token': _lead_token(lead.id)}, status=201)
+            {'lead_id': lead.id, 'lead_token': tok}, status=201)
 
     @http.route('/api/v1/leads/<int:lead_id>/verify', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
@@ -599,7 +610,11 @@ class MintCustomerAuth(http.Controller):
         # the email — is the authorization boundary, closing the IDOR. 404 (not
         # 403) on mismatch so the endpoint doesn't confirm which ids exist.
         token = (data.get('lead_token') or '').strip()
-        if not lead.exists() or not token or not hmac.compare_digest(token, _lead_token(lead_id)):
+        expected = _lead_token(lead_id)
+        if (not lead.exists() or not token or not expected
+                or not hmac.compare_digest(token, expected)):
+            # 404 (not 403) on mismatch/missing-secret so we neither confirm
+            # which ids exist nor leak that the secret is misconfigured.
             return error_response('Lead not found', 404)
         from datetime import date
         dob_raw = (data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
