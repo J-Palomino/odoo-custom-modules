@@ -927,7 +927,16 @@ class PtlDeal(models.Model):
     def _dutchie_readback_id(self, external_id, loc_id, lsp_id):
         """Read-back-as-verify: find an existing Dutchie discount by ExternalId
         at (loc, lsp) via invsvc. int>0 = found, 0 = confirmed absent, None =
-        read failed/unknown (caller must NOT blind-create — sub-395 lesson)."""
+        read failed/unknown (caller must NOT blind-create — sub-395 lesson).
+
+        SCOPE (verified 2026-06-25, task #100245): this reads the invsvc
+        active-discount list, which drops EXPIRED records (ExternalId is not on
+        the raw Dutchie list — it's enrichment-only, so an expired-inclusive
+        scan-by-ExternalId is impractical: ~21k rows/loc). So a live-but-EXPIRED
+        record reads as 0 (absent) here. That residual duplicate window is
+        accepted: the authoritative dup-guard is the shared registry (seeded by
+        the migration — verified 0 gaps) + the bilateral publish mutex, NOT this
+        best-effort read-back. Revisit only if a real duplicate is observed."""
         get_param = self.env['ir.config_parameter'].sudo().get_param
         url = (get_param('dutchie.publish.url')
                or 'https://mintinvsvc-production-6aa5.up.railway.app').rstrip('/')
