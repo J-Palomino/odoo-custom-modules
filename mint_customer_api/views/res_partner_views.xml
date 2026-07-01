@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Surface the web age-verification ledger on the partner form so
+         compliance staff can audit it. Admin-only; web customers only. -->
+    <record id="view_partner_form_age_verification" model="ir.ui.view">
+        <field name="name">res.partner.form.age.verification</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Age Verification"
+                      groups="base.group_system"
+                      invisible="not is_web_customer">
+                    <group>
+                        <field name="is_web_customer" readonly="1"/>
+                        <field name="age_verified" readonly="1"/>
+                        <field name="web_date_of_birth" readonly="1"/>
+                        <field name="age_verified_at" readonly="1"/>
+                        <field name="age_verification_method" readonly="1"/>
+                        <field name="age_verification_source" readonly="1"/>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

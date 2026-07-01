@@ -7,7 +7,7 @@ All endpoints return JSON, use auth='none' since we handle auth via JWT.
 import json
 import logging
 
-from odoo import http
+from odoo import http, fields
 from odoo.http import request, Response
 from odoo.exceptions import AccessDenied, UserError
 
@@ -189,12 +189,44 @@ class MintCustomerAuth(http.Controller):
         if existing:
             return error_response('An account with this email already exists', 409)
 
+        # Age-verification method. The web DOB is self-attested. We deliberately
+        # do NOT honor a client-supplied 'id_scanned' claim: nothing server-side
+        # has validated that an ID document was actually scanned, so trusting the
+        # request body would overstate rigor in what is meant to be a provable
+        # compliance record. Until the IdScanner backend issues a server-
+        # verifiable scan token (then verify it here before upgrading the
+        # method), every web signup is recorded as self_attested.
+        method = 'self_attested'
+
         try:
-            user = self._create_web_user(email=email, name=name, phone=phone)
+            user = self._create_web_user(
+                email=email, name=name, phone=phone,
+                web_dob=dob, age_method=method, age_source='web_register',
+            )
             user.with_context(
                 no_reset_password=True,
                 tracking_disable=True,
             ).write({'password': password})
+
+            # Provable marketing consent (opt-in, OFF by default). Reuses the
+            # canonical consent ledgers: set_email_opt_in (mint_account) and
+            # set_sms_opt_in (mint_sms_telnyx), both of which stamp date +
+            # source. Defensive hasattr so signup never breaks if a consent
+            # module is absent; wrapped so a consent error can't fail the
+            # account creation. Transactional email/SMS is exempt and unaffected.
+            def _opted_in(v):
+                # Strict coercion: a provable consent record must not opt a
+                # user in on a stringy "false"/"0" that is merely truthy.
+                return v is True or str(v).strip().lower() in ('true', '1', 'yes', 'on')
+
+            try:
+                partner = user.partner_id.sudo()
+                if _opted_in(data.get('emailOptIn')) and hasattr(partner, 'set_email_opt_in'):
+                    partner.set_email_opt_in(source='external_web')
+                if _opted_in(data.get('smsOptIn')) and hasattr(partner, 'set_sms_opt_in'):
+                    partner.set_sms_opt_in(source='external_web')
+            except Exception:
+                _logger.exception('Consent capture failed for %s', email)
 
             token = user._generate_jwt()
 
@@ -340,7 +372,8 @@ class MintCustomerAuth(http.Controller):
         except Exception:
             return False
 
-    def _create_web_user(self, email, name, phone=''):
+    def _create_web_user(self, email, name, phone='', web_dob=None,
+                         age_method=None, age_source=None):
         """Create a fresh partner + portal user for a web-site signup.
 
         Always creates a NEW res.partner (doesn't reuse an existing one that
@@ -350,23 +383,38 @@ class MintCustomerAuth(http.Controller):
         Uses login = 'web:<email>' so web users never collide with internal
         user accounts (login = plain email) and sets is_web_customer=True
         so record rules restrict PII to privileged groups.
+
+        When ``web_dob`` (a datetime.date) is supplied, the partner is stamped
+        with the web-side age-verification ledger fields so the 21+ check is
+        provable and linkable to Dutchie. Callers without a DOB (e.g. Google
+        OAuth) leave the account age_verified=False on purpose.
         """
         main_company = request.env['res.company'].sudo().browse(1)
         login = _web_login(email)
 
-        partner = request.env['res.partner'].sudo().with_context(
-            mail_create_nosubscribe=True,
-            mail_create_nolog=True,
-            tracking_disable=True,
-            mail_notrack=True,
-        ).create({
+        partner_vals = {
             'name': name,
             'email': email,
             'phone': phone or False,
             'customer_rank': 1,
             'company_id': main_company.id,
             'is_web_customer': True,
-        })
+        }
+        if web_dob:
+            partner_vals.update({
+                'web_date_of_birth': web_dob,
+                'age_verified': True,
+                'age_verified_at': fields.Datetime.now(),
+                'age_verification_method': age_method or 'self_attested',
+                'age_verification_source': age_source or 'web_register',
+            })
+
+        partner = request.env['res.partner'].sudo().with_context(
+            mail_create_nosubscribe=True,
+            mail_create_nolog=True,
+            tracking_disable=True,
+            mail_notrack=True,
+        ).create(partner_vals)
         request.env.cr.flush()
 
         # Raw INSERT to bypass signup/mail hooks that conflict with the
