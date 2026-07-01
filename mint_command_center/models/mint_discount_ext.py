@@ -1,3 +1,4 @@
+import json
 import logging
 
 from odoo import api, fields, models, _
@@ -6,6 +7,17 @@ from odoo.exceptions import ValidationError
 from .deal_mixins import weekday_bools_from_days
 
 _logger = logging.getLogger(__name__)
+
+# ── Welcome free pre-roll config (task #102149) ──────────────────────────────
+# Per-LSP config for the welcome-coupon issuer. Dutchie category ids are PER-LSP
+# (like brand ids), so the pre-roll category must be resolved per LSP. Seeded
+# with AZ only (LSP 575 -> pre-roll category 34559, verified live vs PHXNTPR);
+# other markets stay unissued until their id is added AND the LSP is enabled.
+WELCOME_PREROLL_CATEGORY_PARAM = 'mint.welcome_preroll.lsp_category_json'  # {"<lsp>": <dutchie_category_id>}
+WELCOME_PREROLL_ENABLED_LSPS_PARAM = 'mint.welcome_preroll.enabled_lsps'   # CSV of LSP ids to fan out to
+WELCOME_PREROLL_LAUNCH_CUTOFF_PARAM = 'mint.welcome_preroll.launch_cutoff'  # only issue to partners created >= this (ISO); blank = disabled
+WELCOME_PREROLL_TTL_DAYS_PARAM = 'mint.welcome_preroll.ttl_days'            # coupon validity window
+DEFAULT_WELCOME_PREROLL_CATEGORY_JSON = '{"575": 34559}'
 
 
 class MintDiscountPTL(models.Model):
@@ -62,6 +74,45 @@ class MintDiscountPTL(models.Model):
                     "A discount with Application Method 'Code' requires a "
                     "Dutchie Discount Code (the code typed at the register)."
                 ))
+
+    @api.model
+    def _welcome_preroll_config(self):
+        """Resolved config for the welcome free pre-roll issuer (task #102149).
+
+        Returns a dict:
+          lsp_categories : {int lsp_id: int dutchie_category_id}
+          enabled_lsps   : [int] LSPs to actually fan out to (subset of the map)
+          launch_cutoff  : str ISO datetime or '' — only partners created on/after
+                           this are issued (blank ⇒ issuer disabled, no backfill)
+          ttl_days       : int coupon validity window (default 30)
+
+        Values come from ir.config_parameter so ops can enable markets without a
+        code change. No behavior on its own — consumed by Phase 2's issuer.
+        """
+        get = self.env['ir.config_parameter'].sudo().get_param
+        try:
+            raw = json.loads(get(WELCOME_PREROLL_CATEGORY_PARAM,
+                                 DEFAULT_WELCOME_PREROLL_CATEGORY_JSON) or '{}')
+            lsp_categories = {int(k): int(v) for k, v in raw.items()}
+        except (ValueError, TypeError):
+            _logger.warning('welcome_preroll: bad %s JSON; using none',
+                            WELCOME_PREROLL_CATEGORY_PARAM)
+            lsp_categories = {}
+        enabled = []
+        for tok in (get(WELCOME_PREROLL_ENABLED_LSPS_PARAM, '') or '').split(','):
+            tok = tok.strip()
+            if tok.isdigit() and int(tok) in lsp_categories:
+                enabled.append(int(tok))
+        try:
+            ttl_days = int(get(WELCOME_PREROLL_TTL_DAYS_PARAM, '30') or 30)
+        except (ValueError, TypeError):
+            ttl_days = 30
+        return {
+            'lsp_categories': lsp_categories,
+            'enabled_lsps': enabled,
+            'launch_cutoff': (get(WELCOME_PREROLL_LAUNCH_CUTOFF_PARAM, '') or '').strip(),
+            'ttl_days': ttl_days,
+        }
 
     # ── Override is_active as stored compute ─────────────────────────────
     is_active = fields.Boolean(
