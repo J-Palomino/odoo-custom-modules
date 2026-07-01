@@ -515,6 +515,13 @@ class PtlDayDutchiePush(models.Model):
         disc['Id'] = existing
         disc['ExternalId'] = external_id
         disc['LocationRestrictions'] = loc_ids
+        # Embed the unified key in DiscountDescription (#100245): it rides the
+        # bare get-discount list (ExternalId is enrichment-only), so the read-back
+        # can find this record by key in one no-enrich scan — incl. EXPIRED.
+        # Key kept within the 500-char field even if the base is long.
+        _suffix = " · %s" % external_id
+        _base = (disc.get('DiscountDescription') or '')[:500 - len(_suffix)]
+        disc['DiscountDescription'] = _base + _suffix
         if isinstance(disc.get('DiscountMenuDisplayDetails'), dict):
             disc['DiscountMenuDisplayDetails']['DiscountId'] = existing
         # All-False day guard (#6) for the consolidated record.

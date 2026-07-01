@@ -626,7 +626,11 @@ class DealSubmissionDutchiePublish(models.Model):
                 'ApplicationMethodId': 1,
                 'CanStackAutomatically': False,
                 'Constraints': [],
-                'DiscountDescription': f"lgm | {self.vendor_name} (Odoo sub {self.id})",
+                # Embed the unified key in DiscountDescription (#100245): it's on
+                # the bare get-discount list, whereas ExternalId is enrichment-only
+                # (~21k rows/loc), so this lets the read-back find a record by key
+                # in one no-enrich list scan — including EXPIRED ones.
+                'DiscountDescription': f"lgm | {self.vendor_name} (Odoo sub {self.id}) · {external_id}",
                 'ExternalId': external_id,
                 'FirstTimeCustomerOnly': 0,
                 'IgnoreNetTax': False,
