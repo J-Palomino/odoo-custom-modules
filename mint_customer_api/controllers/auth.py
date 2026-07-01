@@ -4,14 +4,58 @@ Customer authentication endpoints for MintDeals frontend.
 
 All endpoints return JSON, use auth='none' since we handle auth via JWT.
 """
+import hashlib
+import hmac
 import json
 import logging
 
-from odoo import http
+from odoo import http, fields
 from odoo.http import request, Response
 from odoo.exceptions import AccessDenied, UserError
 
 _logger = logging.getLogger(__name__)
+
+
+def _lead_token(lead_id):
+    """Server-issued capability token binding a caller to a specific crm.lead.
+
+    HMAC of the lead id under the instance's database.secret — unguessable, so
+    holding a lead_id alone (or knowing the signup email) is NOT enough to verify
+    or convert it; the caller must present the token returned by create_lead.
+    No new schema needed.
+    """
+    secret = (request.env['ir.config_parameter'].sudo()
+              .get_param('database.secret', '') or '')
+    return hmac.new(secret.encode('utf-8'), str(lead_id).encode('utf-8'),
+                    hashlib.sha256).hexdigest()
+
+
+def _enqueue_dutchie_create(payload):
+    """Fire-and-forget POST to the inventory service to create the Dutchie guest.
+
+    Best-effort: a signup must never fail because of a Dutchie hiccup; the
+    nightly Dutchie sync reconciles the customer either way. Sends only
+    non-sensitive fields — NOT the driver's-license number (PII; Odoo #101243).
+    """
+    import urllib.request
+    ICP = request.env['ir.config_parameter'].sudo()
+    base = (ICP.get_param('mint.inventory_service_url', '') or '').rstrip('/')
+    if not base:
+        _logger.info('mint.inventory_service_url not set; skipping Dutchie enqueue')
+        return
+    api_key = ICP.get_param('mint.inventory_service.api_key', '') or ''
+    try:
+        req = urllib.request.Request(
+            '%s/jobs/dutchie-customer-create' % base,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json', 'x-api-key': api_key},
+            method='POST',
+        )
+        urllib.request.urlopen(req, timeout=3)
+    except Exception as e:
+        _logger.warning('Dutchie enqueue failed for partner %s: %s',
+                        payload.get('partner_id'), e)
+
 
 # Web-signup user logins are prefixed with "web:" to isolate them from
 # internal employee accounts (login = plain email). An employee can shop
@@ -180,6 +224,73 @@ class MintCustomerAuth(http.Controller):
         if age < 21:
             return error_response('You must be 21 or older to create an account', 403)
 
+        # --- Per-channel consent + employee gating (Odoo #101243) ---
+        # Employees (by configurable email domain) must opt in to all three
+        # channels; everyone else to at least one. Gate on PERSISTABLE consents
+        # (field must exist on this instance) so we never return 201 for a signup
+        # whose requested consent couldn't actually be recorded (silent-drop bug).
+        # Enforced server-side so a manipulated client can't bypass it.
+        email_opt = bool(data.get('email_opt_in'))
+        call_opt = bool(data.get('call_opt_in'))
+        sms_opt = bool(data.get('sms_opt_in'))
+        pf = request.env['res.partner']._fields
+        email_can = 'email_opt_in' in pf
+        call_can = 'call_opt_in' in pf
+        sms_can = 'sms_opt_in' in pf
+        ICP = request.env['ir.config_parameter'].sudo()
+        emp_domains = [x.strip().lower() for x in
+                       (ICP.get_param('mint.employee_email_domains', '') or '').split(',')
+                       if x.strip()]
+        domain = email.split('@')[-1] if '@' in email else ''
+        is_employee = domain in emp_domains
+        persistable = [email_opt and email_can, call_opt and call_can, sms_opt and sms_can]
+        if is_employee:
+            if not (email_opt and call_opt and sms_opt):
+                return error_response(
+                    'Employees must opt in to text, call, and email to create an account', 403)
+            if not (email_can and call_can and sms_can):
+                return error_response(
+                    'Consent channels are not all available on this environment yet', 503)
+        elif not any(persistable):
+            return error_response(
+                'Please opt in to at least one available channel (text, call, or email)', 400)
+
+        # Build the consent + 21+ partner values. opt_in source must be a valid
+        # selection — 'external_web' (Customer Web Form). DOB + age_verified are
+        # the only ID-scan PII we persist (no license number/image; decision #3).
+        now = fields.Datetime.now()
+        SRC = 'external_web'
+        # Write only fields that exist on this instance. The x_ fields
+        # (mint_dutchie_sync) and email/call consent (mint_account, deal-chatter,
+        # not yet on staging) may be absent depending on deploy state, so every
+        # write is field-guarded to avoid an -u/runtime crash on a missing column.
+        extra_vals = {}
+        if 'x_date_of_birth' in pf:
+            extra_vals['x_date_of_birth'] = dob
+        if 'x_age_verified' in pf:
+            extra_vals['x_age_verified'] = True
+
+        def _consent_vals(channel):
+            # Build opt-in vals, including only columns that actually exist — a
+            # partial mint_account merge could define <chan>_opt_in without its
+            # _date/_source companions; guard each individually.
+            out = {}
+            for suffix, val in (('', True), ('_date', now), ('_source', SRC)):
+                f = '%s_opt_in%s' % (channel, suffix)
+                if f in pf:
+                    out[f] = val
+            return out
+        if email_opt:
+            extra_vals.update(_consent_vals('email'))
+        if call_opt:
+            extra_vals.update(_consent_vals('call'))
+        # SMS consent is granted post-create via set_sms_opt_in() so the partner
+        # also gets the SMS whitelist category tag — writing sms_opt_in directly
+        # would skip the tag and every text would be blocked by _check_sendable().
+        home_store_id = int(data.get('home_store_id') or 0) or False
+        if home_store_id and 'x_home_store_id' in pf:
+            extra_vals['x_home_store_id'] = home_store_id
+
         # Only block on existing WEB customer account. An internal employee
         # with login=<email> (share=False) must still be able to sign up as
         # a separate customer (their work identity stays disjoint).
@@ -190,13 +301,50 @@ class MintCustomerAuth(http.Controller):
             return error_response('An account with this email already exists', 409)
 
         try:
-            user = self._create_web_user(email=email, name=name, phone=phone)
+            user = self._create_web_user(
+                email=email, name=name, phone=phone, extra_vals=extra_vals)
             user.with_context(
                 no_reset_password=True,
                 tracking_disable=True,
             ).write({'password': password})
 
+            # SMS consent via the helper so the partner also gets the whitelist
+            # category tag (a direct sms_opt_in write would skip it → texts blocked).
+            # Isolated try + tracking_disable: a whitelist/category hiccup must
+            # degrade to "no SMS consent", never roll back the whole signup.
+            if sms_opt and sms_can:
+                try:
+                    user.partner_id.with_context(
+                        tracking_disable=True, mail_notrack=True
+                    ).set_sms_opt_in(source=SRC)
+                except Exception as e:
+                    _logger.warning('set_sms_opt_in failed for partner %s: %s',
+                                    user.partner_id.id, e)
+
+            # Link the pre-account visitor lead to this new contact (#101243) —
+            # ONLY when the lead belongs to this email, so a registrant can't
+            # repoint an arbitrary lead's partner_id (IDOR).
+            lead_id = int(data.get('lead_id') or 0) or False
+            lead_token = (data.get('lead_token') or '').strip()
+            if lead_id and lead_token:
+                lead = request.env['crm.lead'].sudo().browse(lead_id)
+                if lead.exists() and hmac.compare_digest(lead_token, _lead_token(lead_id)):
+                    lead.write({'partner_id': user.partner_id.id, 'date_conversion': now})
+
             token = user._generate_jwt()
+
+            # Dutchie customer create — best-effort, fired LAST (after all
+            # fallible work) to shrink the window where it POSTs for a signup
+            # that then rolls back. Short timeout; never raises (see helper).
+            _enqueue_dutchie_create({
+                'partner_id': user.partner_id.id,
+                'name': name,
+                'email': email,
+                'phone': phone,
+                'date_of_birth': dob.isoformat(),
+                'home_store_id': home_store_id or None,
+                'dutchie_location_id': (data.get('dutchie_location_id') or '').strip() or None,
+            })
 
             return json_response({
                 'token': token,
@@ -340,7 +488,85 @@ class MintCustomerAuth(http.Controller):
         except Exception:
             return False
 
-    def _create_web_user(self, email, name, phone=''):
+    # ------------------------------------------------------------------
+    # Visitor leads (Odoo #101243) — created pre-account, converted to a
+    # res.partner contact on register() once consent is granted.
+    # ------------------------------------------------------------------
+    @http.route('/api/v1/leads', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def create_lead(self, **kw):
+        """Create a pre-account visitor lead. Called right after Google auth,
+        before the account exists. Captures provable-consent metadata."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        email = (data.get('email') or '').strip().lower()
+        if not email:
+            return error_response('Email is required')
+        ip = request.httprequest.headers.get(
+            'X-Forwarded-For', request.httprequest.remote_addr or '')
+        ua = request.httprequest.headers.get('User-Agent', '')[:200]
+        lead = request.env['crm.lead'].sudo().create({
+            'name': 'Web signup: %s' % email,
+            'contact_name': (data.get('name') or '').strip() or False,
+            'email_from': email,
+            'phone': (data.get('phone') or '').strip() or False,
+            'type': 'lead',
+            'description': ('Web onboarding lead. age_verified=false. '
+                           'consent_proof: ts=%s source=external_web ip=%s ua=%s'
+                           % (fields.Datetime.now(), ip, ua)),
+        })
+        return json_response(
+            {'lead_id': lead.id, 'lead_token': _lead_token(lead.id)}, status=201)
+
+    @http.route('/api/v1/leads/<int:lead_id>/verify', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def verify_lead(self, lead_id, **kw):
+        """Attach 21+ verification to a lead after the ID scan. Under-21 → the
+        lead is archived + marked lost (never deleted)."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        lead = request.env['crm.lead'].sudo().browse(lead_id)
+        # Ownership binding: the caller must present the server-issued token from
+        # create_lead (HMAC of the id). email_from is guessable, so a token — not
+        # the email — is the authorization boundary, closing the IDOR. 404 (not
+        # 403) on mismatch so the endpoint doesn't confirm which ids exist.
+        token = (data.get('lead_token') or '').strip()
+        if not lead.exists() or not token or not hmac.compare_digest(token, _lead_token(lead_id)):
+            return error_response('Lead not found', 404)
+        from datetime import date
+        dob_raw = (data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
+        try:
+            dob = date.fromisoformat(dob_raw[:10])
+        except (ValueError, TypeError):
+            return error_response('Invalid date of birth')
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        if age < 21:
+            # Disqualify with an age-specific lost reason (not an arbitrary one).
+            Reason = request.env['crm.lost.reason'].sudo()
+            reason = Reason.search([('name', '=', 'Under 21')], limit=1) \
+                or Reason.create({'name': 'Under 21'})
+            lead.write({'active': False, 'lost_reason_id': reason.id})
+            return error_response('You must be 21 or older', 403)
+        lead.write({'description': (lead.description or '')
+                    + '\nage_verified=true dob=%s' % dob.isoformat()})
+        return json_response({'ok': True, 'age_verified': True})
+
+    def _create_web_user(self, email, name, phone='', extra_vals=None):
         """Create a fresh partner + portal user for a web-site signup.
 
         Always creates a NEW res.partner (doesn't reuse an existing one that
@@ -354,19 +580,22 @@ class MintCustomerAuth(http.Controller):
         main_company = request.env['res.company'].sudo().browse(1)
         login = _web_login(email)
 
-        partner = request.env['res.partner'].sudo().with_context(
-            mail_create_nosubscribe=True,
-            mail_create_nolog=True,
-            tracking_disable=True,
-            mail_notrack=True,
-        ).create({
+        partner_vals = {
             'name': name,
             'email': email,
             'phone': phone or False,
             'customer_rank': 1,
             'company_id': main_company.id,
             'is_web_customer': True,
-        })
+        }
+        if extra_vals:
+            partner_vals.update(extra_vals)
+        partner = request.env['res.partner'].sudo().with_context(
+            mail_create_nosubscribe=True,
+            mail_create_nolog=True,
+            tracking_disable=True,
+            mail_notrack=True,
+        ).create(partner_vals)
         request.env.cr.flush()
 
         # Raw INSERT to bypass signup/mail hooks that conflict with the
