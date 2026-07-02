@@ -744,6 +744,8 @@ try:
         ('call_opt_in', 'boolean'), ('call_opt_in_date', 'timestamp'), ('call_opt_in_source', 'varchar'),
         # #101243 — 21+ web-signup onboarding (mint_dutchie_sync)
         ('x_age_verified', 'boolean'), ('x_date_of_birth', 'date'),
+        # employee-customer-pos — links a walk-in customer to the ringing employee (mint_customer_api)
+        ('employee_user_id', 'integer'),
     ):
         cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name='res_partner' AND column_name=%s", (col,))
         if not cur.fetchone():
