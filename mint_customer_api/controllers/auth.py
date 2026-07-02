@@ -313,7 +313,11 @@ class MintCustomerAuth(http.Controller):
             lead_token = _clean_token(data.get('lead_token'))
             if lead_id and lead_token:
                 try:
-                    lead = request.env['crm.lead'].sudo().browse(lead_id)
+                    # partner_id is TRACKED on crm.lead — without mail-hook
+                    # suppression this write crashes in the user-less env and
+                    # the except would silently drop the link EVERY time.
+                    lead = request.env['crm.lead'].sudo().with_context(
+                        tracking_disable=True, mail_notrack=True).browse(lead_id)
                     if lead.exists() and _token_eq(lead_token, _lead_token(lead_id)):
                         lead.write({'partner_id': user.partner_id.id,
                                     'date_conversion': fields.Datetime.now()})
@@ -512,7 +516,17 @@ class MintCustomerAuth(http.Controller):
         # or record rule from another crm-extending module must return a clean
         # JSON error, not an uncaught 500.
         try:
-            lead = request.env['crm.lead'].sudo().create({
+            # auth='none' → request.env.user is an EMPTY recordset; crm.lead is a
+            # mail.thread whose create() posts a chatter log that calls
+            # env.user._is_public() → "Expected singleton: res.users()" crash
+            # (hit live on staging). Suppress the mail hooks like
+            # _create_web_user does — same house pattern.
+            lead = request.env['crm.lead'].sudo().with_context(
+                mail_create_nosubscribe=True,
+                mail_create_nolog=True,
+                tracking_disable=True,
+                mail_notrack=True,
+            ).create({
                 'name': 'Web signup: %s' % email,
                 'contact_name': (data.get('name') or '').strip() or False,
                 'email_from': email,
@@ -545,7 +559,11 @@ class MintCustomerAuth(http.Controller):
             data = json.loads(request.httprequest.data)
         except (json.JSONDecodeError, TypeError):
             return error_response('Invalid JSON body')
-        lead = request.env['crm.lead'].sudo().browse(lead_id)
+        # tracking_disable/mail_notrack: lost_reason_id is a TRACKED field —
+        # writing it from this user-less (auth='none') env would fire the same
+        # singleton message_post crash as create (see create_lead).
+        lead = request.env['crm.lead'].sudo().with_context(
+            tracking_disable=True, mail_notrack=True).browse(lead_id)
         # Ownership binding: the caller must present the server-issued token from
         # create_lead (HMAC of the id). 404 (not 403) on mismatch/missing-secret
         # so the endpoint neither confirms which ids exist nor leaks misconfig.
