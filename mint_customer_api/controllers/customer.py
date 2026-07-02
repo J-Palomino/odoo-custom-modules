@@ -7,7 +7,7 @@ All endpoints require JWT authentication via Authorization header.
 import json
 import logging
 
-from odoo import http
+from odoo import fields, http
 from odoo.http import request, Response
 
 from .auth import json_response, error_response, _verify_and_get_user
@@ -120,6 +120,44 @@ class MintCustomerProfile(http.Controller):
                 'total_spend': getattr(partner, 'x_dutchie_total_spend', 0) or 0,
                 'visit_count': getattr(partner, 'x_dutchie_visit_count', 0) or 0,
                 'available_rewards': rewards,
+            },
+        })
+
+    @http.route('/api/v1/customer/welcome-coupon', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def get_welcome_coupon(self, **kw):
+        """Return the customer's welcome free pre-roll coupon (task #102149).
+
+        The DiscountCode is rendered as a scannable Code128 barcode on /account;
+        scanning it at the register applies the Dutchie ApplicationMethodId=3
+        discount our pipeline created in Backoffice. Read-only.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        partner = user.partner_id.sudo()
+        coupon = request.env['mint.discount'].sudo().search([
+            ('is_welcome_preroll', '=', True),
+            ('redemption_partner_id', '=', partner.id),
+        ], order='id desc', limit=1)
+        if not coupon:
+            return json_response({'welcome_coupon': None})
+
+        expired = bool(coupon.valid_until and coupon.valid_until < fields.Datetime.now())
+        return json_response({
+            'welcome_coupon': {
+                'code': coupon.dutchie_discount_code or '',
+                'label': 'Welcome Free Pre-Roll',
+                'reward': '100% off one pre-roll',
+                'status': 'expired' if expired else 'active',
+                'expires_at': coupon.valid_until.isoformat() if coupon.valid_until else None,
+                'in_store_only': True,
             },
         })
 
