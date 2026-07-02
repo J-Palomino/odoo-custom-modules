@@ -4,6 +4,8 @@ Customer authentication endpoints for MintDeals frontend.
 
 All endpoints return JSON, use auth='none' since we handle auth via JWT.
 """
+import hashlib
+import hmac
 import json
 import logging
 
@@ -12,6 +14,59 @@ from odoo.http import request, Response
 from odoo.exceptions import AccessDenied, UserError
 
 _logger = logging.getLogger(__name__)
+
+
+def _lead_token(lead_id):
+    """Server-issued capability token binding a caller to a specific crm.lead.
+
+    HMAC of the lead id under the instance's database.secret — unguessable, so
+    holding a lead_id alone (or knowing the signup email) is NOT enough to verify
+    or convert it; the caller must present the token returned by create_lead.
+    Returns None when database.secret is unset so callers fail closed with a
+    clean error / 404 rather than minting a forgeable empty-key token.
+    """
+    secret = (request.env['ir.config_parameter'].sudo()
+              .get_param('database.secret', '') or '')
+    if not secret:
+        _logger.error('database.secret unavailable; cannot issue/verify lead token')
+        return None
+    return hmac.new(secret.encode('utf-8'), str(lead_id).encode('utf-8'),
+                    hashlib.sha256).hexdigest()
+
+
+def _enqueue_dutchie_create(payload):
+    """Best-effort, non-blocking POST to create the Dutchie guest (#101243).
+
+    A signup must never fail or stall because of a Dutchie hiccup, so the
+    network call runs on a daemon thread (touching NO Odoo env — env is not
+    thread-safe — only captured plain values). The nightly Dutchie sync
+    reconciles the customer either way. Sends only non-sensitive fields.
+    """
+    import threading
+    import urllib.request
+    ICP = request.env['ir.config_parameter'].sudo()
+    base = (ICP.get_param('mint.inventory_service_url', '') or '').rstrip('/')
+    if not base:
+        _logger.info('mint.inventory_service_url not set; skipping Dutchie enqueue')
+        return
+    api_key = ICP.get_param('mint.inventory_service.api_key', '') or ''
+    url = '%s/jobs/dutchie-customer-create' % base
+    body = json.dumps(payload).encode('utf-8')
+
+    def _post():
+        try:
+            req = urllib.request.Request(
+                url, data=body,
+                headers={'Content-Type': 'application/json', 'x-api-key': api_key},
+                method='POST',
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            _logger.warning('Dutchie enqueue failed for partner %s: %s',
+                            payload.get('partner_id'), e)
+
+    threading.Thread(target=_post, name='dutchie-enqueue', daemon=True).start()
+
 
 # Web-signup user logins are prefixed with "web:" to isolate them from
 # internal employee accounts (login = plain email). An employee can shop
@@ -228,7 +283,37 @@ class MintCustomerAuth(http.Controller):
             except Exception:
                 _logger.exception('Consent capture failed for %s', email)
 
+            # Link the pre-account visitor lead to this new contact (#101243).
+            # HMAC-bound so a registrant can't repoint an arbitrary lead's
+            # partner_id (IDOR). Isolated: the account is already committed here,
+            # so a crm.lead hook failure must NOT turn a successful signup into a
+            # 500 (which would then lock the user out via the 409 guard on retry).
+            try:
+                lead_id = int(data.get('lead_id') or 0) or False
+            except (TypeError, ValueError):
+                lead_id = False
+            lead_token = (data.get('lead_token') or '').strip()
+            if lead_id and lead_token:
+                try:
+                    lead = request.env['crm.lead'].sudo().browse(lead_id)
+                    expected = _lead_token(lead_id)
+                    if lead.exists() and expected and hmac.compare_digest(lead_token, expected):
+                        lead.write({'partner_id': user.partner_id.id,
+                                    'date_conversion': fields.Datetime.now()})
+                except Exception as e:
+                    _logger.warning('Lead link failed (lead %s -> partner %s): %s',
+                                    lead_id, user.partner_id.id, e)
+
             token = user._generate_jwt()
+
+            # Dutchie guest create — best-effort, non-blocking, fired last.
+            _enqueue_dutchie_create({
+                'partner_id': user.partner_id.id,
+                'name': name,
+                'email': email,
+                'phone': phone,
+                'date_of_birth': dob.isoformat(),
+            })
 
             return json_response({
                 'token': token,
@@ -371,6 +456,95 @@ class MintCustomerAuth(http.Controller):
             return bool(uid)
         except Exception:
             return False
+
+    # ------------------------------------------------------------------
+    # Visitor leads (Odoo #101243) — created pre-account, converted to a
+    # res.partner contact on register() once the account is created.
+    # ------------------------------------------------------------------
+    @http.route('/api/v1/leads', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def create_lead(self, **kw):
+        """Create a pre-account visitor lead. Called right after Google auth,
+        before the account exists. Captures provable-consent metadata."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        email = (data.get('email') or '').strip().lower()
+        if not email:
+            return error_response('Email is required')
+        ip = request.httprequest.headers.get(
+            'X-Forwarded-For', request.httprequest.remote_addr or '')
+        ua = request.httprequest.headers.get('User-Agent', '')[:200]
+        # Guard the cross-module crm.lead create: a required field, automation,
+        # or record rule from another crm-extending module must return a clean
+        # JSON error, not an uncaught 500.
+        try:
+            lead = request.env['crm.lead'].sudo().create({
+                'name': 'Web signup: %s' % email,
+                'contact_name': (data.get('name') or '').strip() or False,
+                'email_from': email,
+                'phone': (data.get('phone') or '').strip() or False,
+                'type': 'lead',
+                'description': ('Web onboarding lead. age_verified=false. '
+                               'consent_proof: ts=%s source=external_web ip=%s ua=%s'
+                               % (fields.Datetime.now(), ip, ua)),
+            })
+        except Exception as e:
+            _logger.exception('create_lead failed for %s: %s', email, e)
+            return error_response('Could not create lead', 500)
+        tok = _lead_token(lead.id)
+        if not tok:
+            return error_response('Unable to issue lead token', 503)
+        return json_response(
+            {'lead_id': lead.id, 'lead_token': tok}, status=201)
+
+    @http.route('/api/v1/leads/<int:lead_id>/verify', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def verify_lead(self, lead_id, **kw):
+        """Attach 21+ verification to a lead after the ID scan. Under-21 → the
+        lead is archived + marked lost (never deleted)."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        lead = request.env['crm.lead'].sudo().browse(lead_id)
+        # Ownership binding: the caller must present the server-issued token from
+        # create_lead (HMAC of the id). 404 (not 403) on mismatch/missing-secret
+        # so the endpoint neither confirms which ids exist nor leaks misconfig.
+        token = (data.get('lead_token') or '').strip()
+        expected = _lead_token(lead_id)
+        if (not lead.exists() or not token or not expected
+                or not hmac.compare_digest(token, expected)):
+            return error_response('Lead not found', 404)
+        from datetime import date
+        dob_raw = (data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
+        try:
+            dob = date.fromisoformat(dob_raw[:10])
+        except (ValueError, TypeError):
+            return error_response('Invalid date of birth')
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        if age < 21:
+            # Disqualify with an age-specific lost reason (not an arbitrary one).
+            Reason = request.env['crm.lost.reason'].sudo()
+            reason = Reason.search([('name', '=', 'Under 21')], limit=1) \
+                or Reason.create({'name': 'Under 21'})
+            lead.write({'active': False, 'lost_reason_id': reason.id})
+            return error_response('You must be 21 or older', 403)
+        lead.write({'description': (lead.description or '')
+                    + '\nage_verified=true dob=%s' % dob.isoformat()})
+        return json_response({'ok': True, 'age_verified': True})
 
     def _create_web_user(self, email, name, phone='', web_dob=None,
                          age_method=None, age_source=None):
