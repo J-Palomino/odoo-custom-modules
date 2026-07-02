@@ -712,21 +712,23 @@ PYREDIS
     fi
 fi
 
-# ── MR#680: pre-create res.partner email/call consent columns ───────────────
+# ── Pre-create mint res.partner columns (MR#680 consent + #101243 onboarding) ─
 # Self-contained block with its OWN connection on the correct DB port
 # (ODOO_DB_PORT=5432). The older PYCLEAN/PYFIX blocks connect via $PORT (=8080,
 # the web port) and fail "Connection refused" — and they also run dormant
 # destructive ops, so we do NOT reuse them. -u is unreliable on this prod and
 # broke res.partner.create twice; this raw idempotent ALTER (runs every boot,
-# before Odoo) guarantees the column exists before the mint_account field code
-# loads. Field DEFINITIONS live in mint_account (phase 2).
-echo "=== MR#680: pre-creating res.partner consent columns ==="
+# before Odoo) guarantees the columns exist before the field code loads.
+# Field DEFINITIONS live in mint_account (MR#680) and mint_dutchie_sync (#101243).
+# The #101243 age/DOB fields are staging-only for now; the ADD COLUMN IF NOT
+# EXISTS is a harmless no-op on prod where the field code is absent.
+echo "=== Pre-creating res.partner mint columns (consent + onboarding) ==="
 python3 << 'PYCONSENT' 2>&1
 import os, sys
 try:
     import psycopg2
 except ImportError:
-    print("psycopg2 not available, skipping consent column pre-create"); sys.exit(0)
+    print("psycopg2 not available, skipping res.partner column pre-create"); sys.exit(0)
 host = os.environ.get("ODOO_DB_HOST") or os.environ.get("HOST", "localhost")
 port = os.environ.get("ODOO_DB_PORT") or "5432"
 user = os.environ.get("ODOO_DB_USER") or os.environ.get("USER", "odoo")
@@ -737,8 +739,11 @@ try:
     conn.autocommit = True
     cur = conn.cursor()
     for col, coltype in (
+        # MR#680 — email/call marketing consent (mint_account)
         ('email_opt_in', 'boolean'), ('email_opt_in_date', 'timestamp'), ('email_opt_in_source', 'varchar'),
         ('call_opt_in', 'boolean'), ('call_opt_in_date', 'timestamp'), ('call_opt_in_source', 'varchar'),
+        # #101243 — 21+ web-signup onboarding (mint_dutchie_sync)
+        ('x_age_verified', 'boolean'), ('x_date_of_birth', 'date'),
     ):
         cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name='res_partner' AND column_name=%s", (col,))
         if not cur.fetchone():
@@ -748,9 +753,9 @@ try:
             print(f"=== res_partner.{col} already exists ===")
     cur.close()
     conn.close()
-    print("=== MR#680 consent columns OK ===")
+    print("=== res.partner mint columns OK ===")
 except Exception as e:
-    print(f"=== WARNING: consent column pre-create failed: {e} ===")
+    print(f"=== WARNING: res.partner column pre-create failed: {e} ===")
 PYCONSENT
 
 # Execute the original entrypoint
