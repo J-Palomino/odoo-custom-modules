@@ -1,6 +1,10 @@
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
+import time
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError
@@ -386,38 +390,115 @@ class DaisyAgent(models.Model):
             self, message, conversation_history, conversation_id, override_config, session_id=session_id,
         )
 
-    @api.model
-    def mcp_act_as(self, target_login, model, method, args=None, kwargs=None):
-        """Run an Odoo call ON BEHALF OF another user, scoped to THAT user's own
-        permissions (ACLs + record rules) — the server side of agent MCP "act-as"
-        delegation (part b).
+    # --- Agent "act-as" delegation (part b) --------------------------------
+    # An agent may ONLY ever impersonate the OG caller — the exact end user who
+    # is talking to it in this conversation. The target is carried in a short-
+    # lived HMAC-signed token minted server-side by the auto-reply (the agent /
+    # LLM never chooses it and cannot forge it), so a Daisy agent can never do
+    # more than the user it is assisting could do itself. Defence-in-depth: no
+    # acting as other agents or system admins, no security-config models, no
+    # ORM-scope-escape methods, caller context stripped, and every call audited.
 
-        The MCP authenticates as the agent's own service user, then routes each
-        tool call through this method with the requesting (active) user's login,
-        so the agent can never do more than the user it is assisting could do
-        itself — least-privilege / confused-deputy-safe.
+    # Security/config models an agent must never touch via act-as, even if the
+    # OG caller technically could.
+    _ACTAS_MODEL_DENYLIST = (
+        "res.users", "res.groups", "res.company", "res.company.users",
+        "ir.rule", "ir.model.access", "ir.model.data", "ir.model",
+        "ir.config_parameter", "ir.cron", "ir.actions.server", "base.automation",
+    )
+    # Methods that would re-scope the recordset out of the with_user() sandbox.
+    _ACTAS_METHOD_DENYLIST = (
+        "sudo", "with_user", "with_context", "with_company", "with_env",
+        "browse", "search_fetch",
+    )
+    _ACTAS_TOKEN_TTL = 1800  # seconds
+
+    def _actas_secret(self):
+        secret = self.env["ir.config_parameter"].sudo().get_param(
+            "daisydo_agents.actas_secret"
+        )
+        if not secret:
+            raise AccessError(_(
+                "act-as is not configured (missing System Parameter "
+                "daisydo_agents.actas_secret)."
+            ))
+        return secret.encode()
+
+    def mint_act_as_token(self, og_user):
+        """Mint a short-lived signed token binding THIS agent to the OG caller.
+        Called by the auto-reply. The token is the ONLY way to select an act-as
+        target, so an agent can never impersonate anyone but this bound user."""
+        self.ensure_one()
+        og_id = og_user.id if hasattr(og_user, "id") else int(og_user)
+        payload = {"a": self.user_id.id, "u": og_id, "e": int(time.time()) + self._ACTAS_TOKEN_TTL}
+        raw = base64.urlsafe_b64encode(
+            json.dumps(payload, separators=(",", ":")).encode()
+        ).decode()
+        sig = hmac.new(self._actas_secret(), raw.encode(), hashlib.sha256).hexdigest()
+        return f"{raw}.{sig}"
+
+    def _verify_act_as_token(self, token, caller_agent):
+        """Validate the signed token and return the bound OG-caller uid."""
+        try:
+            raw, sig = str(token).split(".", 1)
+        except (ValueError, AttributeError):
+            raise AccessError(_("Malformed act-as token."))
+        expected = hmac.new(self._actas_secret(), raw.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            raise AccessError(_("Invalid act-as token signature."))
+        try:
+            payload = json.loads(base64.urlsafe_b64decode(raw.encode()))
+        except Exception:
+            raise AccessError(_("Malformed act-as token payload."))
+        if int(payload.get("e", 0)) < int(time.time()):
+            raise AccessError(_("Expired act-as token — start a fresh request."))
+        if payload.get("a") != caller_agent.user_id.id:
+            raise AccessError(_("This act-as token was not minted for this agent."))
+        return int(payload["u"])
+
+    @api.model
+    def mcp_act_as(self, token, model, method, args=None, kwargs=None):
+        """Run an Odoo call ON BEHALF OF the OG caller, scoped to THAT user's own
+        permissions (ACLs + record rules). The target comes ONLY from the signed
+        ``token`` (see mint_act_as_token) — never a caller-chosen argument — so an
+        agent can only ever act as the user actually talking to it.
 
         Restricted to Daisy agent service accounts. ``model``/``method`` are the
-        same model + PUBLIC method the MCP would otherwise call directly; ``args``
-        and ``kwargs`` are passed straight through.
+        model + PUBLIC method the MCP would otherwise call; ``args``/``kwargs`` are
+        passed through (any caller-supplied ``context`` is stripped).
         """
         caller = self.env["daisy.agent"].sudo().search(
             [("user_id", "=", self.env.uid)], limit=1
         )
         if not caller:
             raise AccessError(_("mcp_act_as is restricted to Daisy agent accounts."))
-        if not target_login:
-            raise UserError(_("An act-as target user is required."))
-        target = self.env["res.users"].sudo().search(
-            [("login", "=", target_login), ("active", "=", True)], limit=1
-        )
-        if not target:
-            raise UserError(_("Unknown or inactive user: %s") % target_login)
-        if not method or method.startswith("_"):
+
+        # Target = the OG caller, and ONLY the OG caller (from the signed token).
+        og_uid = self._verify_act_as_token(token, caller)
+        target = self.env["res.users"].sudo().browse(og_uid).exists()
+        if not target or not target.active:
+            raise UserError(_("act-as target user is not available."))
+        # Never launder privilege through another agent, and never act as an admin.
+        if self.env["daisy.agent"].sudo().search_count([("user_id", "=", og_uid)]):
+            raise AccessError(_("Cannot act as another Daisy agent."))
+        if target.has_group("base.group_system"):
+            raise AccessError(_("Cannot act as a system administrator."))
+
+        if not model or model in self._ACTAS_MODEL_DENYLIST:
+            raise UserError(_("Model not allowed via act-as: %s") % model)
+        if not method or method.startswith("_") or method in self._ACTAS_METHOD_DENYLIST:
             raise UserError(_("Method not allowed via act-as: %s") % method)
-        # Execute AS the target user: their ACLs and record rules bound the call.
+
+        # Never let a caller-supplied context weaken record-rule/default filtering.
+        safe_kwargs = dict(kwargs or {})
+        safe_kwargs.pop("context", None)
+
+        _logger.info(
+            "[act-as] agent=%s (uid %s) acting as %s (uid %s) -> %s.%s",
+            caller.name, self.env.uid, target.login, og_uid, model, method,
+        )
         target_model = self.env[model].with_user(target.id)
         fn = getattr(target_model, method, None)
         if not callable(fn):
             raise UserError(_("No such method %s on %s") % (method, model))
-        return fn(*(args or []), **(kwargs or {}))
+        return fn(*(args or []), **safe_kwargs)
