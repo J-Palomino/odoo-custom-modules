@@ -2,8 +2,8 @@ import json
 import logging
 import os
 
-from odoo import models, fields, api
-from odoo.exceptions import UserError
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError, AccessError
 
 _logger = logging.getLogger(__name__)
 
@@ -385,3 +385,39 @@ class DaisyAgent(models.Model):
         return ai_svc._call_daisy_api_for_agent(
             self, message, conversation_history, conversation_id, override_config, session_id=session_id,
         )
+
+    @api.model
+    def mcp_act_as(self, target_login, model, method, args=None, kwargs=None):
+        """Run an Odoo call ON BEHALF OF another user, scoped to THAT user's own
+        permissions (ACLs + record rules) — the server side of agent MCP "act-as"
+        delegation (part b).
+
+        The MCP authenticates as the agent's own service user, then routes each
+        tool call through this method with the requesting (active) user's login,
+        so the agent can never do more than the user it is assisting could do
+        itself — least-privilege / confused-deputy-safe.
+
+        Restricted to Daisy agent service accounts. ``model``/``method`` are the
+        same model + PUBLIC method the MCP would otherwise call directly; ``args``
+        and ``kwargs`` are passed straight through.
+        """
+        caller = self.env["daisy.agent"].sudo().search(
+            [("user_id", "=", self.env.uid)], limit=1
+        )
+        if not caller:
+            raise AccessError(_("mcp_act_as is restricted to Daisy agent accounts."))
+        if not target_login:
+            raise UserError(_("An act-as target user is required."))
+        target = self.env["res.users"].sudo().search(
+            [("login", "=", target_login), ("active", "=", True)], limit=1
+        )
+        if not target:
+            raise UserError(_("Unknown or inactive user: %s") % target_login)
+        if not method or method.startswith("_"):
+            raise UserError(_("Method not allowed via act-as: %s") % method)
+        # Execute AS the target user: their ACLs and record rules bound the call.
+        target_model = self.env[model].with_user(target.id)
+        fn = getattr(target_model, method, None)
+        if not callable(fn):
+            raise UserError(_("No such method %s on %s") % (method, model))
+        return fn(*(args or []), **(kwargs or {}))
