@@ -1,5 +1,6 @@
 import json
 import logging
+import urllib.parse
 import urllib.request
 from datetime import timedelta
 
@@ -925,18 +926,16 @@ class PtlDeal(models.Model):
         self.sudo().write({'dutchie_publish_ids': json.dumps(m)})
 
     def _dutchie_readback_id(self, external_id, loc_id, lsp_id):
-        """Read-back-as-verify: find an existing Dutchie discount by ExternalId
-        at (loc, lsp) via invsvc. int>0 = found, 0 = confirmed absent, None =
+        """Read-back-as-verify: find an existing Dutchie discount by the unified
+        key at (loc, lsp) via invsvc. int>0 = found, 0 = confirmed absent, None =
         read failed/unknown (caller must NOT blind-create — sub-395 lesson).
 
-        SCOPE (verified 2026-06-25, task #100245): this reads the invsvc
-        active-discount list, which drops EXPIRED records (ExternalId is not on
-        the raw Dutchie list — it's enrichment-only, so an expired-inclusive
-        scan-by-ExternalId is impractical: ~21k rows/loc). So a live-but-EXPIRED
-        record reads as 0 (absent) here. That residual duplicate window is
-        accepted: the authoritative dup-guard is the shared registry (seeded by
-        the migration — verified 0 gaps) + the bilateral publish mutex, NOT this
-        best-effort read-back. Revisit only if a real duplicate is observed."""
+        The key is matched on DiscountDescription (where publish embeds
+        ``lgm_deal_<id>_lsp<lsp>`` — see phase 1), NOT ExternalId: the raw Dutchie
+        list carries DiscountDescription but not ExternalId (enrichment-only, ~21k
+        rows/loc). The invsvc /api/admin/dutchie-discount-by-key route does a
+        single no-enrich list scan, so this now finds live AND EXPIRED records
+        (task #100245) — closing the earlier expired-record duplicate window."""
         get_param = self.env['ir.config_parameter'].sudo().get_param
         url = (get_param('dutchie.publish.url')
                or 'https://mintinvsvc-production-6aa5.up.railway.app').rstrip('/')
@@ -945,18 +944,15 @@ class PtlDeal(models.Model):
             return None
         try:
             req = urllib.request.Request(
-                "%s/api/admin/dutchie-discounts?locId=%d&lspId=%d"
-                % (url, int(loc_id), int(lsp_id)),
+                "%s/api/admin/dutchie-discount-by-key?needle=%s&locId=%d&lspId=%d"
+                % (url, urllib.parse.quote(external_id), int(loc_id), int(lsp_id)),
                 headers={'x-api-key': api_key}, method='GET')
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=90) as resp:
                 data = json.loads(resp.read().decode(errors='replace'))
             if not data.get('ok'):
                 return None
-            for d in (data.get('discounts') or []):
-                if str(d.get('ExternalId') or '') == external_id:
-                    did = d.get('Id')
-                    return int(did) if isinstance(did, int) and did > 0 else 0
-            return 0  # endpoint answered, no match → confirmed absent
+            did = data.get('id')
+            return int(did) if isinstance(did, int) and did > 0 else 0
         except Exception as exc:
             _logger.warning("Dutchie read-back failed for %s @ loc %s: %s",
                             external_id, loc_id, exc)
