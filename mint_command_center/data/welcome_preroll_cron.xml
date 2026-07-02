@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Welcome free pre-roll issuer (task #102149). Sweeps recent web-signup
+             partners lacking a welcome coupon and issues+publishes one. No-ops
+             until ops sets mint.welcome_preroll.launch_cutoff + enabled_lsps, so
+             it is safe to ship active. -->
+        <record id="cron_issue_welcome_prerolls" model="ir.cron">
+            <field name="name">Mint: Issue welcome free pre-rolls to new web sign-ups</field>
+            <field name="model_id" ref="mint_api_v2.model_mint_discount"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_issue_welcome_prerolls()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">30</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

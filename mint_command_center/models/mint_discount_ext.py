@@ -53,6 +53,13 @@ class MintDiscountPTL(models.Model):
         ondelete='set null',
     )
 
+    # Welcome free pre-roll (task #102149): marks a per-customer single-use code
+    # coupon issued on web sign-up. The Dutchie push branches on this to emit the
+    # fixed pre-roll reward shape; the customer partner is on redemption_partner_id.
+    is_welcome_preroll = fields.Boolean(
+        string="Welcome Pre-Roll", default=False, copy=False, index=True,
+        help="Auto-issued welcome free pre-roll code coupon (one per web signup).")
+
     @api.constrains('application_method', 'dutchie_discount_code', 'source')
     def _check_code_method_has_code(self):
         """A code-method discount we author must carry the register code it is
@@ -113,6 +120,91 @@ class MintDiscountPTL(models.Model):
             'launch_cutoff': (get(WELCOME_PREROLL_LAUNCH_CUTOFF_PARAM, '') or '').strip(),
             'ttl_days': ttl_days,
         }
+
+    def _issue_welcome_preroll(self, partner):
+        """Idempotently create + publish a welcome free pre-roll for one partner.
+
+        Creates a single-use code coupon (ExternalId lgm_welcome_<pid>) and
+        publishes it to Dutchie via the existing PTL canary (_push_one_discount),
+        once per enabled LSP (discounts are LSP-scoped, so one write per LSP
+        covers every store in it). Mode-gated by mint.dutchie_discount_push.mode:
+        off ⇒ record created but no push; dry-run ⇒ logged; live ⇒ POSTed.
+        Returns the coupon record (or None when the issuer is disabled).
+        """
+        cfg = self._welcome_preroll_config()
+        if not cfg['enabled_lsps'] or not cfg['launch_cutoff']:
+            return None  # issuer disabled until ops sets cutoff + enables an LSP
+
+        coupon = self.sudo().search([
+            ('is_welcome_preroll', '=', True),
+            ('redemption_partner_id', '=', partner.id),
+        ], limit=1)
+        if not coupon:
+            now = fields.Datetime.now()
+            coupon = self.sudo().create({
+                'name': (f'Welcome Free Pre-Roll — {partner.name or partner.id}')[:120],
+                'source': 'ptl',
+                'application_method': 'code',
+                'dutchie_discount_code': f'WELCOME-PR-{partner.id}',
+                'maximum_usage_count': 1,
+                'is_welcome_preroll': True,
+                'redemption_partner_id': partner.id,
+                'is_available_online': False,
+                'valid_from': now,
+                'valid_until': fields.Datetime.add(now, days=cfg['ttl_days']),
+            })
+
+        push = self.env['mint.ptl.day'].sudo()
+        mode = push._get_dutchie_push_mode()
+        if mode == 'off':
+            return coupon
+        url = push._get_dutchie_push_url()
+        api_key = push._get_dutchie_push_api_key()
+        Log = self.env['mint.dutchie.discount.push.log'].sudo()
+        Company = self.env['res.company'].sudo()
+        for lsp in cfg['enabled_lsps']:
+            store = Company.search([
+                ('dutchie_lsp_id', '=', lsp),
+                ('dutchie_pos_location_id', '!=', False),
+            ], limit=1)
+            if not store:
+                _logger.warning('welcome_preroll: no store with a POS LocId for LSP %s', lsp)
+                continue
+            try:
+                push._push_one_discount(coupon, store, mode, url, api_key, Log)
+            except Exception as e:
+                _logger.warning('welcome_preroll: publish failed for partner %s LSP %s: %s',
+                                partner.id, lsp, e)
+        return coupon
+
+    @api.model
+    def _cron_issue_welcome_prerolls(self):
+        """Sweep recent web-signup partners lacking a welcome pre-roll and issue.
+
+        Bounded batch; idempotent (skips partners who already have one). Off until
+        ops sets mint.welcome_preroll.launch_cutoff + enabled_lsps.
+        """
+        cfg = self._welcome_preroll_config()
+        if not cfg['enabled_lsps'] or not cfg['launch_cutoff']:
+            return
+        Partner = self.env['res.partner'].sudo()
+        partners = Partner.search([
+            ('is_web_customer', '=', True),
+            ('create_date', '>=', cfg['launch_cutoff']),
+        ], order='create_date asc', limit=200)
+        if not partners:
+            return
+        have = set(self.sudo().search([
+            ('is_welcome_preroll', '=', True),
+            ('redemption_partner_id', 'in', partners.ids),
+        ]).mapped('redemption_partner_id').ids)
+        for p in partners:
+            if p.id in have:
+                continue
+            try:
+                self._issue_welcome_preroll(p)
+            except Exception as e:
+                _logger.warning('welcome_preroll: issue failed for partner %s: %s', p.id, e)
 
     # ── Override is_active as stored compute ─────────────────────────────
     is_active = fields.Boolean(
