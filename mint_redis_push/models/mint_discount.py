@@ -44,6 +44,9 @@ REDIS_RELEVANT_FIELDS = frozenset({
     # Targeting (FKs — the resolved truth)
     'store_ids', 'brand_ids', 'category_ids', 'product_ids',
     'exclude_brand_ids', 'exclude_category_ids', 'exclude_product_ids',
+    'weight_ids', 'exclude_weight_ids',
+    'vendor_ids', 'exclude_vendor_ids',
+    'excluded_skus',
     # Targeting (raw — fallback when FKs not yet resolved)
     'brand_restriction_ids_raw', 'category_restriction_ids_raw',
     'product_restriction_ids_raw', 'inventory_tag_ids_raw',
@@ -211,6 +214,50 @@ class MintDiscount(models.Model):
                 products = {'ids': [int(x) if str(x).isdigit() else x for x in ex],
                             'isExclusion': True}
 
+        # Weight restriction — the "ids" ARE gram floats, mirroring Dutchie's
+        # Reward.Restrictions.Weight where RestrictionIds are gram values
+        # (3.5 = eighth). mintinvsvc's resolveComputedProductIds already
+        # consumes exactly this shape (discountSync.js expandWeightIds,
+        # 0.01g tolerance with name/size parse fallback). Inclusion wins over
+        # exclusion, same single-bucket precedence as brands/categories above
+        # and same as Dutchie's one Weight bucket.
+        weights = {}
+        incl_w = sorted({
+            round(float(w.value), 4)
+            for w in self.weight_ids if w.value and w.value > 0
+        })
+        if incl_w:
+            weights = {'ids': incl_w, 'isExclusion': False}
+        else:
+            excl_w = sorted({
+                round(float(w.value), 4)
+                for w in self.exclude_weight_ids if w.value and w.value > 0
+            })
+            if excl_w:
+                weights = {'ids': excl_w, 'isExclusion': True}
+
+        # Vendor restriction — res.partner has no Dutchie vendor id, so emit
+        # Odoo partner ids plus names; mintinvsvc inventory rows carry
+        # vendor_name/vendor_id, so name is the viable join key when the
+        # resolver grows vendor support. Serialized now so the data stops
+        # dying at the Odoo boundary.
+        vendors = {}
+        vend, vend_excl = self.vendor_ids, False
+        if not vend and self.exclude_vendor_ids:
+            vend, vend_excl = self.exclude_vendor_ids, True
+        if vend:
+            vendors = {
+                'ids': vend.ids,
+                'names': [v.name for v in vend if v.name],
+                'isExclusion': vend_excl,
+            }
+
+        # Excluded SKUs — normalized uppercase list (matches the register-side
+        # matcher _excluded_sku_set). mintinvsvc already consumes this key:
+        # resolveComputedProductIds phase-3 post-filter drops matching SKUs
+        # from computed_product_ids (case-insensitive, trim-tolerant).
+        excluded_skus = sorted(self._excluded_sku_set()) or None
+
         # Determine the numeric discount_id. Prefer the Dutchie one if parsable;
         # fall back to an Odoo-synthetic (id + 1M) to stay distinct from
         # Dutchie's numeric range (which tops out in the 400k range today).
@@ -263,6 +310,9 @@ class MintDiscount(models.Model):
             'brands': brands,
             'product_categories': categories,
             'products': products,
+            'weights': weights,
+            'vendors': vendors,
+            'excluded_skus': excluded_skus,
             # Display
             'menu_display_name': self.menu_display_name or None,
             'menu_display_image_url': self.menu_display_image_url or None,
