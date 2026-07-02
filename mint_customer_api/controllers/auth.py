@@ -326,7 +326,8 @@ class MintCustomerAuth(http.Controller):
             lead_id = int(data.get('lead_id') or 0) or False
             lead_token = (data.get('lead_token') or '').strip()
             if lead_id and lead_token:
-                lead = request.env['crm.lead'].sudo().browse(lead_id)
+                lead = request.env['crm.lead'].sudo().with_context(
+            tracking_disable=True, mail_notrack=True).browse(lead_id)
                 if lead.exists() and hmac.compare_digest(lead_token, _lead_token(lead_id)):
                     lead.write({'partner_id': user.partner_id.id, 'date_conversion': now})
 
@@ -622,7 +623,9 @@ class MintCustomerAuth(http.Controller):
         ip = request.httprequest.headers.get(
             'X-Forwarded-For', request.httprequest.remote_addr or '')
         ua = request.httprequest.headers.get('User-Agent', '')[:200]
-        lead = request.env['crm.lead'].sudo().create({
+        lead = request.env['crm.lead'].sudo().with_context(
+            mail_create_nosubscribe=True, mail_create_nolog=True,
+            tracking_disable=True, mail_notrack=True).create({
             'name': 'Web signup: %s' % email,
             'contact_name': (data.get('name') or '').strip() or False,
             'email_from': email,
@@ -649,7 +652,8 @@ class MintCustomerAuth(http.Controller):
             data = json.loads(request.httprequest.data)
         except (json.JSONDecodeError, TypeError):
             return error_response('Invalid JSON body')
-        lead = request.env['crm.lead'].sudo().browse(lead_id)
+        lead = request.env['crm.lead'].sudo().with_context(
+            tracking_disable=True, mail_notrack=True).browse(lead_id)
         # Ownership binding: the caller must present the server-issued token from
         # create_lead (HMAC of the id). email_from is guessable, so a token — not
         # the email — is the authorization boundary, closing the IDOR. 404 (not
