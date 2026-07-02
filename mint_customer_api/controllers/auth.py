@@ -34,6 +34,24 @@ def _lead_token(lead_id):
                     hashlib.sha256).hexdigest()
 
 
+def _clean_token(v):
+    """Coerce a client-supplied token to a stripped str; '' for non-strings.
+    Guards against a JSON number/list/bool reaching .strip() (AttributeError)."""
+    return v.strip() if isinstance(v, str) else ''
+
+
+def _token_eq(a, b):
+    """Constant-time token compare, tolerant of non-ASCII input.
+    (hmac.compare_digest raises TypeError on a non-ASCII str, so compare bytes.)
+    Returns False on any falsy operand or error — never raises."""
+    if not a or not b:
+        return False
+    try:
+        return hmac.compare_digest(a.encode('utf-8'), b.encode('utf-8'))
+    except Exception:
+        return False
+
+
 def _enqueue_dutchie_create(payload):
     """Best-effort, non-blocking POST to create the Dutchie guest (#101243).
 
@@ -292,12 +310,11 @@ class MintCustomerAuth(http.Controller):
                 lead_id = int(data.get('lead_id') or 0) or False
             except (TypeError, ValueError):
                 lead_id = False
-            lead_token = (data.get('lead_token') or '').strip()
+            lead_token = _clean_token(data.get('lead_token'))
             if lead_id and lead_token:
                 try:
                     lead = request.env['crm.lead'].sudo().browse(lead_id)
-                    expected = _lead_token(lead_id)
-                    if lead.exists() and expected and hmac.compare_digest(lead_token, expected):
+                    if lead.exists() and _token_eq(lead_token, _lead_token(lead_id)):
                         lead.write({'partner_id': user.partner_id.id,
                                     'date_conversion': fields.Datetime.now()})
                 except Exception as e:
@@ -307,13 +324,19 @@ class MintCustomerAuth(http.Controller):
             token = user._generate_jwt()
 
             # Dutchie guest create — best-effort, non-blocking, fired last.
-            _enqueue_dutchie_create({
-                'partner_id': user.partner_id.id,
-                'name': name,
-                'email': email,
-                'phone': phone,
-                'date_of_birth': dob.isoformat(),
-            })
+            # Guarded so a serialize/config hiccup here can't 500 an already-
+            # committed signup (which would then 409-lock the user on retry).
+            try:
+                _enqueue_dutchie_create({
+                    'partner_id': user.partner_id.id,
+                    'name': name,
+                    'email': email,
+                    'phone': phone,
+                    'date_of_birth': dob.isoformat(),
+                })
+            except Exception as e:
+                _logger.warning('Dutchie enqueue dispatch failed for partner %s: %s',
+                                user.partner_id.id, e)
 
             return json_response({
                 'token': token,
@@ -478,6 +501,10 @@ class MintCustomerAuth(http.Controller):
         email = (data.get('email') or '').strip().lower()
         if not email:
             return error_response('Email is required')
+        # Verify we can issue a token BEFORE creating the lead, so a missing
+        # database.secret doesn't leave an orphaned, unconvertible lead behind.
+        if _lead_token(0) is None:
+            return error_response('Unable to issue lead token', 503)
         ip = request.httprequest.headers.get(
             'X-Forwarded-For', request.httprequest.remote_addr or '')
         ua = request.httprequest.headers.get('User-Agent', '')[:200]
@@ -522,28 +549,32 @@ class MintCustomerAuth(http.Controller):
         # Ownership binding: the caller must present the server-issued token from
         # create_lead (HMAC of the id). 404 (not 403) on mismatch/missing-secret
         # so the endpoint neither confirms which ids exist nor leaks misconfig.
-        token = (data.get('lead_token') or '').strip()
-        expected = _lead_token(lead_id)
-        if (not lead.exists() or not token or not expected
-                or not hmac.compare_digest(token, expected)):
+        token = _clean_token(data.get('lead_token'))
+        if not lead.exists() or not _token_eq(token, _lead_token(lead_id)):
             return error_response('Lead not found', 404)
         from datetime import date
-        dob_raw = (data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
+        dob_raw = str(data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
         try:
             dob = date.fromisoformat(dob_raw[:10])
         except (ValueError, TypeError):
             return error_response('Invalid date of birth')
         today = date.today()
         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-        if age < 21:
-            # Disqualify with an age-specific lost reason (not an arbitrary one).
-            Reason = request.env['crm.lost.reason'].sudo()
-            reason = Reason.search([('name', '=', 'Under 21')], limit=1) \
-                or Reason.create({'name': 'Under 21'})
-            lead.write({'active': False, 'lost_reason_id': reason.id})
-            return error_response('You must be 21 or older', 403)
-        lead.write({'description': (lead.description or '')
-                    + '\nage_verified=true dob=%s' % dob.isoformat()})
+        # Guard the crm.lead / crm.lost.reason writes: a cross-module hook, rule,
+        # or automation must not turn a valid verification into an uncaught 500.
+        try:
+            if age < 21:
+                # Disqualify with an age-specific lost reason (not an arbitrary one).
+                Reason = request.env['crm.lost.reason'].sudo()
+                reason = Reason.search([('name', '=', 'Under 21')], limit=1) \
+                    or Reason.create({'name': 'Under 21'})
+                lead.write({'active': False, 'lost_reason_id': reason.id})
+                return error_response('You must be 21 or older', 403)
+            lead.write({'description': (lead.description or '')
+                        + '\nage_verified=true dob=%s' % dob.isoformat()})
+        except Exception as e:
+            _logger.exception('verify_lead write failed for lead %s: %s', lead_id, e)
+            return error_response('Could not record verification', 500)
         return json_response({'ok': True, 'age_verified': True})
 
     def _create_web_user(self, email, name, phone='', web_dob=None,
