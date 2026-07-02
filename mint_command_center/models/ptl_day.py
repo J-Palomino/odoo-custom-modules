@@ -391,6 +391,12 @@ class PtlDay(models.Model):
         if deal.explicit_product_ids:
             vals['product_ids'] = [(6, 0, deal.explicit_product_ids.ids)]
 
+        # Weight targeting — ID-based, forwarded straight to mint.discount.
+        # weight_ids, which builds Dutchie's Reward.Restrictions.Weight. Always
+        # written (even when empty) so de-selecting a weight on the deal clears
+        # the restriction on the existing discount instead of leaving a stale one.
+        vals['weight_ids'] = [(6, 0, deal.weight_ids.ids)]
+
         return vals
 
     # ─── Webhook Push to Inventory Service ───────────────────────────────

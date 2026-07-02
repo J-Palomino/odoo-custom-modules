@@ -177,6 +177,10 @@
                                        placeholder="Add every in-stock category this deal includes"/>
                                 <field name="product_category"
                                        placeholder="Free text — auto-fills from the In-Stock Categories picks"/>
+                                <field name="weight_ids" widget="many2many_tags"
+                                       options="{'no_create': True}"
+                                       invisible="not brand_id and not brand_ids"
+                                       placeholder="Restrict to these net weights (e.g. 3.5g, 7g) — narrows Available Products and the match count"/>
                                 <label for="publish_match_count" string="In-Stock Products Matched"/>
                                 <div>
                                     <field name="publish_match_count" class="oe_inline"
@@ -199,7 +203,7 @@
                                        domain="[('id', 'in', available_product_ids)]"
                                        options="{'no_create': True, 'no_create_edit': True}"
                                        invisible="not brand_id and not brand_ids"
-                                       placeholder="Pick specific products — list is filtered to brand(s) + picked categories + market stores, in stock only."/>
+                                       placeholder="Pick specific products — list is filtered to brand(s) + picked categories + market stores + selected weights, in stock only."/>
                             </group>
                             <group string="Sales Details" col="1">
                                 <field name="sales_details" nolabel="1"
