@@ -211,9 +211,18 @@ class DaisyAgent(models.Model):
                 "email": self.email,
                 "image_1920": self.avatar,
                 "active": True,
-                "group_ids": [(6, 0, [self.env.ref("base.group_user").id])],
+                "group_ids": [(6, 0, [
+                    self.env.ref("base.group_user").id,
+                    # fleet marker: agent-only access rules key off this group
+                    self.env.ref("daisydo_agents.group_daisy_agents").id,
+                ])],
             })
             self.user_id = user
+        elif not self.user_id.has_group("daisydo_agents.group_daisy_agents"):
+            # re-hire of an agent provisioned before the fleet marker existed
+            self.user_id.sudo().write({
+                "group_ids": [(4, self.env.ref("daisydo_agents.group_daisy_agents").id)],
+            })
 
         # Add agent's partner to livechat channels as operator
         if self.partner_id:

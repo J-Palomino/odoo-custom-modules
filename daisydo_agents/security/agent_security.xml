@@ -26,6 +26,19 @@
         <field name="implied_ids" eval="[(4, ref('group_daisy_officer'))]"/>
     </record>
 
+    <!-- ============ AGENT FLEET MARKER ============
+         Flags a res.users as a Daisy+ AI agent service account (NOT a human).
+         Gate agent-only permissions on this group, not base.group_user.
+         Every agent user is added at provisioning (daisy.agent user-create
+         path); pre-existing agents are backfilled by the 19.0.5.9.0 migration,
+         which also adopts the pre-existing DB group (id 409, created without
+         an xmlid) under this external id so -u updates it instead of
+         creating a duplicate. -->
+    <record id="group_daisy_agents" model="res.groups">
+        <field name="name">Daisy Agents</field>
+        <field name="comment">All Daisy+ AI agent service accounts (@daisy.plus). Use for eLearning auto-enroll, access rules, and reporting on the agent fleet.</field>
+    </record>
+
     <!-- NOTE: Daisy Agency access is opt-in. Assign users to
          group_daisy_user / officer / admin manually in Settings > Users. -->
 

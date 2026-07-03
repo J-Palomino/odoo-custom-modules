@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Link Tracker GUI policy: internal users work with link.tracker only
+         through their agents (RPC — see security/ir.model.access.csv, keyed
+         on daisydo_agents.group_daisy_agents). Every backend menu that
+         surfaces link.tracker is restricted to Settings administrators.
+
+         noupdate stays OFF on purpose: each -u of this module re-asserts the
+         policy, undoing any revert caused by an upgrade of the owning stock
+         module (utm / link_tracker / mass_mailing / mass_mailing_sms /
+         website_links). -->
+
+    <record id="utm.menu_link_tracker_root" model="ir.ui.menu">
+        <field name="group_ids" eval="[(6, 0, [ref('base.group_system')])]"/>
+    </record>
+
+    <record id="link_tracker.link_tracker_menu_main" model="ir.ui.menu">
+        <field name="group_ids" eval="[(6, 0, [ref('base.group_system')])]"/>
+    </record>
+
+    <record id="mass_mailing.link_tracker_menu_mass_mailing" model="ir.ui.menu">
+        <field name="group_ids" eval="[(6, 0, [ref('base.group_system')])]"/>
+    </record>
+
+    <record id="mass_mailing_sms.link_tracker_menu" model="ir.ui.menu">
+        <field name="group_ids" eval="[(6, 0, [ref('base.group_system')])]"/>
+    </record>
+
+    <record id="website_links.menu_link_tracker" model="ir.ui.menu">
+        <field name="group_ids" eval="[(6, 0, [ref('base.group_system')])]"/>
+    </record>
+
+    <!-- A hand-made "Project / Link Tracker" menu exists in the prod DB with
+         no external id, so it can't be targeted by ref. Deactivate it by
+         search; a no-match (e.g. staging) makes this a harmless no-op. -->
+    <function model="ir.ui.menu" name="write">
+        <value model="ir.ui.menu"
+               search="[('name', '=', 'Link Tracker'), ('parent_id.name', '=', 'Project')]"/>
+        <value eval="{'active': False}"/>
+    </function>
+</odoo>

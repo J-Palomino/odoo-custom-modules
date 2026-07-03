@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Link Tracker QR',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Marketing',
     'summary': 'Generate a downloadable QR code for every tracked short link',
     'description': """MintDeals Link Tracker QR
@@ -14,9 +14,23 @@
     'author': 'MintDeals',
     'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
-    'depends': ['link_tracker', 'web'],
+    # utm/website_links/mass_mailing/mass_mailing_sms are required so this
+    # module loads after them and may override their Link Tracker menus
+    # (agents-only policy: link.tracker is agent-RPC-accessible, GUI hidden).
+    # daisydo_agents provides group_daisy_agents, the agent fleet marker.
+    'depends': [
+        'link_tracker',
+        'web',
+        'utm',
+        'website_links',
+        'mass_mailing',
+        'mass_mailing_sms',
+        'daisydo_agents',
+    ],
     'data': [
+        'security/ir.model.access.csv',
         'views/link_tracker_views.xml',
+        'data/link_tracker_menu_policy.xml',
     ],
     'installable': True,
     'application': False,
