@@ -251,6 +251,20 @@ class MintCustomerAuth(http.Controller):
         today = date.today()
         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         if age < 21:
+            # Under-21 leads are NEVER retained (owner decision 2026-07-02):
+            # if the caller proves ownership of a pre-account lead via its HMAC
+            # token, delete it here too — the DOB just revealed a minor, and the
+            # CRM must hold no minor PII. Best-effort; the 403 stands either way.
+            try:
+                u21_lead_id = int(data.get('lead_id') or 0) or False
+                u21_token = _clean_token(data.get('lead_token'))
+                if u21_lead_id and u21_token and _token_eq(u21_token, _lead_token(u21_lead_id)):
+                    request.env['crm.lead'].sudo().with_context(
+                        tracking_disable=True, mail_notrack=True
+                    ).browse(u21_lead_id).exists().unlink()
+            except Exception as e:
+                _logger.warning('Under-21 lead cleanup failed (lead %s): %s',
+                                data.get('lead_id'), e)
             return error_response('You must be 21 or older to create an account', 403)
 
         # Only block on existing WEB customer account. An internal employee
@@ -549,7 +563,7 @@ class MintCustomerAuth(http.Controller):
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
     def verify_lead(self, lead_id, **kw):
         """Attach 21+ verification to a lead after the ID scan. Under-21 → the
-        lead is archived + marked lost (never deleted)."""
+        lead is DELETED outright — under-21 PII is never retained."""
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
         gate = self._require_fe_key()
@@ -582,11 +596,11 @@ class MintCustomerAuth(http.Controller):
         # or automation must not turn a valid verification into an uncaught 500.
         try:
             if age < 21:
-                # Disqualify with an age-specific lost reason (not an arbitrary one).
-                Reason = request.env['crm.lost.reason'].sudo()
-                reason = Reason.search([('name', '=', 'Under 21')], limit=1) \
-                    or Reason.create({'name': 'Under 21'})
-                lead.write({'active': False, 'lost_reason_id': reason.id})
+                # NEVER retain an under-21 lead (owner decision 2026-07-02,
+                # supersedes the earlier archive+lost-reason design): holding a
+                # minor's PII in the marketing CRM is a compliance liability, so
+                # the record is deleted outright — not archived.
+                lead.unlink()
                 return error_response('You must be 21 or older', 403)
             lead.write({'description': (lead.description or '')
                         + '\nage_verified=true dob=%s' % dob.isoformat()})
