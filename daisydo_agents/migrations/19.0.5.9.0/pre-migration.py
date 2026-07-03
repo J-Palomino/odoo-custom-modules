@@ -16,22 +16,10 @@ def migrate(cr, version):
     if cr.fetchone():
         return
 
-    # res_groups.name is jsonb (translated) on v19; tolerate varchar just in case
+    # res_groups.name is translated, hence jsonb
     cr.execute(
-        """
-        SELECT data_type FROM information_schema.columns
-        WHERE table_name = 'res_groups' AND column_name = 'name'
-        """
+        "SELECT id FROM res_groups WHERE name->>'en_US' = 'Daisy Agents' ORDER BY id LIMIT 1"
     )
-    row = cr.fetchone()
-    if row and row[0] == "jsonb":
-        cr.execute(
-            "SELECT id FROM res_groups WHERE name->>'en_US' = 'Daisy Agents' ORDER BY id LIMIT 1"
-        )
-    else:
-        cr.execute(
-            "SELECT id FROM res_groups WHERE name = 'Daisy Agents' ORDER BY id LIMIT 1"
-        )
     row = cr.fetchone()
     if row:
         cr.execute(

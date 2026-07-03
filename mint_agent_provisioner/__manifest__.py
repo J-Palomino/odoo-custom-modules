@@ -31,7 +31,7 @@ System parameters
   agent has a ``manager_id``, copy that user's groups/companies to the agent
   user.
 """,
-    "version": "19.0.1.1.0",
+    "version": "19.0.1.2.0",
     "category": "Productivity/Daisy",
     "author": "Mint Cannabis",
     "website": "https://letsgomint.us",

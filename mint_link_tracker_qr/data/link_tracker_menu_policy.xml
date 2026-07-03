@@ -5,10 +5,11 @@
          on daisydo_agents.group_daisy_agents). Every backend menu that
          surfaces link.tracker is restricted to Settings administrators.
 
-         noupdate stays OFF on purpose: each -u of this module re-asserts the
-         policy, undoing any revert caused by an upgrade of the owning stock
-         module (utm / link_tracker / mass_mailing / mass_mailing_sms /
-         website_links). -->
+         noupdate stays OFF on purpose: an upgrade of an owning stock module
+         (utm / link_tracker / mass_mailing / mass_mailing_sms / website_links)
+         restores its stock menu groups; the NEXT -u of this module then
+         re-asserts the policy. After any stock-module upgrade, re-run
+         -u mint_link_tracker_qr. -->
 
     <record id="utm.menu_link_tracker_root" model="ir.ui.menu">
         <field name="group_ids" eval="[(6, 0, [ref('base.group_system')])]"/>
@@ -30,12 +31,8 @@
         <field name="group_ids" eval="[(6, 0, [ref('base.group_system')])]"/>
     </record>
 
-    <!-- A hand-made "Project / Link Tracker" menu exists in the prod DB with
-         no external id, so it can't be targeted by ref. Deactivate it by
-         search; a no-match (e.g. staging) makes this a harmless no-op. -->
-    <function model="ir.ui.menu" name="write">
-        <value model="ir.ui.menu"
-               search="[('name', '=', 'Link Tracker'), ('parent_id.name', '=', 'Project')]"/>
-        <value eval="{'active': False}"/>
-    </function>
+    <!-- The hand-made "Project / Link Tracker" prod menu has no external id
+         and is archived once by the 19.0.2.0.0 post-migration, not here:
+         a search-by-name in noupdate-off data would re-run forever and
+         silently archive any future menu that happens to match. -->
 </odoo>
