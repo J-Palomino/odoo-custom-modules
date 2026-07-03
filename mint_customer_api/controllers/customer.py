@@ -149,13 +149,20 @@ class MintCustomerProfile(http.Controller):
         if not coupon:
             return json_response({'welcome_coupon': None})
 
-        expired = bool(coupon.valid_until and coupon.valid_until < fields.Datetime.now())
+        now = fields.Datetime.now()
+        if coupon.redemption_status == 'used':
+            status = 'redeemed'
+        elif (coupon.redemption_status in ('expired', 'voided')
+              or (coupon.valid_until and coupon.valid_until < now)):
+            status = 'expired'
+        else:
+            status = 'active'
         return json_response({
             'welcome_coupon': {
                 'code': coupon.dutchie_discount_code or '',
                 'label': 'Welcome Free Pre-Roll',
                 'reward': '100% off one pre-roll',
-                'status': 'expired' if expired else 'active',
+                'status': status,
                 'expires_at': coupon.valid_until.isoformat() if coupon.valid_until else None,
                 'in_store_only': True,
             },

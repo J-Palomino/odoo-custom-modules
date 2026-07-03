@@ -15,5 +15,18 @@
             <field name="interval_type">minutes</field>
             <field name="active" eval="True"/>
         </record>
+
+        <!-- Redemption sync-back: read Dutchie RedemptionCount and flip welcome
+             coupons to used/expired. No-ops when nothing is live. -->
+        <record id="cron_sync_welcome_redemptions" model="ir.cron">
+            <field name="name">Mint: Sync welcome pre-roll redemptions from Dutchie</field>
+            <field name="model_id" ref="mint_api_v2.model_mint_discount"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_sync_welcome_redemptions()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+        </record>
     </data>
 </odoo>

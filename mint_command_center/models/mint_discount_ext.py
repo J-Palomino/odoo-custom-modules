@@ -1,5 +1,6 @@
 import json
 import logging
+import urllib.request
 
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
@@ -205,6 +206,62 @@ class MintDiscountPTL(models.Model):
                 self._issue_welcome_preroll(p)
             except Exception as e:
                 _logger.warning('welcome_preroll: issue failed for partner %s: %s', p.id, e)
+
+    @api.model
+    def _cron_sync_welcome_redemptions(self):
+        """Flip welcome coupons to used/expired by reading Dutchie back.
+
+        Expiry is derivable locally (valid_until). Redemption is read from Dutchie
+        via mintinvsvc GET /api/admin/dutchie-discount/<id> (RedemptionCount) per
+        live push-log row — the coupon is LSP-scoped, so we sum across LSPs. Marks
+        redemption_status='used' once the total hits maximum_usage_count.
+        """
+        coupons = self.sudo().search([
+            ('is_welcome_preroll', '=', True),
+            ('redemption_status', 'not in', ['used', 'voided']),
+        ], limit=500)
+        if not coupons:
+            return
+        push = self.env['mint.ptl.day'].sudo()
+        mode = push._get_dutchie_push_mode()
+        api_key = push._get_dutchie_push_api_key()
+        base = (push._get_dutchie_push_url() or '').rsplit('/api/admin/discounts', 1)[0]
+        Log = self.env['mint.dutchie.discount.push.log'].sudo()
+        now = fields.Datetime.now()
+        for c in coupons:
+            # Local expiry first — independent of Dutchie.
+            if c.valid_until and c.valid_until < now:
+                c.write({'redemption_status': 'expired'})
+                continue
+            if mode != 'live' or not base:
+                continue  # only real redemptions to sync when we actually pushed live
+            logs = Log.search([
+                ('discount_id', '=', c.id), ('mode', '=', 'live'),
+                ('success', '=', True), ('dutchie_discount_id', '!=', 0),
+            ])
+            total, seen = 0, False
+            for lg in logs:
+                store = lg.company_id
+                loc = push._resolve_pos_loc_id(store)
+                lsp = push._resolve_lsp_id(store)
+                if not loc or not lsp:
+                    continue
+                u = (f'{base}/api/admin/dutchie-discount/{lg.dutchie_discount_id}'
+                     f'?locId={loc}&lspId={lsp}')
+                try:
+                    req = urllib.request.Request(u, headers={
+                        'X-API-Key': api_key,
+                        'User-Agent': 'mint-odoo-welcome-sync/1.0',
+                    })
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        rec = (json.loads(resp.read().decode('utf-8', 'replace')) or {}).get('discount') or {}
+                        total += int(rec.get('RedemptionCount') or 0)
+                        seen = True
+                except Exception as e:
+                    _logger.warning('welcome_sync: read failed coupon %s did %s: %s',
+                                    c.id, lg.dutchie_discount_id, e)
+            if seen and total >= int(c.maximum_usage_count or 1):
+                c.write({'redemption_status': 'used', 'redemption_used_at': now})
 
     # ── Override is_active as stored compute ─────────────────────────────
     is_active = fields.Boolean(
