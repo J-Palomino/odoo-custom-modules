@@ -57,6 +57,34 @@ for _a in REGISTRY['appMethods']:
     APP_METHOD_ID_BY_ODOO[_a['odooType']] = _a['id']
 
 
+def application_method_id_for(application_method):
+    """Dutchie ApplicationMethodId for a mint.discount.application_method.
+
+    1=Automatic, 2=Manual, 3=Code. Unset/unknown -> 1 (Automatic), the safe
+    default that preserves existing automatic deals. Single source of truth
+    shared by BOTH Odoo->Dutchie payload builders (the PTL canary in
+    dutchie_discount_push.py and the submission path in dutchie_publish.py) so
+    the mapping cannot drift between them.
+    """
+    return APP_METHOD_ID_BY_ODOO.get(application_method) or 1
+
+
+def redemption_fields_for(max_uses):
+    """Dutchie redemption-cap fields for a usage count.
+
+    Verified single/limited-use shape (live record PHXNTPR 383481):
+    MaxRedemptions set, RedemptionLimit null, counting mode 0. Uncapped deals
+    keep the historical '' RedemptionLimit and no cap -- a 0/'' MaxRedemptions
+    makes Dutchie reject the discount as unpublishable.
+    """
+    n = int(max_uses or 0)
+    if n > 0:
+        return {'MaxRedemptions': n, 'RedemptionLimit': None,
+                'RedemptionLimitCountingMode': 0}
+    return {'MaxRedemptions': None, 'RedemptionLimit': '',
+            'RedemptionLimitCountingMode': 0}
+
+
 def calc_method_id_for(discount):
     """Authoritative Dutchie CalculationMethodId for a mint.discount record.
 

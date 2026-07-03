@@ -33,6 +33,7 @@ from datetime import date as _date, timedelta
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
+from odoo.addons.mint_api_v2.models.discount_canonical import application_method_id_for
 
 from .deal_mixins import (format_bundle_tiers_text, build_dutchie_restrictions,
                           normalize_publish_mode)
@@ -613,7 +614,10 @@ class DealSubmissionDutchiePublish(models.Model):
                            else f"lgm_{self.id}_w{gidx}")
             discounts.append({
                 'Id': 0,
-                'ApplicationMethodId': 1,
+                # Vendor submissions are always Automatic (no app-method/code
+                # field on mint.deal.submission). Routed through the shared
+                # canonical mapping so it can't drift from the PTL canary path.
+                'ApplicationMethodId': application_method_id_for('automatic'),
                 'CanStackAutomatically': False,
                 'Constraints': [],
                 'DiscountDescription': f"lgm | {self.vendor_name} (Odoo sub {self.id})",

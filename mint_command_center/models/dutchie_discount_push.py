@@ -25,9 +25,11 @@ import urllib.request
 from odoo import api, fields, models
 from odoo.addons.mint_api_v2.models.discount_canonical import (
     THRESHOLD_TYPE_ID_BY_ODOO,
+    application_method_id_for,
     calc_method_id_for,
     discount_value_for,
     parse_raw_restriction,
+    redemption_fields_for,
 )
 
 from .deal_mixins import coerce_dutchie_ids
@@ -169,6 +171,16 @@ class PtlDayDutchiePush(models.Model):
             return int(discount.item_group_type_id)
         return self.ITEM_GROUP_TYPE_ID_FALLBACK
 
+    def _resolve_application_method_id(self, discount):
+        # Single source of truth in discount_canonical (shared with the
+        # submission publish path in dutchie_publish.py).
+        return application_method_id_for(discount.application_method)
+
+    def _resolve_redemption_fields(self, discount):
+        # Single source of truth in discount_canonical. Verified single-use
+        # shape comes from there; see redemption_fields_for().
+        return redemption_fields_for(discount.maximum_usage_count)
+
     def _build_backoffice_url(self, discount_id, loc_id, lsp_id):
         """Build the Dutchie backoffice review URL for a discount.
 
@@ -225,6 +237,21 @@ class PtlDayDutchiePush(models.Model):
         ], order='id desc', limit=1)
         existing_int = prior.dutchie_discount_id or 0
 
+        # Welcome free pre-roll (task #102149): a standalone code coupon with a
+        # fixed, live-verified reward shape (mirrors PHXNTPR 383481) and a per-LSP
+        # pre-roll category. Branch BEFORE the PTL-specific logic below, which
+        # reads self.market_id (this method can be called on an empty mint.ptl.day
+        # for welcome coupons, which have no market/day).
+        if getattr(discount, 'is_welcome_preroll', False):
+            cfg = discount._welcome_preroll_config()
+            cat = cfg['lsp_categories'].get(self._resolve_lsp_id(store))
+            if not cat:
+                raise ValueError(
+                    'welcome pre-roll: no pre-roll category configured for LSP %s '
+                    '(store %s) — refusing to publish an un-scoped free coupon'
+                    % (self._resolve_lsp_id(store), store.id))
+            return self._welcome_preroll_payload(discount, store, existing_int, cat)
+
         name = (discount.name or '')[:120]
         calc_method_id = self._resolve_calc_method_id(discount)
         item_group_type_id = self._resolve_item_group_type_id(discount)
@@ -268,11 +295,26 @@ class PtlDayDutchiePush(models.Model):
         # and a >60-day-out deal collapsed to all-False = every-day (#6). The
         # all-False guard in _push_one_discount refuses to send an empty set for
         # a day-scoped deal.
-        day_bools = discount._compute_weekday_bools(market=self.market_id)
+        if self.market_id:
+            day_bools = discount._compute_weekday_bools(market=self.market_id)
+        else:
+            # Standalone publish (no PTL day/market) — e.g. a manually-authored
+            # code coupon pushed via action_publish_to_dutchie. Use the discount's
+            # own day flags; all-False ⇒ every day (Dutchie default).
+            day_bools = {d: bool(getattr(discount, d, False)) for d in
+                         ('sunday', 'monday', 'tuesday', 'wednesday',
+                          'thursday', 'friday', 'saturday')}
+
+        # Code-coupon support: application method + register code + usage cap are
+        # read from mint.discount (default to an automatic, code-less, uncapped
+        # deal — unchanged for existing PTL deals).
+        app_method_id = self._resolve_application_method_id(discount)
+        discount_code = discount.dutchie_discount_code or ''
+        redemption = self._resolve_redemption_fields(discount)
 
         return {
             'Id': existing_int,
-            'ApplicationMethodId': 1,  # 1=Automatic; 2=Manual; 3=Code
+            'ApplicationMethodId': app_method_id,  # 1=Automatic; 2=Manual; 3=Code
             'CanStackAutomatically': bool(
                 discount.can_stack_automatically
                 if discount.can_stack_automatically is not None
@@ -293,7 +335,7 @@ class PtlDayDutchiePush(models.Model):
             # unless ops customizes via mint.discount in the future.
             'OnlineName': name,
             'PaymentRestrictions': {'PayByBankSignupIncentive': False},
-            'RedemptionLimit': '',
+            'RedemptionLimit': redemption['RedemptionLimit'],
             'RequireManagerApproval': False,
             'RestrictToGroupIds': [],
             'RestrictToSegmentIds': [],
@@ -318,9 +360,9 @@ class PtlDayDutchiePush(models.Model):
             'SavedWithAdvancedOptions': False,
             'ValidDateFrom': self._format_dutchie_date(discount.valid_from),
             'ValidDateTo': self._format_dutchie_date(discount.valid_until),
-            'DiscountCode': '',
-            'MaxRedemptions': None,
-            'RedemptionLimitCountingMode': 0,
+            'DiscountCode': discount_code,
+            'MaxRedemptions': redemption['MaxRedemptions'],
+            'RedemptionLimitCountingMode': redemption['RedemptionLimitCountingMode'],
             # Day-of-week. mint.discount stores monday..sunday as separate
             # booleans (set by _recompute_day_booleans from the PTL day binding).
             # If all 7 are False, Dutchie treats the discount as every-day.
@@ -344,6 +386,58 @@ class PtlDayDutchiePush(models.Model):
                 'MenuDisplayName': name,
                 'MenuDisplayDescription': '',
                 'DiscountMenuDisplayId': None,
+            },
+        }
+
+    def _welcome_preroll_payload(self, discount, store, existing_int, category_id):
+        """Dutchie payload for a welcome free pre-roll (task #102149).
+
+        Fixed, live-verified shape from record PHXNTPR (Dutchie Id 383481):
+        ApplicationMethodId=3 (Code) + DiscountCode, 100%-off exactly one item
+        (percent value 1.0 + 1-item threshold), pre-roll Category (per-LSP) +
+        0.7g Weight, single-use (MaxRedemptions), in-store only. Day booleans
+        left None ⇒ every day. ExternalId keyed to the partner for idempotent
+        re-publish.
+        """
+        empty = lambda: {'IsExclusion': False, 'RestrictionIds': []}
+        restrictions = {k: empty() for k in (
+            'Strain', 'Weight', 'Category', 'Tag', 'InventoryTag',
+            'Tier', 'Brand', 'Vendor', 'Product')}
+        restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': [int(category_id)]}
+        restrictions['Weight'] = {'IsExclusion': False, 'RestrictionIds': [0.7]}
+        pid = discount.redemption_partner_id.id or discount.id
+        max_uses = int(discount.maximum_usage_count or 1) or 1
+        return {
+            'Id': existing_int, 'ApplicationMethodId': 3,
+            'CanStackAutomatically': False, 'Constraints': [],
+            'DiscountCode': discount.dutchie_discount_code or '',
+            'DiscountDescription': f'lgm | welcome free pre-roll (partner {pid})',
+            'ExternalId': f'lgm_welcome_{pid}',
+            'FirstTimeCustomerOnly': 0, 'IgnoreNetTax': False,
+            'IsAvailableOnline': False, 'IsBundledDiscount': False,
+            'LocationRestrictions': [], 'OnlineName': 'Welcome Free Pre-Roll',
+            'PaymentRestrictions': {'PayByBankSignupIncentive': False},
+            'RedemptionLimit': None, 'RequireManagerApproval': False,
+            'RestrictToGroupIds': [], 'RestrictToSegmentIds': [],
+            'PlatformTypeRestrictions': [{'PlatformTypeId': 2, 'IsExclusion': False}],
+            'OrderTypeRestrictions': [],
+            'Reward': {
+                'DiscountRewardId': None, 'HasThreshold': True, 'ApplyToOnlyOneItem': False,
+                'CalculationMethodId': 2, 'DiscountValue': 1, 'IncludeNonCannabis': True,
+                'ItemGroupTypeId': 5, 'ManualDefaultApplyTo': 1, 'Restrictions': restrictions,
+                'ThresholdMax': 1, 'ThresholdMin': 1, 'ThresholdTypeId': 1,
+            },
+            'SavedWithAdvancedOptions': False,
+            'ValidDateFrom': self._format_dutchie_date(discount.valid_from),
+            'ValidDateTo': self._format_dutchie_date(discount.valid_until),
+            'MaxRedemptions': max_uses, 'RedemptionLimitCountingMode': 0,
+            'Sunday': None, 'Monday': None, 'Tuesday': None, 'Wednesday': None,
+            'Thursday': None, 'Friday': None, 'Saturday': None,
+            'MenuDisplayRank': 0,
+            'DiscountMenuDisplayDetails': {
+                'DiscountId': existing_int, 'MenuDisplayImageUrl': '',
+                'MenuDisplayName': 'Welcome Free Pre-Roll',
+                'MenuDisplayDescription': '', 'DiscountMenuDisplayId': None,
             },
         }
 
