@@ -295,7 +295,15 @@ class PtlDayDutchiePush(models.Model):
         # and a >60-day-out deal collapsed to all-False = every-day (#6). The
         # all-False guard in _push_one_discount refuses to send an empty set for
         # a day-scoped deal.
-        day_bools = discount._compute_weekday_bools(market=self.market_id)
+        if self.market_id:
+            day_bools = discount._compute_weekday_bools(market=self.market_id)
+        else:
+            # Standalone publish (no PTL day/market) — e.g. a manually-authored
+            # code coupon pushed via action_publish_to_dutchie. Use the discount's
+            # own day flags; all-False ⇒ every day (Dutchie default).
+            day_bools = {d: bool(getattr(discount, d, False)) for d in
+                         ('sunday', 'monday', 'tuesday', 'wednesday',
+                          'thursday', 'friday', 'saturday')}
 
         # Code-coupon support: application method + register code + usage cap are
         # read from mint.discount (default to an automatic, code-less, uncapped

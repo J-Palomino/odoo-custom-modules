@@ -79,6 +79,7 @@
         'data/billboard_data.xml',
         'data/sdlc_stage_automations.xml',
         'views/ptl_views.xml',
+        'views/mint_discount_coupon_views.xml',
         'views/product_line_review_views.xml',
         'views/deal_submission_views.xml',
         'views/brand_calendar_views.xml',

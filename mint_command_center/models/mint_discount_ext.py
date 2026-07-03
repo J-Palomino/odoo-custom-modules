@@ -3,7 +3,7 @@ import logging
 import urllib.request
 
 from odoo import api, fields, models, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import ValidationError, UserError
 
 from .deal_mixins import weekday_bools_from_days
 
@@ -262,6 +262,55 @@ class MintDiscountPTL(models.Model):
                                     c.id, lg.dutchie_discount_id, e)
             if seen and total >= int(c.maximum_usage_count or 1):
                 c.write({'redemption_status': 'used', 'redemption_used_at': now})
+
+    def action_publish_to_dutchie(self):
+        """Manual 'Publish to Dutchie' button for a standalone (one-off) coupon.
+
+        Emits ApplicationMethodId (from application_method), the DiscountCode, and
+        MaxRedemptions (from maximum_usage_count), scoped by the Targeting
+        restrictions, to each target store via the PTL canary's _push_one_discount.
+        Gated by mint.dutchie_discount_push.mode (off/dry-run/live). Targets
+        store_ids when set, else every push-enabled store with a POS LocId + LSP.
+        """
+        self.ensure_one()
+        push = self.env['mint.ptl.day'].sudo()
+        mode = push._get_dutchie_push_mode()
+        if mode == 'off':
+            raise UserError(_(
+                "Dutchie push is OFF. Set mint.dutchie_discount_push.mode to "
+                "'dry-run' or 'live' before publishing."))
+        url = push._get_dutchie_push_url()
+        api_key = push._get_dutchie_push_api_key()
+        Log = self.env['mint.dutchie.discount.push.log'].sudo()
+        Company = self.env['res.company'].sudo()
+        stores = self.store_ids if self.store_ids else Company.search([
+            ('dutchie_pos_location_id', '!=', False),
+            ('dutchie_lsp_id', '!=', False),
+            ('dutchie_discount_push_enabled', '=', True),
+        ])
+        if not stores:
+            raise UserError(_(
+                "No target stores. Pick stores under Targeting, or enable "
+                "'Push Discounts to Dutchie' on a store that has a POS LocId + LSP."))
+        ok = 0
+        for store in stores:
+            try:
+                if push._push_one_discount(self, store, mode, url, api_key, Log):
+                    ok += 1
+            except Exception as e:
+                _logger.warning('publish_to_dutchie: discount %s @ store %s failed: %s',
+                                self.id, store.id, e)
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Published to Dutchie'),
+                'message': _('%(ok)s of %(n)s store(s) in %(mode)s mode — see the Dutchie push log.',
+                             ok=ok, n=len(stores), mode=mode),
+                'type': 'success' if ok else 'warning',
+                'sticky': False,
+            },
+        }
 
     # ── Override is_active as stored compute ─────────────────────────────
     is_active = fields.Boolean(
