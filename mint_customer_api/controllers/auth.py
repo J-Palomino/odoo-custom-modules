@@ -4,14 +4,87 @@ Customer authentication endpoints for MintDeals frontend.
 
 All endpoints return JSON, use auth='none' since we handle auth via JWT.
 """
+import hashlib
+import hmac
 import json
 import logging
 
-from odoo import http
+from odoo import http, fields
 from odoo.http import request, Response
 from odoo.exceptions import AccessDenied, UserError
 
 _logger = logging.getLogger(__name__)
+
+
+def _lead_token(lead_id):
+    """Server-issued capability token binding a caller to a specific crm.lead.
+
+    HMAC of the lead id under the instance's database.secret — unguessable, so
+    holding a lead_id alone (or knowing the signup email) is NOT enough to verify
+    or convert it; the caller must present the token returned by create_lead.
+    Returns None when database.secret is unset so callers fail closed with a
+    clean error / 404 rather than minting a forgeable empty-key token.
+    """
+    secret = (request.env['ir.config_parameter'].sudo()
+              .get_param('database.secret', '') or '')
+    if not secret:
+        _logger.error('database.secret unavailable; cannot issue/verify lead token')
+        return None
+    return hmac.new(secret.encode('utf-8'), str(lead_id).encode('utf-8'),
+                    hashlib.sha256).hexdigest()
+
+
+def _clean_token(v):
+    """Coerce a client-supplied token to a stripped str; '' for non-strings.
+    Guards against a JSON number/list/bool reaching .strip() (AttributeError)."""
+    return v.strip() if isinstance(v, str) else ''
+
+
+def _token_eq(a, b):
+    """Constant-time token compare, tolerant of non-ASCII input.
+    (hmac.compare_digest raises TypeError on a non-ASCII str, so compare bytes.)
+    Returns False on any falsy operand or error — never raises."""
+    if not a or not b:
+        return False
+    try:
+        return hmac.compare_digest(a.encode('utf-8'), b.encode('utf-8'))
+    except Exception:
+        return False
+
+
+def _enqueue_dutchie_create(payload):
+    """Best-effort, non-blocking POST to create the Dutchie guest (#101243).
+
+    A signup must never fail or stall because of a Dutchie hiccup, so the
+    network call runs on a daemon thread (touching NO Odoo env — env is not
+    thread-safe — only captured plain values). The nightly Dutchie sync
+    reconciles the customer either way. Sends only non-sensitive fields.
+    """
+    import threading
+    import urllib.request
+    ICP = request.env['ir.config_parameter'].sudo()
+    base = (ICP.get_param('mint.inventory_service_url', '') or '').rstrip('/')
+    if not base:
+        _logger.info('mint.inventory_service_url not set; skipping Dutchie enqueue')
+        return
+    api_key = ICP.get_param('mint.inventory_service.api_key', '') or ''
+    url = '%s/jobs/dutchie-customer-create' % base
+    body = json.dumps(payload).encode('utf-8')
+
+    def _post():
+        try:
+            req = urllib.request.Request(
+                url, data=body,
+                headers={'Content-Type': 'application/json', 'x-api-key': api_key},
+                method='POST',
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            _logger.warning('Dutchie enqueue failed for partner %s: %s',
+                            payload.get('partner_id'), e)
+
+    threading.Thread(target=_post, name='dutchie-enqueue', daemon=True).start()
+
 
 # Web-signup user logins are prefixed with "web:" to isolate them from
 # internal employee accounts (login = plain email). An employee can shop
@@ -178,6 +251,20 @@ class MintCustomerAuth(http.Controller):
         today = date.today()
         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         if age < 21:
+            # Under-21 leads are NEVER retained (owner decision 2026-07-02):
+            # if the caller proves ownership of a pre-account lead via its HMAC
+            # token, delete it here too — the DOB just revealed a minor, and the
+            # CRM must hold no minor PII. Best-effort; the 403 stands either way.
+            try:
+                u21_lead_id = int(data.get('lead_id') or 0) or False
+                u21_token = _clean_token(data.get('lead_token'))
+                if u21_lead_id and u21_token and _token_eq(u21_token, _lead_token(u21_lead_id)):
+                    request.env['crm.lead'].sudo().with_context(
+                        tracking_disable=True, mail_notrack=True
+                    ).browse(u21_lead_id).exists().unlink()
+            except Exception as e:
+                _logger.warning('Under-21 lead cleanup failed (lead %s): %s',
+                                data.get('lead_id'), e)
             return error_response('You must be 21 or older to create an account', 403)
 
         # Only block on existing WEB customer account. An internal employee
@@ -189,14 +276,85 @@ class MintCustomerAuth(http.Controller):
         if existing:
             return error_response('An account with this email already exists', 409)
 
+        # Age-verification method. The web DOB is self-attested. We deliberately
+        # do NOT honor a client-supplied 'id_scanned' claim: nothing server-side
+        # has validated that an ID document was actually scanned, so trusting the
+        # request body would overstate rigor in what is meant to be a provable
+        # compliance record. Until the IdScanner backend issues a server-
+        # verifiable scan token (then verify it here before upgrading the
+        # method), every web signup is recorded as self_attested.
+        method = 'self_attested'
+
         try:
-            user = self._create_web_user(email=email, name=name, phone=phone)
+            user = self._create_web_user(
+                email=email, name=name, phone=phone,
+                web_dob=dob, age_method=method, age_source='web_register',
+            )
             user.with_context(
                 no_reset_password=True,
                 tracking_disable=True,
             ).write({'password': password})
 
+            # Provable marketing consent (opt-in, OFF by default). Reuses the
+            # canonical consent ledgers: set_email_opt_in (mint_account) and
+            # set_sms_opt_in (mint_sms_telnyx), both of which stamp date +
+            # source. Defensive hasattr so signup never breaks if a consent
+            # module is absent; wrapped so a consent error can't fail the
+            # account creation. Transactional email/SMS is exempt and unaffected.
+            def _opted_in(v):
+                # Strict coercion: a provable consent record must not opt a
+                # user in on a stringy "false"/"0" that is merely truthy.
+                return v is True or str(v).strip().lower() in ('true', '1', 'yes', 'on')
+
+            try:
+                partner = user.partner_id.sudo()
+                if _opted_in(data.get('emailOptIn')) and hasattr(partner, 'set_email_opt_in'):
+                    partner.set_email_opt_in(source='external_web')
+                if _opted_in(data.get('smsOptIn')) and hasattr(partner, 'set_sms_opt_in'):
+                    partner.set_sms_opt_in(source='external_web')
+            except Exception:
+                _logger.exception('Consent capture failed for %s', email)
+
+            # Link the pre-account visitor lead to this new contact (#101243).
+            # HMAC-bound so a registrant can't repoint an arbitrary lead's
+            # partner_id (IDOR). Isolated: the account is already committed here,
+            # so a crm.lead hook failure must NOT turn a successful signup into a
+            # 500 (which would then lock the user out via the 409 guard on retry).
+            try:
+                lead_id = int(data.get('lead_id') or 0) or False
+            except (TypeError, ValueError):
+                lead_id = False
+            lead_token = _clean_token(data.get('lead_token'))
+            if lead_id and lead_token:
+                try:
+                    # partner_id is TRACKED on crm.lead — without mail-hook
+                    # suppression this write crashes in the user-less env and
+                    # the except would silently drop the link EVERY time.
+                    lead = request.env['crm.lead'].sudo().with_context(
+                        tracking_disable=True, mail_notrack=True).browse(lead_id)
+                    if lead.exists() and _token_eq(lead_token, _lead_token(lead_id)):
+                        lead.write({'partner_id': user.partner_id.id,
+                                    'date_conversion': fields.Datetime.now()})
+                except Exception as e:
+                    _logger.warning('Lead link failed (lead %s -> partner %s): %s',
+                                    lead_id, user.partner_id.id, e)
+
             token = user._generate_jwt()
+
+            # Dutchie guest create — best-effort, non-blocking, fired last.
+            # Guarded so a serialize/config hiccup here can't 500 an already-
+            # committed signup (which would then 409-lock the user on retry).
+            try:
+                _enqueue_dutchie_create({
+                    'partner_id': user.partner_id.id,
+                    'name': name,
+                    'email': email,
+                    'phone': phone,
+                    'date_of_birth': dob.isoformat(),
+                })
+            except Exception as e:
+                _logger.warning('Dutchie enqueue dispatch failed for partner %s: %s',
+                                user.partner_id.id, e)
 
             return json_response({
                 'token': token,
@@ -340,7 +498,119 @@ class MintCustomerAuth(http.Controller):
         except Exception:
             return False
 
-    def _create_web_user(self, email, name, phone=''):
+    # ------------------------------------------------------------------
+    # Visitor leads (Odoo #101243) — created pre-account, converted to a
+    # res.partner contact on register() once the account is created.
+    # ------------------------------------------------------------------
+    @http.route('/api/v1/leads', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def create_lead(self, **kw):
+        """Create a pre-account visitor lead. Called right after Google auth,
+        before the account exists. Captures provable-consent metadata."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        email = (data.get('email') or '').strip().lower()
+        if not email:
+            return error_response('Email is required')
+        # Verify we can issue a token BEFORE creating the lead, so a missing
+        # database.secret doesn't leave an orphaned, unconvertible lead behind.
+        if _lead_token(0) is None:
+            return error_response('Unable to issue lead token', 503)
+        ip = request.httprequest.headers.get(
+            'X-Forwarded-For', request.httprequest.remote_addr or '')
+        ua = request.httprequest.headers.get('User-Agent', '')[:200]
+        # Guard the cross-module crm.lead create: a required field, automation,
+        # or record rule from another crm-extending module must return a clean
+        # JSON error, not an uncaught 500.
+        try:
+            # auth='none' → request.env.user is an EMPTY recordset; crm.lead is a
+            # mail.thread whose create() posts a chatter log that calls
+            # env.user._is_public() → "Expected singleton: res.users()" crash
+            # (hit live on staging). Suppress the mail hooks like
+            # _create_web_user does — same house pattern.
+            lead = request.env['crm.lead'].sudo().with_context(
+                mail_create_nosubscribe=True,
+                mail_create_nolog=True,
+                tracking_disable=True,
+                mail_notrack=True,
+            ).create({
+                'name': 'Web signup: %s' % email,
+                'contact_name': (data.get('name') or '').strip() or False,
+                'email_from': email,
+                'phone': (data.get('phone') or '').strip() or False,
+                'type': 'lead',
+                'description': ('Web onboarding lead. age_verified=false. '
+                               'consent_proof: ts=%s source=external_web ip=%s ua=%s'
+                               % (fields.Datetime.now(), ip, ua)),
+            })
+        except Exception as e:
+            _logger.exception('create_lead failed for %s: %s', email, e)
+            return error_response('Could not create lead', 500)
+        tok = _lead_token(lead.id)
+        if not tok:
+            return error_response('Unable to issue lead token', 503)
+        return json_response(
+            {'lead_id': lead.id, 'lead_token': tok}, status=201)
+
+    @http.route('/api/v1/leads/<int:lead_id>/verify', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def verify_lead(self, lead_id, **kw):
+        """Attach 21+ verification to a lead after the ID scan. Under-21 → the
+        lead is DELETED outright — under-21 PII is never retained."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        # tracking_disable/mail_notrack: lost_reason_id is a TRACKED field —
+        # writing it from this user-less (auth='none') env would fire the same
+        # singleton message_post crash as create (see create_lead).
+        lead = request.env['crm.lead'].sudo().with_context(
+            tracking_disable=True, mail_notrack=True).browse(lead_id)
+        # Ownership binding: the caller must present the server-issued token from
+        # create_lead (HMAC of the id). 404 (not 403) on mismatch/missing-secret
+        # so the endpoint neither confirms which ids exist nor leaks misconfig.
+        token = _clean_token(data.get('lead_token'))
+        if not lead.exists() or not _token_eq(token, _lead_token(lead_id)):
+            return error_response('Lead not found', 404)
+        from datetime import date
+        dob_raw = str(data.get('dateOfBirth') or data.get('date_of_birth') or '').strip()
+        try:
+            dob = date.fromisoformat(dob_raw[:10])
+        except (ValueError, TypeError):
+            return error_response('Invalid date of birth')
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        # Guard the crm.lead / crm.lost.reason writes: a cross-module hook, rule,
+        # or automation must not turn a valid verification into an uncaught 500.
+        try:
+            if age < 21:
+                # NEVER retain an under-21 lead (owner decision 2026-07-02,
+                # supersedes the earlier archive+lost-reason design): holding a
+                # minor's PII in the marketing CRM is a compliance liability, so
+                # the record is deleted outright — not archived.
+                lead.unlink()
+                return error_response('You must be 21 or older', 403)
+            lead.write({'description': (lead.description or '')
+                        + '\nage_verified=true dob=%s' % dob.isoformat()})
+        except Exception as e:
+            _logger.exception('verify_lead write failed for lead %s: %s', lead_id, e)
+            return error_response('Could not record verification', 500)
+        return json_response({'ok': True, 'age_verified': True})
+
+    def _create_web_user(self, email, name, phone='', web_dob=None,
+                         age_method=None, age_source=None):
         """Create a fresh partner + portal user for a web-site signup.
 
         Always creates a NEW res.partner (doesn't reuse an existing one that
@@ -350,23 +620,38 @@ class MintCustomerAuth(http.Controller):
         Uses login = 'web:<email>' so web users never collide with internal
         user accounts (login = plain email) and sets is_web_customer=True
         so record rules restrict PII to privileged groups.
+
+        When ``web_dob`` (a datetime.date) is supplied, the partner is stamped
+        with the web-side age-verification ledger fields so the 21+ check is
+        provable and linkable to Dutchie. Callers without a DOB (e.g. Google
+        OAuth) leave the account age_verified=False on purpose.
         """
         main_company = request.env['res.company'].sudo().browse(1)
         login = _web_login(email)
 
-        partner = request.env['res.partner'].sudo().with_context(
-            mail_create_nosubscribe=True,
-            mail_create_nolog=True,
-            tracking_disable=True,
-            mail_notrack=True,
-        ).create({
+        partner_vals = {
             'name': name,
             'email': email,
             'phone': phone or False,
             'customer_rank': 1,
             'company_id': main_company.id,
             'is_web_customer': True,
-        })
+        }
+        if web_dob:
+            partner_vals.update({
+                'web_date_of_birth': web_dob,
+                'age_verified': True,
+                'age_verified_at': fields.Datetime.now(),
+                'age_verification_method': age_method or 'self_attested',
+                'age_verification_source': age_source or 'web_register',
+            })
+
+        partner = request.env['res.partner'].sudo().with_context(
+            mail_create_nosubscribe=True,
+            mail_create_nolog=True,
+            tracking_disable=True,
+            mail_notrack=True,
+        ).create(partner_vals)
         request.env.cr.flush()
 
         # Raw INSERT to bypass signup/mail hooks that conflict with the

@@ -255,29 +255,44 @@ class DealSubmission(models.Model):
         store=True,
     )
 
-    @api.depends('window_ids.date_start', 'window_ids.date_end')
+    @staticmethod
+    def _format_date_range(start, end):
+        """Render one date range like 'Jun 1', 'Jun 1–7', or 'Jun 1–Jul 3'.
+        Returns '' when either bound is missing."""
+        if not start or not end:
+            return ''
+        if start == end:
+            return start.strftime('%b %-d')
+        same_year = start.year == end.year
+        same_month = same_year and start.month == end.month
+        if same_month:
+            return f"{start.strftime('%b %-d')}–{end.strftime('%-d')}"
+        return f"{start.strftime('%b %-d')}–{end.strftime('%b %-d')}"
+
+    @api.depends(
+        'window_ids.date_start', 'window_ids.date_end',
+        'preferred_start_date', 'preferred_end_date',
+    )
     def _compute_windows_summary(self):
         for rec in self:
-            parts = []
-            for w in rec.window_ids:
-                if not w.date_start or not w.date_end:
-                    continue
-                if w.date_start == w.date_end:
-                    parts.append(w.date_start.strftime('%b %-d'))
-                else:
-                    same_year = w.date_start.year == w.date_end.year
-                    same_month = same_year and w.date_start.month == w.date_end.month
-                    if same_month:
-                        parts.append(
-                            f"{w.date_start.strftime('%b %-d')}–"
-                            f"{w.date_end.strftime('%-d')}"
-                        )
-                    else:
-                        parts.append(
-                            f"{w.date_start.strftime('%b %-d')}–"
-                            f"{w.date_end.strftime('%b %-d')}"
-                        )
-            rec.windows_summary = ', '.join(parts) or False
+            if rec.window_ids:
+                # Structured Plot Windows are authoritative when present.
+                parts = [
+                    self._format_date_range(w.date_start, w.date_end)
+                    for w in rec.window_ids
+                ]
+                rec.windows_summary = ', '.join(p for p in parts if p) or False
+                continue
+            # Fallback: agents/public-form rows often fill the legacy
+            # preferred_start/end instead of building Plot Windows. Mirror
+            # those into the summary (as run_end_date and action_convert_to_deal
+            # already do) so the Schedule Summary is never blank for a
+            # legacy-scheduled deal. Flagged so reviewers know it came from
+            # vendor preferences, not confirmed windows.
+            start = rec.preferred_start_date or rec.preferred_end_date
+            end = rec.preferred_end_date or rec.preferred_start_date
+            legacy = self._format_date_range(start, end)
+            rec.windows_summary = f"{legacy} (vendor pref)" if legacy else False
 
     # --- State machine ---
     # Board lifecycle: New -> Under Review -> [Approved] -> Scheduled ->
@@ -810,15 +825,49 @@ class DealSubmission(models.Model):
         if names:
             vals['product_category'] = ', '.join(names)
 
+    def _sync_legacy_window(self):
+        """Promote the legacy preferred_start/end into a structured Plot Window
+        for rows that have dates but no windows yet — chiefly public
+        vendor-form submissions, which collect a simple start/end/days. This
+        keeps window_ids the single source of truth across every intake path
+        (public form, agent/RPC, internal board). Idempotent: rows that
+        already have windows are left untouched. A reversed range (end before
+        start) is skipped rather than created, so a bad public-form entry can't
+        trip the window's date constraint and reject the submission. Mirrors
+        the one-time backfill in migrations/19.0.6.56.0 for the live path."""
+        Window = self.env['mint.deal.submission.window']
+        for rec in self:
+            if rec.window_ids:
+                continue
+            start = rec.preferred_start_date or rec.preferred_end_date
+            end = rec.preferred_end_date or rec.preferred_start_date
+            if not (start and end) or start > end:
+                continue
+            Window.create({
+                'submission_id': rec.id,
+                'sequence': 10,
+                'date_start': start,
+                'date_end': end,
+            })
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
             self._mirror_category_text(vals)
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        records._sync_legacy_window()
+        return records
 
     def write(self, vals):
         self._mirror_category_text(vals)
-        return super().write(vals)
+        res = super().write(vals)
+        # Re-promote when the legacy dates were just set/changed and the row
+        # still has no structured windows. Don't touch rows whose windows are
+        # being managed directly (window_ids in vals) — those are authoritative.
+        if ('preferred_start_date' in vals or 'preferred_end_date' in vals) \
+                and 'window_ids' not in vals:
+            self._sync_legacy_window()
+        return res
 
     @api.onchange('market_id')
     def _onchange_market_fill_stores(self):

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Customer API',
-    'version': '19.0.2.18.0',
+    'version': '19.0.2.20.0',
     'category': 'Website',
     'summary': 'Customer auth, checkout, and loyalty API for MintDeals frontend',
     'author': 'MintDeals',
@@ -13,6 +13,7 @@
         'auth_signup',
         'sale_management',
         'loyalty',
+        'crm',
         'mint_api_v2',
     ],
     'external_dependencies': {
@@ -21,6 +22,7 @@
     'data': [
         'security/ir.model.access.csv',
         'security/web_customer_security.xml',
+        'views/res_partner_views.xml',
     ],
     'installable': True,
     'application': False,

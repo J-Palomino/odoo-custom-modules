@@ -61,6 +61,7 @@ def _find_matching_free_line(redemption, order_items):
 class MintDiscount(models.Model):
     _name = "mint.discount"
     _description = "Cannabis Discount/Deal"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
     _order = "valid_from desc, id desc"
 
     name = fields.Char(string="Name", required=True)

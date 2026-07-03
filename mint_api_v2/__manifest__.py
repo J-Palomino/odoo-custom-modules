@@ -22,6 +22,7 @@
     'license': 'LGPL-3',
     'depends': [
         'base',
+        'mail',
         'product',
         'stock',
         'website',

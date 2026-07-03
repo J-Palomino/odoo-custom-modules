@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Embeds',
-    'version': '19.0.1.2.0',
+    'version': '19.0.1.2.1',
     'category': 'Website',
     'summary': 'Embeddable widgets for WordPress and third-party sites',
     'description': """MintDeals Embeds

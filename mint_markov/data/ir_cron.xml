@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ir_cron_collect_markov" model="ir.cron">
+        <field name="name">Markov: collect shopping/buying transition snapshot</field>
+        <field name="model_id" ref="model_mint_markov_snapshot"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_collect()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="nextcall" eval="(DateTime.now() + timedelta(minutes=10))"/>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>
