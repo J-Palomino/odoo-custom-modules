@@ -13,9 +13,12 @@
     'data': [
         'security/ir.model.access.csv',
         'data/push_site_data.xml',
-        'views/push_site_views.xml',
+        # Load order matters on fresh installs: push_subscription_views.xml
+        # defines menu_push_root (and needs the wizard's action), and
+        # push_site_views.xml hangs its menu under menu_push_root.
         'wizard/push_send_wizard_views.xml',
         'views/push_subscription_views.xml',
+        'views/push_site_views.xml',
     ],
     'external_dependencies': {'python': ['pywebpush', 'py_vapid']},
     'installable': True,
