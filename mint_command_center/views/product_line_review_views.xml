@@ -72,30 +72,9 @@
         <field name="code">action = env['mint.ptl.deal'].action_review_recompute_format_keys()</field>
     </record>
 
-    <menuitem id="menu_product_line_review"
-              name="Product Line Review"
-              parent="menu_ptl"
-              action="action_product_line_review"
-              sequence="45"/>
-
-    <!-- Temporarily hide "Product Line Review". Re-enable by setting active
-         back to True (prod xmlid row is pinned noupdate, so flip it live too). -->
-    <record id="menu_product_line_review" model="ir.ui.menu">
-        <field name="active" eval="False"/>
-    </record>
-
-    <menuitem id="menu_recompute_format_keys"
-              name="Recompute Format Keys"
-              parent="menu_ptl"
-              action="action_recompute_format_keys"
-              sequence="46"/>
-
-    <!-- Hide "Recompute Format Keys" from the Mint Marketing menu. The
-         server action (action_recompute_format_keys) is retained and still
-         runnable directly; re-enable by setting active back to True (prod
-         xmlid row is pinned noupdate, so flip it live too). -->
-    <record id="menu_recompute_format_keys" model="ir.ui.menu">
-        <field name="active" eval="False"/>
-    </record>
+    <!-- The menu entries for these actions live in views/menu.xml: their
+         parent menu_ptl is defined there, and menu.xml loads after this
+         file, so declaring them here breaks fresh installs (External ID
+         not found: menu_ptl). -->
 
 </odoo>

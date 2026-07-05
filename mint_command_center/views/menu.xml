@@ -62,6 +62,29 @@
               action="action_deal_submission"
               sequence="30"/>
 
+    <!-- Moved here from views/product_line_review_views.xml: that file loads
+         before this one, so a parent="menu_ptl" reference there breaks fresh
+         installs (External ID not found). Both entries stay hidden; re-enable
+         by setting active back to True (prod xmlid rows are pinned noupdate,
+         so flip them live too). -->
+    <menuitem id="menu_product_line_review"
+              name="Product Line Review"
+              parent="menu_ptl"
+              action="action_product_line_review"
+              sequence="45"/>
+    <record id="menu_product_line_review" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+
+    <menuitem id="menu_recompute_format_keys"
+              name="Recompute Format Keys"
+              parent="menu_ptl"
+              action="action_recompute_format_keys"
+              sequence="46"/>
+    <record id="menu_recompute_format_keys" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+
     <!-- "Promo Campaigns" scoped to system administrators only
          (base.group_system). Hidden from the ~165 non-admin Mint Marketing
          users; the 9 admins still navigate to it normally. NOTE: on prod this
