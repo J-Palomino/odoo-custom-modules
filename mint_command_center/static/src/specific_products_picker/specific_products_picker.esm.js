@@ -84,7 +84,10 @@ class ProductPickerDialog extends Component {
                     {
                         limit: this.state.limit,
                         offset: this.state.offset,
-                        order: "display_name",
+                        // display_name is computed (not stored) — Odoo 19 raises
+                        // "Cannot convert ... to SQL" when ordering by it. Order by
+                        // the stored fields display_name is built from instead.
+                        order: "default_code, name",
                         context: ctx,
                     }
                 ),
