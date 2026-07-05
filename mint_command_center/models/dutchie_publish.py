@@ -975,6 +975,157 @@ class DealSubmissionDutchiePublish(models.Model):
                     failures += 1
         return results, failures, retired
 
+    # ------------------------------------------------------------------
+    # Reconciliation — catch drift between Odoo's recorded publish map and
+    # Dutchie's actual discounts (read-only).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _dutchie_read_one(url, api_key, did, loc_id, lsp):
+        """GET one Dutchie discount via the invsvc read route.
+        Returns (status, discount): status in {'ok','missing','error'}.
+        'missing' = genuine 404; 'error' = transient (5xx/timeout) — never
+        flagged as drift so a rate-limit can't raise a false alarm."""
+        try:
+            req = urllib.request.Request(
+                f"{url}/api/admin/dutchie-discount/{int(did)}"
+                f"?locId={int(loc_id)}&lspId={int(lsp)}",
+                headers={'x-api-key': api_key}, method='GET')
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = json.loads(resp.read().decode(errors='replace'))
+            if isinstance(body, dict) and body.get('ok') and body.get('discount'):
+                return ('ok', body['discount'])
+            return ('missing', None)
+        except Exception as exc:
+            return ('missing', None) if getattr(exc, 'code', None) == 404 else ('error', None)
+
+    def _dutchie_map_pairs(self, published, fallback_loc):
+        """Flatten a recorded publish map (any shape) to [(locId, dutchieId)].
+        Consolidated ids read against fallback_loc (a configured LSP LocId)."""
+        pairs = []
+        for k, v in published.items():
+            if isinstance(v, dict):                                   # legacy nested {ext:{loc:id}}
+                for lk, lv in v.items():
+                    if lv:
+                        pairs.append((int(lk), int(lv)))
+            elif isinstance(v, int) and not isinstance(v, bool) and v:
+                # flat legacy key is a locId; consolidated key is an ExternalId
+                loc = int(k) if re.fullmatch(r'-?\d+', str(k)) else fallback_loc
+                pairs.append((loc, v))
+        return pairs
+
+    def _dutchie_reconcile_findings(self, url, api_key, loc_map):
+        """Human-readable drift findings for this submission's recorded Dutchie
+        publish map. Read-only against Dutchie."""
+        self.ensure_one()
+        try:
+            published = json.loads(self.dutchie_publish_loc_ids or '{}')
+        except (ValueError, TypeError):
+            return ["publish map is not valid JSON"]
+        if not published:
+            return []
+        lsp = self._dutchie_lsp()
+        if not lsp:
+            return ["no Dutchie LSP mapping for market %r" %
+                    (self.market_id.name if self.market_id else None)]
+        cfg_locs = [int(x) for x in (loc_map.get(str(lsp)) or [])]
+        fallback_loc = cfg_locs[0] if cfg_locs else None
+
+        findings = []
+        keys = list(published.keys())
+        if keys and all(re.fullmatch(r'-?\d+', str(k)) for k in keys):
+            findings.append("legacy flat map shape — re-publish to migrate to a consolidated record")
+        elif any(isinstance(v, dict) for v in published.values()):
+            findings.append("legacy nested map shape — re-publish to migrate to a consolidated record")
+
+        pairs = self._dutchie_map_pairs(published, fallback_loc)
+
+        # Expired/rejected deals should have an empty map (deactivate clears it).
+        # Any still-live recorded discount is an orphan firing past its deal.
+        if self.state in ('expired', 'rejected'):
+            still_live = 0
+            for loc, did in pairs:
+                if loc is None:
+                    continue
+                status, d = self._dutchie_read_one(url, api_key, did, loc, lsp)
+                if status == 'ok' and d.get('IsDeleted') is False:
+                    still_live += 1
+            if still_live:
+                findings.append("state=%s but %d recorded discount(s) still LIVE in Dutchie "
+                                "— should be deactivated" % (self.state, still_live))
+            return findings
+
+        # Scheduled / final_review should be live: each recorded id must exist,
+        # not be deleted, and not already be expired while the deal still runs
+        # (the #388 Tempe drift: a recorded discount stuck on old dates).
+        if self.state in ('scheduled', 'final_review'):
+            today = str(fields.Date.context_today(self))
+            for loc, did in pairs:
+                if loc is None:
+                    findings.append("recorded id %s: no configured LocId for LSP %s to read against"
+                                    % (did, lsp))
+                    continue
+                status, d = self._dutchie_read_one(url, api_key, did, loc, lsp)
+                if status == 'error':
+                    continue  # transient — don't flag
+                if status == 'missing':
+                    findings.append("recorded discount %s missing in Dutchie (deal is %s)"
+                                    % (did, self.state))
+                    continue
+                if d.get('IsDeleted') is True:
+                    findings.append("recorded discount %s is IsDeleted in Dutchie but deal is %s"
+                                    % (did, self.state))
+                    continue
+                vto = str(d.get('ValidDateTo') or '')[:10]
+                if vto and vto < today:
+                    findings.append("recorded discount %s expired %s but deal is still %s — date drift"
+                                    % (did, vto, self.state))
+        return findings
+
+    @api.model
+    def _cron_dutchie_reconcile(self, limit=None):
+        """Daily: read each published deal's recorded Dutchie discounts back and
+        flag drift — legacy map shapes, expired/rejected deals still live, and
+        recorded ids that are missing / IsDeleted / expired-while-scheduled
+        (the #388 class). Read-only against Dutchie. Findings ship to Grafana
+        Loki as a deal.audit line AND post to the drifting deal's chatter."""
+        get_param = self.env['ir.config_parameter'].sudo().get_param
+        url = (get_param('dutchie.publish.url')
+               or 'https://mintinvsvc-production-6aa5.up.railway.app').rstrip('/')
+        api_key = get_param('dutchie.publish.api_key')
+        if not api_key:
+            _logger.info("dutchie reconcile: no api_key configured — skipping")
+            return
+        try:
+            loc_map = json.loads(get_param('dutchie.publish.loc_ids') or '{}')
+        except (ValueError, TypeError):
+            loc_map = {}
+        subs = self.search([('dutchie_publish_loc_ids', '!=', False)], limit=limit)
+        checked = drifting = total = 0
+        for sub in subs:
+            checked += 1
+            try:
+                findings = sub._dutchie_reconcile_findings(url, api_key, loc_map)
+            except Exception:
+                _logger.exception("dutchie reconcile: submission %s errored", sub.id)
+                continue
+            if not findings:
+                continue
+            drifting += 1
+            total += len(findings)
+            _logger.warning("deal.audit %s", json.dumps({
+                'event': 'deal.audit', 'action': 'reconcile_drift',
+                'submission_id': sub.id, 'state': sub.state,
+                'vendor': sub.vendor_name, 'findings': findings}))
+            try:
+                sub.message_post(
+                    body="[Dutchie reconcile — DRIFT]\n" + "\n".join("• " + f for f in findings),
+                    message_type='comment')
+            except Exception:
+                _logger.exception("dutchie reconcile: chatter post failed for %s", sub.id)
+        _logger.info("dutchie reconcile: checked %d submission(s), %d drifting, %d finding(s)",
+                     checked, drifting, total)
+
     def _dutchie_deactivate(self):
         """Mark this submission's published Dutchie discounts deleted (IsDeleted=True).
 

@@ -41,4 +41,23 @@
             <field name="active" eval="True"/>
         </record>
     </data>
+
+    <!-- Daily Dutchie reconciliation: read each published deal's recorded
+         Dutchie discounts back and flag drift (legacy map shapes, expired/
+         rejected deals still live, recorded ids missing/IsDeleted/expired-while-
+         scheduled — the #388 class). Read-only against Dutchie; findings go to
+         Grafana Loki (deal.audit) + the drifting deal's chatter. noupdate="1" so
+         a later upgrade creates it once but never resets its schedule. -->
+    <data noupdate="1">
+        <record id="ir_cron_dutchie_reconcile" model="ir.cron">
+            <field name="name">Dutchie: Reconcile Published Deals (drift check)</field>
+            <field name="model_id" ref="model_mint_deal_submission"/>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_dutchie_reconcile()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>
