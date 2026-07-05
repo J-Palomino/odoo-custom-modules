@@ -797,6 +797,73 @@ class DealSubmission(models.Model):
         if current and current not in avail:
             self.product_category_id = kept[:1] if kept else False
 
+    def _fill_vendor_details_from_brands(self, brands):
+        """Autofill the Vendor Details fields (vendor_name / vendor_contact /
+        vendor_email / vendor_phone) from the given brand(s). Sources, in
+        order: the brand's Vendor Portal Contact (mint.brand
+        vendor_partner_ids), then the most recent prior submissions carrying
+        the same brand. Only EMPTY fields are filled — a value staff already
+        typed is never overwritten, and re-picking a brand re-fills only
+        what's still blank."""
+        if not brands:
+            return
+        vendor_fields = ('vendor_name', 'vendor_contact',
+                         'vendor_email', 'vendor_phone')
+        empty = [f for f in vendor_fields if not self[f]]
+        if not empty:
+            return
+        filled = {}
+        partner = brands.vendor_partner_ids[:1]
+        if partner:
+            filled = {
+                'vendor_contact': partner.name,
+                'vendor_email': partner.email,
+                'vendor_phone': partner.phone,
+            }
+        if not all(filled.get(f) for f in empty):
+            prior = self.search([
+                ('id', '!=', self._origin.id),
+                '|',
+                ('brand_id', 'in', brands.ids),
+                ('brand_ids', 'in', brands.ids),
+            ], order='create_date desc', limit=10)
+            for prev in prior:
+                for f in empty:
+                    if not filled.get(f) and prev[f]:
+                        filled[f] = prev[f]
+                if all(filled.get(f) for f in empty):
+                    break
+        if 'vendor_name' in empty and not filled.get('vendor_name'):
+            filled['vendor_name'] = ' / '.join(brands.mapped('name'))
+        for f in empty:
+            if filled.get(f):
+                self[f] = filled[f]
+
+    @api.onchange('brand_id', 'brand_ids')
+    def _onchange_brands_fill_vendor_details(self):
+        """Picking a brand (Vendor Details tab or the Inclusions multi-brand
+        picker) autofills the vendor contact details — see
+        _fill_vendor_details_from_brands for sources and precedence."""
+        self._fill_vendor_details_from_brands(
+            (self.brand_id | self.brand_ids)._origin)
+
+    @api.onchange('vendor_name')
+    def _onchange_vendor_name_resolve_brand(self):
+        """Typing a Vendor / Brand Name resolves it to brand record(s) via
+        names + aliases (mint.brand.resolve_vendor_string) when no brand is
+        picked yet, then autofills the remaining vendor details the same way
+        picking a brand does. A wrong fuzzy match is still hand-editable —
+        nothing here overwrites a non-empty field or an explicit brand pick."""
+        if not self.vendor_name or self.brand_id or self.brand_ids:
+            return
+        brands = self.env['mint.brand'].resolve_vendor_string(self.vendor_name)
+        if not brands:
+            return
+        self.brand_id = brands[0]
+        if len(brands) > 1:
+            self.brand_ids = [(6, 0, brands.ids)]
+        self._fill_vendor_details_from_brands(brands)
+
     @api.model
     def _mirror_category_text(self, vals):
         """Non-form writes (RPC, imports, server actions) that set the

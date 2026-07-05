@@ -7,3 +7,4 @@ from . import test_dutchie_restrictions
 from . import test_weekday_bools
 from . import test_dutchie_claim
 from . import test_publish_mode
+from . import test_vendor_autofill
