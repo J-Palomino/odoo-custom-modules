@@ -97,7 +97,8 @@
                         </group>
                         <group>
                             <field name="store_ids" widget="many2many_tags"
-                                   options="{'no_create': True}"/>
+                                   options="{'no_create': True}"
+                                   domain="[('is_dispensary', '=', True), ('is_active', '=', True)]"/>
                         </group>
                     </group>
                     <notebook>
