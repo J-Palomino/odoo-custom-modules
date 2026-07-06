@@ -399,19 +399,29 @@ class DaisyAgent(models.Model):
     # acting as other agents or system admins, no security-config models, no
     # ORM-scope-escape methods, caller context stripped, and every call audited.
 
-    # Security/config models an agent must never touch via act-as, even if the
-    # OG caller technically could.
+    # Security/config + injection/impersonation-capable models an agent must
+    # never touch via act-as, even if the OG caller technically could. (Deny-list
+    # is a stopgap; a (model, method) allow-list is the intended end state.)
     _ACTAS_MODEL_DENYLIST = (
+        # security / administration surface
         "res.users", "res.groups", "res.company", "res.company.users",
         "ir.rule", "ir.model.access", "ir.model.data", "ir.model",
         "ir.config_parameter", "ir.cron", "ir.actions.server", "base.automation",
+        # code / template / config-execution surface (SSTI / stored-XSS / exec)
+        "ir.ui.view", "ir.actions.report", "ir.filters", "ir.default", "ir.exports",
+        # send-as-user / exfil surface
+        "mail.mail", "mail.template", "mail.compose.message",
+        # arbitrary file read/overwrite
+        "ir.attachment",
     )
+    # Groups whose members an agent must never impersonate (admin / near-admin).
+    _ACTAS_ADMIN_GROUP_XMLIDS = ("base.group_system", "base.group_erp_manager")
     # Methods that would re-scope the recordset out of the with_user() sandbox.
     _ACTAS_METHOD_DENYLIST = (
         "sudo", "with_user", "with_context", "with_company", "with_env",
         "browse", "search_fetch",
     )
-    _ACTAS_TOKEN_TTL = 1800  # seconds
+    _ACTAS_TOKEN_TTL = 180  # seconds — covers one auto-reply turn, minimises replay
 
     def _actas_secret(self):
         secret = self.env["ir.config_parameter"].sudo().get_param(
@@ -424,13 +434,20 @@ class DaisyAgent(models.Model):
             ))
         return secret.encode()
 
-    def mint_act_as_token(self, og_user):
+    def _mint_act_as_token(self, og_user):
         """Mint a short-lived signed token binding THIS agent to the OG caller.
-        Called by the auto-reply. The token is the ONLY way to select an act-as
-        target, so an agent can never impersonate anyone but this bound user."""
+        PRIVATE (leading underscore) so it is NOT dispatchable over RPC/MCP — only
+        trusted server-side auto-reply code can call it. The token is the ONLY way
+        to select an act-as target, so an agent can never impersonate anyone but
+        this bound user."""
         self.ensure_one()
         og_id = og_user.id if hasattr(og_user, "id") else int(og_user)
-        payload = {"a": self.user_id.id, "u": og_id, "e": int(time.time()) + self._ACTAS_TOKEN_TTL}
+        payload = {
+            "a": self.user_id.id,
+            "u": og_id,
+            "e": int(time.time()) + self._ACTAS_TOKEN_TTL,
+            "j": os.urandom(8).hex(),  # nonce (audit / future single-use)
+        }
         raw = base64.urlsafe_b64encode(
             json.dumps(payload, separators=(",", ":")).encode()
         ).decode()
@@ -481,8 +498,15 @@ class DaisyAgent(models.Model):
         # Never launder privilege through another agent, and never act as an admin.
         if self.env["daisy.agent"].sudo().search_count([("user_id", "=", og_uid)]):
             raise AccessError(_("Cannot act as another Daisy agent."))
-        if target.has_group("base.group_system"):
-            raise AccessError(_("Cannot act as a system administrator."))
+        # NB: res.users.has_group() is @api.model — it checks the CURRENT user, not
+        # `target`. Check the target's membership directly against the group's users.
+        admin_uids = set()
+        for xmlid in self._ACTAS_ADMIN_GROUP_XMLIDS:
+            grp = self.env.ref(xmlid, raise_if_not_found=False)
+            if grp:
+                admin_uids |= set(grp.sudo().users.ids)
+        if og_uid in admin_uids:
+            raise AccessError(_("Cannot act as an administrator."))
 
         if not model or model in self._ACTAS_MODEL_DENYLIST:
             raise UserError(_("Model not allowed via act-as: %s") % model)
