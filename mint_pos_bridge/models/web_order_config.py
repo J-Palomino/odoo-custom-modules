@@ -29,10 +29,10 @@ class WebOrderConfig(models.Model):
     # Dutchie POS connection
     dutchie_loc_id = fields.Integer(string='Dutchie LocId', required=True,
                                      help='Dutchie POS location ID (e.g. 1568 for Tempe)')
-    dutchie_register_id = fields.Integer(string='Register ID', default=5115,
-                                          help='POS register to assign orders to')
-    dutchie_room_id = fields.Integer(string='Room ID', default=16071,
-                                      help='POS room for check-in (e.g. Sales Floor)')
+    dutchie_register_id = fields.Integer(string='Register ID', default=0,
+                                          help='POS register to assign orders to (0 = none; register/room IDs are per-location in Dutchie)')
+    dutchie_room_id = fields.Integer(string='Room ID', default=0,
+                                      help='POS room for check-in — set to THIS location\'s room; IDs are per-location in Dutchie')
 
     # State-to-lane mapping (stored as JSON)
     state_lane_map = fields.Text(
