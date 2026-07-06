@@ -46,8 +46,11 @@ class StockCheckWizard(models.TransientModel):
         self.ensure_one()
 
         get_param = self.env['ir.config_parameter'].sudo().get_param
+        # Default to the LetsGoMint instance (-6aa5) — the cache the storefront
+        # reads and every other mint_command_center flow writes to. The
+        # no-suffix host is a separate instance with its own Redis.
         base_url = get_param('mint.inventory_service.url',
-                             'https://mintinvsvc-production.up.railway.app')
+                             'https://mintinvsvc-production-6aa5.up.railway.app')
         api_key = get_param('mint.inventory_service.api_key', '')
 
         # Get retail stores for the market
