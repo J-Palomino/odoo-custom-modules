@@ -230,3 +230,60 @@ class DaisyAgentJob(models.Model):
         if count:
             old_jobs.unlink()
             _logger.info("Cleaned up %s old agent jobs", count)
+
+    @api.model
+    def _cron_log_timesheets(self):
+        """Tier A: log each completed agent execution as a nominal timesheet line
+        (``account.analytic.line``) on the agent's email project, attributed to the
+        agent's ``hr.employee``.
+
+        - Idempotent: processes only jobs newer than the ``daisy.timesheet.last_job_id``
+          watermark, then advances it (re-runs never double-count).
+        - Nominal duration (``daisy.timesheet.nominal_hours``, default 0.1h) — the real
+          per-execution timing lives on daisy.plus, not in Odoo (job create->write is DB
+          latency). Swap in daisy.plus /executions timing for billing accuracy (Tier B).
+        - Soft-gated: no-op unless ``hr_timesheet`` is installed (keeps the module
+          installable without force-pulling hr_timesheet on environments that lack it).
+        - Coverage: skips agents whose backing user has no ``hr.employee``.
+        """
+        IMM = self.env["ir.module.module"].sudo()
+        if not IMM.search_count([("name", "=", "hr_timesheet"), ("state", "=", "installed")]):
+            return 0
+        ICP = self.env["ir.config_parameter"].sudo()
+        watermark = int(ICP.get_param("daisy.timesheet.last_job_id", "0") or "0")
+        nominal = float(ICP.get_param("daisy.timesheet.nominal_hours", "0.1") or "0.1")
+        jobs = self.sudo().search(
+            [("id", ">", watermark), ("state", "=", "done")], order="id asc", limit=500)
+        if not jobs:
+            return 0
+        Emp = self.env["hr.employee"].sudo()
+        Proj = self.env["project.project"].sudo()
+        AAL = self.env["account.analytic.line"].sudo()
+        max_id = watermark
+        made = 0
+        for job in jobs:
+            max_id = max(max_id, job.id)
+            agent = job.agent_id
+            if not agent or not agent.user_id:
+                continue
+            emp = Emp.search([("user_id", "=", agent.user_id.id)], limit=1)
+            if not emp:
+                continue  # Tier A coverage: only agents with an hr.employee
+            proj = Proj.search(
+                [("daisy_agent_id", "=", agent.id), ("allow_timesheets", "=", True)], limit=1)
+            if not proj:
+                continue
+            day = (job.create_date or fields.Datetime.now()).date()
+            AAL.create({
+                "name": "[daisy:%s] %s execution" % (job.id, agent.name or agent.code or agent.id),
+                "project_id": proj.id,
+                "employee_id": emp.id,
+                "unit_amount": nominal,
+                "date": day,
+            })
+            made += 1
+        ICP.set_param("daisy.timesheet.last_job_id", str(max_id))
+        if made:
+            _logger.info(
+                "Daisy timesheet cron: logged %s execution(s); watermark -> %s", made, max_id)
+        return made
