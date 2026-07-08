@@ -25,6 +25,19 @@ class ResUsersDaisy(models.Model):
              "survives logout/login.",
     )
 
+    # Comma-separated additional email addresses that may sign into this
+    # account via Google OAuth (e.g. a second Gmail on another domain). The
+    # login email always works; these are extras. Each sign-in from an
+    # alternate address relinks oauth_uid to that Google identity, so any of
+    # the listed accounts can be used interchangeably.
+    oauth_alt_emails = fields.Char(
+        string="Alternate OAuth Emails",
+        copy=False,
+        help="Comma-separated additional email addresses allowed to sign "
+             "into this account with Google. The login email always works; "
+             "list extra addresses here (e.g. jane@otherdomain.com).",
+    )
+
     def _auth_oauth_signin(self, provider, validation, params):
         """Override to link existing users by email on first OAuth login."""
         oauth_uid = validation['user_id']
@@ -44,6 +57,19 @@ class ResUsersDaisy(models.Model):
                 ('login', '=ilike', email),
                 ('active', '=', True),
             ], limit=1)
+            if not existing_user:
+                # ilike pre-filters (wildcards in emails over-match); exact
+                # token comparison decides.
+                candidates = self.sudo().search([
+                    ('oauth_alt_emails', 'ilike', email),
+                    ('active', '=', True),
+                ])
+                existing_user = candidates.filtered(
+                    lambda u: email in [
+                        alt.strip().lower()
+                        for alt in (u.oauth_alt_emails or '').split(',')
+                    ]
+                )[:1]
             if existing_user:
                 # Link the existing user to this OAuth provider
                 existing_user.sudo().write({
