@@ -57,11 +57,13 @@ class DiscussChannel(models.Model):
         if private_owner and message.author_id != private_owner.partner_id:
             return result
 
-        # Build conversation history from recent messages
-        recent = self.env["mail.message"].search([
+        # Build conversation history from the NEWEST messages, chronological
+        # (MR-954: "date asc" + limit froze history on the oldest turns once
+        # a channel outgrew ai_max_turns)
+        recent = self.env["daisy.agent.job"]._recent_history_messages([
             ("res_id", "=", self.id),
             ("model", "=", "discuss.channel"),
-        ], order="date asc", limit=agent.ai_max_turns)
+        ], agent.ai_max_turns)
 
         history = []
         for msg in recent:
