@@ -428,4 +428,8 @@ class DutchieSyncCheckpoint(models.Model):
                 vals['x_dutchie_customer_id'] = cust_id
             vals.setdefault('name', _('Dutchie Customer %s') % (cust_id or identity_key))
             vals['customer_rank'] = 1
+            # Without this, the mint_pos_bridge field default stamps roster
+            # imports 'odoo_manual', and record rules then treat them as
+            # internal contacts instead of customer PII.
+            vals['x_partner_origin'] = 'dutchie_walkin'
         return vals

@@ -23,10 +23,10 @@
             </field>
         </record>
 
-        <!-- Admins automatically get web customer access. -->
-        <record id="base.group_erp_manager" model="res.groups">
-            <field name="implied_ids" eval="[(4, ref('mint_customer_api.group_web_customer_access'))]"/>
-        </record>
+        <!-- Customer PII access is opt-in ONLY: no group implies
+             group_web_customer_access. Even Access Rights / Settings
+             admins must be added to the group explicitly (default-deny
+             for customer PII, decided 2026-07-08). -->
 
         <!--
             Record rules on res.partner.
@@ -41,10 +41,16 @@
             so a user in both base.group_user and group_web_customer_access
             gets the union (all partners).
         -->
+        <!-- Hides ALL customer partners (web signups, web checkout, and the
+             Dutchie POS roster) from regular internal users. The
+             x_dutchie_customer_id clause also catches roster imports that
+             were mislabeled x_partner_origin='odoo_manual' by the field
+             default before 2026-07-08. Fields referenced here are owned by
+             mint_pos_bridge / mint_dutchie_sync (see manifest depends). -->
         <record id="partner_rule_hide_web_customers" model="ir.rule">
-            <field name="name">Partner: hide web customers from regular internal users</field>
+            <field name="name">Partner: hide customers from regular internal users</field>
             <field name="model_id" ref="base.model_res_partner"/>
-            <field name="domain_force">[('is_web_customer', '=', False)]</field>
+            <field name="domain_force">['&amp;', '&amp;', ('is_web_customer', '=', False), ('x_partner_origin', 'not in', ['dutchie_walkin', 'web_checkout']), ('x_dutchie_customer_id', '=', False)]</field>
             <field name="groups" eval="[(4, ref('base.group_user'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
