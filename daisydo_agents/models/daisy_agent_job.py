@@ -1,10 +1,19 @@
 import base64
 import json
 import logging
+import re
 
 from odoo import models, fields, api
 
 _logger = logging.getLogger(__name__)
+
+# Outbound-link lint (MR-954). Discuss renders no markdown, so [label](url)
+# is rewritten to "label — url"; letsgomint Odoo links must match the
+# action-window form and point at a record the posting agent can read.
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
+ODOO_URL_RE = re.compile(r"https?://letsgomint\.us/odoo/[^\s<>\"'\)\],]*")
+ALLOWED_ODOO_URL_RE = re.compile(r"^https://letsgomint\.us/odoo/action-(\d+)/(\d+)$")
+LINK_REMOVED_MARKER = "[link removed — failed validation]"
 
 
 class DaisyAgentJob(models.Model):
@@ -37,6 +46,114 @@ class DaisyAgentJob(models.Model):
     response_text = fields.Text(help="AI response for audit trail")
     attempts = fields.Integer(default=0)
     max_attempts = fields.Integer(default=3)
+
+    def _sanitize_agent_reply(self, text, check_user=None):
+        """Lint an outgoing agent reply before it is posted (MR-954).
+
+        Deterministic replacement for the Flowise link-gate (adding nodes
+        after the agent node disables tool execution platform-wide):
+        - rewrite ``[label](url)`` to ``label — url`` (Discuss renders no
+          markdown anchors);
+        - replace letsgomint Odoo links that are not of the form
+          ``/odoo/action-<action>/<record>`` with a removal marker;
+        - replace links whose action or record does not exist or is not
+          readable by ``check_user`` — the check runs under that user's
+          record rules, so record existence is not leaked across access
+          boundaries. Kill switch: ``daisydo_agents.link_check_tier2``.
+        Fail-open: on any internal error the ORIGINAL text is returned —
+        linting must never block an agent reply.
+        """
+        original = text or ""
+        try:
+            removed = 0
+            text = MARKDOWN_LINK_RE.sub(
+                lambda m: f"{m.group(1)} — {m.group(2)}", original
+            )
+
+            tier2 = self.env["ir.config_parameter"].sudo().get_param(
+                "daisydo_agents.link_check_tier2", "1"
+            ) not in ("0", "false", "False")
+            check_user = check_user or self.env.user
+
+            def _check_url(match):
+                nonlocal removed
+                url = match.group(0)
+                trailing = ""
+                stripped = url
+                while stripped and stripped[-1] in ".,;:!?":
+                    trailing = stripped[-1] + trailing
+                    stripped = stripped[:-1]
+                allowed = ALLOWED_ODOO_URL_RE.match(stripped)
+                if not allowed:
+                    removed += 1
+                    return LINK_REMOVED_MARKER
+                if tier2:
+                    try:
+                        action = self.env["ir.actions.act_window"].sudo().browse(
+                            int(allowed.group(1))
+                        )
+                        model = action.exists() and action.res_model
+                        visible = model and self.env[model].with_user(
+                            check_user
+                        ).search_count([("id", "=", int(allowed.group(2)))])
+                    except Exception:
+                        visible = False
+                    if not visible:
+                        removed += 1
+                        return LINK_REMOVED_MARKER
+                return stripped + trailing
+
+            text = ODOO_URL_RE.sub(_check_url, text)
+
+            if removed:
+                _logger.warning(
+                    "Agent job %s: removed %s unvalidated link(s) from reply",
+                    self.ids and self.ids[0], removed,
+                )
+                text += (
+                    f"\n\n(Note: {removed} link(s) were removed because they "
+                    "could not be validated. Ask me to re-check the record "
+                    "and resend.)"
+                )
+            return text
+        except Exception:
+            _logger.exception(
+                "Agent job %s: reply sanitizer failed — posting unsanitized",
+                self.ids and self.ids[0],
+            )
+            return original
+
+    def _is_superseded(self):
+        """True when a newer job exists for the same agent + target (MR-954).
+
+        A failed job that re-pends can complete on a later cron tick than a
+        job enqueued after it (seen live: job 17671 posted after 17672),
+        producing confusing out-of-order double replies. The newer job's
+        history contains this job's message, so skipping this reply loses
+        nothing. Same-second create_dates are broken by id order.
+        """
+        self.ensure_one()
+        return bool(self.sudo().search_count([
+            ("agent_id", "=", self.agent_id.id),
+            ("channel_model", "=", self.channel_model),
+            ("channel_id", "=", self.channel_id),
+            ("state", "!=", "error"),
+            "|", ("create_date", ">", self.create_date),
+            "&", ("create_date", "=", self.create_date), ("id", ">", self.id),
+        ]))
+
+    @api.model
+    def _recent_history_messages(self, domain, limit):
+        """Newest ``limit`` mail.messages matching ``domain``, oldest-first.
+
+        MR-954: the enqueue hooks used ``order="date asc"`` + ``limit``,
+        which pins history to the OLDEST messages once a thread outgrows
+        the cap — the agent then never sees recent turns.
+        """
+        msgs = self.env["mail.message"].search(
+            domain, order="date desc, id desc", limit=limit
+        )
+        return msgs.sorted(key=lambda m: (m.date, m.id))
 
     @api.model
     def _cron_process_jobs(self):
@@ -145,6 +262,20 @@ class DaisyAgentJob(models.Model):
                 if member:
                     member._notify_typing(False)
 
+                # A newer message on the same channel supersedes this reply:
+                # the newer job's history includes this job's message, so
+                # posting both yields out-of-order double replies (MR-954 —
+                # checked AFTER the slow AI call so messages that arrived
+                # while the prediction ran also supersede).
+                if job._is_superseded():
+                    job.write({"state": "done", "response_text": "[SUPERSEDED]"})
+                    self.env.cr.commit()
+                    _logger.info(
+                        "Job %s superseded by a newer job on %s#%s — reply skipped",
+                        job.id, job.channel_model, job.channel_id,
+                    )
+                    continue
+
                 if not ai_result.get("response"):
                     job.write({"state": "error", "error_message": "Empty AI response"})
                     self.env.cr.commit()
@@ -175,9 +306,15 @@ class DaisyAgentJob(models.Model):
                     except Exception:
                         _logger.warning("Job %s: could not decode agent image", job.id)
 
+                # Lint links before posting (MR-954): allowlist Odoo action
+                # links, verify targets as the agent user, rewrite markdown.
+                reply_body = job._sanitize_agent_reply(
+                    ai_result["response"], check_user=agent.user_id
+                )
+
                 # Post AI response as agent
                 ai_msg = target.with_user(agent.user_id).message_post(
-                    body=ai_result["response"],
+                    body=reply_body,
                     message_type="comment",
                     subtype_xmlid="mail.mt_comment",
                     attachments=attachments or None,
