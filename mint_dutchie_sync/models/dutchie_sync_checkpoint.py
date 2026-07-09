@@ -363,10 +363,33 @@ class DutchieSyncCheckpoint(models.Model):
                     [('x_dutchie_customer_id', 'in', cust_ids)], ['id', 'x_dutchie_customer_id'])
             }
 
+        # Never stamp Dutchie customer identity onto an internal staff/employee
+        # contact. A roster row can resolve to an existing employee (shared
+        # phone/name, or a customer_id left by an earlier run), and stamping it
+        # flags the employee as a customer — hiding them from colleagues under
+        # the customer-isolation record rule. Bulk-resolve which matched
+        # partners are staff (an employee work-contact, or backing a non-share
+        # internal user) so the write loop can skip them.
+        candidate_pids = set(by_identity.values()) | set(by_custid.values())
+        staff_pids = set()
+        if candidate_pids:
+            staff_pids = set(Partner.search([
+                ('id', 'in', list(candidate_pids)),
+                '|', ('employee', '=', True), ('user_ids.share', '=', False),
+            ]).ids)
+
         processed = 0
         for key, row in keyed.items():
             cust_id = str(row.get(ROSTER_COLS['id']) or '') or False
             pid = by_identity.get(key) or (by_custid.get(cust_id) if cust_id else None)
+            if pid and pid in staff_pids:
+                # Resolved to an internal staff/employee contact — skip so the
+                # backfill can never re-flag an employee as a customer.
+                _logger.info(
+                    "Roster: skipped staff partner %s (loc %s, identity %s)",
+                    pid, self.loc_id, key)
+                processed += 1
+                continue
             try:
                 with self.env.cr.savepoint():
                     if pid:
