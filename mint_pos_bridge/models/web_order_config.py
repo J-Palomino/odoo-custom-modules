@@ -33,6 +33,12 @@ class WebOrderConfig(models.Model):
                                           help='POS register to assign orders to (0 = none; register/room IDs are per-location in Dutchie)')
     dutchie_room_id = fields.Integer(string='Room ID', default=0,
                                       help='POS room for check-in — set to THIS location\'s room; IDs are per-location in Dutchie')
+    dutchie_lsp_id = fields.Integer(
+        string='LSP ID', default=0,
+        help='Dutchie Licensed Service Provider (tenant) id that owns this '
+             'location. Required so POS calls route to the correct tenant — '
+             'a wrong or missing LSP sends non-AZ traffic to the default '
+             '(AZ) tenant.')
 
     # State-to-lane mapping (stored as JSON)
     state_lane_map = fields.Text(
@@ -133,6 +139,7 @@ class WebOrderConfigAPI(models.AbstractModel):
             'dutchie_loc_id': config.dutchie_loc_id,
             'dutchie_register_id': config.dutchie_register_id,
             'dutchie_room_id': config.dutchie_room_id,
+            'dutchie_lsp_id': config.dutchie_lsp_id,
             'state_lane_map': state_lane_map,
             'push_templates': push_templates,
             'order_source': config.order_source,
@@ -170,6 +177,7 @@ class WebOrderConfigAPI(models.AbstractModel):
                 'dutchie_loc_id': config.dutchie_loc_id,
                 'dutchie_register_id': config.dutchie_register_id,
                 'dutchie_room_id': config.dutchie_room_id,
+                'dutchie_lsp_id': config.dutchie_lsp_id,
                 'state_lane_map': state_lane_map,
                 'push_templates': push_templates,
                 'online_orders_lane': config.get_lane_for_state('placed'),
