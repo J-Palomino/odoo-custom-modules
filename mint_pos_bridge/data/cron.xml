@@ -30,5 +30,31 @@
             <field name="user_id" ref="base.user_root"/>
         </record>
 
+        <!--
+            Self-healing staff-flag guard.
+
+            Backstop for the customer-isolation rule (mint_customer_api
+            partner_rule_hide_web_customers): strips Dutchie/POS customer
+            flags (x_dutchie_customer_id, walk-in/web_checkout origin) off
+            any staff partner that picked them up. Staff who also shop can
+            get matched by phone/email and stamped as customers, which then
+            hides their own contact from colleagues and breaks ticket-
+            follower rendering for internal users. Runs hourly so a stray
+            mislabel self-corrects long before anyone hits the error.
+
+            Does NOT clear is_web_customer (genuine-signup signal — human
+            decision). See models/pos_partner.py::_cron_clear_staff_customer_flags.
+        -->
+        <record id="cron_clear_staff_customer_flags" model="ir.cron">
+            <field name="name">Mint: clear customer flags off staff partners (guard)</field>
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_clear_staff_customer_flags()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+            <field name="user_id" ref="base.user_root"/>
+        </record>
+
     </data>
 </odoo>

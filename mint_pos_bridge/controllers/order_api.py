@@ -137,11 +137,18 @@ def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=N
         partner = Partner.search([('email', '=ilike', email)], limit=1)
 
     if partner:
+        # Never stamp Dutchie customer identity onto a staff/employee contact
+        # (an employee work-contact, or a partner backing a non-share internal
+        # user). Staff who also shop match here by phone/email; stamping them
+        # flags the employee as a customer and hides their own record from
+        # colleagues under the customer-isolation rule. Benign contact fills
+        # still apply; the guard cron cleans up any historical stamps.
+        is_staff = partner.employee or any(not u.share for u in partner.user_ids)
         # Non-destructive upgrade: fill in fields the existing partner lacks.
         updates = {}
-        if dutchie_customer_id and not partner.x_dutchie_customer_id:
+        if not is_staff and dutchie_customer_id and not partner.x_dutchie_customer_id:
             updates['x_dutchie_customer_id'] = dutchie_customer_id
-        if dutchie_loyalty_id and not partner.x_dutchie_loyalty_id:
+        if not is_staff and dutchie_loyalty_id and not partner.x_dutchie_loyalty_id:
             updates['x_dutchie_loyalty_id'] = dutchie_loyalty_id
         if phone and not partner.phone:
             updates['phone'] = phone
@@ -149,6 +156,10 @@ def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=N
             updates['email'] = email
         if full_name and (not partner.name or partner.name.startswith('Walk-in #')):
             updates['name'] = full_name
+        if is_staff and (dutchie_customer_id or dutchie_loyalty_id):
+            _logger.info(
+                'Matched staff partner %s — not stamping Dutchie customer identity',
+                partner.id)
         if updates:
             partner.write(updates)
             partner._recompute_stub_flag()
