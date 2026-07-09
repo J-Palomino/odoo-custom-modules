@@ -60,17 +60,23 @@ PRIORITY_OPTIONS = [
 
 class MaintenanceFormController(http.Controller):
 
-    def _require_course(self):
-        """If FIXIT_COURSE_ID is set, check that the current user has
-        completed the eLearning course.  Returns None if the user may
-        proceed, or an HTTP response (redirect) if they must complete
-        the course first."""
+    def _course_status(self):
+        """Return a context dict describing the current user's Fix-It
+        training status.  The training course is *encouraged*, not
+        required — users may always submit a ticket.  When the user
+        hasn't completed the course, ``training_incomplete`` is True and
+        a banner linking to the course is shown on the forms.
+
+        Returns a dict suitable for merging into a render context:
+            {"training_incomplete": bool, "training_course_url": str}
+        """
+        ctx = {"training_incomplete": False, "training_course_url": ""}
         if not FIXIT_COURSE_ID:
-            return None
+            return ctx
         user = request.env.user
-        # Internal / admin users bypass the requirement
+        # Internal / admin users never see the banner
         if user.has_group("base.group_system"):
-            return None
+            return ctx
         partner = user.partner_id
         completed = (
             request.env["slide.channel.partner"]
@@ -82,12 +88,11 @@ class MaintenanceFormController(http.Controller):
             ])
         )
         if completed:
-            return None
+            return ctx
         course = request.env["slide.channel"].sudo().browse(FIXIT_COURSE_ID)
-        return request.render(
-            "mint_maintenance_form.course_required",
-            {"course_id": FIXIT_COURSE_ID, "course_url": course.website_url or f"/slides/{FIXIT_COURSE_ID}"},
-        )
+        ctx["training_incomplete"] = True
+        ctx["training_course_url"] = course.website_url or f"/slides/{FIXIT_COURSE_ID}"
+        return ctx
 
     def _check_request_access(self, maint_req, user):
         """Return True if user owns this request or is on the assigned team."""
@@ -169,6 +174,7 @@ class MaintenanceFormController(http.Controller):
             "form_values": {},
             "is_logged_in": False,
         }
+        ctx.update(self._course_status())
         ctx.update(extra)
         return ctx
 
@@ -434,10 +440,9 @@ class MaintenanceFormController(http.Controller):
         methods=["GET"],
     )
     def fixit_routing(self, **kw):
-        gate = self._require_course()
-        if gate:
-            return gate
-        return request.render("mint_maintenance_form.routing_page")
+        return request.render(
+            "mint_maintenance_form.routing_page", self._course_status()
+        )
 
     # ------------------------------------------------------------------
     # /it-requests — IT equipment form
@@ -450,10 +455,6 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def it_request_form(self, **post):
-        gate = self._require_course()
-        if gate:
-            return gate
-
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
             "form_title": "IT Request",
@@ -493,10 +494,6 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def engineering_request_form(self, **post):
-        gate = self._require_course()
-        if gate:
-            return gate
-
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
             "form_title": "Mint Technology Request",
@@ -536,10 +533,6 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def graphics_request_form(self, **post):
-        gate = self._require_course()
-        if gate:
-            return gate
-
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
             "form_title": "Graphics Request",
@@ -579,10 +572,6 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def vendor_request_form(self, **post):
-        gate = self._require_course()
-        if gate:
-            return gate
-
         template = "mint_maintenance_form.engineering_request_form"
         form_ctx = {
             "form_title": "Vendor Request",
@@ -622,10 +611,6 @@ class MaintenanceFormController(http.Controller):
         methods=["GET", "POST"],
     )
     def facilities_request_form(self, **post):
-        gate = self._require_course()
-        if gate:
-            return gate
-
         template = "mint_maintenance_form.facilities_request_form"
 
         if request.httprequest.method == "GET":
