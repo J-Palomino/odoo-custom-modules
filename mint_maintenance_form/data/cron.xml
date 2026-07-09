@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            Internal-ticket customer-follower guard.
+
+            Backstop for the customer-isolation rule (mint_customer_api
+            partner_rule_hide_web_customers): removes any customer partner
+            that has become a follower of a maintenance.request. Maintenance
+            tickets are internal (IT/Engineering/Facilities); a hidden
+            customer follower makes internal users hit an AccessError when the
+            ticket's follower avatars render (this blocked Pablo/user 5 on
+            ~15 IT tickets). Runs every 15 min so a stray follower self-heals
+            before anyone opens the ticket.
+
+            Complements the staff-flag guard (mint_pos_bridge, hourly) which
+            covers the staff-mislabel cause; this one covers genuine customers
+            following internal tickets.
+
+            See models/maintenance_request.py::_cron_unfollow_customers_from_internal.
+        -->
+        <record id="cron_unfollow_customers_from_internal" model="ir.cron">
+            <field name="name">Mint: unfollow customers from internal maintenance tickets (guard)</field>
+            <field name="model_id" ref="maintenance.model_maintenance_request"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_unfollow_customers_from_internal()</field>
+            <field name="interval_number">15</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+            <field name="user_id" ref="base.user_root"/>
+        </record>
+
+    </data>
+</odoo>

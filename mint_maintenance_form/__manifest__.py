@@ -1,6 +1,6 @@
 {
     "name": "Mint Service Request Forms",
-    "version": "19.0.9.6.0",
+    "version": "19.0.9.7.0",
     "category": "Maintenance",
     "summary": "Website forms for Mint Technology, Facilities, Graphics, and Vendor service requests",
     "author": "Mint Cannabis",
@@ -8,6 +8,7 @@
     "depends": ["maintenance", "website", "website_slides"],
     "data": [
         "security/equipment_rules.xml",
+        "data/cron.xml",
         "data/facilities_data.xml",
         "data/graphics_data.xml",
         "data/engineering_data.xml",
