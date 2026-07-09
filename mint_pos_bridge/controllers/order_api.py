@@ -585,10 +585,52 @@ class MintPosOrderAPI(http.Controller):
         if not company:
             return _error('Store not found', 404)
 
-        # Resolve customer
-        partner = _find_or_upgrade_partner(
-            data.get('customer'), origin='web_checkout',
-        )
+        # Idempotency guard: one Dutchie shipment == one order. Concurrent
+        # checkout submissions (double-click, BullMQ retry) race past the
+        # client-side exists-check in webOrder.js, so serialize on the
+        # shipment id with a transaction-scoped advisory lock and return the
+        # existing row instead of creating a twin.
+        shipment_id = str(data.get('dutchie_shipment_id') or '')
+        if shipment_id:
+            request.env.cr.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                ('mint.pos.order:' + shipment_id,),
+            )
+            existing = request.env['mint.pos.order'].sudo().search(
+                [('dutchie_shipment_id', '=', shipment_id)],
+                order='id desc', limit=1,
+            )
+            if existing:
+                _logger.info(
+                    'POS order %s already exists for shipment %s — returning existing',
+                    existing.name, shipment_id,
+                )
+                return _json({
+                    'success': True,
+                    'order_id': existing.id,
+                    'order_ref': existing.name,
+                    'state': existing.state,
+                    'partner_id': existing.partner_id.id if existing.partner_id else None,
+                    'existed': True,
+                })
+
+        # Resolve customer. Trust an explicit partner_id when the caller
+        # sends one — the webOrder processor forwards the signed-in
+        # customer's JWT-verified partner id, and re-matching by customer
+        # data can pick a POS-roster duplicate of the same person instead,
+        # which hides the order from "My Orders" (the list endpoint filters
+        # strictly by the JWT partner id).
+        partner = None
+        if data.get('partner_id'):
+            try:
+                partner = request.env['res.partner'].sudo().browse(
+                    int(data['partner_id'])).exists() or None
+            except (TypeError, ValueError):
+                partner = None
+        if not partner:
+            partner = _find_or_upgrade_partner(
+                data.get('customer'), origin='web_checkout',
+            )
 
         # Map order type
         raw_type = data.get('order_type', 'pickup')
@@ -624,7 +666,6 @@ class MintPosOrderAPI(http.Controller):
         # Without dutchie_shipment_id the Odoo→Dutchie cancel webhook
         # (server.js /api/webhook/lane-change) can't flag the swimlane entry,
         # leaving cancelled orders live in the POS UI.
-        shipment_id = str(data.get('dutchie_shipment_id') or '')
         if shipment_id:
             order_vals['dutchie_shipment_id'] = shipment_id
         if data.get('dutchie_customer_id'):
