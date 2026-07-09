@@ -4,22 +4,27 @@ Resumable per-store checkpoint + cron for backfilling Dutchie customer rosters
 into res.partner.
 
 Each Dutchie store (one LocId) gets one ``mint.dutchie.sync.checkpoint`` row.
-The cron processes ONE WHOLE STORE per fire: it streams that store's Patient
-Contact Report (ReportId 125) from the mintinvsvc endpoint as NDJSON and upserts
-the rows in savepoint batches, then marks the store done. Report 125 has no
-server-side paging and returns the entire roster in one snapshot, so a single
-streamed request per store is the coherent unit of work (no offset cursor, no
-per-process cache, no cross-instance paging hazard). The per-store fetch is the
-only fragile call (Dutchie 502/timeout); on failure the store goes to 'error'
-and is retried on the next tick.
+The cron claims one store per fire and processes a TIME-BOXED CHUNK of it
+(``CHUNK_TIME_BUDGET_S`` wall seconds): it streams that store's Patient Contact
+Report (ReportId 125) from the mintinvsvc endpoint as NDJSON, discards the
+``rows_done`` lines consumed by previous fires, and upserts rows in savepoint
+batches until the budget is spent. A store that doesn't finish stays 'running'
+with ``rows_done`` advanced; the next fire resumes where it left off. This keeps
+every fire well inside prod's cron limits (limit_time_real=300 / limit_time_cpu
+=120 — a whole-store fire on a 30K+ roster exceeded both and was killed with the
+transaction rolled back, head-blocking the queue forever).
 
-⚠️ Known limitation: a large store (e.g. Tempe ~365K rows) is one cron fire that
-holds its checkpoint row's FOR UPDATE lock and an OPEN transaction for the whole
-multi-minute stream. On the 2-worker prod Odoo this can pin a worker and lag
-autovacuum for that window, so run the initial backfill OFF-HOURS. Bounding the
-transaction via per-batch commits is deferred: committing mid-cron can release
-the ir.cron job lock in Odoo, so that change needs validation against v19
-cron-lock semantics before it is made.
+Report 125 has no server-side paging, so each fire re-runs the report and skips
+forward. That trades a cheap re-fetch (~6s for a 30K-row store, network-bound
+discard) for bounded transactions. Rows can shift between snapshots; the upsert
+is identity-key idempotent, and the perpetual refresh pass re-syncs every store
+from row 0, so skip drift self-heals. The per-store fetch remains the fragile
+call (Dutchie 502/timeout); on failure the store goes to 'error', keeps its
+``rows_done`` cursor, and is retried on the next tick.
+
+Because a partially-synced store sets ``last_run``, the claim's ``ORDER BY
+last_run ASC NULLS FIRST`` round-robins: never-run stores are claimed first, so
+a 365K-row store cannot starve the small ones.
 
 Identity model
 --------------
@@ -42,6 +47,7 @@ ROSTER_COLS keys are confirmed VERBATIM against a live report-125 response
 """
 import json
 import logging
+import time
 
 import requests
 
@@ -58,6 +64,14 @@ _logger = logging.getLogger(__name__)
 INVSVC_URL_PARAM = 'mint.dutchie_sync.invsvc_url'
 DEFAULT_INVSVC_URL = 'https://mintinvsvc-production.up.railway.app'
 INVSVC_API_KEY_PARAM = 'mint.inventory_service.api_key'
+
+# Wall-clock budget per cron fire. Prod runs limit_time_real=300 /
+# limit_time_cpu=120 with no cron-specific override, and exceeding either kills
+# the cron worker MID-TRANSACTION (all progress rolled back). 90s of upsert work
+# plus report fetch + skip-discard stays comfortably under both. The deadline is
+# only checked between batches, so every fire is guaranteed to advance by at
+# least one batch even when the fetch itself is slow.
+CHUNK_TIME_BUDGET_S = 90
 
 # Patient Contact Report (ReportId 125) column -> handling. ``Id`` is a
 # per-location row PK (no cross-store overlap) — a reference id, NOT the dedup key.
@@ -186,10 +200,16 @@ class DutchieSyncCheckpoint(models.Model):
                 'last_run': fields.Datetime.now(),
             })
             return
+        deadline = time.monotonic() + CHUNK_TIME_BUDGET_S
+        # rows_done is the stream-consumption cursor: how many report lines
+        # previous fires already upserted. Fresh/re-armed stores carry 0.
+        skip = self.rows_done or 0
         try:
-            total, processed = self._sync_store(cipher)
+            total, consumed, finished = self._sync_store(cipher, skip, deadline)
         except Exception as exc:  # network/502/timeout — record and retry next tick
             _logger.exception("Dutchie roster sync failed for loc %s", self.loc_id)
+            # Keep rows_done as-is: progress from completed fires is committed,
+            # and re-processing this fire's rows is an idempotent upsert.
             self.write({
                 'state': 'error',
                 'last_error': str(exc)[:2000],
@@ -197,23 +217,32 @@ class DutchieSyncCheckpoint(models.Model):
             })
             return
         self.write({
-            'state': 'done',
+            'state': 'done' if finished else 'running',
             'rows_total': total,
-            'rows_done': processed,
+            'rows_done': skip + consumed,
             'last_run': fields.Datetime.now(),
             'last_error': False,
         })
+        if not finished:
+            _logger.info(
+                "Roster chunk for loc %s: %d/%d rows consumed, resuming next fire.",
+                self.loc_id, skip + consumed, total)
 
     # ------------------------------------------------------------------
     # Fetch — stream the whole store roster as NDJSON, upsert in batches
     # ------------------------------------------------------------------
-    def _sync_store(self, cipher):
-        """Stream report-125 rows for this store and upsert them in batches.
+    def _sync_store(self, cipher, skip=0, deadline=None):
+        """Stream report-125 rows, skip the first ``skip``, upsert until done
+        or ``deadline`` (time.monotonic) is reached.
 
-        Returns ``(total, processed)``. The mintinvsvc endpoint runs report 125
-        once and streams one JSON object per line; we buffer ``batch_size`` rows,
-        upsert them, then flush+invalidate the ORM cache so peak memory stays
-        bounded even for 365K-row stores. Flush (not commit) keeps the row lock.
+        Returns ``(total, consumed, finished)`` where ``consumed`` is the number
+        of NEW stream lines this fire upserted (excluding skipped ones) and
+        ``finished`` is True when the stream was fully drained. The mintinvsvc
+        endpoint runs report 125 once and streams one JSON object per line; we
+        buffer ``batch_size`` rows, upsert them, then flush+invalidate the ORM
+        cache so peak memory stays bounded even for 365K-row stores. Flush (not
+        commit) keeps the row lock; the actual commit happens once at cron end,
+        which is why each fire must stay inside the cron time limits.
         """
         ICP = self.env['ir.config_parameter'].sudo()
         base = (ICP.get_param(INVSVC_URL_PARAM, DEFAULT_INVSVC_URL) or '').rstrip('/')
@@ -240,26 +269,36 @@ class DutchieSyncCheckpoint(models.Model):
                 if not line:
                     continue
                 seen += 1
+                if seen <= skip:
+                    continue  # consumed by a previous fire — discard cheaply
                 batch.append(json.loads(line))
                 if len(batch) >= batch_size:
-                    processed += self._upsert_rows(batch, cipher)
+                    processed += len(batch)
+                    self._upsert_rows(batch, cipher)
                     batch = []
                     # Persist this batch and release ORM cache memory (no commit
                     # → the FOR UPDATE checkpoint lock is retained for this store).
                     self.env.cr.flush()
                     self.env.invalidate_all()
+                    if deadline is not None and time.monotonic() >= deadline:
+                        # Budget spent: stop cleanly mid-store. Closing the
+                        # response (context exit) aborts the remaining stream.
+                        return (total or seen), processed, False
             if batch:
-                processed += self._upsert_rows(batch, cipher)
+                processed += len(batch)
+                self._upsert_rows(batch, cipher)
         # Integrity: a stream truncated on a clean newline boundary parses fine
         # but drops the tail. Refuse to mark 'done' if fewer rows arrived than the
-        # endpoint promised — raise so the store is retried in full next tick.
+        # endpoint promised — raise so the store is retried next tick (the
+        # rows_done cursor is preserved, so the retry resumes, not restarts).
         if total and seen < total:
             raise ValueError(
                 "Roster stream truncated for loc %s: received %d of %d rows."
                 % (self.loc_id, seen, total))
-        # rows_total = raw rows streamed (seen); rows_done = upserted-after-dedup
-        # (processed). They legitimately differ by identity-key dedup attrition.
-        return (total or seen), processed
+        # consumed counts stream lines this fire handled (post-skip), NOT
+        # post-dedup upserts — it is the resume cursor, so it must track the
+        # stream position exactly.
+        return (total or seen), processed, True
 
     # ------------------------------------------------------------------
     # Deterministic dedup + batched encrypted upsert
@@ -324,10 +363,33 @@ class DutchieSyncCheckpoint(models.Model):
                     [('x_dutchie_customer_id', 'in', cust_ids)], ['id', 'x_dutchie_customer_id'])
             }
 
+        # Never stamp Dutchie customer identity onto an internal staff/employee
+        # contact. A roster row can resolve to an existing employee (shared
+        # phone/name, or a customer_id left by an earlier run), and stamping it
+        # flags the employee as a customer — hiding them from colleagues under
+        # the customer-isolation record rule. Bulk-resolve which matched
+        # partners are staff (an employee work-contact, or backing a non-share
+        # internal user) so the write loop can skip them.
+        candidate_pids = set(by_identity.values()) | set(by_custid.values())
+        staff_pids = set()
+        if candidate_pids:
+            staff_pids = set(Partner.search([
+                ('id', 'in', list(candidate_pids)),
+                '|', ('employee', '=', True), ('user_ids.share', '=', False),
+            ]).ids)
+
         processed = 0
         for key, row in keyed.items():
             cust_id = str(row.get(ROSTER_COLS['id']) or '') or False
             pid = by_identity.get(key) or (by_custid.get(cust_id) if cust_id else None)
+            if pid and pid in staff_pids:
+                # Resolved to an internal staff/employee contact — skip so the
+                # backfill can never re-flag an employee as a customer.
+                _logger.info(
+                    "Roster: skipped staff partner %s (loc %s, identity %s)",
+                    pid, self.loc_id, key)
+                processed += 1
+                continue
             try:
                 with self.env.cr.savepoint():
                     if pid:
