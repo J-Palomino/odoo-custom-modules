@@ -327,7 +327,9 @@ class MintCheckout(http.Controller):
             ], limit=1)
             if order and order.x_checkout_status != 'paid':
                 order.sudo().write({'x_checkout_status': 'paid'})
-                # Award loyalty on the existing order
+                # Deduct any redemption + consume pending rewards. Earned
+                # points are NOT credited here — the nightly Dutchie import
+                # is the single award source (see _award_loyalty docstring).
                 if order.partner_id:
                     self._award_loyalty(
                         order.partner_id,
@@ -373,7 +375,12 @@ class MintCheckout(http.Controller):
             })
             _logger.info('Created new customer partner %s: %s', partner.id, name)
 
-        # Award loyalty points (1 point per dollar spent)
+        # Loyalty: deduct redeemed points immediately (they must not be
+        # re-spendable), but do NOT add earned points here. The nightly Dutchie
+        # transaction import (GKE dutchie-daily-import → mint.dutchie.purchase)
+        # is the SINGLE award source, keyed on the POS receipt — every fulfilled
+        # web pickup order also lands as a POS transaction, so awarding here too
+        # double-counted. points_earned below is a PENDING estimate for display.
         points_earned = 0
         total_amount = totals.get('total', 0)
         points_redeemed = data.get('loyalty_points_redeemed', 0)
@@ -396,17 +403,17 @@ class MintCheckout(http.Controller):
                     'points': 0,
                 })
 
-            # Award: 1 point per dollar (on pre-tax subtotal minus discounts)
+            # Pending estimate: 1 point per dollar (pre-tax subtotal minus
+            # discounts). Actually credited by the nightly import.
             spend_basis = totals.get('subtotal', 0) - totals.get('discounts', 0)
             points_earned = int(spend_basis)
 
-            # Deduct redeemed points, add earned
-            new_balance = card.points - points_redeemed + points_earned
-            card.sudo().write({'points': max(new_balance, 0)})
+            if points_redeemed:
+                card.sudo().write({'points': max(card.points - points_redeemed, 0)})
 
             _logger.info(
-                'Loyalty update for %s: -%d redeemed, +%d earned = %d balance',
-                partner.name, points_redeemed, points_earned, max(new_balance, 0)
+                'Loyalty checkout for %s: -%d redeemed now, +%d pending (awarded by nightly import)',
+                partner.name, points_redeemed, points_earned,
             )
 
             # Auto-consume any pending /rewards redemption whose product
@@ -450,14 +457,21 @@ class MintCheckout(http.Controller):
         return min(round((discount_amount / unit_price) * 100, 2), 100)
 
     def _award_loyalty(self, partner, spend_amount, points_redeemed=0):
-        """Award loyalty points + auto-consume any pending redemption.
+        """Deduct redeemed points + auto-consume any pending redemption.
+
+        Earned points are NOT credited here. The nightly Dutchie transaction
+        import (GKE CronJob dutchie-daily-import → mint.dutchie.purchase,
+        which awards atomically on create, deduped by POS receipt) is the
+        single source of point EARNING — every fulfilled web pickup order also
+        posts as a POS transaction, so crediting at checkout double-counted.
 
         Points from explicit checkout-time redemption (points_redeemed arg)
-        are deducted as before. Separately, any pending loyalty_redemption
-        record for this partner is auto-marked 'used' here — points for
-        those were already deducted on /rewards redeem.
+        are still deducted immediately so they cannot be re-spent before the
+        nightly import runs. Any pending loyalty_redemption record for this
+        partner is auto-marked 'used' here — points for those were already
+        deducted on /rewards redeem.
 
-        Returns points earned.
+        Returns the pending points estimate (1 pt / $1) for display.
         """
         loyalty_program = request.env['loyalty.program'].sudo().search(
             [('program_type', '=', 'loyalty')], limit=1
@@ -478,12 +492,12 @@ class MintCheckout(http.Controller):
             })
 
         points_earned = int(spend_amount)
-        new_balance = card.points - points_redeemed + points_earned
-        card.sudo().write({'points': max(new_balance, 0)})
+        if points_redeemed:
+            card.sudo().write({'points': max(card.points - points_redeemed, 0)})
 
         _logger.info(
-            'Loyalty update for %s: -%d redeemed, +%d earned = %d balance',
-            partner.name, points_redeemed, points_earned, max(new_balance, 0),
+            'Loyalty checkout for %s: -%d redeemed now, +%d pending (awarded by nightly import)',
+            partner.name, points_redeemed, points_earned,
         )
 
         consumed = request.env['mint.discount'].sudo().consume_pending_redemption(partner)
