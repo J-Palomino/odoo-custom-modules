@@ -15,6 +15,10 @@
         'loyalty',
         'crm',
         'mint_api_v2',
+        # Owns x_partner_origin (and pulls in mint_dutchie_sync, which owns
+        # x_dutchie_customer_id) — both referenced by the customer-hiding
+        # record rule and the partner search filters.
+        'mint_pos_bridge',
     ],
     'external_dependencies': {
         'python': ['PyJWT'],

@@ -23,4 +23,30 @@
             </xpath>
         </field>
     </record>
+
+    <!-- Customer-vs-contact slicing for staff who hold Mint Web Customer
+         Access (everyone else never sees customer partners — record rule
+         partner_rule_hide_web_customers). No <group> element: Odoo 19
+         search views reject it. -->
+    <record id="view_partner_filter_customer_origin" model="ir.ui.view">
+        <field name="name">res.partner.select.customer.origin</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_res_partner_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <filter string="Web Customers" name="filter_web_customers"
+                        domain="[('is_web_customer', '=', True)]"/>
+                <filter string="Dutchie Customers" name="filter_dutchie_customers"
+                        domain="[('x_dutchie_customer_id', '!=', False)]"/>
+                <filter string="Non-Customer Contacts" name="filter_non_customer_contacts"
+                        domain="[('is_web_customer', '=', False), ('x_dutchie_customer_id', '=', False), ('x_partner_origin', 'not in', ['dutchie_walkin', 'web_checkout'])]"/>
+                <separator/>
+                <filter string="Group by Origin" name="group_by_partner_origin"
+                        context="{'group_by': 'x_partner_origin'}"/>
+                <filter string="Group by Home Store" name="group_by_home_store"
+                        context="{'group_by': 'x_home_store_id'}"/>
+            </xpath>
+        </field>
+    </record>
 </odoo>
