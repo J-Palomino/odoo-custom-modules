@@ -31,6 +31,27 @@ class MaintenanceRequest(models.Model):
         "unless explicitly set to 'manual'.",
     )
 
+    # Region rollup + store label, stamped from company_id by the
+    # "Maintenance: set state/locale from company" automation (see
+    # data/maintenance_region_data.xml). Previously Studio/manual fields; defined
+    # here so they survive a DB restore and the stamping action never crashes on
+    # a missing column. x_state_region is a FULL-name rollup used as the parent
+    # sort dimension (Arizona/Nevada/.../Distribution/Corporate); company_id is
+    # the child (per-store) dimension. Kept indexed for group-by performance.
+    x_state_region = fields.Char(
+        string="State",
+        index=True,
+        help="Regional rollup for sorting tickets: full US state name for "
+        "store companies, 'Distribution' for the Warehouse-Ordering entities, "
+        "'Corporate' for stateless corporate companies. Set automatically from "
+        "company_id.",
+    )
+    x_store_location = fields.Char(
+        string="Store Location",
+        help="Human-readable store/company name, set automatically from "
+        "company_id.",
+    )
+
     @api.model
     def _cron_unfollow_customers_from_internal(self):
         """Monitor + self-heal: drop customer partners from maintenance followers.

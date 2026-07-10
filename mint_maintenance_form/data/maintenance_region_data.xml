@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!--
+        Region rollup stamping for maintenance tickets.
+
+        Fills x_state_region (parent sort dimension) and x_store_location from
+        the ticket's company on every create/write. x_state_region is a
+        FULL-name rollup so tickets can be grouped by region:
+          - Warehouse-Ordering subtree {38,39,40,41,42,50,51,54} -> "Distribution"
+          - a stateless-store override map (Sofa King 84 -> "Arizona")
+          - else company.state_id.name (Arizona / Florida / Nevada / ...)
+          - stateless corporate companies (Mint Cannabis 1, etc.) -> "Corporate"
+
+        These records were originally created ad-hoc over RPC (server action 2956
+        + base.automation 68, no external IDs). The 19.0.9.8.1 pre-migrate binds
+        those existing records to the external IDs below so this module adopts
+        them in place instead of creating duplicates. noupdate is left at the
+        default (0) so the stamping logic stays in sync with this source on -u.
+    -->
+    <data>
+        <record id="automation_maintenance_region" model="base.automation">
+            <field name="name">Maintenance: set state/locale from company</field>
+            <field name="model_id" ref="maintenance.model_maintenance_request"/>
+            <field name="trigger">on_create_or_write</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="action_set_maintenance_region" model="ir.actions.server">
+            <field name="name">Set x_state_region/x_store_location from company</field>
+            <field name="model_id" ref="maintenance.model_maintenance_request"/>
+            <field name="state">code</field>
+            <field name="usage">base_automation</field>
+            <field name="base_automation_id" ref="automation_maintenance_region"/>
+            <field name="code"><![CDATA[# Region rollup for maintenance tickets: Distribution / <State> / Corporate
+DIST = {38, 39, 40, 41, 42, 50, 51, 54}   # Warehouse-Ordering subtree
+OVERRIDE = {84: 'Arizona'}                 # stateless stores w/ known region (Sofa King = AZ)
+for rec in records:
+    comp = rec.company_id
+    vals = {}
+    if rec.x_store_location != (comp.name or False):
+        vals['x_store_location'] = comp.name or False
+    if not comp:
+        region = 'Corporate'
+    elif comp.id in DIST:
+        region = 'Distribution'
+    elif comp.id in OVERRIDE:
+        region = OVERRIDE[comp.id]
+    elif comp.state_id:
+        region = comp.state_id.name
+    else:
+        region = 'Corporate'
+    if region and rec.x_state_region != region:
+        vals['x_state_region'] = region
+    if vals:
+        rec.write(vals)
+]]></field>
+        </record>
+    </data>
+</odoo>
