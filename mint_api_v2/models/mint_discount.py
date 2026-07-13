@@ -504,12 +504,18 @@ class MintDiscount(models.Model):
         raise UserError(_("Could not generate a unique redemption code."))
 
     @api.model
-    def create_redemption(self, partner, points_cost, reward=None, product=None):
+    def create_redemption(self, partner, points_cost, reward=None, product=None, store=None):
         """Create a loyalty_redemption discount for a customer.
 
         Caller is responsible for deducting points from the loyalty.card
         inside the same transaction. Supply either `reward` (generic tier)
         or `product` (specific product.template). Returns the new record.
+
+        Per-state/location separation: pass `store` (res.company) — the store
+        the customer is redeeming at. The redemption is locked to that store's
+        STATE (region) via store_ids, so consume_pending_redemption will only
+        honor it at stores in the same market. An empty store_ids means "any
+        store" — a cross-state leak — so a store SHOULD always be supplied.
         """
         if not partner:
             raise UserError(_("Partner is required."))
@@ -518,7 +524,7 @@ class MintDiscount(models.Model):
 
         label = (product.name if product else None) or (reward.display_name if reward else _("Reward"))
         expires = fields.Datetime.now() + timedelta(days=REDEMPTION_DEFAULT_TTL_DAYS)
-        return self.sudo().create({
+        vals = {
             'name': _("Redemption: %s") % label,
             'discount_type': 'loyalty_redemption',
             'is_published': True,
@@ -534,7 +540,22 @@ class MintDiscount(models.Model):
             'redemption_points_cost': points_cost,
             'redemption_status': 'pending',
             'expires_at': expires,
-        })
+        }
+        # Lock to the store's STATE (all dispensary companies in its region), so
+        # an AZ-issued reward can't be consumed at a FL/MI store.
+        if store:
+            region = store.region_id
+            if region:
+                state_stores = self.env['res.company'].sudo().search(
+                    [('region_id', '=', region.id), ('is_dispensary', '=', True)])
+                vals['store_ids'] = [(6, 0, state_stores.ids or [store.id])]
+            else:
+                vals['store_ids'] = [(6, 0, [store.id])]
+        else:
+            _logger.warning('create_redemption: no store supplied for partner %s — '
+                            'redemption is NOT location-locked (redeemable at any store)',
+                            partner.id)
+        return self.sudo().create(vals)
 
     def action_mark_redemption_used(self):
         """Budtender action: mark this redemption as used."""
@@ -586,7 +607,7 @@ class MintDiscount(models.Model):
         return True
 
     @api.model
-    def consume_pending_redemption(self, partner, order_items=None):
+    def consume_pending_redemption(self, partner, order_items=None, store=None):
         """Consume the pending redemption that this order actually honored.
 
         Strict path (preferred): caller passes ``order_items`` — a list of
@@ -603,11 +624,21 @@ class MintDiscount(models.Model):
         if not partner:
             return self.browse()
 
-        pending = self.sudo().search([
+        domain = [
             ('discount_type', '=', 'loyalty_redemption'),
             ('redemption_partner_id', '=', partner.id),
             ('redemption_status', '=', 'pending'),
-        ], order='create_date asc')
+        ]
+        # Per-state/location enforcement: only honor a redemption whose locked
+        # store set (its state) includes THIS order's store. store_ids empty =
+        # legacy/unlocked redemption, honored anywhere (back-compat). Without a
+        # store we cannot enforce location — log and fall through (legacy).
+        if store:
+            domain += ['|', ('store_ids', '=', False), ('store_ids', 'in', store.id)]
+        else:
+            _logger.warning('consume_pending_redemption: no store supplied for '
+                            'partner %s — location lock NOT enforced', partner.id)
+        pending = self.sudo().search(domain, order='create_date asc')
         if not pending:
             return self.browse()
 

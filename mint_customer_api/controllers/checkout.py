@@ -335,6 +335,7 @@ class MintCheckout(http.Controller):
                         order.partner_id,
                         order.amount_untaxed,
                         data.get('loyalty_points_redeemed', 0),
+                        company=order.company_id,
                     )
                 _logger.info('Order %s marked as paid', order.name)
                 return json_response({
@@ -420,6 +421,8 @@ class MintCheckout(http.Controller):
             # appears as a free line in this order (strict match).
             consumed = request.env['mint.discount'].sudo().consume_pending_redemption(
                 partner, order_items=items,
+                store=(request.env['res.company'].sudo().browse(int(data['store_id']))
+                       if data.get('store_id') else None),
             )
             if consumed:
                 _logger.info(
@@ -456,7 +459,7 @@ class MintCheckout(http.Controller):
             return 0
         return min(round((discount_amount / unit_price) * 100, 2), 100)
 
-    def _award_loyalty(self, partner, spend_amount, points_redeemed=0):
+    def _award_loyalty(self, partner, spend_amount, points_redeemed=0, company=None):
         """Deduct redeemed points + auto-consume any pending redemption.
 
         Earned points are NOT credited here. The nightly Dutchie transaction
@@ -500,7 +503,8 @@ class MintCheckout(http.Controller):
             partner.name, points_redeemed, points_earned,
         )
 
-        consumed = request.env['mint.discount'].sudo().consume_pending_redemption(partner)
+        consumed = request.env['mint.discount'].sudo().consume_pending_redemption(
+            partner, store=company)
         if consumed:
             _logger.info(
                 'Auto-consumed redemption %s (%s) for %s on order completion',
