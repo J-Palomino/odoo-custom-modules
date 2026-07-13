@@ -95,9 +95,9 @@ class TestAgentReplySanitize(TransactionCase):
     # --- AC08: sanitizer failure fails OPEN (posts original) ---
     def test_fail_open_on_internal_error(self):
         text = f"Body {self.good_url}"
-        with patch.object(
-            job_module.ODOO_URL_RE, "sub", side_effect=RuntimeError("boom")
-        ):
+        # compiled re.Pattern attrs are read-only — replace the module global
+        with patch.object(job_module, "ODOO_URL_RE") as fake_re:
+            fake_re.sub.side_effect = RuntimeError("boom")
             self.assertEqual(self._sanitize(text), text)
 
     def test_empty_and_none_input(self):

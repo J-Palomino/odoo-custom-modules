@@ -1,0 +1,45 @@
+2026-07-13 18:40:29,387 1 WARNING ? odoo.tools.config: missing --http-interface/http_interface, using 0.0.0.0 by default, will change to 127.0.0.1 in 20.0 
+2026-07-13 18:40:30,559 1 WARNING qa954 odoo.modules.module: Missing `author` key in manifest for 'daisy_error_handler', defaulting to '' 
+2026-07-13 18:40:30,561 1 WARNING qa954 odoo.modules.module: Missing `author` key in manifest for 'daisy_error_handler', defaulting to '' 
+2026-07-13 18:40:31,985 1 WARNING qa954 odoo.modules.module: Missing `author` key in manifest for 'purchase_price_precision', defaulting to '' 
+2026-07-13 18:40:31,986 1 WARNING qa954 odoo.modules.module: Missing `author` key in manifest for 'purchase_price_precision', defaulting to '' 
+2026-07-13 18:40:32,081 1 WARNING qa954 odoo.modules.module: The module sign_oca has an incompatible version, setting installable=False 
+2026-07-13 18:40:32,084 1 WARNING qa954 odoo.modules.module: The module sign_oca has an incompatible version, setting installable=False 
+2026-07-13 18:40:32,922 1 WARNING qa954 odoo.modules.module: Missing `author` key in manifest for 'daisy_error_handler', defaulting to '' 
+2026-07-13 18:40:34,164 1 WARNING qa954 odoo.modules.module: Missing `author` key in manifest for 'purchase_price_precision', defaulting to '' 
+2026-07-13 18:40:34,240 1 WARNING qa954 odoo.modules.module: The module sign_oca has an incompatible version, setting installable=False 
+2026-07-13 18:40:36,938 1 WARNING qa954 odoo.addons.base.models.ir_ui_view: A <i> with fa class (fa fa-comments) must have title in its tag, parents, descendants or have text
+View error context:
+{'file': '/mnt/extra-addons/daisydo_agents/views/daisy_agent_views.xml',
+ 'line': 23,
+ 'name': 'daisy.agent.kanban',
+ 'view': ir.ui.view(1685,),
+ 'view.model': 'daisy.agent',
+ 'view.parent': ir.ui.view(),
+ 'xmlid': 'daisy_agent_view_kanban'} 
+2026-07-13 18:40:36,938 1 WARNING qa954 odoo.addons.base.models.ir_ui_view: A <i> with fa class (fa fa-envelope) must have title in its tag, parents, descendants or have text
+View error context:
+{'file': '/mnt/extra-addons/daisydo_agents/views/daisy_agent_views.xml',
+ 'line': 26,
+ 'name': 'daisy.agent.kanban',
+ 'view': ir.ui.view(1685,),
+ 'view.model': 'daisy.agent',
+ 'view.parent': ir.ui.view(),
+ 'xmlid': 'daisy_agent_view_kanban'} 
+2026-07-13 18:40:38,779 1 WARNING qa954 odoo.addons.daisydo_agents.models.daisy_agent_job: Agent job []: removed 1 unvalidated link(s) from reply 
+2026-07-13 18:40:38,786 1 ERROR qa954 odoo.addons.daisydo_agents.models.daisy_agent_job: Agent job []: reply sanitizer failed — posting unsanitized 
+Traceback (most recent call last):
+  File "/mnt/extra-addons/daisydo_agents/models/daisy_agent_job.py", line 106, in _sanitize_agent_reply
+    text = ODOO_URL_RE.sub(_check_url, text)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/mock.py", line 1134, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/mock.py", line 1138, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/mock.py", line 1193, in _execute_mock_call
+    raise effect
+RuntimeError: boom
+2026-07-13 18:40:38,817 1 WARNING qa954 odoo.addons.daisydo_agents.models.daisy_agent_job: Agent job []: removed 1 unvalidated link(s) from reply 
+2026-07-13 18:40:38,822 1 WARNING qa954 odoo.addons.daisydo_agents.models.daisy_agent_job: Agent job []: removed 1 unvalidated link(s) from reply 
