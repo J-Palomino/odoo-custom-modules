@@ -486,9 +486,20 @@ class MintDealsAPI(http.Controller):
                 ('valid_until', '>=', today),
             ]
 
+            # Per-state/location separation: a store- or region-scoped request
+            # returns THAT scope's deals plus global (empty store_ids) deals; an
+            # UNSCOPED request returns ONLY global deals — never another state's
+            # store-targeted deals. This closes the cross-state leak.
             store_id = kwargs.get('store_id')
+            region_id = kwargs.get('region_id')
             if store_id:
-                domain.append(('store_ids', 'in', [int(store_id)]))
+                domain += ['|', ('store_ids', '=', False), ('store_ids', 'in', [int(store_id)])]
+            elif region_id:
+                region_stores = request.env['res.company'].sudo().search(
+                    [('region_id', '=', int(region_id))]).ids
+                domain += ['|', ('store_ids', '=', False), ('store_ids', 'in', region_stores)]
+            else:
+                domain.append(('store_ids', '=', False))
 
             featured_only = kwargs.get('featured', '').lower() == 'true'
             if featured_only:
@@ -562,9 +573,18 @@ class MintDealsAPI(http.Controller):
                 ('valid_until', '>=', today),
             ]
 
+            # Per-state separation (see get_discounts): scoped → that scope +
+            # global; unscoped → global only, never another state's deals.
             store_id = kwargs.get('store_id')
+            region_id = kwargs.get('region_id')
             if store_id:
-                domain.append(('store_ids', 'in', [int(store_id)]))
+                domain += ['|', ('store_ids', '=', False), ('store_ids', 'in', [int(store_id)])]
+            elif region_id:
+                region_stores = request.env['res.company'].sudo().search(
+                    [('region_id', '=', int(region_id))]).ids
+                domain += ['|', ('store_ids', '=', False), ('store_ids', 'in', region_stores)]
+            else:
+                domain.append(('store_ids', '=', False))
 
             limit = int(kwargs.get('limit', 100))
             offset = int(kwargs.get('offset', 0))

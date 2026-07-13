@@ -268,10 +268,20 @@ class MintCustomerProfile(http.Controller):
         try:
             with request.env.cr.savepoint():
                 card.sudo().write({'points': points - points_cost})
+                # Location-lock the redemption to the selected store's STATE so
+                # it can only be consumed at stores in the same market (per-state
+                # separation). Resolve the store from the request body.
+                store = False
+                if data.get('store_id'):
+                    store = request.env['res.company'].sudo().browse(int(data['store_id']))
+                elif data.get('store_slug'):
+                    store = request.env['res.company'].sudo().search(
+                        [('x_slug', '=', data['store_slug'])], limit=1)
                 redemption = request.env['mint.discount'].sudo().create_redemption(
                     partner=partner,
                     product=product,
                     points_cost=points_cost,
+                    store=store or None,
                 )
         except Exception as e:
             _logger.exception('Redemption failed for partner %s product %s', partner.id, product_id)
