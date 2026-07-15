@@ -6,7 +6,7 @@
 
 from logging import getLogger
 
-from odoo import api, fields, models
+from odoo import SUPERUSER_ID, api, fields, models
 from odoo.exceptions import AccessError
 from odoo.osv.expression import (
     FALSE_DOMAIN,
@@ -205,8 +205,18 @@ class DmsSecurityMixin(models.AbstractModel):
         """Abstract logic for searching computed permission fields."""
         _self = self
         # HACK ir.rule domain is always computed with sudo, so if this check is
-        # true, we can assume safely that you're checking permissions
-        if self.env.su and value == self.env.uid:
+        # true, we can assume safely that you're checking permissions.
+        #
+        # Odoo 19 normalizes a domain leaf against its field's type before the
+        # search method is reached. permission_* are Boolean, so the security
+        # rules' ('permission_read', '=', user.id) arrives here as value=True,
+        # never the uid -- the original `value == self.env.uid` guard cannot
+        # fire, the env stays sudo, and the TRUE_DOMAIN branch below then
+        # matches every record for every user, silently disabling DMS access
+        # groups altogether. ir.rules are never evaluated for SUPERUSER_ID, so
+        # a sudo env carrying a non-superuser uid is a permission check; only a
+        # genuine superuser env may bypass the permission domain.
+        if self.env.su and self.env.uid != SUPERUSER_ID:
             _self = self.sudo(False)
             value = bool(value)
         # Tricky one, to know if you want to search
