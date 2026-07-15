@@ -72,4 +72,18 @@
         <field name="key">daisy.go2rtc_public_url</field>
         <field name="value">https://go2rtc-media-production.up.railway.app</field>
     </record>
+
+    <!-- Tier A: log completed agent executions as nominal timesheet lines.
+         Parked (active=False): enable per-environment once hr_timesheet is installed
+         and you've seeded the watermark. No-op unless hr_timesheet is installed. -->
+    <record id="ir_cron_agent_timesheets" model="ir.cron">
+        <field name="name">Daisy Agency: Log Executions to Timesheets (Tier A)</field>
+        <field name="model_id" ref="model_daisy_agent_job"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_log_timesheets()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">hours</field>
+        <field name="active" eval="False"/>
+        <field name="priority">10</field>
+    </record>
 </odoo>
