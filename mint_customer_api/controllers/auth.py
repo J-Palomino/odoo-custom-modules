@@ -285,10 +285,28 @@ class MintCustomerAuth(http.Controller):
         # method), every web signup is recorded as self_attested.
         method = 'self_attested'
 
+        # Dutchie identity link. The IdScanner reads the PDF417 on the back of
+        # a US licence and posts documentNumber; 91.0% of the 1.79M synced
+        # partners key on 'dl:<DL>' (5.1% mj:, 3.4% nd:, 0.4% ph:), so the DL
+        # is the only match key worth carrying from a scan.
+        #
+        # We stamp the key and let the roster sync's dedup do the linking. We
+        # do NOT bind this account to a matched partner here, for the same
+        # reason the comment above refuses a client-supplied 'id_scanned':
+        # documentNumber arrives in the request body and nothing server-side
+        # has verified a document was scanned. Binding on it would let anyone
+        # POST a 9-digit DL and inherit that person's purchase history and
+        # loyalty balance. A matched partner that ALREADY has a web login is a
+        # claimed account — flag it for human review rather than touch it.
+        identity_key = self._dutchie_identity_key(data, name, dob)
+        if identity_key:
+            self._flag_identity_collision(identity_key)
+
         try:
             user = self._create_web_user(
                 email=email, name=name, phone=phone,
                 web_dob=dob, age_method=method, age_source='web_register',
+                identity_key=identity_key,
             )
             user.with_context(
                 no_reset_password=True,
@@ -609,13 +627,76 @@ class MintCustomerAuth(http.Controller):
             return error_response('Could not record verification', 500)
         return json_response({'ok': True, 'age_verified': True})
 
+    @staticmethod
+    def _dutchie_identity_key(data, name, dob):
+        """Build x_dutchie_identity_key for a web signup.
+
+        MUST stay byte-identical to mint_dutchie_sync's
+        DutchieSyncCheckpoint._identity_key, which produced the 1.79M keys we
+        match against — a different normalisation silently matches nothing.
+        That builder is DL > MJ state id > Name+DOB > phone; a web signup only
+        ever has the first and third:
+
+            dl:<DL uppercased>
+            nd:<NAME uppercased>|<MM/DD/YYYY>
+
+        Note the date format: the roster (and therefore every stored nd: key)
+        uses MM/DD/YYYY, while the IdScanner posts ISO yyyy-mm-dd. Passing the
+        ISO string straight through would build a key that matches no row.
+
+        Returns None when neither a DL nor a name+DOB is available.
+        """
+        dl = (data.get('documentNumber') or data.get('document_number') or '').strip()
+        if dl:
+            return 'dl:' + dl.upper()
+        nm = (name or '').strip().upper()
+        if nm and dob:
+            return 'nd:%s|%s' % (nm, dob.strftime('%m/%d/%Y'))
+        return None
+
+    @staticmethod
+    def _flag_identity_collision(identity_key):
+        """Mark an already-claimed partner sharing this identity for review.
+
+        Best-effort: a signup must never fail because the review flag couldn't
+        be written. Only partners that already carry a portal login are
+        flagged — an unclaimed roster record needs no review, the sync's dedup
+        will fold it in on the shared key.
+        """
+        try:
+            Partner = request.env['res.partner'].sudo()
+            matches = Partner.search([('x_dutchie_identity_key', '=', identity_key)], limit=10)
+            if not matches:
+                return
+            claimed = request.env['res.users'].sudo().search([
+                ('partner_id', 'in', matches.ids),
+            ]).mapped('partner_id')
+            if claimed and 'x_merge_needs_review' in Partner._fields:
+                claimed.with_context(
+                    tracking_disable=True, mail_notrack=True
+                ).write({'x_merge_needs_review': True})
+                _logger.info(
+                    'register: identity %s already claimed by partner(s) %s — flagged for review',
+                    identity_key, claimed.ids,
+                )
+        except Exception as e:  # noqa: BLE001 - never break signup on a flag
+            _logger.warning('register: identity collision flag failed for %s: %s',
+                            identity_key, e)
+
     def _create_web_user(self, email, name, phone='', web_dob=None,
-                         age_method=None, age_source=None):
+                         age_method=None, age_source=None, identity_key=None):
         """Create a fresh partner + portal user for a web-site signup.
 
         Always creates a NEW res.partner (doesn't reuse an existing one that
         happens to have the same email) so employees shopping the consumer
         site get a separate customer identity from their staff partner.
+
+        ``identity_key`` stamps x_dutchie_identity_key (see
+        mint_dutchie_sync._identity_key) so the roster sync's existing dedup
+        can link this signup to the same person's POS records. It is only a
+        match key — it does NOT reuse an existing partner here; see
+        _dutchie_identity_key() for why a client-supplied DL is not trusted
+        to bind an account on its own.
 
         Uses login = 'web:<email>' so web users never collide with internal
         user accounts (login = plain email) and sets is_web_customer=True
@@ -645,6 +726,13 @@ class MintCustomerAuth(http.Controller):
                 'age_verification_method': age_method or 'self_attested',
                 'age_verification_source': age_source or 'web_register',
             })
+        # x_dutchie_identity_key is declared by mint_dutchie_sync, which is NOT
+        # in this module's depends (adding it would couple the consumer signup
+        # API to the roster importer). Both are installed on prod, but an
+        # unknown key in create() raises — so probe _fields rather than let a
+        # missing module take down every signup.
+        if identity_key and 'x_dutchie_identity_key' in request.env['res.partner']._fields:
+            partner_vals['x_dutchie_identity_key'] = identity_key
 
         partner = request.env['res.partner'].sudo().with_context(
             mail_create_nosubscribe=True,
