@@ -153,6 +153,19 @@
         <field name="sequence">30</field>
     </record>
 
+    <!-- Coupon Codes belongs to this module (its action lives in
+         views/mint_discount_coupon_views.xml, which loads earlier). It is
+         declared here rather than beside its action because its parent —
+         menu_command_center_loyalty — is defined in this file, and because its
+         previous parent (mint_api_v2.menu_mint_discount_root) is deleted just
+         below. Referencing that deleted xmlid made every mint_command_center
+         upgrade fail with "External ID not found in the system". -->
+    <menuitem id="menu_mint_coupon_codes"
+              name="Coupon Codes"
+              parent="menu_command_center_loyalty"
+              action="action_mint_coupon_codes"
+              sequence="15"/>
+
     <delete id="mint_api_v2.menu_mint_discount_root" model="ir.ui.menu"/>
 
     <!-- ── Intel Section ──

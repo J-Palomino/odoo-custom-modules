@@ -61,9 +61,8 @@
         </field>
     </record>
 
-    <menuitem id="menu_mint_coupon_codes"
-              name="Coupon Codes"
-              parent="mint_api_v2.menu_mint_discount_root"
-              action="action_mint_coupon_codes"
-              sequence="15"/>
+    <!-- The Coupon Codes menuitem lives in views/menu.xml, under the Loyalty
+         section. It cannot be declared here: this file loads before menu.xml,
+         and its former parent (mint_api_v2.menu_mint_discount_root) is deleted
+         by menu.xml itself — so parenting to it broke every upgrade. -->
 </odoo>
