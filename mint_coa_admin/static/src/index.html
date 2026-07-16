@@ -260,7 +260,7 @@
 
         function fileRow(f) {
           var tr = document.createElement('tr');
-          var view = f.attachmentId ? (ODOO + '/web/content/' + f.attachmentId) : (f.driveId ? ('/api/coa/pdf?id=' + encodeURIComponent(f.driveId)) : '#');
+          var view = f.attachmentId ? (ODOO + '/web/content/' + f.attachmentId) : '#';
           tr.innerHTML =
             '<td>' + esc(f.name) + '</td>' +
             '<td>' + esc(f.size) + '</td>' +

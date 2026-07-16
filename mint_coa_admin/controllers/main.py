@@ -107,13 +107,12 @@ class CoaAdmin(http.Controller):
                 raise UserError("directoryId required")
             files = request.env["dms.file"].search_read(
                 [("directory_id", "=", directory_id)],
-                ["id", "name", "human_size", "x_drive_id", "write_date"],
+                ["id", "name", "human_size", "write_date"],
                 limit=5000, order="name")
             att = self._attachment_map([f["id"] for f in files])
             return {"files": [{
                 "id": f["id"], "name": f["name"], "size": f["human_size"],
-                "driveId": f["x_drive_id"] or None, "updated": f["write_date"],
-                "attachmentId": att.get(f["id"]),
+                "updated": f["write_date"], "attachmentId": att.get(f["id"]),
             } for f in files]}
 
         if action == "upload":
