@@ -39,6 +39,10 @@ def _verify_api_key():
 
 class PosCallbackController(http.Controller):
 
+    # ── CANONICAL OWNER: dutchie-status callback (Task #106611) ────────
+    # This is the ONLY handler for PUT /api/v1/pos/orders/<id>/dutchie-status.
+    # Called by mintinvsvc dutchiePosRelay.js with native pos.order IDs.
+    # Duplicate in mint_pos_bridge was removed 2026-07-16.
     @http.route(
         '/api/v1/pos/orders/<int:order_id>/dutchie-status',
         type='http', auth='none', methods=['PUT', 'OPTIONS'],

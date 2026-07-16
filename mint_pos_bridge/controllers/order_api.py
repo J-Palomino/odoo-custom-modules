@@ -828,57 +828,12 @@ class MintPosOrderAPI(http.Controller):
             'offset': offset,
         })
 
-    # ── PUT /api/v1/pos/orders/<id>/dutchie-status — Relay callback ──
-    # Called by the inventory-service dutchiePosRelay after checking in a
-    # guest at Dutchie. Persists the Dutchie-assigned ShipmentId (stable key
-    # the lane watcher uses) and receipt number back onto the mint.pos.order.
-
-    @http.route('/api/v1/pos/orders/<int:order_id>/dutchie-status',
-                type='http', auth='none', methods=['PUT', 'OPTIONS'],
-                csrf=False, cors='*')
-    def update_dutchie_status(self, order_id, **kw):
-        if request.httprequest.method == 'OPTIONS':
-            return _json({})
-        if not _verify_api_key():
-            return _error('Invalid API key', 401)
-
-        try:
-            data = json.loads(request.httprequest.data)
-        except (json.JSONDecodeError, TypeError):
-            return _error('Invalid JSON body')
-
-        order = request.env['mint.pos.order'].sudo().browse(order_id)
-        if not order.exists():
-            return _error('Order not found', 404)
-
-        vals = {}
-        if data.get('success'):
-            if data.get('dutchie_receipt_no'):
-                vals['dutchie_receipt_no'] = data['dutchie_receipt_no']
-            if data.get('dutchie_shipment_id'):
-                vals['dutchie_shipment_id'] = str(data['dutchie_shipment_id'])
-            if data.get('dutchie_order_number'):
-                vals['dutchie_order_number'] = data['dutchie_order_number']
-        else:
-            err = data.get('error') or 'Unknown relay error'
-            vals['notes'] = (order.notes or '') + '\nDutchie relay failed: ' + err
-
-        if vals:
-            order.write(vals)
-
-        _logger.info(
-            'Dutchie status for %s: success=%s shipment=%s receipt=%s',
-            order.name, data.get('success'),
-            vals.get('dutchie_shipment_id', '-'),
-            vals.get('dutchie_receipt_no', '-'),
-        )
-
-        return _json({
-            'success': True,
-            'order_id': order.id,
-            'order_ref': order.name,
-            'dutchie_shipment_id': order.dutchie_shipment_id or None,
-        })
+    # ── REMOVED: dutchie-status route ──────────────────────────────────
+    # Route collision fix (Task #106611): This handler wrote to mint.pos.order
+    # but live traffic from mintinvsvc dutchiePosRelay.js expects pos.order.
+    # The canonical handler is now in mint_pos_dutchie/controllers/pos_callback_api.py
+    # which loads later and writes to the correct model.
+    # Removed 2026-07-16 by Devid per controller decision.
 
     # ── PUT /api/v1/pos/orders/<id>/state — Update state ─────────────
 
