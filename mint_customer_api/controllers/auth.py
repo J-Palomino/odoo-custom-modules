@@ -205,6 +205,7 @@ class MintCustomerAuth(http.Controller):
                 'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
                 'phone': user.partner_id.phone or '',
                 'partner_id': user.partner_id.id,
+                'is_internal': not user.share,
             },
         })
 
@@ -405,6 +406,7 @@ class MintCustomerAuth(http.Controller):
                     'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
                     'phone': user.partner_id.phone or '',
                     'partner_id': user.partner_id.id,
+                    'is_internal': not user.share,
                 },
             }, status=201)
 
@@ -513,6 +515,7 @@ class MintCustomerAuth(http.Controller):
                 'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
                 'phone': user.partner_id.phone or '',
                 'partner_id': user.partner_id.id,
+                'is_internal': not user.share,
             },
         })
 
@@ -1146,5 +1149,6 @@ class MintCustomerAuth(http.Controller):
                 'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
                 'phone': user.partner_id.phone or '',
                 'partner_id': user.partner_id.id,
+                'is_internal': not user.share,
             },
         })

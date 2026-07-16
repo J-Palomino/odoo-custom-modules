@@ -84,6 +84,11 @@ class MintCustomerProfile(http.Controller):
 
         partner = user.partner_id.sudo()
 
+        # Internal/staff accounts don't participate in loyalty. Signal the
+        # frontend so it hides the rewards UI for employee logins.
+        if not user.share:
+            return json_response({'internal': True})
+
         # Find loyalty program
         program = request.env['loyalty.program'].sudo().search(
             [('program_type', '=', 'loyalty')], limit=1

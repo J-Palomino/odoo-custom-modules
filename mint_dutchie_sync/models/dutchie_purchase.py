@@ -70,6 +70,14 @@ class DutchiePurchase(models.Model):
         for rec in records:
             if not rec.partner_id or not rec.loyalty_points:
                 continue
+            # Internal/staff accounts don't earn loyalty points. Skip any
+            # partner linked to an internal Odoo user (res.users.share == False).
+            if any(not u.share for u in rec.partner_id.sudo().user_ids):
+                _logger.info(
+                    'Loyalty: skipped %d points for internal user %s (receipt %s)',
+                    int(rec.loyalty_points), rec.partner_id.name, rec.receipt_no,
+                )
+                continue
             card = LoyaltyCard.search([
                 ('partner_id', '=', rec.partner_id.id),
                 ('program_id', '=', program.id),
