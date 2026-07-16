@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>COA Document Store — Admin</title>
+    <style>
+      :root { --mint:#0f766e; --mint-d:#115e59; --line:#e5e7eb; --bg:#f8fafc; }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827; background:var(--bg); }
+      header { background:var(--mint-d); color:#fff; padding:14px 20px; display:flex; align-items:center; justify-content:space-between; }
+      header h1 { font-size:18px; margin:0; font-weight:700; }
+      header .sub { font-size:12px; opacity:.8; }
+      .wrap { display:flex; min-height: calc(100vh - 52px); }
+      .side { width:300px; border-right:1px solid var(--line); background:#fff; overflow-y:auto; max-height: calc(100vh - 52px); }
+      .side .tool { padding:10px; border-bottom:1px solid var(--line); display:flex; gap:6px; }
+      .brand { padding:9px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; display:flex; justify-content:space-between; font-size:14px; }
+      .brand:hover { background:#f0fdfa; }
+      .brand.active { background:#ccfbf1; font-weight:600; }
+      .brand .n { color:#6b7280; font-size:12px; }
+      main { flex:1; padding:18px 22px; overflow-y:auto; max-height: calc(100vh - 52px); }
+      input, select, button { font:inherit; }
+      input[type=text], input[type=password], select { padding:7px 9px; border:1px solid var(--line); border-radius:7px; }
+      button { padding:7px 12px; border:0; border-radius:7px; background:var(--mint); color:#fff; cursor:pointer; font-weight:600; }
+      button.ghost { background:#fff; color:var(--mint-d); border:1px solid var(--line); font-weight:500; }
+      button.danger { background:#dc2626; }
+      button:disabled { opacity:.5; cursor:default; }
+      table { width:100%; border-collapse:collapse; font-size:14px; }
+      th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+      th { color:#6b7280; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+      td .acts { display:flex; gap:6px; flex-wrap:wrap; }
+      .uploadbar { display:flex; gap:8px; align-items:center; margin:0 0 16px; padding:12px; background:#fff; border:1px solid var(--line); border-radius:9px; flex-wrap:wrap; }
+      .gate { max-width:460px; margin:80px auto; background:#fff; padding:26px; border:1px solid var(--line); border-radius:12px; }
+      .gate h2 { margin:0 0 6px; }
+      .gate p { color:#6b7280; font-size:14px; margin:0 0 16px; line-height:1.5; }
+      header .who { font-size:12px; opacity:.9; margin-right:10px; }
+      .modal { position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:flex-start; justify-content:center; padding-top:70px; z-index:50; }
+      .modalBox { background:#fff; width:min(560px,92vw); border-radius:12px; padding:20px; box-shadow:0 20px 50px rgba(0,0,0,.25); }
+      .modalHead { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+      .muted { color:#6b7280; font-size:13px; margin:6px 0 14px; }
+      table.mini { width:100%; border-collapse:collapse; font-size:14px; }
+      table.mini td { padding:7px 4px; border-bottom:1px solid #f1f5f9; }
+      table.mini td.email { color:#6b7280; font-size:12px; }
+      .addRow { margin-top:14px; position:relative; }
+      .addRow input { width:100%; }
+      .results { border:1px solid var(--line); border-radius:8px; margin-top:6px; max-height:190px; overflow-y:auto; }
+      .results:empty { display:none; }
+      .results div { padding:8px 10px; cursor:pointer; font-size:14px; border-bottom:1px solid #f8fafc; }
+      .results div:hover { background:#f0fdfa; }
+      .you { font-size:11px; color:var(--mint-d); background:#ccfbf1; padding:1px 6px; border-radius:99px; margin-left:6px; }
+      .status { font-size:13px; color:#6b7280; margin:8px 0; min-height:18px; }
+      .hidden { display:none; }
+      a.link { color:var(--mint-d); font-weight:600; text-decoration:none; }
+      a.link:hover { text-decoration:underline; }
+      .email { color:#6b7280; font-size:12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div><h1>COA Document Store</h1><div class="sub">Odoo DMS · Certificates of Analysis</div></div>
+      <div>
+        <span id="who" class="who"></span>
+        <button id="manageBtn" class="ghost hidden">Manage access</button>
+        <button id="signout" class="ghost hidden">Sign out</button>
+      </div>
+    </header>
+
+    <!-- Access management -->
+    <div id="accessModal" class="modal hidden">
+      <div class="modalBox">
+        <div class="modalHead">
+          <strong>Who can manage COAs</strong>
+          <button id="accessClose" class="ghost">✕</button>
+        </div>
+        <p class="muted">These people can view and edit the COA documents in Odoo and here. Changes take effect immediately.</p>
+        <table class="mini"><tbody id="accessList"></tbody></table>
+        <div class="addRow">
+          <input id="userSearch" type="text" placeholder="Search staff by name or email…" autocomplete="off" />
+          <div id="searchResults" class="results"></div>
+        </div>
+        <div id="accessStatus" class="status"></div>
+      </div>
+    </div>
+
+    <!-- No-access notice (signed in, but not a COA member) -->
+    <div id="gate" class="gate hidden">
+      <h2>No COA access</h2>
+      <p id="gateMsg">You're signed in, but your account isn't on the COA access list. Ask an admin to add you under “Manage access.”</p>
+      <p><a class="link" href="/web">Back to Odoo</a></p>
+    </div>
+
+    <!-- App -->
+    <div id="app" class="wrap hidden">
+      <aside class="side">
+        <div class="tool">
+          <input id="newBrand" type="text" placeholder="New brand folder" style="flex:1" />
+          <button id="addBrand" class="ghost">+</button>
+        </div>
+        <div id="brands"></div>
+      </aside>
+      <main>
+        <div class="uploadbar">
+          <strong id="curBrand">Select a brand</strong>
+          <span style="flex:1"></span>
+          <input id="file" type="file" accept="application/pdf" />
+          <button id="upload" disabled>Upload PDF</button>
+        </div>
+        <div id="status" class="status"></div>
+        <table>
+          <thead><tr><th>Certificate</th><th>Size</th><th>Updated</th><th style="width:280px">Actions</th></tr></thead>
+          <tbody id="files"><tr><td colspan="4" style="color:#9ca3af">Select a brand folder to view its certificates.</td></tr></tbody>
+        </table>
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        var ODOO = window.location.origin;
+        var els = {
+          gate: document.getElementById('gate'), gateMsg: document.getElementById('gateMsg'),
+          app: document.getElementById('app'), who: document.getElementById('who'),
+          manageBtn: document.getElementById('manageBtn'), signout: document.getElementById('signout'),
+          accessModal: document.getElementById('accessModal'), accessClose: document.getElementById('accessClose'),
+          accessList: document.getElementById('accessList'), accessStatus: document.getElementById('accessStatus'),
+          userSearch: document.getElementById('userSearch'), searchResults: document.getElementById('searchResults'),
+          brands: document.getElementById('brands'), files: document.getElementById('files'),
+          curBrand: document.getElementById('curBrand'), status: document.getElementById('status'),
+          file: document.getElementById('file'), upload: document.getElementById('upload'),
+          newBrand: document.getElementById('newBrand'), addBrand: document.getElementById('addBrand'),
+        };
+        var state = { name: '', brandId: null, brandName: '' };
+
+        // Calls the Odoo controller with the current session cookie (same origin).
+        function api(action, params) {
+          return fetch('/coa/admin/api', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ jsonrpc: '2.0', method: 'call', params: Object.assign({ action: action }, params || {}) }),
+          }).then(function (r) {
+            if (r.status === 401) throw new Error('unauthorized');
+            return r.json().catch(function () { return {}; }).then(function (j) {
+              if (j && j.error) {
+                var d = j.error.data || {};
+                if (d.name === 'odoo.http.SessionExpiredException') throw new Error('unauthorized');
+                throw new Error(d.message || j.error.message || 'Error');
+              }
+              return (j && j.result) || {};
+            });
+          });
+        }
+        function setStatus(m) { els.status.textContent = m || ''; }
+        function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c]; }); }
+
+        function showApp() {
+          els.gate.classList.add('hidden'); els.app.classList.remove('hidden');
+          els.signout.classList.remove('hidden'); els.manageBtn.classList.remove('hidden');
+          els.who.textContent = state.name ? 'Signed in as ' + state.name : '';
+        }
+        function showNoAccess() {
+          els.app.classList.add('hidden'); els.gate.classList.remove('hidden');
+          els.manageBtn.classList.add('hidden');
+          els.signout.classList.remove('hidden');
+          els.who.textContent = state.name ? 'Signed in as ' + state.name : '';
+        }
+
+        // ---- access management ----
+        function openAccess() {
+          els.accessModal.classList.remove('hidden');
+          els.userSearch.value = ''; els.searchResults.innerHTML = ''; els.accessStatus.textContent = '';
+          loadAccess();
+        }
+        function closeAccess() { els.accessModal.classList.add('hidden'); }
+
+        function loadAccess() {
+          els.accessList.innerHTML = '<tr><td style="color:#9ca3af">Loading…</td></tr>';
+          return api('list_access').then(function (j) {
+            var rows = j.members || [];
+            els.accessList.innerHTML = '';
+            rows.forEach(function (m) {
+              var tr = document.createElement('tr');
+              tr.innerHTML =
+                '<td>' + esc(m.name) + (m.isYou ? '<span class="you">you</span>' : '') +
+                '<div class="email">' + esc(m.login) + '</div></td>' +
+                '<td style="text-align:right"><button class="ghost" data-act="revoke">Remove</button></td>';
+              tr.querySelector('[data-act=revoke]').addEventListener('click', function () { revoke(m); });
+              els.accessList.appendChild(tr);
+            });
+          }).catch(function (e) {
+            els.accessList.innerHTML = '<tr><td style="color:#dc2626">' + esc(e.message) + '</td></tr>';
+          });
+        }
+
+        function revoke(m) {
+          var self = m.isYou ? '\n\nThis is YOUR access — you will lose access to this page.' : '';
+          if (!confirm('Remove COA access for ' + m.name + '?' + self)) return;
+          els.accessStatus.textContent = 'Removing…';
+          api('revoke_access', { userId: m.id }).then(function (j) {
+            els.accessStatus.textContent = 'Removed ' + m.name + '.';
+            if (j.selfRemoved) { closeAccess(); showNoAccess(); return; }
+            loadAccess();
+          }).catch(function (e) { els.accessStatus.textContent = 'Error: ' + e.message; });
+        }
+
+        var searchTimer = null;
+        function onSearch() {
+          clearTimeout(searchTimer);
+          var q = els.userSearch.value.trim();
+          if (q.length < 2) { els.searchResults.innerHTML = ''; return; }
+          searchTimer = setTimeout(function () {
+            api('search_users', { query: q }).then(function (j) {
+              els.searchResults.innerHTML = '';
+              (j.users || []).forEach(function (u) {
+                var d = document.createElement('div');
+                d.innerHTML = esc(u.name) + ' <span class="email">' + esc(u.login) + '</span>';
+                d.addEventListener('click', function () { grant(u); });
+                els.searchResults.appendChild(d);
+              });
+              if (!(j.users || []).length) els.searchResults.innerHTML = '<div style="color:#9ca3af;cursor:default">No matching staff (or they already have access)</div>';
+            }).catch(function (e) { els.accessStatus.textContent = 'Error: ' + e.message; });
+          }, 250);
+        }
+
+        function grant(u) {
+          els.accessStatus.textContent = 'Granting…';
+          api('grant_access', { userId: u.id }).then(function () {
+            els.accessStatus.textContent = 'Added ' + u.name + '.';
+            els.userSearch.value = ''; els.searchResults.innerHTML = '';
+            loadAccess();
+          }).catch(function (e) { els.accessStatus.textContent = 'Error: ' + e.message; });
+        }
+
+        function loadBrands() {
+          return api('list_brands').then(function (j) {
+            els.brands.innerHTML = '';
+            (j.brands || []).forEach(function (b) {
+              var d = document.createElement('div');
+              d.className = 'brand' + (b.id === state.brandId ? ' active' : '');
+              d.innerHTML = '<span>' + esc(b.name) + '</span><span class="n">' + (b.count_files || 0) + '</span>';
+              d.addEventListener('click', function () { selectBrand(b.id, b.name); });
+              els.brands.appendChild(d);
+            });
+          });
+        }
+
+        function selectBrand(id, name) {
+          state.brandId = id; state.brandName = name;
+          els.curBrand.textContent = name;
+          els.upload.disabled = false;
+          Array.prototype.forEach.call(els.brands.children, function (c) { c.classList.toggle('active', c.querySelector('span').textContent === name); });
+          els.files.innerHTML = '<tr><td colspan="4" style="color:#9ca3af">Loading…</td></tr>';
+          api('list_files', { directoryId: id }).then(function (j) {
+            var rows = (j.files || []);
+            if (!rows.length) { els.files.innerHTML = '<tr><td colspan="4" style="color:#9ca3af">No certificates in this folder.</td></tr>'; return; }
+            els.files.innerHTML = '';
+            rows.forEach(function (f) { els.files.appendChild(fileRow(f)); });
+          }).catch(handleErr);
+        }
+
+        function fileRow(f) {
+          var tr = document.createElement('tr');
+          var view = f.attachmentId ? (ODOO + '/web/content/' + f.attachmentId) : '#';
+          tr.innerHTML =
+            '<td>' + esc(f.name) + '</td>' +
+            '<td>' + esc(f.size) + '</td>' +
+            '<td>' + esc((f.updated || '').slice(0, 10)) + '</td>' +
+            '<td><div class="acts">' +
+              '<a class="link" href="' + view + '" target="_blank" rel="noopener">View</a>' +
+              '<button class="ghost" data-act="rename">Rename</button>' +
+              '<button class="ghost" data-act="move">Move</button>' +
+              '<button class="danger" data-act="archive">Archive</button>' +
+            '</div></td>';
+          tr.querySelector('[data-act=rename]').addEventListener('click', function () { doRename(f, tr); });
+          tr.querySelector('[data-act=move]').addEventListener('click', function () { doMove(f, tr); });
+          tr.querySelector('[data-act=archive]').addEventListener('click', function () { doArchive(f, tr); });
+          return tr;
+        }
+
+        function doRename(f, tr) {
+          var name = prompt('Rename certificate:', f.name);
+          if (!name || name === f.name) return;
+          api('rename', { fileId: f.id, name: name }).then(function () { f.name = name; tr.cells[0].textContent = name; setStatus('Renamed.'); }).catch(handleErr);
+        }
+        function doMove(f) {
+          var name = prompt('Move to which brand folder? (exact name)');
+          if (!name) return;
+          api('list_brands').then(function (j) {
+            var b = (j.brands || []).find(function (x) { return x.name.toLowerCase() === name.trim().toLowerCase(); });
+            if (!b) { setStatus('Brand "' + name + '" not found.'); return; }
+            return api('move', { fileId: f.id, directoryId: b.id }).then(function () { setStatus('Moved to ' + b.name + '.'); selectBrand(state.brandId, state.brandName); loadBrands(); });
+          }).catch(handleErr);
+        }
+        function doArchive(f, tr) {
+          if (!confirm('Archive "' + f.name + '"? It will be hidden from /coa (recoverable in Odoo).')) return;
+          api('archive', { fileId: f.id }).then(function () { tr.remove(); setStatus('Archived.'); loadBrands(); }).catch(handleErr);
+        }
+
+        function doUpload() {
+          var file = els.file.files[0];
+          if (!file || !state.brandId) return;
+          els.upload.disabled = true; setStatus('Uploading ' + file.name + '…');
+          var reader = new FileReader();
+          reader.onload = function () {
+            var b64 = String(reader.result).split(',')[1];
+            api('upload', { directoryId: state.brandId, name: file.name, contentBase64: b64 })
+              .then(function () { setStatus('Uploaded ' + file.name + '.'); els.file.value = ''; selectBrand(state.brandId, state.brandName); loadBrands(); })
+              .catch(handleErr).then(function () { els.upload.disabled = false; });
+          };
+          reader.readAsDataURL(file);
+        }
+
+        function doAddBrand() {
+          var name = els.newBrand.value.trim();
+          if (!name) return;
+          api('create_brand', { name: name }).then(function () { els.newBrand.value = ''; setStatus('Brand created.'); loadBrands(); }).catch(handleErr);
+        }
+
+        function handleErr(e) {
+          if (e && e.message === 'unauthorized') { window.location.href = '/web/login?redirect=' + encodeURIComponent('/coa/admin'); return; }
+          setStatus('Error: ' + (e && e.message ? e.message : e));
+        }
+
+        els.upload.addEventListener('click', doUpload);
+        els.addBrand.addEventListener('click', doAddBrand);
+        els.signout.addEventListener('click', function () { window.location.href = '/web/session/logout?redirect=' + encodeURIComponent('/coa/admin'); });
+        els.manageBtn.addEventListener('click', openAccess);
+        els.accessClose.addEventListener('click', closeAccess);
+        els.userSearch.addEventListener('input', onSearch);
+        els.accessModal.addEventListener('click', function (e) { if (e.target === els.accessModal) closeAccess(); });
+
+        // Boot: the session is already established (auth='user'). Ask who we are.
+        api('init').then(function (j) {
+          state.name = j.name || '';
+          if (j.member) { loadBrands().then(showApp).catch(handleErr); }
+          else { showNoAccess(); }
+        }).catch(handleErr);
+      })();
+    </script>
+  </body>
+</html>
