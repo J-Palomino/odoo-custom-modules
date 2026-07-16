@@ -193,6 +193,7 @@ COPY --chown=odoo:odoo account_statement_base /opt/extra-addons/account_statemen
 # ── OCA appointments stack (resource_booking + slot-duration helper) ──
 COPY --chown=odoo:odoo web_calendar_slot_duration /opt/extra-addons/web_calendar_slot_duration
 COPY --chown=odoo:odoo resource_booking /opt/extra-addons/resource_booking
+COPY --chown=odoo:odoo mint_coa_admin /opt/extra-addons/mint_coa_admin
 
 # ── Verify critical modules ─────────────────────────────────────────
 RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
