@@ -72,31 +72,54 @@ def build_dutchie_restrictions(brand_ids, exc_brand_ids, prod_inc, prod_exc, cat
     """Assemble the Dutchie ``Reward.Restrictions`` dict + warnings from already
     resolved id lists. Returns ``(restrictions, warnings)``.
 
-    Dutchie AND's restriction types together, so a Product INCLUDE layered on
-    top of a Brand/Category include can only SHRINK eligibility — never what we
-    intend (deal sub 395 "IO Extracts — 2 for $35" published with
-    Brand+Category+239 products applied to 48 products instead of the 233 that
-    Brand+Category alone cover). Send the Product include ONLY when it is the
-    sole scoping signal; otherwise drop it (warn) and keep product EXCLUDES.
+    An explicit product include is the reviewer's own pick list and is the most
+    specific statement of intent we have, so it wins outright: when ``prod_inc``
+    is present the deal publishes as Product-only and Brand/Category are omitted.
+    Dutchie natively supports that shape (live records 371881, 380941, 53849 carry
+    a Product include and no Brand/Category), and it is what the picker,
+    ``available_product_ids`` and ``publish_match_count`` already promise the
+    reviewer on the form.
+
+    This intentionally reverses the older "drop the include when Brand/Category
+    scope the deal" rule, which was written after deal sub 395 ("IO Extracts —
+    2 for $35") published Brand+Category+239 products and applied to only 48.
+    That diagnosis was wrong. Re-checked against live data (Odoo #107245): all
+    239 picks were inside the picker's own scope, all 239 carried a valid
+    ``dutchie_product_id``, and all 239 were a single brand and a single Odoo
+    category — so the Product include was correct and the collapse to 48 means
+    the *published Dutchie Category id did not correspond to the Odoo category*.
+    Dropping the include masked that mapping defect and shipped a brand-wide
+    discount overlapping the reviewer's picks by ~20%. Publishing Product-only
+    sends no category id at all, so it cannot be poisoned by that mapping.
+
+    Product EXCLUDES still take the slot when there is no include.
     """
     restrictions = {k: {'IsExclusion': False, 'RestrictionIds': []}
                     for k in DUTCHIE_RESTRICTION_TYPES}
     warnings = []
+    if prod_inc:
+        # Product-only: the pick list fully scopes the deal. Emitting a Brand or
+        # Category INCLUDE alongside it would let Dutchie's intersection silently
+        # drop any pick whose brand/category disagrees with the header.
+        restrictions['Product'] = {'IsExclusion': False, 'RestrictionIds': prod_inc}
+        if not brand_ids and exc_brand_ids:
+            # A brand EXCLUDE is a negative filter, not a positive scope — it can
+            # only narrow the pick list, never widen it, so it still applies.
+            restrictions['Brand'] = {'IsExclusion': True, 'RestrictionIds': exc_brand_ids}
+        if prod_exc:
+            warnings.append("product exclusions dropped (Product slot used by includes)")
+        if brand_ids or cat_ids:
+            warnings.append(
+                "%d explicit product include(s) scope this deal; Brand/Category "
+                "restrictions omitted so the discount targets exactly the picks"
+                % len(prod_inc))
+        return restrictions, warnings
     if brand_ids:
         restrictions['Brand'] = {'IsExclusion': False, 'RestrictionIds': brand_ids}
     elif exc_brand_ids:
         restrictions['Brand'] = {'IsExclusion': True, 'RestrictionIds': exc_brand_ids}
-    if prod_inc and not brand_ids and not cat_ids:
-        restrictions['Product'] = {'IsExclusion': False, 'RestrictionIds': prod_inc}
-        if prod_exc:
-            warnings.append("product exclusions dropped (Product slot used by includes)")
-    elif prod_exc:
+    if prod_exc:
         restrictions['Product'] = {'IsExclusion': True, 'RestrictionIds': prod_exc}
-    elif prod_inc:
-        warnings.append(
-            "%d explicit product include(s) dropped — Brand/Category already "
-            "scope this deal; an extra Product include would only shrink "
-            "eligibility (Dutchie intersects restriction types)" % len(prod_inc))
     if cat_ids:
         restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': cat_ids}
     return restrictions, warnings
