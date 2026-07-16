@@ -85,6 +85,7 @@ COPY --chown=odoo:odoo mint_oauth_only /opt/extra-addons/mint_oauth_only
 COPY --chown=odoo:odoo mint_customer_api /opt/extra-addons/mint_customer_api
 COPY --chown=odoo:odoo mint_dutchie_sync /opt/extra-addons/mint_dutchie_sync
 COPY --chown=odoo:odoo mint_pos_bridge /opt/extra-addons/mint_pos_bridge
+COPY --chown=odoo:odoo mint_pos_dutchie /opt/extra-addons/mint_pos_dutchie
 COPY --chown=odoo:odoo mint_account /opt/extra-addons/mint_account
 COPY --chown=odoo:odoo print_nodes /opt/extra-addons/print_nodes
 COPY --chown=odoo:odoo mint_redis_session /opt/extra-addons/mint_redis_session
@@ -209,6 +210,7 @@ RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MOD
 RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_dutchie_sync/__manifest__.py && echo "MINT_DUTCHIE_SYNC VERIFIED" || (echo "MINT_DUTCHIE_SYNC MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_pos_bridge/__manifest__.py && echo "MINT_POS_BRIDGE VERIFIED" || (echo "MINT_POS_BRIDGE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_pos_dutchie/__manifest__.py && echo "MINT_POS_DUTCHIE VERIFIED" || (echo "MINT_POS_DUTCHIE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_redis_session/__manifest__.py && echo "MINT_REDIS_SESSION VERIFIED" || (echo "MINT_REDIS_SESSION MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_inventory_ops/__manifest__.py && echo "MINT_INVENTORY_OPS VERIFIED" || (echo "MINT_INVENTORY_OPS MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_sms_telnyx/__manifest__.py && echo "MINT_SMS_TELNYX VERIFIED" || (echo "MINT_SMS_TELNYX MISSING" && exit 1)
