@@ -844,24 +844,37 @@ class MintCustomerAuth(http.Controller):
             # mint_dutchie_sync absent (not in depends — see _create_web_user).
             return json_response({'found': False})
 
+        # Only UNCLAIMED roster records are linkable, so scope the search to
+        # them rather than filtering after — the distinction is load-bearing.
+        #
+        # register() stamps x_dutchie_identity_key on every new web partner (so
+        # the roster sync can dedup later), which means each signup ADDS a row
+        # carrying that licence's key. Matching on the key alone therefore saw
+        # the roster record *plus* every account already created from it, tripped
+        # the ambiguity guard, and refused — so a customer could link exactly
+        # once and was locked out forever after. Observed in prod: one licence
+        # accumulated 3 rows within a day of testing.
+        #
+        # Those extra rows all carry a login, so excluding claimed partners here
+        # both restores matching and preserves the original refusal: an identity
+        # someone has already signed up on is not linkable, it's a takeover.
+        # What remains is genuine ambiguity — two roster rows, no logins, same
+        # licence — which is still refused below because there is no safe way to
+        # guess between two real people.
+        #
         # limit=2: enough to detect ambiguity, no need to page 1.6M rows.
         matches = Partner.search(
-            [('x_dutchie_identity_key', '=', identity_key)], limit=2,
+            [('x_dutchie_identity_key', '=', identity_key),
+             ('user_ids', '=', False)],
+            limit=2,
         )
         if len(matches) != 1:
             if len(matches) > 1:
-                # 2 such rows exist in prod today. Never guess between people.
                 _logger.warning('dutchie-lookup: ambiguous key %s -> %s',
                                 identity_key, matches.ids)
             return json_response({'found': False})
 
         partner = matches
-        if partner.user_ids:
-            # Someone already signed up on this identity. Linking would be a
-            # takeover, not a link.
-            _logger.warning('dutchie-lookup: refused claimed partner %s (%s)',
-                            partner.id, identity_key)
-            return json_response({'found': False})
 
         if not self._surname_matches(last_name, partner.name):
             _logger.info('dutchie-lookup: surname mismatch for %s', identity_key)
