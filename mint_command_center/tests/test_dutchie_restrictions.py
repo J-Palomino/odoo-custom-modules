@@ -1,12 +1,24 @@
 """Regression: Dutchie discount restriction assembly.
 
-Guards the fix for deal sub 395 ("IO Extracts — 2 for $35"), which published
-with Brand + Category + an explicit 239-product include. Dutchie intersects
-restriction types, so the extra Product include collapsed eligibility from the
-233 products that Brand+Category cover down to 48. The rule under test: send a
-Product INCLUDE only when it is the sole scoping signal; when a Brand/Category
-already scopes the deal, drop the include (with a warning) and keep any product
-EXCLUDES on the slot.
+The rule under test (Odoo #107245): an explicit product include is the
+reviewer's pick list and wins outright — the deal publishes Product-only and
+Brand/Category INCLUDES are omitted. A brand EXCLUDE survives (it can only
+narrow the picks), and product EXCLUDES still take the slot when there is no
+include.
+
+This reverses the earlier rule, which dropped the Product include whenever a
+Brand/Category was present. That rule came from deal sub 395 ("IO Extracts —
+2 for $35"), which published Brand+Category+239 products and applied to only 48
+— read at the time as "the Product include over-constrains". That diagnosis was
+wrong. Verified against live data (#107245): all 239 picks sat inside the
+picker's own scope, all 239 had a valid dutchie_product_id, and all 239 were a
+single brand + single Odoo category. So the include was right and the collapse
+to 48 means the published Dutchie Category id did not correspond to the Odoo
+category — a mapping defect. Dropping the include masked it and shipped a
+brand-wide discount overlapping the picks by ~20%. Product-only publishes no
+category id, so it cannot be poisoned by that mapping.
+
+Dutchie natively supports Product-only (live records 371881, 380941, 53849).
 
 These exercise the pure ``build_dutchie_restrictions`` helper directly (the
 same path ``DealSubmissionDutchiePublish._dutchie_build`` uses), so no Dutchie
@@ -31,31 +43,34 @@ def _slot(restr, key):
 @tagged('post_install', '-at_install')
 class TestDutchieRestrictions(TransactionCase):
 
-    # ── The bug case + its fix ───────────────────────────────────────────
-    def test_brand_category_product_drops_include(self):
-        """sub 395 shape: brand+category+products -> Product dropped, warned."""
+    # ── sub 395 shape: the picks win ─────────────────────────────────────
+    def test_brand_category_product_publishes_product_only(self):
+        """sub 395 shape: brand+category+products -> Product-only, no Brand/Category."""
         restr, warns = build_dutchie_restrictions(B, [], PI, [], C)
-        self.assertEqual(_slot(restr, 'Brand'), (False, B))
-        self.assertEqual(_slot(restr, 'Category'), (False, C))
-        self.assertEqual(_slot(restr, 'Product'), (False, []),
-                         "Product include must be dropped when Brand+Category scope the deal")
-        self.assertTrue(any('product include' in w for w in warns))
+        self.assertEqual(_slot(restr, 'Product'), (False, PI),
+                         "the reviewer's picks must reach Dutchie verbatim")
+        self.assertEqual(_slot(restr, 'Brand'), (False, []),
+                         "Brand include must be omitted so intersection cannot drop a pick")
+        self.assertEqual(_slot(restr, 'Category'), (False, []),
+                         "Category include must be omitted — it is the #395 mapping defect")
+        self.assertTrue(any('Brand/Category' in w for w in warns),
+                        "omitting Brand/Category must be surfaced, not silent")
 
-    def test_brand_category_keeps_excludes_when_include_dropped(self):
-        """brand+category+inc+exc -> include dropped, EXCLUDE now applied."""
+    def test_brand_category_product_include_beats_excludes(self):
+        """brand+category+inc+exc -> include takes the slot; exclude warned."""
         restr, warns = build_dutchie_restrictions(B, [], PI, PE, C)
-        self.assertEqual(_slot(restr, 'Product'), (True, PE),
-                         "product excludes must survive when the include is dropped")
+        self.assertEqual(_slot(restr, 'Product'), (False, PI))
+        self.assertTrue(any('exclusions dropped' in w for w in warns))
 
-    def test_brand_only_drops_product_include(self):
+    def test_brand_only_keeps_product_include(self):
         restr, warns = build_dutchie_restrictions(B, [], PI, [], [])
-        self.assertEqual(_slot(restr, 'Product'), (False, []))
-        self.assertTrue(any('product include' in w for w in warns))
+        self.assertEqual(_slot(restr, 'Product'), (False, PI))
+        self.assertEqual(_slot(restr, 'Brand'), (False, []))
 
-    def test_category_only_drops_product_include(self):
+    def test_category_only_keeps_product_include(self):
         restr, warns = build_dutchie_restrictions([], [], PI, [], C)
-        self.assertEqual(_slot(restr, 'Product'), (False, []))
-        self.assertTrue(any('product include' in w for w in warns))
+        self.assertEqual(_slot(restr, 'Product'), (False, PI))
+        self.assertEqual(_slot(restr, 'Category'), (False, []))
 
     # ── Unchanged behaviour (no regression) ──────────────────────────────
     def test_product_only_keeps_include(self):

@@ -446,7 +446,13 @@ class DealSubmissionDutchiePublish(models.Model):
                     if str(p.dutchie_product_id or '').strip().isdigit()]
         unres_inc = [p.name for p in self.product_ids if not p.dutchie_product_id]
         if unres_inc:
-            warnings.append("products without dutchie id skipped: " + ", ".join(unres_inc[:5]))
+            # The picks now scope the discount outright, so a pick that cannot be
+            # mapped silently shrinks it. Lead with the count so the reviewer sees
+            # the size of the gap even when the name list is long.
+            warnings.append(
+                "%d of %d picked product(s) have no Dutchie id and are NOT in the "
+                "discount: %s" % (len(unres_inc), len(self.product_ids),
+                                  ", ".join(unres_inc)))
         prod_exc, unres_exc = self._resolve_exclusion_products(brands)
         if unres_exc:
             warnings.append("exclusion terms unresolved: " + ", ".join(unres_exc))
