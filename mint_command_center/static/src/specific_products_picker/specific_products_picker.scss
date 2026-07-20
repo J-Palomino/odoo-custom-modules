@@ -1,0 +1,28 @@
+.o_mdcc_specific_products {
+    .o_mdcc_tag_remove {
+        cursor: pointer;
+        opacity: 0.6;
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+}
+
+.o_mdcc_picker {
+    .o_mdcc_picker_list {
+        max-height: 45vh;
+        overflow-y: auto;
+
+        // The whole row toggles via the checkbox's wrapping label, so make the
+        // label span the cell width for a comfortable click target.
+        .o_checkbox {
+            width: 100%;
+
+            label,
+            span {
+                cursor: pointer;
+            }
+        }
+    }
+}

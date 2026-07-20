@@ -265,13 +265,10 @@
                             <field name="display_text" readonly="1"/>
                             <field name="format_key" readonly="1"
                                    help="Blank until the matching product has a Product Line set"/>
-                            <field name="weight_ids" widget="many2many_tags"
-                                   options="{'no_create': True}"
-                                   placeholder="Net weights (grams) — drives the Dutchie Weight restriction"/>
-                            <label for="weight_value" string="Weight (derived)"/>
+                            <label for="weight_value" string="Weight"/>
                             <div class="o_row">
-                                <field name="weight_value" nolabel="1" readonly="1"/>
-                                <field name="weight_unit" nolabel="1" readonly="1"/>
+                                <field name="weight_value" nolabel="1"/>
+                                <field name="weight_unit" nolabel="1"/>
                             </div>
                             <field name="is_featured"/>
                             <field name="is_available_online" widget="boolean_toggle"/>
@@ -387,15 +384,6 @@
                             <group string="Details &amp; Exclusions" col="1">
                                 <field name="details_exclusions" nolabel="1"
                                        placeholder="Product exclusions and conditions..."/>
-                            </group>
-                            <!-- Holiday/event carried from the vendor submission
-                                 (grafted, reconcile 2026-06). Surfaces in the PTL
-                                 Category column on the Daily Deals Sheet. -->
-                            <group string="Special Event / Holiday">
-                                <field name="is_holiday"/>
-                                <field name="event_name"
-                                       invisible="not is_holiday"
-                                       required="is_holiday"/>
                             </group>
                         </page>
                     </notebook>

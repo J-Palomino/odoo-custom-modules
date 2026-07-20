@@ -37,16 +37,4 @@
         <field name="code">action = records.action_export_ptl_calendar_csv()</field>
     </record>
 
-    <!-- PTL Daily Deals Sheet (PDF) — one row per discount, grouped by category -->
-    <record id="action_report_ptl_deals_sheet" model="ir.actions.report">
-        <field name="name">PTL Daily Deals Sheet</field>
-        <field name="model">mint.ptl.day</field>
-        <field name="report_type">qweb-pdf</field>
-        <field name="report_name">mint_command_center.report_ptl_deals_sheet</field>
-        <field name="report_file">mint_command_center.report_ptl_deals_sheet</field>
-        <field name="binding_model_id" ref="model_mint_ptl_day"/>
-        <field name="binding_type">report</field>
-        <field name="print_report_name">'PTL Deals Sheet - %s' % (object.name or '')</field>
-    </record>
-
 </odoo>

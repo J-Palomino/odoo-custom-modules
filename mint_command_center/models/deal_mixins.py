@@ -61,6 +61,137 @@ def format_bundle_tiers_text(tiers):
     return ' or '.join(parts)
 
 
+# Dutchie discount restriction types. One IsExclusion flag + id list per type;
+# Dutchie applies them as an INTERSECTION (a product must satisfy every
+# populated type). Keep this ordering stable — it mirrors the Backoffice shape.
+DUTCHIE_RESTRICTION_TYPES = ('Strain', 'Weight', 'Category', 'Tag',
+                             'InventoryTag', 'Tier', 'Brand', 'Vendor', 'Product')
+
+
+def build_dutchie_restrictions(brand_ids, exc_brand_ids, prod_inc, prod_exc, cat_ids):
+    """Assemble the Dutchie ``Reward.Restrictions`` dict + warnings from already
+    resolved id lists. Returns ``(restrictions, warnings)``.
+
+    An explicit product include is the reviewer's own pick list and is the most
+    specific statement of intent we have, so it wins outright: when ``prod_inc``
+    is present the deal publishes as Product-only and Brand/Category are omitted.
+    Dutchie natively supports that shape (live records 371881, 380941, 53849 carry
+    a Product include and no Brand/Category), and it is what the picker,
+    ``available_product_ids`` and ``publish_match_count`` already promise the
+    reviewer on the form.
+
+    This intentionally reverses the older "drop the include when Brand/Category
+    scope the deal" rule, which was written after deal sub 395 ("IO Extracts —
+    2 for $35") published Brand+Category+239 products and applied to only 48.
+    That diagnosis was wrong. Re-checked against live data (Odoo #107245): all
+    239 picks were inside the picker's own scope, all 239 carried a valid
+    ``dutchie_product_id``, and all 239 were a single brand and a single Odoo
+    category — so the Product include was correct and the collapse to 48 means
+    the *published Dutchie Category id did not correspond to the Odoo category*.
+    Dropping the include masked that mapping defect and shipped a brand-wide
+    discount overlapping the reviewer's picks by ~20%. Publishing Product-only
+    sends no category id at all, so it cannot be poisoned by that mapping.
+
+    Product EXCLUDES still take the slot when there is no include.
+    """
+    restrictions = {k: {'IsExclusion': False, 'RestrictionIds': []}
+                    for k in DUTCHIE_RESTRICTION_TYPES}
+    warnings = []
+    if prod_inc:
+        # Product-only: the pick list fully scopes the deal. Emitting a Brand or
+        # Category INCLUDE alongside it would let Dutchie's intersection silently
+        # drop any pick whose brand/category disagrees with the header.
+        restrictions['Product'] = {'IsExclusion': False, 'RestrictionIds': prod_inc}
+        if not brand_ids and exc_brand_ids:
+            # A brand EXCLUDE is a negative filter, not a positive scope — it can
+            # only narrow the pick list, never widen it, so it still applies.
+            restrictions['Brand'] = {'IsExclusion': True, 'RestrictionIds': exc_brand_ids}
+        if prod_exc:
+            warnings.append("product exclusions dropped (Product slot used by includes)")
+        if brand_ids or cat_ids:
+            warnings.append(
+                "%d explicit product include(s) scope this deal; Brand/Category "
+                "restrictions omitted so the discount targets exactly the picks"
+                % len(prod_inc))
+        return restrictions, warnings
+    if brand_ids:
+        restrictions['Brand'] = {'IsExclusion': False, 'RestrictionIds': brand_ids}
+    elif exc_brand_ids:
+        restrictions['Brand'] = {'IsExclusion': True, 'RestrictionIds': exc_brand_ids}
+    if prod_exc:
+        restrictions['Product'] = {'IsExclusion': True, 'RestrictionIds': prod_exc}
+    if cat_ids:
+        restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': cat_ids}
+    return restrictions, warnings
+
+
+# Dutchie day-of-week field names, Monday-first to match Python's date.weekday()
+# (0=Mon … 6=Sun). NOTE: ALL-FALSE means "active EVERY day" in Dutchie — so a
+# day-scoped deal must never resolve to all-False (see weekday_bools_from_days).
+_WEEKDAY_BY_NUM = {0: 'monday', 1: 'tuesday', 2: 'wednesday', 3: 'thursday',
+                   4: 'friday', 5: 'saturday', 6: 'sunday'}
+DAY_FIELD_NAMES = tuple(_WEEKDAY_BY_NUM[i] for i in range(7))
+
+
+def weekday_bools_from_days(days, span_from=None, span_to=None, market_id=None):
+    """Reduce plotted PTL days to Monday..Sunday booleans.
+
+    ``days`` is an iterable of ``(date, market_id)`` pairs. A weekday flag is
+    True when at least one day falls on it, AFTER filtering to the inclusive
+    span ``[span_from, span_to]`` (when given) and to ``market_id`` (when given,
+    for per-market Dutchie pushes). Returns ``{monday: bool, … sunday: bool}``.
+
+    Bounded by the discount's own validity span — NOT a fixed today+N horizon —
+    so a future-dated deal resolves its real weekdays instead of collapsing to
+    all-False (which Dutchie would read as "every day"). Callers must treat an
+    all-False result for a day-scoped deal as a refuse-to-publish signal, never
+    send it as-is.
+    """
+    bools = {name: False for name in DAY_FIELD_NAMES}
+    for d, mid in days:
+        if d is None:
+            continue
+        if span_from and d < span_from:
+            continue
+        if span_to and d > span_to:
+            continue
+        if market_id is not None and mid != market_id:
+            continue
+        bools[_WEEKDAY_BY_NUM[d.weekday()]] = True
+    return bools
+
+
+def dutchie_claim_decision(owner, path):
+    """Pure cross-path publish mutex (#2). There are two paths that write a
+    deal to Dutchie — the submission convert auto-publish and the PTL Publish
+    button — and they use different ExternalIds/topologies, so both firing
+    creates a DUPLICATE live discount. First live writer wins.
+
+    ``owner`` is the deal's current ``dutchie_publish_owner``
+    ('submission' | 'ptl' | falsy); ``path`` is the path requesting to publish.
+    Returns ``(may_publish, owner_to_set)`` — ``owner_to_set`` is the value to
+    persist (None = leave unchanged). Same-path re-publish is always allowed
+    (idempotent update via that path's own id map); the OTHER path is blocked.
+    """
+    if owner and owner != path:
+        return (False, None)
+    return (True, None if owner else path)
+
+
+def normalize_publish_mode(raw, unset_default='dry_run', valid=('off', 'dry_run', 'live')):
+    """Normalize a ``dutchie.publish.mode`` value (#4 fail-closed).
+
+    Unset/empty -> ``unset_default`` (preserves the historical default). A value
+    that is SET but unrecognized -> 'off', never silently LIVE — path-1 used to
+    treat anything that wasn't 'off'/'dry_run' as live (fail-open); this matches
+    the PTL push path's fail-closed coercion.
+    """
+    if raw is None or str(raw).strip() == '':
+        return unset_default
+    m = str(raw).strip().lower()
+    return m if m in valid else 'off'
+
+
 WEIGHT_UNIT_SELECTION = [
     ('g', 'g'),
     ('mg', 'mg'),

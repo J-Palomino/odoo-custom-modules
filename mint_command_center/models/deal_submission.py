@@ -9,49 +9,41 @@ from .ptl_deal import MASTER_CATEGORY_PATTERNS
 
 _logger = logging.getLogger(__name__)
 
-# Gram tolerance for matching a product's net weight against a selected
-# mint.discount.weight value. Mirrors mint_api_v2's mint.discount
-# (_WEIGHT_TOLERANCE_G = 0.01) so the picker/gate narrow the SAME products the
-# Dutchie Reward.Restrictions.Weight will match downstream.
-_WEIGHT_TOLERANCE_G = 0.01
+# Mass-unit → grams, so a weight range expressed in one unit (e.g. g) can be
+# compared against products whose name parses to another (mg/oz). Mirrors
+# dutchie_discount_push.WEIGHT_UNIT_TO_GRAMS. 'ct' is a count, not a mass, so
+# it is normalised on its own dimension (see _norm_weight) and only compared
+# against other counts.
+_UNIT_TO_GRAMS = {'g': 1.0, 'mg': 0.001, 'oz': 28.3495}
 
 
-def _product_weight_g(template):
-    """Net weight in grams for a product.template, or None if unresolved.
+def _norm_weight(value, unit):
+    """Normalise a (value, unit) weight onto a comparable dimension.
 
-    ID/value matching only -- reads the numeric x_weight_grams (Studio Float,
-    populated by the Dutchie sync from NetWeight). No name/Char parsing: the
-    field defaults to 0.0 on unsynced rows, so >0 is authoritative and
-    0/None/False resolves to None. A product with no positive synced weight is
-    excluded when a weight facet is active -- identical policy to mint.discount
-    inclusions, so the picker can never offer a product the published discount
-    would then filter out.
-    """
-    val = getattr(template, 'x_weight_grams', None)
-    if val not in (None, False):
-        try:
-            fv = float(val)
-            if fv > 0:
-                return fv
-        except (TypeError, ValueError):
-            pass
-    return None
+    Returns ('mass', grams) for mass units, ('count', value) for 'ct', or
+    (None, None) when the unit is missing/unknown. Two weights are only
+    comparable when their dimension matches."""
+    grams = _UNIT_TO_GRAMS.get(unit)
+    if grams is not None:
+        return ('mass', value * grams)
+    if unit == 'ct':
+        return ('count', value)
+    return (None, None)
 
 
-def _weight_filter_templates(templates, weight_ids):
-    """Keep only templates whose net weight is within tolerance of any selected
-    mint.discount.weight value. No-op when weight_ids is empty."""
-    if not weight_ids:
-        return templates
-    targets = [w.value for w in weight_ids]
-    kept = templates.browse()
-    for tmpl in templates:
-        pw = _product_weight_g(tmpl)
-        if pw is None:
-            continue
-        if any(abs(pw - t) <= _WEIGHT_TOLERANCE_G for t in targets):
-            kept |= tmpl
-    return kept
+def _weight_label(value, unit):
+    """Compact human label for a parsed weight, e.g. (0.5, 'g') -> '0.5g'."""
+    return f"{value:g}{unit}"
+
+
+def _weight_key(value, unit):
+    """Canonical, order-stable key for a (value, unit) weight, used both to
+    build the discrete weight options and to match a product against the
+    reviewer's picks. e.g. (3.5, 'g') -> '3.5:g'. Returns None when the
+    weight is unparseable (no unit)."""
+    if not unit:
+        return None
+    return f"{value:g}:{unit}"
 
 
 class DealSubmission(models.Model):
@@ -114,42 +106,6 @@ class DealSubmission(models.Model):
              'Leave empty to keep today\'s "all-of-brand-and-category" '
              'fallback. Picker is brand-scoped via the view domain.',
     )
-    weight_ids = fields.Many2many(
-        'mint.discount.weight',
-        'mint_deal_submission_weight_rel',
-        'submission_id',
-        'weight_id',
-        string='Weights',
-        help='Restrict the deal to products of these net weights (grams). '
-             'When set, the Available Products picker and the convert-gate '
-             'match count keep ONLY products whose net weight '
-             '(product.template.x_weight_grams, synced from Dutchie NetWeight; '
-             'legacy x_weight Char as fallback) is within '
-             '0.01g of a selected value. Leave empty to ignore weight. '
-             'Same canonical catalog Dutchie uses for '
-             'Reward.Restrictions.Weight (0.5, 1.0, 3.5, 7.0, 14.0, 28.0 ...).',
-    )
-    weight_value = fields.Float(
-        string='Weight',
-        compute='_compute_weight_scalar',
-        store=True,
-        help='Smallest selected weight (grams), derived from Weights. Kept as '
-             'a scalar for the promos conflict API; the picker (weight_ids) is '
-             'the source of truth — never parsed from the deal name.',
-    )
-    weight_unit = fields.Char(
-        string='Weight Unit',
-        compute='_compute_weight_scalar',
-        store=True,
-        help="Always 'g' when a weight is selected (the catalog is in grams).",
-    )
-
-    @api.depends('weight_ids')
-    def _compute_weight_scalar(self):
-        for sub in self:
-            weights = sub.weight_ids.sorted('value')
-            sub.weight_value = weights[0].value if weights else 0.0
-            sub.weight_unit = 'g' if weights else False
 
     # --- Vendor funding terms ---
     # vendor_funding_amount / vendor_funding_percent / currency_id come from
@@ -205,6 +161,30 @@ class DealSubmission(models.Model):
              '0 means the deal would be invisible on the storefront and apply '
              'to nothing at the register — conversion is blocked. -1 means no '
              'product-narrowing restriction (store-wide), handled elsewhere.',
+    )
+    # --- Weight filter (search aid for the Specific Products picker) ---
+    # A discrete multi-select of the REAL in-stock sizes for the chosen
+    # brand(s)+categor(ies)+market, mirroring the brand/category tag pickers:
+    # add weights one at a time, mass-clear at once. Empty = no weight filter,
+    # so the picker shows every in-stock candidate (weight-sorted). Does NOT
+    # affect the published Dutchie restriction or publish_match_count — purely
+    # a picker filter.
+    weight_keys = fields.Json(
+        string='Weights',
+        default=list,
+        help='Reviewer-selected weights (canonical "<value>:<unit>" keys) that '
+             'narrow the Specific Products picker. Empty = all sizes shown, '
+             'weight-sorted. Options are the real in-stock sizes — see '
+             'available_weight_options.',
+    )
+    available_weight_options = fields.Json(
+        string='Available Weights',
+        compute='_compute_available_product_ids',
+        help='Distinct, real weights (with product counts) parseable from the '
+             'in-stock candidate products for the selected brand(s) + '
+             'categor(ies) + market. Feeds the weight picker widget; computed '
+             'before the weight filter is applied so the option list is '
+             'stable regardless of what is picked.',
     )
     # discount_type / discount_value / original_price come from
     # mint.discount.core.mixin.
@@ -609,9 +589,11 @@ class DealSubmission(models.Model):
         return self.product_category_ids | self.product_category_id
 
     @api.depends('brand_id', 'brand_ids', 'product_category_id',
-                 'product_category_ids', 'market_id', 'store_ids', 'weight_ids')
+                 'product_category_ids', 'market_id', 'store_ids',
+                 'weight_keys')
     def _compute_available_product_ids(self):
-        """Products matching every facet, for the Specific Products domain.
+        """Products matching every facet, for the Specific Products domain,
+        plus the discrete weight options that feed the weight picker.
 
         Searched on product.product (not dotted template domains) so the
         SAME variant must carry both the store location and the stock —
@@ -620,12 +602,25 @@ class DealSubmission(models.Model):
         market. Store scope = requested store_ids when set, else the
         market's stores; no stores resolved -> stock anywhere. sudo for the
         same reason as _compute_available_category_ids.
+
+        Weight options (available_weight_options) are the distinct, real
+        sizes parseable from the candidate set BEFORE any weight filter, so
+        the option list stays stable no matter what is picked. Weight filter:
+        when weight_keys are picked, candidates are narrowed to products whose
+        parsed weight matches ANY picked key (cross-unit safe — each key
+        carries its own unit). Candidates are then ordered by normalised
+        weight so sizes group and ascend; unparseable weights sort last and
+        are dropped only when a filter is active.
         """
+        # Lazy import: brand_calendar loads AFTER this module in models/
+        # __init__, so a top-level import would fail at load time.
+        from .brand_calendar import _parse_weight
         Variant = self.env['product.product'].sudo()
         for sub in self:
             brands = sub.brand_ids | sub.brand_id
             if not brands:
                 sub.available_product_ids = False
+                sub.available_weight_options = []
                 continue
             domain = [
                 ('product_tmpl_id.brand_id', 'in', brands.ids),
@@ -645,10 +640,52 @@ class DealSubmission(models.Model):
             if uuids:
                 domain.append(('x_dutchie_location_id', 'in', uuids))
             variants = Variant.search(domain)
-            templates = _weight_filter_templates(
-                variants.product_tmpl_id, sub.weight_ids
+            tmpls = variants.product_tmpl_id
+            # Parse each candidate once: {id: (value, unit)} and normalise for
+            # sorting: {id: (dimension, magnitude)}.
+            pmap = {t.id: _parse_weight(t.name) for t in tmpls}
+            nmap = {t.id: _norm_weight(*pmap[t.id]) for t in tmpls}
+
+            # Distinct weight options (real, in-stock sizes) with product
+            # counts — computed on the full candidate set, before filtering.
+            opt = {}
+            for t in tmpls:
+                value, unit = pmap[t.id]
+                key = _weight_key(value, unit)
+                if not key:
+                    continue
+                if key not in opt:
+                    opt[key] = {
+                        'key': key,
+                        'label': _weight_label(value, unit),
+                        'count': 0,
+                        '_sort': _norm_weight(value, unit),
+                    }
+                opt[key]['count'] += 1
+            # Mass sizes first (by grams), then counts (by count); each ascends.
+            dim_order = {'mass': 0, 'count': 1}
+            options = sorted(
+                opt.values(),
+                key=lambda o: (dim_order.get(o['_sort'][0], 2), o['_sort'][1] or 0.0),
             )
-            sub.available_product_ids = [(6, 0, templates.ids)]
+            sub.available_weight_options = [
+                {'key': o['key'], 'label': o['label'], 'count': o['count']}
+                for o in options
+            ]
+
+            # Apply the reviewer's weight picks: keep products whose parsed
+            # weight matches ANY selected key.
+            picked = set(sub.weight_keys or [])
+            if picked:
+                tmpls = tmpls.filtered(
+                    lambda t: _weight_key(*pmap[t.id]) in picked
+                )
+            # Sort by normalised magnitude; unparseable weights sort last.
+            ordered = tmpls.sorted(
+                key=lambda t: (0, nmap[t.id][1]) if nmap[t.id][0] is not None
+                else (1, 0.0)
+            )
+            sub.available_product_ids = [(6, 0, ordered.ids)]
 
     def _resolve_publish_match_count(self):
         """Count the IN-STOCK products this deal's restriction set actually
@@ -657,10 +694,6 @@ class DealSubmission(models.Model):
 
         Mirrors the published restriction precedence: explicit Specific
         Products are authoritative; otherwise brand(s) ∩ picked categor(ies).
-        When a Weights facet is set, the result is further narrowed to
-        products whose net weight matches (same gram tolerance the Dutchie
-        Weight restriction uses), so the gate count reflects the Product ∩
-        Weight intersection the register will actually apply.
         Scoped to the requested stores (else the market's stores) and to
         on-hand stock (x_quantity_available > 0, the same Dutchie-synced
         signal the FE inventory cache is built from). Searched on
@@ -697,14 +730,11 @@ class DealSubmission(models.Model):
         if uuids:
             domain.append(('x_dutchie_location_id', 'in', uuids))
         variants = Variant.search(domain)
-        templates = _weight_filter_templates(
-            variants.product_tmpl_id, self.weight_ids
-        )
-        return len(set(templates.ids))
+        return len(set(variants.product_tmpl_id.ids))
 
     @api.depends('brand_id', 'brand_ids', 'product_ids',
                  'product_category_id', 'product_category_ids',
-                 'market_id', 'store_ids', 'weight_ids')
+                 'market_id', 'store_ids')
     def _compute_publish_match_count(self):
         """Surfaced on the form so the approver sees how many in-stock
         products the deal will hit BEFORE converting (the resolve-and-gate
@@ -952,7 +982,6 @@ class DealSubmission(models.Model):
             'vendor_funding_percent': self.vendor_funding_percent,
             'campaign_id': self.campaign_id.id if self.campaign_id else False,
             'explicit_product_ids': [(6, 0, explicit_products.ids)] if explicit_products else False,
-            'weight_ids': [(6, 0, self.weight_ids.ids)] if self.weight_ids else False,
             'excluded_brand_ids': [(6, 0, self.excluded_brand_ids.ids)] if self.excluded_brand_ids else False,
             'excluded_skus': self.excluded_skus or False,
         })

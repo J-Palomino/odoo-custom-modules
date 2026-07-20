@@ -3,5 +3,7 @@ from . import test_ptl_deal_targeting
 from . import test_stock_check_wizard
 from . import test_structured_bogo_bundle
 from . import test_dutchie_publish_split
-from . import test_dutchie_lsp_wide_dedup
-from . import test_ptl_deal_tabs
+from . import test_dutchie_restrictions
+from . import test_weekday_bools
+from . import test_dutchie_claim
+from . import test_publish_mode

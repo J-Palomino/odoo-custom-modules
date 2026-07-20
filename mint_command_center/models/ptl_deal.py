@@ -7,7 +7,7 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from .brand_calendar import _brand_lookup_key, _parse_brand_name
-from .deal_mixins import format_bundle_tiers_text
+from .deal_mixins import format_bundle_tiers_text, dutchie_claim_decision
 
 _logger = logging.getLogger(__name__)
 
@@ -54,6 +54,12 @@ class PtlDeal(models.Model):
     _order = 'sequence, id'
 
     name = fields.Char(string='Deal Name', required=True, tracking=True)
+    dutchie_publish_owner = fields.Selection(
+        [('submission', 'Submission convert'), ('ptl', 'PTL publish')],
+        string='Dutchie Publish Owner', copy=False, tracking=True,
+        help="Which publish path owns this deal's live Dutchie discount. Set by "
+             "the first path to publish live; the other path then refuses to "
+             "create a duplicate (#2 cross-path mutex). Clear it to switch paths.")
     brand_id = fields.Many2one(
         'mint.brand',
         string='Brand',
@@ -121,21 +127,6 @@ class PtlDeal(models.Model):
     details_exclusions = fields.Text(
         string='Details & Exclusions',
         help='Product details, exclusions, and conditions (PTL Column C)',
-    )
-    # is_holiday / event_name — grafted from staging (reconcile 2026-06);
-    # carried from the vendor submission on convert_to_deal.
-    is_holiday = fields.Boolean(
-        string='Special Event / Holiday',
-        default=False,
-        tracking=True,
-        help='Carried from vendor submission. Causes Event Name to render in '
-             'the PTL Category column (#93650) and unlocks the Daily Deals Sheet callout.',
-    )
-    event_name = fields.Char(
-        string='Event Name',
-        tracking=True,
-        help='Name of the holiday or special event (e.g. "Mother\'s Day", "420"). '
-             'Surfaces in the PTL Category column when is_holiday is True.',
     )
     excluded_skus = fields.Text(
         string='Excluded SKUs',
@@ -322,20 +313,6 @@ class PtlDeal(models.Model):
              'forwards it to mint.discount.product_ids so the Dutchie '
              'discount restricts at the SKU level. Empty = use today\'s '
              'brand+category+excluded_skus fallback.',
-    )
-    weight_ids = fields.Many2many(
-        'mint.discount.weight',
-        'mint_ptl_deal_weight_rel',
-        'deal_id',
-        'weight_id',
-        string='Weights',
-        tracking=True,
-        help='Net weights (grams) this deal restricts to, by ID — carried '
-             'from the submission and forwarded to mint.discount.weight_ids, '
-             'which builds the Dutchie Reward.Restrictions.Weight payload. '
-             'This is the single source of truth for the deal weight: '
-             'weight_value / weight_unit are derived from the smallest '
-             'selected value (no name parsing).',
     )
 
     # --- Validity range ---
@@ -598,22 +575,14 @@ class PtlDeal(models.Model):
         self.sudo().store_ids = [(6, 0, stores.ids)]
         return True
 
-    @api.depends('weight_ids')
+    def _weight_source(self):
+        return (self.name, self.sales_details)
+
+    @api.depends('name', 'sales_details')
     def _compute_weight(self):
-        # ID-based, NOT regex: the deal weight is whatever weight_ids the
-        # operator selected (mint.discount.weight stores grams). We override the
-        # mixin's name-parsing compute entirely so a deal's weight can never be
-        # silently mis-derived from its title. weight_value/weight_unit are kept
-        # as derived scalars for format_key, promos_api, and the PTL calendar;
-        # the smallest selected value wins when more than one weight is picked.
-        for rec in self:
-            weights = rec.weight_ids.sorted('value')
-            if weights:
-                rec.weight_value = weights[0].value
-                rec.weight_unit = 'g'
-            else:
-                rec.weight_value = 0.0
-                rec.weight_unit = False
+        # Source fields + deps are PTL-specific; the parse/assign body lives in
+        # mint.weight.parsed.mixin.
+        return super()._compute_weight()
 
     @api.depends('name')
     def _compute_brand_id(self):
@@ -892,39 +861,6 @@ class PtlDeal(models.Model):
             'context': {'default_deal_id': self.id},
         }
 
-    # --- Daily Deals Sheet report helpers (grafted from staging, reconcile 2026-06) ---
-
-    def _report_discount(self):
-        """Short discount tag for the deals-sheet 'Discount' column
-        (mirrors the legacy ptl-generate-deals-sheet formatter)."""
-        self.ensure_one()
-        v = self.discount_value or 0.0
-        orig = self.original_price or 0.0
-        t = self.discount_type
-        if t == 'percent' and v:
-            return "%.0f%% Off" % (v if v > 1 else v * 100)
-        if t == 'fixed' and v:
-            return "$%.0f Off" % v
-        if t == 'price' and v:
-            return "$%.2f%s" % (v, (" (was $%.0f)" % orig) if orig else "")
-        if t == 'bogo':
-            return "BOGO"
-        if t == 'bundle':
-            return "%.0f%% Off (bundle)" % (v if v > 1 else v * 100) if v else "Bundle"
-        if t == 'points_multiplier' and v:
-            mult = v if v >= 1 else (1 / v if v else 0)
-            return ("%dx Points" % int(mult)) if mult == int(mult) else ("%.1fx Points" % mult)
-        if t == 'clearance':
-            return "Clearance"
-        return ""
-
-    def _report_thumb(self):
-        """Base64 thumbnail for the deals sheet — first matching product's
-        image_128, or False (template renders a placeholder)."""
-        self.ensure_one()
-        prod = self.matching_product_ids[:1]
-        return prod.image_128 if prod else False
-
     # --- State transition actions ---
 
     def action_approve(self):
@@ -947,6 +883,18 @@ class PtlDeal(models.Model):
                 'active_ids': self.ids,
             },
         }
+
+    def _dutchie_claim(self, path):
+        """Claim this deal for live Dutchie publishing by ``path``
+        ('submission' | 'ptl'). Returns True if the path may publish (owner
+        unset or already this path) and stamps the owner on first claim; False
+        if the OTHER path already owns it (#2 cross-path mutex). Pure decision
+        in deal_mixins.dutchie_claim_decision."""
+        self.ensure_one()
+        may, to_set = dutchie_claim_decision(self.dutchie_publish_owner, path)
+        if to_set:
+            self.sudo().write({'dutchie_publish_owner': to_set})
+        return may
 
     def action_publish(self):
         """Publish this deal to the storefront (Redis) AND Dutchie POS.
@@ -1254,9 +1202,3 @@ class PtlDeal(models.Model):
                 'date_end': deal.date_end.isoformat() if deal.date_end else False,
             })
         return result
-
-    @property
-    def is_expired(self):
-        """Return True if the deal's end date is before today."""
-        today = fields.Date.context_today(self)
-        return self.date_end and self.date_end < today

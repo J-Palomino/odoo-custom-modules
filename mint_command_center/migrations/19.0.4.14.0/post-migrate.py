@@ -1,16 +1,13 @@
-"""Post-migration for 19.0.4.14.0.
+"""
+Post-migration for 19.0.4.14.0 — back-fill mint.deal.submission.window
+from legacy preferred_start_date / preferred_end_date.
 
-Two independent, idempotent backfills that collided on the same version number
-on the main and staging lines — combined during the main→staging reconcile
-(2026-06). Both are safe to re-run.
+Creates exactly one window row per submission that:
+  - has both preferred_start_date AND preferred_end_date set
+  - has no window_ids yet (idempotent — re-running won't dup)
 
-  1. mint_deal_submission_window      ← legacy preferred_start_date/end_date
-                                        (main line)
-  2. mint_deal_submission_market_rel  ← legacy single market_id, for the
-                                        #93723 multi-market m2m (staging line)
-
-`preferred_days` (free-text, e.g. "Mon, Wed, Fri") is intentionally NOT parsed
-into windows — too lossy; it stays on the legacy field for staff reference.
+`preferred_days` (free-text, e.g. "Mon, Wed, Fri") is intentionally NOT
+parsed — too lossy. It stays on the legacy fields for staff reference.
 """
 import logging
 
@@ -21,10 +18,10 @@ def migrate(cr, version):
     if not version:
         return
 
-    # 1. Back-fill mint.deal.submission.window from legacy preferred dates.
     _logger.info(
         "mint_command_center 19.0.4.14.0: back-filling deal-submission windows"
     )
+
     cr.execute(
         """
         INSERT INTO mint_deal_submission_window
@@ -42,39 +39,8 @@ def migrate(cr, version):
            )
         """
     )
+    inserted = cr.rowcount
     _logger.info(
         "mint_command_center 19.0.4.14.0: back-filled %s window row(s)",
-        cr.rowcount,
-    )
-
-    # 2. Back-fill the #93723 multi-market m2m from the legacy single market_id.
-    #    The relation table only exists once mint.deal.submission.market_ids is
-    #    loaded; guard so a partial upgrade doesn't crash.
-    cr.execute(
-        "SELECT 1 FROM information_schema.tables "
-        "WHERE table_name = 'mint_deal_submission_market_rel'"
-    )
-    if not cr.fetchone():
-        _logger.warning(
-            "mint_deal_submission_market_rel does not exist post-upgrade; "
-            "skipping market backfill. Check the m2m field definition on "
-            "mint.deal.submission.market_ids."
-        )
-        return
-
-    cr.execute(
-        """
-        INSERT INTO mint_deal_submission_market_rel (submission_id, market_id)
-        SELECT id, market_id
-          FROM mint_deal_submission
-         WHERE market_id IS NOT NULL
-           AND id NOT IN (
-               SELECT submission_id FROM mint_deal_submission_market_rel
-           )
-        """
-    )
-    _logger.info(
-        "mint_command_center 19.0.4.14.0: backfilled %d row(s) into "
-        "mint_deal_submission_market_rel from legacy market_id",
-        cr.rowcount,
+        inserted,
     )

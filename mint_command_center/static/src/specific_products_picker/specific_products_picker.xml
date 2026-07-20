@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="mint_command_center.SpecificProductsField">
+        <div class="o_mdcc_specific_products" data-testid="mdcc-specific-products">
+            <div class="d-flex flex-wrap align-items-center gap-1">
+                <span t-foreach="tags" t-as="tag" t-key="tag.id"
+                      class="o_tag badge text-bg-light border d-inline-flex align-items-center">
+                    <span t-esc="tag.text"/>
+                    <i t-if="!props.readonly"
+                       class="fa fa-times ms-1 o_mdcc_tag_remove"
+                       role="button" title="Remove"
+                       t-on-click="() => this.removeOne(tag.resId)"/>
+                </span>
+                <span t-if="!tags.length" class="text-muted fst-italic">
+                    No specific products — deal stays brand-wide.
+                </span>
+            </div>
+            <div t-if="!props.readonly" class="mt-1 d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-sm btn-secondary"
+                        data-testid="mdcc-browse-products" t-on-click="openPicker">
+                    <i class="fa fa-search me-1"/>Browse &amp; select products
+                </button>
+                <button t-if="tags.length" type="button"
+                        class="btn btn-sm btn-link text-danger p-0"
+                        data-testid="mdcc-clear-all" t-on-click="clearAll">
+                    Clear all (<t t-esc="tags.length"/>)
+                </button>
+            </div>
+        </div>
+    </t>
+
+    <t t-name="mint_command_center.ProductPickerDialog">
+        <Dialog title="props.title" size="'lg'">
+            <div class="o_mdcc_picker" data-testid="mdcc-picker">
+                <div class="mb-2">
+                    <input type="text" class="form-control"
+                           placeholder="Search products by name or SKU…"
+                           data-testid="mdcc-picker-search"
+                           t-on-input="onSearchInput"/>
+                </div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <CheckBox value="allOnPageSelected"
+                                  indeterminate="someOnPageSelected and !allOnPageSelected"
+                                  onChange="() => this.toggleSelectPage()">
+                            <span class="small">Select page</span>
+                        </CheckBox>
+                        <span class="text-muted small" data-testid="mdcc-picker-count">
+                            <t t-esc="state.selected.size"/> selected
+                        </span>
+                    </div>
+                    <button t-if="state.selected.size" type="button"
+                            class="btn btn-sm btn-link text-danger p-0"
+                            data-testid="mdcc-picker-clear" t-on-click="clearSelection">
+                        Clear selection
+                    </button>
+                </div>
+                <div class="o_mdcc_picker_list border rounded">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <tbody>
+                            <tr t-foreach="state.records" t-as="rec" t-key="rec.id">
+                                <td style="width: 2.5rem;">
+                                    <CheckBox value="isSelected(rec.id)"
+                                              onChange="() => this.toggle(rec.id)">
+                                        <span t-esc="rec.display_name"/>
+                                    </CheckBox>
+                                </td>
+                            </tr>
+                            <tr t-if="!state.records.length and !state.loading">
+                                <td class="text-muted text-center p-3">
+                                    No matching products.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-end mt-2">
+                    <Pager offset="state.offset" limit="state.limit"
+                           total="state.total" onUpdate="(p) => this.onPager(p)"/>
+                </div>
+            </div>
+            <t t-set-slot="footer">
+                <button type="button" class="btn btn-primary"
+                        data-testid="mdcc-picker-confirm" t-on-click="confirm">
+                    Select (<t t-esc="state.selected.size"/>)
+                </button>
+                <button type="button" class="btn btn-secondary" t-on-click="discard">
+                    Discard
+                </button>
+            </t>
+        </Dialog>
+    </t>
+
+</templates>

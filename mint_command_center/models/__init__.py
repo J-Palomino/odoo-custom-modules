@@ -35,5 +35,6 @@ from . import ambassador
 from . import ambassador_shift
 from . import project_task_daisy
 from . import project_task_sdlc
+from . import maintenance_request_daisy
 from . import dutchie_publish
 from . import dutchie_publish_review

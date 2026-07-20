@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="mint_command_center.WeightPickerField">
+        <div class="o_mdcc_weight_picker" data-testid="mdcc-weight-picker">
+            <div class="d-flex flex-wrap align-items-center gap-1">
+                <span t-foreach="tags" t-as="tag" t-key="tag.key"
+                      class="o_tag badge text-bg-light border d-inline-flex align-items-center">
+                    <span t-esc="tag.text"/>
+                    <i t-if="!props.readonly"
+                       class="fa fa-times ms-1 o_mdcc_tag_remove"
+                       role="button" title="Remove"
+                       t-on-click="() => this.removeOne(tag.key)"/>
+                </span>
+                <span t-if="!tags.length" class="text-muted fst-italic">
+                    No weight filter — all sizes shown.
+                </span>
+            </div>
+            <div t-if="!props.readonly" class="mt-1 d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-sm btn-secondary"
+                        data-testid="mdcc-browse-weights"
+                        t-att-disabled="!options.length"
+                        t-on-click="openPicker">
+                    <i class="fa fa-search me-1"/>Browse &amp; select weights
+                </button>
+                <button t-if="tags.length" type="button"
+                        class="btn btn-sm btn-link text-danger p-0"
+                        data-testid="mdcc-weights-clear-all" t-on-click="clearAll">
+                    Clear all (<t t-esc="tags.length"/>)
+                </button>
+                <span t-if="!options.length" class="text-muted small fst-italic">
+                    Pick a brand (and optionally categories) to load in-stock weights.
+                </span>
+            </div>
+        </div>
+    </t>
+
+    <t t-name="mint_command_center.WeightPickerDialog">
+        <Dialog title="props.title" size="'md'">
+            <div class="o_mdcc_weight_dialog" data-testid="mdcc-weight-dialog">
+                <div class="mb-2">
+                    <input type="text" class="form-control"
+                           placeholder="Filter weights…"
+                           data-testid="mdcc-weight-search"
+                           t-on-input="onSearchInput"/>
+                </div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <CheckBox value="allShownSelected"
+                                  indeterminate="someShownSelected and !allShownSelected"
+                                  onChange="() => this.toggleSelectShown()">
+                            <span class="small">Select all</span>
+                        </CheckBox>
+                        <span class="text-muted small" data-testid="mdcc-weight-count">
+                            <t t-esc="state.selected.size"/> selected
+                        </span>
+                    </div>
+                    <button t-if="state.selected.size" type="button"
+                            class="btn btn-sm btn-link text-danger p-0"
+                            data-testid="mdcc-weight-clear" t-on-click="clearSelection">
+                        Clear selection
+                    </button>
+                </div>
+                <div class="o_mdcc_weight_list border rounded">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <tbody>
+                            <tr t-foreach="filteredOptions" t-as="opt" t-key="opt.key">
+                                <td>
+                                    <CheckBox value="isSelected(opt.key)"
+                                              onChange="() => this.toggle(opt.key)">
+                                        <span t-esc="opt.label"/>
+                                        <span class="text-muted small ms-2">
+                                            (<t t-esc="opt.count"/> product<t t-if="opt.count != 1">s</t>)
+                                        </span>
+                                    </CheckBox>
+                                </td>
+                            </tr>
+                            <tr t-if="!filteredOptions.length">
+                                <td class="text-muted text-center p-3">
+                                    No matching weights.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <t t-set-slot="footer">
+                <button type="button" class="btn btn-primary"
+                        data-testid="mdcc-weight-confirm" t-on-click="confirm">
+                    Select (<t t-esc="state.selected.size"/>)
+                </button>
+                <button type="button" class="btn btn-secondary" t-on-click="discard">
+                    Discard
+                </button>
+            </t>
+        </Dialog>
+    </t>
+
+</templates>

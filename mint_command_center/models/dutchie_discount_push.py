@@ -25,9 +25,11 @@ import urllib.request
 from odoo import api, fields, models
 from odoo.addons.mint_api_v2.models.discount_canonical import (
     THRESHOLD_TYPE_ID_BY_ODOO,
+    application_method_id_for,
     calc_method_id_for,
     discount_value_for,
     parse_raw_restriction,
+    redemption_fields_for,
 )
 
 from .deal_mixins import coerce_dutchie_ids
@@ -169,6 +171,16 @@ class PtlDayDutchiePush(models.Model):
             return int(discount.item_group_type_id)
         return self.ITEM_GROUP_TYPE_ID_FALLBACK
 
+    def _resolve_application_method_id(self, discount):
+        # Single source of truth in discount_canonical (shared with the
+        # submission publish path in dutchie_publish.py).
+        return application_method_id_for(discount.application_method)
+
+    def _resolve_redemption_fields(self, discount):
+        # Single source of truth in discount_canonical. Verified single-use
+        # shape comes from there; see redemption_fields_for().
+        return redemption_fields_for(discount.maximum_usage_count)
+
     def _build_backoffice_url(self, discount_id, loc_id, lsp_id):
         """Build the Dutchie backoffice review URL for a discount.
 
@@ -225,6 +237,21 @@ class PtlDayDutchiePush(models.Model):
         ], order='id desc', limit=1)
         existing_int = prior.dutchie_discount_id or 0
 
+        # Welcome free pre-roll (task #102149): a standalone code coupon with a
+        # fixed, live-verified reward shape (mirrors PHXNTPR 383481) and a per-LSP
+        # pre-roll category. Branch BEFORE the PTL-specific logic below, which
+        # reads self.market_id (this method can be called on an empty mint.ptl.day
+        # for welcome coupons, which have no market/day).
+        if getattr(discount, 'is_welcome_preroll', False):
+            cfg = discount._welcome_preroll_config()
+            cat = cfg['lsp_categories'].get(self._resolve_lsp_id(store))
+            if not cat:
+                raise ValueError(
+                    'welcome pre-roll: no pre-roll category configured for LSP %s '
+                    '(store %s) — refusing to publish an un-scoped free coupon'
+                    % (self._resolve_lsp_id(store), store.id))
+            return self._welcome_preroll_payload(discount, store, existing_int, cat)
+
         name = (discount.name or '')[:120]
         calc_method_id = self._resolve_calc_method_id(discount)
         item_group_type_id = self._resolve_item_group_type_id(discount)
@@ -261,9 +288,33 @@ class PtlDayDutchiePush(models.Model):
             'Product':  self._resolve_product_restriction(discount),
         }
 
+        # Day-of-week scoped to THIS push's market (self.market_id) and bounded
+        # by the discount's validity span. A deal plotted Mon-in-AZ + Fri-in-MO
+        # publishes Mon only to AZ and Fri only to MO — reading the market-blind
+        # booleans on mint.discount leaked both weekdays into both markets (#7),
+        # and a >60-day-out deal collapsed to all-False = every-day (#6). The
+        # all-False guard in _push_one_discount refuses to send an empty set for
+        # a day-scoped deal.
+        if self.market_id:
+            day_bools = discount._compute_weekday_bools(market=self.market_id)
+        else:
+            # Standalone publish (no PTL day/market) — e.g. a manually-authored
+            # code coupon pushed via action_publish_to_dutchie. Use the discount's
+            # own day flags; all-False ⇒ every day (Dutchie default).
+            day_bools = {d: bool(getattr(discount, d, False)) for d in
+                         ('sunday', 'monday', 'tuesday', 'wednesday',
+                          'thursday', 'friday', 'saturday')}
+
+        # Code-coupon support: application method + register code + usage cap are
+        # read from mint.discount (default to an automatic, code-less, uncapped
+        # deal — unchanged for existing PTL deals).
+        app_method_id = self._resolve_application_method_id(discount)
+        discount_code = discount.dutchie_discount_code or ''
+        redemption = self._resolve_redemption_fields(discount)
+
         return {
             'Id': existing_int,
-            'ApplicationMethodId': 1,  # 1=Automatic; 2=Manual; 3=Code
+            'ApplicationMethodId': app_method_id,  # 1=Automatic; 2=Manual; 3=Code
             'CanStackAutomatically': bool(
                 discount.can_stack_automatically
                 if discount.can_stack_automatically is not None
@@ -284,7 +335,7 @@ class PtlDayDutchiePush(models.Model):
             # unless ops customizes via mint.discount in the future.
             'OnlineName': name,
             'PaymentRestrictions': {'PayByBankSignupIncentive': False},
-            'RedemptionLimit': '',
+            'RedemptionLimit': redemption['RedemptionLimit'],
             'RequireManagerApproval': False,
             'RestrictToGroupIds': [],
             'RestrictToSegmentIds': [],
@@ -309,19 +360,19 @@ class PtlDayDutchiePush(models.Model):
             'SavedWithAdvancedOptions': False,
             'ValidDateFrom': self._format_dutchie_date(discount.valid_from),
             'ValidDateTo': self._format_dutchie_date(discount.valid_until),
-            'DiscountCode': '',
-            'MaxRedemptions': None,
-            'RedemptionLimitCountingMode': 0,
+            'DiscountCode': discount_code,
+            'MaxRedemptions': redemption['MaxRedemptions'],
+            'RedemptionLimitCountingMode': redemption['RedemptionLimitCountingMode'],
             # Day-of-week. mint.discount stores monday..sunday as separate
             # booleans (set by _recompute_day_booleans from the PTL day binding).
             # If all 7 are False, Dutchie treats the discount as every-day.
-            'Sunday': bool(discount.sunday),
-            'Monday': bool(discount.monday),
-            'Tuesday': bool(discount.tuesday),
-            'Wednesday': bool(discount.wednesday),
-            'Thursday': bool(discount.thursday),
-            'Friday': bool(discount.friday),
-            'Saturday': bool(discount.saturday),
+            'Sunday': day_bools['sunday'],
+            'Monday': day_bools['monday'],
+            'Tuesday': day_bools['tuesday'],
+            'Wednesday': day_bools['wednesday'],
+            'Thursday': day_bools['thursday'],
+            'Friday': day_bools['friday'],
+            'Saturday': day_bools['saturday'],
             'MenuDisplayRank': 0,
             # Customer-facing menu card name. Without DiscountMenuDisplayDetails
             # /MenuDisplayName, Dutchie's online menu falls back to
@@ -335,6 +386,58 @@ class PtlDayDutchiePush(models.Model):
                 'MenuDisplayName': name,
                 'MenuDisplayDescription': '',
                 'DiscountMenuDisplayId': None,
+            },
+        }
+
+    def _welcome_preroll_payload(self, discount, store, existing_int, category_id):
+        """Dutchie payload for a welcome free pre-roll (task #102149).
+
+        Fixed, live-verified shape from record PHXNTPR (Dutchie Id 383481):
+        ApplicationMethodId=3 (Code) + DiscountCode, 100%-off exactly one item
+        (percent value 1.0 + 1-item threshold), pre-roll Category (per-LSP) +
+        0.7g Weight, single-use (MaxRedemptions), in-store only. Day booleans
+        left None ⇒ every day. ExternalId keyed to the partner for idempotent
+        re-publish.
+        """
+        empty = lambda: {'IsExclusion': False, 'RestrictionIds': []}
+        restrictions = {k: empty() for k in (
+            'Strain', 'Weight', 'Category', 'Tag', 'InventoryTag',
+            'Tier', 'Brand', 'Vendor', 'Product')}
+        restrictions['Category'] = {'IsExclusion': False, 'RestrictionIds': [int(category_id)]}
+        restrictions['Weight'] = {'IsExclusion': False, 'RestrictionIds': [0.7]}
+        pid = discount.redemption_partner_id.id or discount.id
+        max_uses = int(discount.maximum_usage_count or 1) or 1
+        return {
+            'Id': existing_int, 'ApplicationMethodId': 3,
+            'CanStackAutomatically': False, 'Constraints': [],
+            'DiscountCode': discount.dutchie_discount_code or '',
+            'DiscountDescription': f'lgm | welcome free pre-roll (partner {pid})',
+            'ExternalId': f'lgm_welcome_{pid}',
+            'FirstTimeCustomerOnly': 0, 'IgnoreNetTax': False,
+            'IsAvailableOnline': False, 'IsBundledDiscount': False,
+            'LocationRestrictions': [], 'OnlineName': 'Welcome Free Pre-Roll',
+            'PaymentRestrictions': {'PayByBankSignupIncentive': False},
+            'RedemptionLimit': None, 'RequireManagerApproval': False,
+            'RestrictToGroupIds': [], 'RestrictToSegmentIds': [],
+            'PlatformTypeRestrictions': [{'PlatformTypeId': 2, 'IsExclusion': False}],
+            'OrderTypeRestrictions': [],
+            'Reward': {
+                'DiscountRewardId': None, 'HasThreshold': True, 'ApplyToOnlyOneItem': False,
+                'CalculationMethodId': 2, 'DiscountValue': 1, 'IncludeNonCannabis': True,
+                'ItemGroupTypeId': 5, 'ManualDefaultApplyTo': 1, 'Restrictions': restrictions,
+                'ThresholdMax': 1, 'ThresholdMin': 1, 'ThresholdTypeId': 1,
+            },
+            'SavedWithAdvancedOptions': False,
+            'ValidDateFrom': self._format_dutchie_date(discount.valid_from),
+            'ValidDateTo': self._format_dutchie_date(discount.valid_until),
+            'MaxRedemptions': max_uses, 'RedemptionLimitCountingMode': 0,
+            'Sunday': None, 'Monday': None, 'Tuesday': None, 'Wednesday': None,
+            'Thursday': None, 'Friday': None, 'Saturday': None,
+            'MenuDisplayRank': 0,
+            'DiscountMenuDisplayDetails': {
+                'DiscountId': existing_int, 'MenuDisplayImageUrl': '',
+                'MenuDisplayName': 'Welcome Free Pre-Roll',
+                'MenuDisplayDescription': '', 'DiscountMenuDisplayId': None,
             },
         }
 
@@ -381,6 +484,27 @@ class PtlDayDutchiePush(models.Model):
             return
 
         for discount in discounts:
+            # Cross-path mutex (#2 stopgap): if this deal's live discount is
+            # already owned by the submission/convert path, skip the PTL live
+            # push to avoid a duplicate record. First live writer wins; same-path
+            # re-publish is allowed. Dry-run never claims/blocks (no live write).
+            if mode == 'live' and discount.ptl_deal_id and \
+                    not discount.ptl_deal_id._dutchie_claim('ptl'):
+                _logger.info(
+                    "Dutchie push: discount %s skipped — deal already published "
+                    "via submission path (dutchie_publish_owner='submission')",
+                    discount.id)
+                Log.create({
+                    'discount_id': discount.id,
+                    'company_id': enabled_stores[:1].id,
+                    'mode': mode,
+                    'success': False,
+                    'error_message': (
+                        "Skipped: deal already published to Dutchie via the "
+                        "submission/convert path (#2 mutex). Republish from the "
+                        "submission, or clear dutchie_publish_owner to switch."),
+                })
+                continue
             # Honor per-discount store filter if set
             target_stores = discount.store_ids & enabled_stores if discount.store_ids \
                             else enabled_stores
@@ -541,23 +665,33 @@ class PtlDayDutchiePush(models.Model):
     # Conversion factors to grams (Dutchie Reward.Restrictions.Weight.RestrictionIds
     # expects gram floats, per __tests__/fixtures/discount-381839.json + test at
     # discountSyncTransform.test.js:687 (RestrictionIds: [1.0] = 1 gram).
+    WEIGHT_UNIT_TO_GRAMS = {
+        'g':  1.0,
+        'mg': 0.001,
+        'oz': 28.3495,
+        # 'ct' = count, NOT a weight — produces no Weight restriction
+    }
 
     def _resolve_weight_restriction(self, discount):
         """{IsExclusion, RestrictionIds:[<gram_float>]} for Reward.Restrictions.Weight.
 
-        ID-based only: reads mint.discount.weight_ids (each a gram value in the
-        canonical mint.discount.weight catalog) — NO name/regex parsing. The
-        catalog stores grams already, so the RestrictionIds are the selected
-        values de-duplicated and rounded to 4 decimals (Dutchie's canonical
-        precision, avoids 0.99999999 vs 1.0 drift). Empty weight_ids → no
-        Weight restriction.
+        Reads weight_value + weight_unit from the linked mint.ptl.deal (the
+        weight feature is on ptl.deal, not mint.discount — landed in commit
+        bdeb5d1). Returns empty default when unit is 'ct' (count, not weight)
+        or fields are unpopulated.
         """
-        ids = sorted({
-            round(float(w.value), 4)
-            for w in discount.weight_ids
-            if w.value and w.value > 0
-        })
-        return {'IsExclusion': False, 'RestrictionIds': ids}
+        deal = discount.ptl_deal_id
+        if not deal:
+            return {'IsExclusion': False, 'RestrictionIds': []}
+        value = getattr(deal, 'weight_value', 0) or 0
+        unit = getattr(deal, 'weight_unit', '') or ''
+        if not value or unit not in self.WEIGHT_UNIT_TO_GRAMS:
+            return {'IsExclusion': False, 'RestrictionIds': []}
+        grams = float(value) * self.WEIGHT_UNIT_TO_GRAMS[unit]
+        # Dutchie expects float grams with reasonable precision (3.5, 7.0, etc.)
+        # Round to 4 decimals to avoid 0.99999999 vs 1.0 mismatches with their
+        # canonical enum.
+        return {'IsExclusion': False, 'RestrictionIds': [round(grams, 4)]}
 
     def _resolve_dutchie_amount(self, discount):
         """Compute the Amount Dutchie expects for this discount's Reward.
@@ -630,6 +764,60 @@ class PtlDayDutchiePush(models.Model):
                     f'this store can push to Dutchie.'
                 ),
             })
+            return False
+
+        # All-False day guard (#6): Dutchie reads all-7-days-False as "active
+        # EVERY day". A day-scoped deal (one with plotted days) that resolves to
+        # NO weekday in this market/span is a bug, not an every-day deal — refuse
+        # the write rather than silently running it daily. Continuous deals with
+        # no plotted days legitimately use all-False and are exempt.
+        disc = payload['discount']
+        deal = discount.ptl_deal_id
+        if (not is_delete and deal and deal.day_ids and not any(
+                disc.get(d) for d in ('Sunday', 'Monday', 'Tuesday', 'Wednesday',
+                                      'Thursday', 'Friday', 'Saturday'))):
+            Log.create({
+                'discount_id': discount.id,
+                'company_id': store.id,
+                'dutchie_loc_id': str(store.dutchie_store_id or ''),
+                'mode': mode,
+                'request_payload': json.dumps(payload, default=str)[:8000],
+                'success': False,
+                'error_message': (
+                    'Skipped: day-scoped deal resolved to NO weekday for market '
+                    '%s within [%s, %s]. Sending all-False would make Dutchie run '
+                    'this EVERY day. Check the deal is plotted on published days '
+                    'inside its validity window.' % (
+                        self.market_id.code if self.market_id else '?',
+                        discount.valid_from, discount.valid_until)
+                ),
+            })
+            return False
+
+        # Resurrection guard (#9): re-publishing (non-delete) a discount that was
+        # deactivated in Dutchie reuses its id and POSTs without IsDeleted,
+        # reviving it. Allow that ONLY when the deal is genuinely active again
+        # (re-approved / live); otherwise a stray push would silently un-delete
+        # an expired/revoked deal. The legitimate reactivation path clears the
+        # flag on its successful publish below.
+        if (not is_delete and mode == 'live' and discount.dutchie_is_deleted
+                and not (discount.ptl_deal_id
+                         and discount.ptl_deal_id.state in ('approved', 'live'))):
+            Log.create({
+                'discount_id': discount.id,
+                'company_id': store.id,
+                'dutchie_loc_id': str(store.dutchie_store_id or ''),
+                'mode': mode,
+                'request_payload': json.dumps(payload, default=str)[:8000],
+                'success': False,
+                'error_message': (
+                    "Skipped: discount is deactivated in Dutchie "
+                    "(dutchie_is_deleted) and its deal is not active — refusing to "
+                    "resurrect it. Re-approve the deal to republish, or clear "
+                    "dutchie_is_deleted manually."),
+            })
+            _logger.info("Dutchie push: discount %s skipped — resurrection guard "
+                         "(deactivated + deal not active)", discount.id)
             return False
 
         if is_delete:
@@ -706,6 +894,15 @@ class PtlDayDutchiePush(models.Model):
             log_vals['error_message'] = f'{type(e).__name__}: {str(e)[:500]}'
 
         Log.create(log_vals)
+        # #9: a successful live (re)publish reactivates the discount in Dutchie,
+        # so clear the stale deleted flag. The deactivate path sets it True but
+        # nothing cleared it, so Odoo's state drifted from Dutchie's.
+        if not is_delete and log_vals.get('success') and discount.dutchie_is_deleted:
+            try:
+                discount.sudo().write({'dutchie_is_deleted': False})
+            except Exception:
+                _logger.warning('Could not clear dutchie_is_deleted on discount %s',
+                                discount.id)
         # Structured audit line — ships to Grafana Loki via mint_loki_logger.
         # The Log table above is the queryable Odoo audit; this line is the
         # cross-service one (same event name as mintinvsvc dealAudit).

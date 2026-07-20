@@ -118,33 +118,6 @@ class PtlDay(models.Model):
         for rec in self:
             rec.deal_count = len(rec.deal_ids)
 
-    # ─── Deals Sheet report ──────────────────────────────────────────────
-
-    # Category display order for the PTL Daily Deals Sheet (Featured first).
-    _DEALS_SHEET_ORDER = [
-        'Featured Deals', 'Flower', 'Pre-Rolls', 'Vapes',
-        'Edibles & Tinctures', 'Concentrates & Topicals',
-    ]
-
-    def _report_sheet_groups(self):
-        """Return [(category_label, deals_recordset)] for the deals sheet —
-        Featured first, then the standard category order, trailing 'Other'."""
-        self.ensure_one()
-        buckets = {}
-        for deal in self.deal_ids:
-            cat = deal.product_category or 'Other'
-            if deal.is_featured or cat == 'Featured Deals':
-                cat = 'Featured Deals'
-            buckets.setdefault(cat, self.env['mint.ptl.deal'])
-            buckets[cat] |= deal
-        groups = []
-        for cat in self._DEALS_SHEET_ORDER:
-            if cat in buckets:
-                groups.append((cat, buckets.pop(cat).sorted(lambda d: (d.sequence, d.name or ''))))
-        for cat in sorted(buckets):
-            groups.append((cat, buckets[cat].sorted(lambda d: (d.sequence, d.name or ''))))
-        return groups
-
     # ─── Dynamic Store UUID Map ──────────────────────────────────────────
 
     def _get_store_uuid_map(self):
@@ -182,13 +155,7 @@ class PtlDay(models.Model):
         # the Daily Deals page. (Odoo #93649 AC05.)
         self.write({'state': 'published'})
 
-        # Exclude expired deals from publish — a deal whose end date is in the
-        # past must never reach the storefront (Odoo #94502 phase 2). Uses the
-        # is_expired helper on mint.ptl.deal added in phase 1.
-        active_deals = self.deal_ids.filtered(lambda d: not d.is_expired)
-        skipped_expired = len(self.deal_ids) - len(active_deals)
-
-        for deal in active_deals:
+        for deal in self.deal_ids:
             discount = self._ensure_discount(deal)
             Discount._recompute_day_booleans(discount)
             discount_ids.append(discount.id)
@@ -202,8 +169,7 @@ class PtlDay(models.Model):
         self._push_discounts_to_dutchie(discount_ids)
 
         self.message_post(
-            body=f"Published {len(discount_ids)} deal(s) to frontend."
-                 + (f" Skipped {skipped_expired} expired deal(s)." if skipped_expired else ""),
+            body=f"Published {len(discount_ids)} deal(s) to frontend.",
             message_type='comment',
         )
 
@@ -390,12 +356,6 @@ class PtlDay(models.Model):
         # narrows the discount without widening anything else.
         if deal.explicit_product_ids:
             vals['product_ids'] = [(6, 0, deal.explicit_product_ids.ids)]
-
-        # Weight targeting — ID-based, forwarded straight to mint.discount.
-        # weight_ids, which builds Dutchie's Reward.Restrictions.Weight. Always
-        # written (even when empty) so de-selecting a weight on the deal clears
-        # the restriction on the existing discount instead of leaving a stale one.
-        vals['weight_ids'] = [(6, 0, deal.weight_ids.ids)]
 
         return vals
 

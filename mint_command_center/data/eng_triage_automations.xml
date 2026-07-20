@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+      Engineering maintenance-ticket triage — dispatch Eriq (daisy.agent).
+      On entry to "In Progress" (stage_id=2) for the Engineering team
+      (maintenance_team_id=4), enqueue Eriq via the queue
+      (maintenance_request_daisy._eng_dispatch_triage_on_stage). The sibling
+      "kanban_state -> blocked" trigger is handled in Python (write() override
+      in maintenance_request_daisy.py), not here — see that file's docstring
+      for why.
+
+      base.automation correctness (learned the hard way, #94837, reused here):
+        - action_server_ids is a ONE2MANY (inverse base_automation_id on
+          ir.actions.server) -> this automation needs its OWN server action
+          with usage='base_automation'. A shared/reused action silently fails
+          to link.
+        - on_stage_set requires trg_field_ref = the target stage_id (the
+          stage the automation fires on); filter_domain alone is not enough.
+      Pattern mirrors data/sdlc_stage_automations.xml.
+    -->
+
+    <!-- In Progress (2) + Engineering team (4) -> Eriq -->
+    <record id="eng_triage_auto_in_progress" model="base.automation">
+        <field name="name">Eng Triage: dispatch Eriq on In Progress (Engineering team)</field>
+        <field name="model_id" ref="maintenance.model_maintenance_request"/>
+        <field name="trigger">on_stage_set</field>
+        <field name="trg_field_ref">2</field>
+        <field name="filter_domain">[('maintenance_team_id','=',4),('stage_id','=',2)]</field>
+    </record>
+    <record id="eng_triage_act_in_progress" model="ir.actions.server">
+        <field name="name">Eng Triage: enqueue Eriq</field>
+        <field name="model_id" ref="maintenance.model_maintenance_request"/>
+        <field name="state">code</field>
+        <field name="usage">base_automation</field>
+        <field name="base_automation_id" ref="eng_triage_auto_in_progress"/>
+        <field name="code">records._eng_dispatch_triage_on_stage()</field>
+    </record>
+</odoo>

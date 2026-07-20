@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.6.56.0',
+    'version': '19.0.6.63.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -41,6 +41,7 @@
         'bus',
         'project',
         'base_automation',
+        'maintenance',
         'website',
         'crm',
         'report_xlsx',
@@ -48,13 +49,6 @@
         'mint_push',
         'mint_banner',
         'mint_api_v2',
-        # required by the marketing ROLE groups in security/security_groups.xml
-        'mass_mailing',
-        'marketing_card',
-        'im_livechat',
-        'project',
-        'website_slides',
-        'analytic',
     ],
     'assets': {
         'web.assets_backend': [
@@ -65,6 +59,12 @@
             'mint_command_center/static/src/ptl_day_grid/ptl_day_grid.esm.js',
             'mint_command_center/static/src/ptl_day_grid/ptl_day_grid.xml',
             'mint_command_center/static/src/ptl_day_grid/ptl_day_grid.scss',
+            'mint_command_center/static/src/weight_picker/weight_picker.esm.js',
+            'mint_command_center/static/src/weight_picker/weight_picker.xml',
+            'mint_command_center/static/src/weight_picker/weight_picker.scss',
+            'mint_command_center/static/src/specific_products_picker/specific_products_picker.esm.js',
+            'mint_command_center/static/src/specific_products_picker/specific_products_picker.xml',
+            'mint_command_center/static/src/specific_products_picker/specific_products_picker.scss',
         ],
         'web.assets_frontend_lazy': [
             'mint_command_center/static/src/outdated_page_watcher_patch.js',
@@ -75,10 +75,13 @@
         'security/ir.model.access.csv',
         'security/record_rules.xml',
         'data/ptl_cron_data.xml',
+        'data/welcome_preroll_cron.xml',
         'data/placement_data.xml',
         'data/billboard_data.xml',
         'data/sdlc_stage_automations.xml',
+        'data/eng_triage_automations.xml',
         'views/ptl_views.xml',
+        'views/mint_discount_coupon_views.xml',
         'views/product_line_review_views.xml',
         'views/deal_submission_views.xml',
         'views/brand_calendar_views.xml',

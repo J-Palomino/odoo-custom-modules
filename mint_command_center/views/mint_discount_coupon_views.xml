@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- One-off Dutchie code coupons (task #102149): expose the code-coupon
+         fields + a manual "Publish to Dutchie" button on the mint.discount form,
+         and a dedicated "Coupon Codes" menu. -->
+    <record id="view_mint_discount_form_coupon" model="ir.ui.view">
+        <field name="name">mint.discount.form.coupon</field>
+        <field name="model">mint.discount</field>
+        <field name="inherit_id" ref="mint_api_v2.view_mint_discount_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//header" position="inside">
+                <button name="action_publish_to_dutchie" type="object"
+                        string="Publish to Dutchie" class="btn-primary"
+                        invisible="application_method != 'code'"
+                        confirm="Publish this code coupon to Dutchie? This respects the push mode (off / dry-run / live). No live Dutchie write unless mode = live."/>
+            </xpath>
+
+            <xpath expr="//notebook" position="inside">
+                <page string="Coupon Code (Dutchie POS)"
+                      invisible="discount_type == 'loyalty_redemption'">
+                    <group>
+                        <group>
+                            <field name="application_method"/>
+                            <field name="dutchie_discount_code"
+                                   required="application_method == 'code'"
+                                   invisible="application_method != 'code'"
+                                   placeholder="e.g. WELCOME-PR-123 or SUMMER25"/>
+                            <field name="maximum_usage_count"
+                                   invisible="application_method != 'code'"
+                                   help="Total redemptions cap. Set 1 for a single-use one-off code."/>
+                        </group>
+                        <group>
+                            <field name="is_welcome_preroll" readonly="1"/>
+                            <field name="redemption_partner_id"
+                                   invisible="not is_welcome_preroll" readonly="1"/>
+                        </group>
+                    </group>
+                    <div class="text-muted" invisible="application_method != 'code'">
+                        A code coupon publishes to Dutchie as
+                        <b>ApplicationMethodId&#160;3</b> — budtenders type or scan the
+                        code at the register. Scope it under <b>Targeting</b>; set
+                        <b>Maximum Usage Count</b> to 1 for a one-off code, then use
+                        <b>Publish to Dutchie</b>. Redemption status syncs back hourly.
+                    </div>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_mint_coupon_codes" model="ir.actions.act_window">
+        <field name="name">Coupon Codes</field>
+        <field name="res_model">mint.discount</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('application_method', '=', 'code')]</field>
+        <field name="context">{'default_application_method': 'code', 'default_source': 'ptl', 'default_maximum_usage_count': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create a one-off Dutchie code coupon</p>
+            <p>Set an Application Method of <b>Code</b>, a unique <b>Dutchie Discount Code</b>,
+               and Maximum Usage Count 1, scope it under Targeting, then <b>Publish to Dutchie</b>.</p>
+        </field>
+    </record>
+
+    <!-- The Coupon Codes menuitem lives in views/menu.xml, under the Loyalty
+         section. It cannot be declared here: this file loads before menu.xml,
+         and its former parent (mint_api_v2.menu_mint_discount_root) is deleted
+         by menu.xml itself — so parenting to it broke every upgrade. -->
+</odoo>
