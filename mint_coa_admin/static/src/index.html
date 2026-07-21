@@ -103,8 +103,8 @@
         <div class="uploadbar">
           <strong id="curBrand">Select a brand</strong>
           <span style="flex:1"></span>
-          <input id="file" type="file" accept="application/pdf" />
-          <button id="upload" disabled>Upload PDF</button>
+          <input id="file" type="file" accept="application/pdf" multiple />
+          <button id="upload" disabled>Upload PDFs</button>
         </div>
         <div id="status" class="status"></div>
         <table>
@@ -296,18 +296,45 @@
           api('archive', { fileId: f.id }).then(function () { tr.remove(); setStatus('Archived.'); loadBrands(); }).catch(handleErr);
         }
 
+        function readAsBase64(file) {
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(String(reader.result).split(',')[1]); };
+            reader.onerror = function () { reject(reader.error || new Error('read failed')); };
+            reader.readAsDataURL(file);
+          });
+        }
+
         function doUpload() {
-          var file = els.file.files[0];
-          if (!file || !state.brandId) return;
-          els.upload.disabled = true; setStatus('Uploading ' + file.name + '…');
-          var reader = new FileReader();
-          reader.onload = function () {
-            var b64 = String(reader.result).split(',')[1];
-            api('upload', { directoryId: state.brandId, name: file.name, contentBase64: b64 })
-              .then(function () { setStatus('Uploaded ' + file.name + '.'); els.file.value = ''; selectBrand(state.brandId, state.brandName); loadBrands(); })
-              .catch(handleErr).then(function () { els.upload.disabled = false; });
-          };
-          reader.readAsDataURL(file);
+          var files = Array.prototype.slice.call(els.file.files);
+          if (!files.length || !state.brandId) return;
+          els.upload.disabled = true;
+          var total = files.length, failed = [];
+
+          function finish() {
+            els.file.value = '';
+            els.upload.disabled = false;
+            selectBrand(state.brandId, state.brandName);
+            loadBrands();
+            if (failed.length) setStatus('Uploaded ' + (total - failed.length) + '/' + total + '. Failed: ' + failed.join(', '));
+            else setStatus('Uploaded ' + total + ' file' + (total === 1 ? '' : 's') + '.');
+          }
+
+          // Upload one at a time so we never post a huge multi-file payload and each
+          // failure is isolated; the server upload action stays single-file.
+          function step(i) {
+            if (i >= total) { finish(); return; }
+            var file = files[i];
+            setStatus('Uploading ' + (i + 1) + '/' + total + ': ' + file.name + '…');
+            readAsBase64(file)
+              .then(function (b64) { return api('upload', { directoryId: state.brandId, name: file.name, contentBase64: b64 }); })
+              .then(function () { step(i + 1); })
+              .catch(function (e) {
+                if (e && e.message === 'unauthorized') { els.upload.disabled = false; handleErr(e); return; }
+                failed.push(file.name); step(i + 1);
+              });
+          }
+          step(0);
         }
 
         function doAddBrand() {
