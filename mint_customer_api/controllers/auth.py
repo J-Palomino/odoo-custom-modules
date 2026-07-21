@@ -361,6 +361,20 @@ class MintCustomerAuth(http.Controller):
                 'dutchie_location_id': (data.get('dutchie_location_id') or '').strip() or None,
             })
 
+            # Welcome free pre-roll — issue the customer's unique, single-use
+            # coupon at signup rather than waiting up to 30 min for the sweep
+            # cron. _issue_welcome_preroll is idempotent and self-gates on the
+            # mint.welcome_preroll config, and the cron stays as a backstop.
+            # Best-effort + guarded: unlike _enqueue_dutchie_create (which never
+            # raises), this does config reads + Dutchie pushes, so a hiccup here
+            # must not 500 an already-committed signup (→ 409-lock on retry).
+            try:
+                request.env['mint.discount'].sudo()._issue_welcome_preroll(
+                    user.partner_id.sudo())
+            except Exception as e:
+                _logger.warning('Welcome pre-roll issue failed for partner %s: %s',
+                                user.partner_id.id, e)
+
             return json_response({
                 'token': token,
                 'user': {
