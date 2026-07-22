@@ -419,7 +419,13 @@ class PtlDayDutchiePush(models.Model):
             'PaymentRestrictions': {'PayByBankSignupIncentive': False},
             'RedemptionLimit': None, 'RequireManagerApproval': False,
             'RestrictToGroupIds': [], 'RestrictToSegmentIds': [],
-            'PlatformTypeRestrictions': [{'PlatformTypeId': 2, 'IsExclusion': False}],
+            # MUST stay empty. PlatformTypeId 2 is "Online", and this coupon is
+            # in-store only (IsAvailableOnline=False) — restricting it to the
+            # online platform makes it redeemable nowhere: the register rejects
+            # it with "this coupon is not available on this origin platform".
+            # Every working Code discount in LSP 575, including the PHXNTPR
+            # pre-roll this payload mirrors, carries no platform restriction.
+            'PlatformTypeRestrictions': [],
             'OrderTypeRestrictions': [],
             'Reward': {
                 'DiscountRewardId': None, 'HasThreshold': True, 'ApplyToOnlyOneItem': False,
