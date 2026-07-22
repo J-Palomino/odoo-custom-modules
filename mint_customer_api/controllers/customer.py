@@ -133,9 +133,10 @@ class MintCustomerProfile(http.Controller):
     def get_welcome_coupon(self, **kw):
         """Return the customer's welcome free pre-roll coupon (task #102149).
 
-        The DiscountCode is rendered as a scannable Code128 barcode on /account;
-        scanning it at the register applies the Dutchie ApplicationMethodId=3
-        discount our pipeline created in Backoffice. Read-only.
+        The DiscountCode is shown on /rewards as a short typeable code (the
+        budtender keys it into the register), which applies the Dutchie
+        ApplicationMethodId=3 discount our pipeline created in Backoffice.
+        Read-only.
         """
         if request.httprequest.method == 'OPTIONS':
             return json_response({})

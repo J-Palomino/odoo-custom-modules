@@ -1,6 +1,8 @@
 import json
 import logging
+import secrets
 import urllib.request
+from datetime import timedelta
 
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError, UserError
@@ -19,6 +21,31 @@ WELCOME_PREROLL_ENABLED_LSPS_PARAM = 'mint.welcome_preroll.enabled_lsps'   # CSV
 WELCOME_PREROLL_LAUNCH_CUTOFF_PARAM = 'mint.welcome_preroll.launch_cutoff'  # only issue to partners created >= this (ISO); blank = disabled
 WELCOME_PREROLL_TTL_DAYS_PARAM = 'mint.welcome_preroll.ttl_days'            # coupon validity window
 DEFAULT_WELCOME_PREROLL_CATEGORY_JSON = '{"575": 34559}'
+
+# ── Welcome coupon code format ───────────────────────────────────────────────
+# Budtenders key these in by hand at the register, so the code has to be short
+# and unambiguous when read aloud or off a phone screen.
+#
+# It must ALSO be unguessable. Dutchie applies no customer restriction to these
+# discounts (RestrictToGroupIds/RestrictToSegmentIds are empty and there is no
+# customer field), so the secrecy of the code is the ONLY thing stopping one
+# customer from redeeming another's reward. The previous format was
+# WELCOME-PR-<partner.id> — sequential, and issued partner ids land on
+# consecutive integers in practice, so a customer could add 1 to their own code
+# and take a stranger's pre-roll. Never derive this code from a record id.
+WELCOME_CODE_PREFIX = 'MINT'
+WELCOME_CODE_LEN = 6
+# Crockford-style: no 0/O, 1/I/L (misread), no U (avoids accidental profanity).
+WELCOME_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'
+# 30**6 = 729M combinations.
+WELCOME_CODE_MAX_TRIES = 12
+# Dates are stored as Date but issuance runs in UTC. Arizona is UTC-7, so a
+# signup after 5pm local lands on the next UTC day and the coupon would be
+# future-dated — Dutchie then rejects it for the rest of that evening, exactly
+# when someone is most likely to walk into a store. Backdating by a day is
+# cheaper and more robust than resolving each customer's store timezone, and
+# covers every US market (worst case UTC-10).
+WELCOME_VALID_FROM_SLACK_DAYS = 1
 
 
 class MintDiscountPTL(models.Model):
@@ -172,6 +199,24 @@ class MintDiscountPTL(models.Model):
             'ttl_days': ttl_days,
         }
 
+    @api.model
+    def _generate_welcome_code(self):
+        """Return a fresh, unguessable, budtender-typeable coupon code.
+
+        Uses secrets (not random) because this value is the only access control
+        on the reward — see WELCOME_CODE_PREFIX above. Retries on the (unlikely)
+        collision rather than trusting 729M combinations blindly, since a
+        duplicate code would let two customers race for one Dutchie redemption.
+        """
+        Discount = self.sudo()
+        for _attempt in range(WELCOME_CODE_MAX_TRIES):
+            body = ''.join(secrets.choice(WELCOME_CODE_ALPHABET)
+                           for _ in range(WELCOME_CODE_LEN))
+            code = f'{WELCOME_CODE_PREFIX}-{body}'
+            if not Discount.search_count([('dutchie_discount_code', '=', code)]):
+                return code
+        raise UserError(_('Could not generate a unique welcome coupon code.'))
+
     def _issue_welcome_preroll(self, partner):
         """Idempotently create + publish a welcome free pre-roll for one partner.
 
@@ -191,18 +236,22 @@ class MintDiscountPTL(models.Model):
             ('redemption_partner_id', '=', partner.id),
         ], limit=1)
         if not coupon:
-            now = fields.Datetime.now()
+            # valid_from/valid_until are Date fields; writing Datetime.now()
+            # into them truncated the UTC instant, future-dating evening
+            # signups. Compute in dates and back off by the slack day.
+            starts = (fields.Date.context_today(self)
+                      - timedelta(days=WELCOME_VALID_FROM_SLACK_DAYS))
             coupon = self.sudo().create({
                 'name': (f'Welcome Free Pre-Roll — {partner.name or partner.id}')[:120],
                 'source': 'ptl',
                 'application_method': 'code',
-                'dutchie_discount_code': f'WELCOME-PR-{partner.id}',
+                'dutchie_discount_code': self._generate_welcome_code(),
                 'maximum_usage_count': 1,
                 'is_welcome_preroll': True,
                 'redemption_partner_id': partner.id,
                 'is_available_online': False,
-                'valid_from': now,
-                'valid_until': fields.Datetime.add(now, days=cfg['ttl_days']),
+                'valid_from': starts,
+                'valid_until': starts + timedelta(days=cfg['ttl_days']),
             })
 
         push = self.env['mint.ptl.day'].sudo()
