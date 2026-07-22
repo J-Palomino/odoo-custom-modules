@@ -92,7 +92,11 @@ class MintDiscountPTL(models.Model):
         # Mirror the /rewards reader's notion of "usable": not used, not expired.
         if coupon.redemption_status in ('used', 'expired', 'voided'):
             return 0
-        if coupon.valid_until and coupon.valid_until < fields.Datetime.now():
+        # valid_until is a Date, so compare against a date. Against
+        # fields.Datetime.now() this raises TypeError ("can't compare
+        # datetime.datetime to datetime.date"), which the caller's best-effort
+        # except swallows — silently dropping EVERY welcome push.
+        if coupon.valid_until and coupon.valid_until < fields.Date.context_today(coupon):
             return 0
 
         sent = self.env['mint.push.subscription'].sudo().send_to_partner(
@@ -273,10 +277,12 @@ class MintDiscountPTL(models.Model):
         api_key = push._get_dutchie_push_api_key()
         base = (push._get_dutchie_push_url() or '').rsplit('/api/admin/discounts', 1)[0]
         Log = self.env['mint.dutchie.discount.push.log'].sudo()
-        now = fields.Datetime.now()
+        # valid_until is a Date — compare date-to-date. Against a Datetime this
+        # raises TypeError and aborts the whole sweep on its first coupon.
+        today = fields.Date.context_today(self)
         for c in coupons:
             # Local expiry first — independent of Dutchie.
-            if c.valid_until and c.valid_until < now:
+            if c.valid_until and c.valid_until < today:
                 c.write({'redemption_status': 'expired'})
                 continue
             if mode != 'live' or not base:
