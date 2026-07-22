@@ -164,12 +164,22 @@ class MintDiscountPTL(models.Model):
         Log = self.env['mint.dutchie.discount.push.log'].sudo()
         Company = self.env['res.company'].sudo()
         for lsp in cfg['enabled_lsps']:
+            # Push through a CANARY store only. `_push_one_discount` (and every
+            # other push path: action_publish_to_dutchie, the PTL sweep) targets
+            # stores flagged dutchie_discount_push_enabled — that flag is the
+            # canary gate, and only enabled stores are wired to actually reach
+            # Dutchie. Without this filter the search returned the lowest-id
+            # LSP store (a non-canary), so the write silently went nowhere and
+            # every welcome coupon showed on /rewards but was never in Dutchie.
+            # Discounts are LSP-scoped, so one enabled store per LSP covers it.
             store = Company.search([
                 ('dutchie_lsp_id', '=', lsp),
                 ('dutchie_pos_location_id', '!=', False),
+                ('dutchie_discount_push_enabled', '=', True),
             ], limit=1)
             if not store:
-                _logger.warning('welcome_preroll: no store with a POS LocId for LSP %s', lsp)
+                _logger.warning('welcome_preroll: no push-enabled store with a POS '
+                                'LocId for LSP %s — coupon created but NOT pushed', lsp)
                 continue
             try:
                 push._push_one_discount(coupon, store, mode, url, api_key, Log)
