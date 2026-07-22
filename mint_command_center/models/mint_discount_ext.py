@@ -61,6 +61,52 @@ class MintDiscountPTL(models.Model):
         string="Welcome Pre-Roll", default=False, copy=False, index=True,
         help="Auto-issued welcome free pre-roll code coupon (one per web signup).")
 
+    welcome_push_sent = fields.Boolean(
+        string="Welcome Push Sent", default=False, copy=False,
+        help="The 'your free pre-roll is ready' push has been delivered for this "
+             "coupon. Set only on a CONFIRMED send, so a failed delivery retries "
+             "on the customer's next subscribe rather than being lost.")
+
+    def _send_welcome_coupon_push(self, partner):
+        """Push the welcome coupon to a partner who just enabled notifications.
+
+        Onboarding step 3 asks for push, and the pay-off is this: the free
+        pre-roll lands as a notification instead of the customer having to go
+        look for it. Sent from the push subscription's create() (see
+        push_subscription_ext) so it fires exactly when they opt in.
+
+        Only for a coupon that is genuinely usable — an already redeemed or
+        expired one must not be announced. welcome_push_sent is flipped only
+        after a confirmed delivery, so a transient push failure retries on the
+        next subscribe instead of silently dropping the notification.
+        """
+        if not partner:
+            return 0
+        coupon = self.sudo().search([
+            ('is_welcome_preroll', '=', True),
+            ('redemption_partner_id', '=', partner.id),
+            ('welcome_push_sent', '=', False),
+        ], order='id desc', limit=1)
+        if not coupon:
+            return 0
+        # Mirror the /rewards reader's notion of "usable": not used, not expired.
+        if coupon.redemption_status in ('used', 'expired', 'voided'):
+            return 0
+        if coupon.valid_until and coupon.valid_until < fields.Datetime.now():
+            return 0
+
+        sent = self.env['mint.push.subscription'].sudo().send_to_partner(
+            partner.id,
+            'Your free pre-roll is ready',
+            'Show your code at any Mint AZ store — 100% off one pre-roll.',
+            url='/rewards',
+        )
+        if sent:
+            coupon.sudo().write({'welcome_push_sent': True})
+            _logger.info('welcome_preroll: pushed coupon %s to partner %s (%s subs)',
+                         coupon.dutchie_discount_code, partner.id, sent)
+        return sent
+
     @api.constrains('application_method', 'dutchie_discount_code', 'source')
     def _check_code_method_has_code(self):
         """A code-method discount we author must carry the register code it is
