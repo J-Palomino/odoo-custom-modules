@@ -154,11 +154,17 @@ class MintCustomerProfile(http.Controller):
         if not coupon:
             return json_response({'welcome_coupon': None})
 
-        now = fields.Datetime.now()
+        # valid_until is a Date, so this must be a date-to-date comparison.
+        # Against fields.Datetime.now() Python raises TypeError ("can't compare
+        # datetime.datetime to datetime.date") — and because a live coupon is
+        # 'pending', neither earlier branch short-circuits, so the endpoint 500d
+        # for every usable coupon and /rewards silently rendered no card
+        # (the client bails on `if (!res.ok) return`).
+        today = fields.Date.context_today(coupon)
         if coupon.redemption_status == 'used':
             status = 'redeemed'
         elif (coupon.redemption_status in ('expired', 'voided')
-              or (coupon.valid_until and coupon.valid_until < now)):
+              or (coupon.valid_until and coupon.valid_until < today)):
             status = 'expired'
         else:
             status = 'active'
