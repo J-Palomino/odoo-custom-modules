@@ -226,8 +226,23 @@
                                 <field name="excluded_brand_ids" widget="many2many_tags"
                                        options="{'no_create_edit': True}"
                                        placeholder="Brands to exclude from this deal"/>
+                                <field name="excluded_category_ids" widget="many2many_tags"
+                                       options="{'no_create': True}"
+                                       domain="[('id', 'in', available_category_ids)]"
+                                       placeholder="Categories to exclude from this deal"/>
                                 <field name="excluded_skus"
                                        placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002"/>
+                                <label for="excluded_weight_keys" string="Excluded Weights"/>
+                                <div>
+                                    <field name="excluded_weight_keys"
+                                           widget="mdcc_weight_picker"
+                                           nolabel="1"
+                                           options="{'optionsField': 'available_weight_options'}"
+                                           placeholder="Pick weights to exclude — the real in-stock sizes for the brand(s)."/>
+                                    <span class="text-muted">
+                                        Weights to exclude from this deal — same in-stock sizes as the Inclusions picker.
+                                    </span>
+                                </div>
                             </group>
                             <group string="Details &amp; Exclusions Notes" col="1">
                                 <field name="details_exclusions" nolabel="1"

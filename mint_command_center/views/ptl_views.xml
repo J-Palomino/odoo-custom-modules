@@ -378,8 +378,19 @@
                                        domain="[('product_count','&gt;',0)]"
                                        options="{'no_create_edit': True}"
                                        placeholder="Brands to exclude from this deal"/>
+                                <field name="excluded_category_ids" widget="many2many_tags"
+                                       options="{'no_create': True}"
+                                       placeholder="Categories to exclude from this deal"/>
                                 <field name="excluded_skus"
                                        placeholder="One SKU per line, or comma-separated&#10;e.g. STZ-001, STZ-002&#10;CRT-PINEAPPLE"/>
+                                <label for="excluded_weight_keys" string="Excluded Weights"/>
+                                <div>
+                                    <field name="excluded_weight_keys"
+                                           widget="mdcc_weight_picker"
+                                           nolabel="1"
+                                           readonly="1"
+                                           placeholder="Excluded weights (carried from submission)"/>
+                                </div>
                             </group>
                             <group string="Details &amp; Exclusions" col="1">
                                 <field name="details_exclusions" nolabel="1"

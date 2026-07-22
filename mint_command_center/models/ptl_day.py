@@ -340,6 +340,9 @@ class PtlDay(models.Model):
         if deal.excluded_brand_ids:
             vals['exclude_brand_ids'] = [(6, 0, deal.excluded_brand_ids.ids)]
 
+        if deal.excluded_category_ids:
+            vals['exclude_category_ids'] = [(6, 0, deal.excluded_category_ids.ids)]
+
         # Category targeting (ptl.deal uses char, mint.discount uses product.category)
         # Uses the master-category resolver on the deal so master buckets like
         # "Flower" expand to Prepack Flower / Bulk Flower / etc. — otherwise a
@@ -446,6 +449,10 @@ class PtlDay(models.Model):
             dutchie_ids = coerce_dutchie_ids(discount.category_ids, 'dutchie_category_id')
             if dutchie_ids:
                 categories = {'ids': dutchie_ids, 'isExclusion': False}
+        elif discount.exclude_category_ids:
+            dutchie_ids = coerce_dutchie_ids(discount.exclude_category_ids, 'dutchie_category_id')
+            if dutchie_ids:
+                categories = {'ids': dutchie_ids, 'isExclusion': True}
 
         products = None
         if discount.product_ids:

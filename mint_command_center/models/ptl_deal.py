@@ -141,6 +141,30 @@ class PtlDeal(models.Model):
         string='Excluded Brands',
         help='Products from these brands are excluded from this deal.',
     )
+    excluded_category_ids = fields.Many2many(
+        'product.category',
+        'mint_ptl_deal_excluded_categ_rel',
+        'deal_id',
+        'categ_id',
+        string='Excluded Categories',
+        help='Categories excluded from this deal, carried from the vendor '
+             'submission. Forwarded to the linked mint.discount '
+             '(exclude_category_ids): filters the storefront (mintinvsvc '
+             'webhook isExclusion flag + server-side applies_to_product) and '
+             'emits a Dutchie negative category restriction when no positive '
+             'category scope is set — full parity with excluded_brand_ids.',
+    )
+    excluded_weight_keys = fields.Json(
+        string='Excluded Weights',
+        default=list,
+        help='Weights excluded from this deal (canonical "<value>:<unit>" '
+             'keys), carried from the vendor submission Exclusions picker for '
+             'reference. On the submission it narrows the Specific Products '
+             'picker; it is NOT emitted as a discount/Dutchie weight '
+             'restriction (Dutchie weight restrictions are inclusion-only, '
+             'driven by weight_value/weight_unit), so unlike excluded '
+             'brands/categories it does not reach the live deal post-conversion.',
+    )
     store_ids = fields.Many2many(
         'res.company',
         'mint_ptl_deal_store_rel',
