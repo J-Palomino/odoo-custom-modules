@@ -96,7 +96,15 @@ class MintCustomerProfile(http.Controller):
             ('program_id', '=', program.id),
         ], limit=1)
 
-        points = card.points if card else 0
+        # Dutchie is the source of truth for loyalty points. When the partner is
+        # linked to a Dutchie customer (x_dutchie_customer_id set), surface the
+        # mirrored native balance (x_dutchie_loyalty_balance, kept in sync from
+        # the Backoffice loyalty ledger). Fall back to the legacy computed
+        # loyalty.card only for partners not yet linked to Dutchie.
+        if getattr(partner, 'x_dutchie_customer_id', False):
+            points = getattr(partner, 'x_dutchie_loyalty_balance', 0) or 0
+        else:
+            points = card.points if card else 0
 
         # Get available rewards
         rewards = []
