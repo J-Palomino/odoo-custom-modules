@@ -106,6 +106,10 @@ class MintCustomerProfile(http.Controller):
         else:
             points = card.points if card else 0
 
+        # Display whole points only — round the balance DOWN to the nearest
+        # integer (never over-state redeemable points). Balances are non-negative.
+        points = int(points)
+
         # Get available rewards
         rewards = []
         for reward in program.reward_ids:
