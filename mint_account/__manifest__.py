@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint Account',
-    'version': '19.0.1.3.0',
+    'version': '19.0.1.4.0',
     'category': 'Website',
     'summary': 'Customer account, cart persistence, order lookup for MintDeals frontend',
     'description': """
@@ -25,6 +25,7 @@
         'mail',
         'mint_customer_api',  # owns /api/v1/auth/* + JWT helper on res.users
         'mint_pos_bridge',    # owns pos.order model (read-side for /orders)
+        'mint_api_v2',        # owns res.company.dutchie_store_id (cart store_id resolution)
     ],
     'data': [
         'security/ir.model.access.csv',
