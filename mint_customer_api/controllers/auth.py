@@ -99,6 +99,13 @@ def _web_login(email):
     return WEB_LOGIN_PREFIX + (email or '').strip().lower()
 
 
+# Advisory-lock namespace for web signups. pg_advisory_xact_lock takes
+# (classid, objid) int4s; a fixed classid keeps this path's per-login locks
+# from colliding with any other advisory lock in the database. Value is
+# ASCII 'mint' as an int4.
+_SIGNUP_LOCK_CLASS = 1836216180
+
+
 def json_response(data, status=200):
     """JSON response with CORS headers."""
     return Response(
@@ -954,6 +961,48 @@ class MintCustomerAuth(http.Controller):
         main_company = request.env['res.company'].sudo().browse(1)
         login = _web_login(email)
 
+        # Serialize every concurrent signup for this login before touching
+        # res_users. The ON CONFLICT guards below cannot do it on their own:
+        # the website module redefines res_users_login_key as
+        # UNIQUE (login, website_id) and these INSERTs leave website_id NULL,
+        # and in Postgres NULLs are never equal — so the constraint never
+        # matches, ON CONFLICT never fires, and BOTH racers insert. That is
+        # how one double-submitted signup produced two users and two partners
+        # (8 duplicate login pairs in prod as of 2026-07-23).
+        #
+        # A transaction-scoped advisory lock makes the second racer wait for
+        # the first to commit, so it observes the winning row instead of
+        # racing it. Released automatically on commit/rollback. The classid
+        # namespaces the lock to this signup path so it cannot collide with
+        # another feature's advisory lock.
+        request.env.cr.execute(
+            "SELECT pg_advisory_xact_lock(%s, hashtext(%s))",
+            (_SIGNUP_LOCK_CLASS, login),
+        )
+
+        # Holding that lock, an account for this login may already exist: the
+        # first racer just committed, or a pre-guard duplicate is on file.
+        # Reuse it for EVERY path below — the DL-link branch included, since
+        # _attach_login's ON CONFLICT misses for the same website_id-is-NULL
+        # reason and would otherwise insert a second row for one person.
+        # ORDER BY id keeps the winner deterministic where historical
+        # duplicates remain.
+        request.env.cr.execute(
+            "SELECT id FROM res_users WHERE login = %s ORDER BY id LIMIT 1",
+            (login,),
+        )
+        # Residual (pre-existing, unchanged by this guard): register() writes
+        # the submitted password onto whatever user it gets back, so a race
+        # loser sets its password on the winner's account. Harmless for the
+        # real case this fixes — one person double-submitting one form sends
+        # the same password twice — and register()'s 409 guard already blocks
+        # a second signup on an established login. Left as-is deliberately;
+        # closing it means restructuring register(), not this guard.
+        already = request.env.cr.fetchone()
+        if already:
+            request.env['res.users'].sudo().invalidate_model()
+            return request.env['res.users'].sudo().browse(already[0])
+
         # --- Dutchie DL link: attach to the existing POS partner ------------
         # A verified link_token means dutchie_lookup already matched an
         # unclaimed roster record on 'dl:<DL>'. Reuse that partner instead of
@@ -1006,35 +1055,18 @@ class MintCustomerAuth(http.Controller):
         request.env.cr.flush()
 
         # Raw INSERT to bypass signup/mail hooks that conflict with the
-        # transaction. ON CONFLICT handles the race where two concurrent
-        # signups for the same email both try to insert — the loser
-        # re-selects the winning row.
-        #
-        # FIXME: This bypasses the website module's @api.constrains check
-        # for duplicate logins where website_id IS NULL, so the loser-
-        # branch's password write can clobber the winner's account on a
-        # genuine race. Tracked for ORM refactor — see follow-up ticket.
-        # Constraint is named (not column-targeted) because the website
-        # module replaces UNIQUE (login) with UNIQUE (login, website_id).
+        # transaction. No ON CONFLICT clause: res_users_login_key is
+        # UNIQUE (login, website_id) with website_id NULL here, so it could
+        # never detect the collision anyway. The advisory lock plus the
+        # existence check above are what guarantee one row per login.
         request.env.cr.execute("""
             INSERT INTO res_users (login, password, company_id, partner_id,
                                    active, share, create_uid, write_uid,
                                    create_date, write_date, notification_type)
             VALUES (%s, '', %s, %s, true, true, 1, 1, NOW(), NOW(), 'email')
-            ON CONFLICT ON CONSTRAINT res_users_login_key DO NOTHING
             RETURNING id
         """, (login, main_company.id, partner.id))
-        row = request.env.cr.fetchone()
-        if row:
-            user_id = row[0]
-        else:
-            # Race: another request just created this login. Use theirs and
-            # drop the extra partner we made to avoid orphans.
-            request.env.cr.execute(
-                "SELECT id FROM res_users WHERE login = %s", (login,)
-            )
-            user_id = request.env.cr.fetchone()[0]
-            partner.sudo().unlink()
+        user_id = request.env.cr.fetchone()[0]
 
         request.env.cr.execute("""
             INSERT INTO res_company_users_rel (cid, user_id)
