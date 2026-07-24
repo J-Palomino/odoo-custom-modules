@@ -707,12 +707,53 @@ class MintCustomerAuth(http.Controller):
                     + '\nage_verified=true dob=%s' % dob.isoformat()})
         return json_response({'ok': True, 'age_verified': True})
 
-    def _create_web_user(self, email, name, phone='', extra_vals=None):
-        """Create a fresh partner + portal user for a web-site signup.
+    def _find_linkable_dutchie_partner(self, email, phone):
+        """Find an existing Dutchie-linked customer partner to adopt for a web
+        signup, so the new account inherits that customer's loyalty and
+        purchase history instead of being orphaned. Returns a partner record
+        or None.
 
-        Always creates a NEW res.partner (doesn't reuse an existing one that
-        happens to have the same email) so employees shopping the consumer
-        site get a separate customer identity from their staff partner.
+        Resolves the same way checkout does (phone last-10 first, then email
+        case-insensitively — mirrors checkout.py::_find_partner). Guarded so we
+        never hijack a staff identity:
+
+          * the partner must already be a Dutchie customer
+            (``x_dutchie_customer_id`` set), and
+          * it must not already back a login (no employee/web user) — an
+            employee shopping the site keeps a disjoint customer identity.
+
+        No-ops (returns None) if the Dutchie fields aren't installed, so the
+        module still works without mint_api_v2.
+        """
+        Partner = request.env['res.partner'].sudo()
+        if 'x_dutchie_customer_id' not in Partner._fields:
+            return None
+
+        base = [('x_dutchie_customer_id', '!=', False)]
+        digits = ''.join(c for c in (phone or '') if c.isdigit())
+
+        match = Partner.browse()
+        if len(digits) >= 10:
+            match = Partner.search(
+                base + [('phone', 'ilike', digits[-10:])], order='id asc', limit=1)
+        if not match and email:
+            match = Partner.search(
+                base + [('email', '=ilike', email)], order='id asc', limit=1)
+
+        # Never adopt a partner that already backs a login (employee staff
+        # account or an existing web customer) — keep identities disjoint.
+        if not match or match.user_ids:
+            return None
+        return match
+
+    def _create_web_user(self, email, name, phone='', extra_vals=None):
+        """Create (or adopt a partner for) a portal user for a web-site signup.
+
+        Adopts the customer's existing Dutchie-linked partner when one is found
+        (see _find_linkable_dutchie_partner) so the account inherits their
+        loyalty/history; otherwise creates a fresh res.partner. It never reuses
+        an employee's staff partner, so employees shopping the consumer site
+        keep a customer identity disjoint from their staff one.
 
         Uses login = 'web:<email>' so web users never collide with internal
         user accounts (login = plain email) and sets is_web_customer=True
@@ -721,22 +762,46 @@ class MintCustomerAuth(http.Controller):
         main_company = request.env['res.company'].sudo().browse(1)
         login = _web_login(email)
 
-        partner_vals = {
-            'name': name,
-            'email': email,
-            'phone': phone or False,
-            'customer_rank': 1,
-            'company_id': main_company.id,
-            'is_web_customer': True,
-        }
-        if extra_vals:
-            partner_vals.update(extra_vals)
-        partner = request.env['res.partner'].sudo().with_context(
-            mail_create_nosubscribe=True,
-            mail_create_nolog=True,
-            tracking_disable=True,
-            mail_notrack=True,
-        ).create(partner_vals)
+        # Prefer adopting the customer's existing Dutchie-linked partner so the
+        # web account inherits their loyalty and purchase history instead of
+        # being orphaned as a fresh record (which is why signups previously
+        # showed 0 points). Guarded to never claim an employee's staff partner
+        # — see _find_linkable_dutchie_partner. None => create fresh (historical
+        # behaviour).
+        partner = self._find_linkable_dutchie_partner(email, phone)
+        created_here = False
+        if partner:
+            adopt_vals = {'is_web_customer': True}
+            if partner.customer_rank < 1:
+                adopt_vals['customer_rank'] = 1
+            if not partner.email:
+                adopt_vals['email'] = email
+            if phone and not partner.phone:
+                adopt_vals['phone'] = phone
+            # Fill only blank fields from extra_vals — never clobber the
+            # customer's real Dutchie data (name, DOB, etc.).
+            for key, val in (extra_vals or {}).items():
+                if key in partner._fields and not partner[key]:
+                    adopt_vals[key] = val
+            partner.sudo().write(adopt_vals)
+        else:
+            partner_vals = {
+                'name': name,
+                'email': email,
+                'phone': phone or False,
+                'customer_rank': 1,
+                'company_id': main_company.id,
+                'is_web_customer': True,
+            }
+            if extra_vals:
+                partner_vals.update(extra_vals)
+            partner = request.env['res.partner'].sudo().with_context(
+                mail_create_nosubscribe=True,
+                mail_create_nolog=True,
+                tracking_disable=True,
+                mail_notrack=True,
+            ).create(partner_vals)
+            created_here = True
         request.env.cr.flush()
 
         # Raw INSERT to bypass signup/mail hooks that conflict with the
@@ -763,12 +828,14 @@ class MintCustomerAuth(http.Controller):
             user_id = row[0]
         else:
             # Race: another request just created this login. Use theirs and
-            # drop the extra partner we made to avoid orphans.
+            # drop the extra partner we made to avoid orphans — but ONLY if we
+            # created it here. Never unlink an adopted existing Dutchie partner.
             request.env.cr.execute(
                 "SELECT id FROM res_users WHERE login = %s", (login,)
             )
             user_id = request.env.cr.fetchone()[0]
-            partner.sudo().unlink()
+            if created_here:
+                partner.sudo().unlink()
 
         request.env.cr.execute("""
             INSERT INTO res_company_users_rel (cid, user_id)
