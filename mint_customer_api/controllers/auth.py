@@ -1101,15 +1101,25 @@ class MintCustomerAuth(http.Controller):
         so the account inherits that customer's loyalty and purchase history
         instead of being orphaned (MR-1089). Returns a partner or None.
 
-        Resolves the way checkout already does — phone last-10 first, then
-        email case-insensitively (mirrors checkout.py::_find_partner).
+        STRICT match: the signup must supply BOTH an email and a usable phone,
+        and each must independently resolve to exactly ONE unclaimed Dutchie
+        customer — the SAME one. Any weaker outcome returns None and the
+        caller creates a clean account.
+
+        Deliberately stricter than checkout.py::_find_partner (which takes
+        phone OR email). Checkout matches per-order; this binds a LOGIN, so a
+        wrong match hands over the customer's history permanently. Requiring
+        two independent identifiers to agree means knowing just a victim's
+        email — or being assigned a recycled phone number — is not enough.
 
         Guarded so this can never claim an account:
 
           * the partner must already be a Dutchie customer
             (``x_dutchie_customer_id`` set), and
           * it must not already back a login — an employee or an existing web
-            customer keeps a disjoint identity.
+            customer keeps a disjoint identity, and
+          * an ambiguous hit on either identifier (2+ candidates) is refused
+            rather than guessed.
 
         SECURITY POSTURE: unlike the link_token path, the email/phone here
         come straight from the request body and nothing has verified the
@@ -1124,19 +1134,34 @@ class MintCustomerAuth(http.Controller):
         if 'x_dutchie_customer_id' not in Partner._fields:
             return None
 
-        base = [('x_dutchie_customer_id', '!=', False)]
         digits = ''.join(c for c in (phone or '') if c.isdigit())
+        if not email or len(digits) < 10:
+            # Both identifiers are required — one alone never adopts.
+            return None
 
-        match = Partner.browse()
-        if len(digits) >= 10:
-            match = Partner.search(
-                base + [('phone', 'ilike', digits[-10:])], order='id asc', limit=1)
-        if not match and email:
-            match = Partner.search(
-                base + [('email', '=ilike', email)], order='id asc', limit=1)
+        # Unclaimed is part of the domain, not a post-filter, so an ambiguity
+        # count is computed over adoptable records only.
+        base = [('x_dutchie_customer_id', '!=', False), ('user_ids', '=', False)]
+        # limit=2 is enough to tell "exactly one" from "ambiguous".
+        by_phone = Partner.search(
+            base + [('phone', 'ilike', digits[-10:])], order='id asc', limit=2)
+        by_email = Partner.search(
+            base + [('email', '=ilike', email)], order='id asc', limit=2)
 
-        # Never adopt a partner that already backs a login.
-        if not match or match.user_ids:
+        if len(by_phone) != 1 or len(by_email) != 1:
+            # Zero matches, or ambiguous on an identifier — never guess.
+            return None
+        if by_phone.id != by_email.id:
+            # The identifiers point at different people: strong evidence this
+            # signup is not the roster customer. Refuse.
+            _logger.info('adopt: email/phone disagree (%s vs %s) — no adoption',
+                         by_email.id, by_phone.id)
+            return None
+
+        match = by_phone
+        # Re-assert unclaimed (belt-and-braces; also re-checked in-transaction
+        # by _adopt_dutchie_partner).
+        if match.user_ids:
             return None
         return match
 

@@ -4,8 +4,12 @@
 Web signup used to always create a fresh res.partner, so a customer who already
 had a Dutchie-backfilled partner (holding their loyalty/history) got a brand-new
 orphan with no x_dutchie_customer_id -> 0 points. _find_linkable_dutchie_partner
-adopts that existing partner, mirroring how checkout resolves customers, while
-never claiming an employee's staff partner. See MR-1089.
+adopts that existing partner, while never claiming an employee's staff partner.
+
+The match is STRICTER than checkout's (which takes phone OR email): both the
+email and the phone must resolve to the SAME single unclaimed Dutchie customer.
+Checkout matches per-order, but signup binds a login — a wrong match would hand
+over that customer's history permanently. See MR-1089.
 """
 from unittest.mock import patch
 
@@ -37,24 +41,58 @@ class TestSignupDutchieLink(TransactionCase):
         with patch.object(auth_mod, 'request', _FakeRequest(self.env)):
             return self.ctrl._find_linkable_dutchie_partner(email, phone)
 
-    def test_match_by_phone(self):
+    def test_match_requires_both_email_and_phone(self):
+        # Both identifiers agree on one unclaimed Dutchie customer -> adopt.
+        # Email match is case-insensitive; phone is normalised to last-10.
         self.assertEqual(
-            self._resolve('someone-else@example.test', '(555) 999-8888'),
+            self._resolve('ZZ-LinkTest-Uniq@EXAMPLE.test', '(555) 999-8888'),
             self.dutchie_partner,
         )
 
-    def test_match_by_email_case_insensitive(self):
-        self.assertEqual(
-            self._resolve('ZZ-LinkTest-Uniq@EXAMPLE.test', ''),
-            self.dutchie_partner,
-        )
+    def test_phone_alone_does_not_adopt(self):
+        # Correct phone but a different email must NOT adopt: one identifier is
+        # not enough to hand over a customer's history on a login bind.
+        self.assertFalse(
+            self._resolve('someone-else@example.test', '(555) 999-8888'))
+
+    def test_email_alone_does_not_adopt(self):
+        # Correct email, no phone supplied -> refused.
+        self.assertFalse(
+            self._resolve('zz-linktest-uniq@example.test', ''))
+
+    def test_conflicting_identifiers_do_not_adopt(self):
+        # Email resolves to one Dutchie customer, phone to a different one:
+        # strong evidence the signup is neither. Refuse rather than guess.
+        self.env['res.partner'].create({
+            'name': 'ZZ Other Customer',
+            'email': 'zz-other-uniq@example.test',
+            'phone': '5554443333',
+            'x_dutchie_customer_id': 'TESTZZ-3',
+        })
+        self.assertFalse(
+            self._resolve('zz-linktest-uniq@example.test', '5554443333'))
+
+    def test_ambiguous_identifier_does_not_adopt(self):
+        # A second unclaimed Dutchie customer sharing the phone makes that
+        # identifier ambiguous -> refuse.
+        self.env['res.partner'].create({
+            'name': 'ZZ Duplicate Phone',
+            'email': 'zz-dupphone-uniq@example.test',
+            'phone': '5559998888',
+            'x_dutchie_customer_id': 'TESTZZ-4',
+        })
+        self.assertFalse(
+            self._resolve('zz-linktest-uniq@example.test', '5559998888'))
 
     def test_no_dutchie_id_is_not_adopted(self):
-        # A plain partner sharing the email but without a Dutchie link is ignored.
+        # A plain partner matching on both identifiers but without a Dutchie
+        # link is ignored.
         self.env['res.partner'].create({
             'name': 'ZZ Plain', 'email': 'zz-plain-uniq@example.test',
+            'phone': '5552221111',
         })
-        self.assertFalse(self._resolve('zz-plain-uniq@example.test', ''))
+        self.assertFalse(
+            self._resolve('zz-plain-uniq@example.test', '5552221111'))
 
     def test_partner_with_user_is_excluded(self):
         # An employee/staff (or already-web) partner that backs a login must

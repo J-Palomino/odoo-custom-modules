@@ -17,8 +17,10 @@ What it does, per active `web:<email>` login group:
      tie-break); free + archive any duplicates.
   2. If the survivor's partner has no x_dutchie_customer_id, look for the one
      unambiguous Dutchie customer partner (x_dutchie_customer_id set, no login)
-     matching by phone(last-10) then email — mirroring the controller — and
-     repoint the survivor's login to it, marking it is_web_customer.
+     that BOTH the email and the phone(last-10) resolve to — the same strict
+     rule the controller uses — and repoint the survivor's login to it,
+     marking it is_web_customer. A single-identifier-only match is NOT linked;
+     it is logged for manual review.
   3. Archive the leftover orphan web partners (is_web_customer, no Dutchie id,
      no remaining active user).
 
@@ -43,24 +45,37 @@ WEB_LOGIN_PREFIX = 'web:'
 
 
 def _linkable_dutchie_partners(env, email, phone):
-    """Return candidate linkable Dutchie customer partners (capped at 2).
+    """Return the linkable Dutchie customer partner, or an empty/2-record set.
 
     Mirrors mint_customer_api.controllers.auth._find_linkable_dutchie_partner
-    (Dutchie customer, no login, phone-then-email) but returns the recordset so
-    the caller can tell "no match" (0) from "ambiguous" (>1) and never guess.
+    and applies the SAME strict rule: BOTH email and phone are required, each
+    must resolve to exactly one unclaimed Dutchie customer, and both must point
+    at the same record. Anything weaker returns a set the caller treats as
+    "no match" (0) or "ambiguous" (2) so it skips and logs instead of guessing.
+
+    Kept strict deliberately: this repoints a real login onto a roster record,
+    exactly as the controller does, so it must not link anything the controller
+    itself would refuse. Single-identifier orphans are left for manual review.
     """
     Partner = env['res.partner'].sudo()
-    base = [('x_dutchie_customer_id', '!=', False), ('user_ids', '=', False)]
     digits = ''.join(c for c in (phone or '') if c.isdigit())
+    if not email or len(digits) < 10:
+        return Partner.browse()
 
-    match = Partner.browse()
-    if len(digits) >= 10:
-        match = Partner.search(
-            base + [('phone', 'ilike', digits[-10:])], order='id asc', limit=2)
-    if not match and email:
-        match = Partner.search(
-            base + [('email', '=ilike', email)], order='id asc', limit=2)
-    return match
+    base = [('x_dutchie_customer_id', '!=', False), ('user_ids', '=', False)]
+    by_phone = Partner.search(
+        base + [('phone', 'ilike', digits[-10:])], order='id asc', limit=2)
+    by_email = Partner.search(
+        base + [('email', '=ilike', email)], order='id asc', limit=2)
+
+    # Ambiguous on either identifier -> hand back 2 records so the caller
+    # records it as ambiguous (needs manual review) rather than linking.
+    if len(by_phone) > 1 or len(by_email) > 1:
+        return by_phone if len(by_phone) > 1 else by_email
+    # Missing on either side, or the two disagree -> no confident match.
+    if len(by_phone) != 1 or len(by_email) != 1 or by_phone.id != by_email.id:
+        return Partner.browse()
+    return by_phone
 
 
 def migrate(cr, version):
