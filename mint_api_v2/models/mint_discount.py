@@ -592,14 +592,24 @@ class MintDiscount(models.Model):
                     "Cannot void redemption %s (status: %s).",
                     rec.redemption_code, rec.redemption_status,
                 ))
+            # Refund the deducted points regardless of whether this was a
+            # reward-based or a product-based redemption. The product redeem
+            # path (create_redemption(product=...)) never sets
+            # redemption_reward_id, so the old `if reward` gate silently kept
+            # the customer's points on void. Resolve the program from the
+            # reward when present, else the same way redeem_loyalty found the
+            # card to deduct from: the loyalty-type program.
             reward = rec.redemption_reward_id
-            if reward and rec.redemption_partner_id and rec.redemption_points_cost:
-                card = LoyaltyCard.search([
-                    ('partner_id', '=', rec.redemption_partner_id.id),
-                    ('program_id', '=', reward.program_id.id),
-                ], limit=1)
-                if card:
-                    card.points = card.points + rec.redemption_points_cost
+            if rec.redemption_partner_id and rec.redemption_points_cost:
+                program = reward.program_id if reward else self.env['loyalty.program'].sudo().search(
+                    [('program_type', '=', 'loyalty')], limit=1)
+                if program:
+                    card = LoyaltyCard.search([
+                        ('partner_id', '=', rec.redemption_partner_id.id),
+                        ('program_id', '=', program.id),
+                    ], limit=1)
+                    if card:
+                        card.points = card.points + rec.redemption_points_cost
             rec.write({
                 'redemption_status': 'voided',
                 'is_published': False,
