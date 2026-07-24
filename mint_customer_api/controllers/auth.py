@@ -1022,6 +1022,25 @@ class MintCustomerAuth(http.Controller):
             _logger.warning('register: DL link to partner %s rejected at bind; '
                             'creating a fresh account', link_partner_id)
 
+        # --- MR-1089: adopt an unclaimed Dutchie customer by email/phone ----
+        # Without a scan there is no link_token, and the identity keys can
+        # never collide by construction ('nd:NAME|DOB' here vs 'dl:<licence>'
+        # on the roster), so every no-scan signup used to be orphaned from the
+        # customer's own loyalty and purchase history.
+        #
+        # This match is WEAKER than the token path — email/phone are asserted
+        # by the request body, not verified — so the adopted record is stamped
+        # x_merge_needs_review and confirmed by staff at the register. It can
+        # only ever touch a record that backs no login, so it cannot take over
+        # an existing account.
+        adopt = self._find_linkable_dutchie_partner(email, phone)
+        if adopt:
+            adopted = self._adopt_dutchie_partner(
+                adopt, email, name, phone, web_dob, age_method, age_source,
+            )
+            if adopted:
+                return self._attach_login(adopted, login, main_company)
+
         partner_vals = {
             'name': name,
             'email': email,
@@ -1076,6 +1095,98 @@ class MintCustomerAuth(http.Controller):
 
         request.env['res.users'].sudo().invalidate_model()
         return request.env['res.users'].sudo().browse(user_id)
+
+    def _find_linkable_dutchie_partner(self, email, phone):
+        """Find an existing Dutchie customer partner a web signup may adopt,
+        so the account inherits that customer's loyalty and purchase history
+        instead of being orphaned (MR-1089). Returns a partner or None.
+
+        Resolves the way checkout already does — phone last-10 first, then
+        email case-insensitively (mirrors checkout.py::_find_partner).
+
+        Guarded so this can never claim an account:
+
+          * the partner must already be a Dutchie customer
+            (``x_dutchie_customer_id`` set), and
+          * it must not already back a login — an employee or an existing web
+            customer keeps a disjoint identity.
+
+        SECURITY POSTURE: unlike the link_token path, the email/phone here
+        come straight from the request body and nothing has verified the
+        caller controls them. Adoption is therefore PROVISIONAL — the caller
+        stamps x_merge_needs_review so staff confirm the physical ID at the
+        register before the link is trusted.
+
+        No-ops (returns None) when the Dutchie fields aren't installed, so the
+        module still works without mint_dutchie_sync.
+        """
+        Partner = request.env['res.partner'].sudo()
+        if 'x_dutchie_customer_id' not in Partner._fields:
+            return None
+
+        base = [('x_dutchie_customer_id', '!=', False)]
+        digits = ''.join(c for c in (phone or '') if c.isdigit())
+
+        match = Partner.browse()
+        if len(digits) >= 10:
+            match = Partner.search(
+                base + [('phone', 'ilike', digits[-10:])], order='id asc', limit=1)
+        if not match and email:
+            match = Partner.search(
+                base + [('email', '=ilike', email)], order='id asc', limit=1)
+
+        # Never adopt a partner that already backs a login.
+        if not match or match.user_ids:
+            return None
+        return match
+
+    def _adopt_dutchie_partner(self, partner, email, name, phone, web_dob,
+                               age_method, age_source):
+        """Prepare an email/phone-matched roster partner for a portal login.
+
+        Mirrors _bind_link_partner, minus the identity-key assertion: that
+        check is specific to the DL-token flow (the roster record is keyed
+        'dl:<licence>' while a web signup computes 'nd:NAME|DOB', so the keys
+        never match here by construction). The unclaimed re-check is kept —
+        that is the property which stops an adoption from claiming an account.
+        """
+        partner = partner.exists()
+        if not partner:
+            return None
+        # TOCTOU: someone may have claimed it since the match.
+        if partner.user_ids:
+            _logger.warning('adopt: partner %s claimed since match', partner.id)
+            return None
+
+        vals = {
+            'is_web_customer': True,
+            'customer_rank': 1,
+            # Provisional until a human matches the licence to the record.
+            'x_merge_needs_review': True,
+        }
+        # Never overwrite roster data with signup data — only fill gaps.
+        if not partner.email and email:
+            vals['email'] = email
+        if not partner.phone and phone:
+            vals['phone'] = phone
+        if web_dob and not partner.web_date_of_birth:
+            vals.update({
+                'web_date_of_birth': web_dob,
+                'age_verified': True,
+                'age_verified_at': fields.Datetime.now(),
+                'age_verification_method': age_method or 'self_attested',
+                'age_verification_source': age_source or 'web_register',
+            })
+        if 'x_merge_needs_review' not in partner._fields:
+            vals.pop('x_merge_needs_review')
+
+        partner.with_context(
+            tracking_disable=True, mail_notrack=True,
+        ).write(vals)
+        request.env.cr.flush()
+        _logger.info('adopt: bound Dutchie partner %s to new login for %s '
+                     '(flagged for review)', partner.id, email)
+        return partner
 
     def _bind_link_partner(self, partner_id, identity_key, email, name, phone,
                            web_dob, age_method, age_source):
