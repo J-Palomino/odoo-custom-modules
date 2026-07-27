@@ -515,19 +515,55 @@ class MintCheckout(http.Controller):
         return points_earned
 
     def _find_partner(self, phone, email):
-        """Find partner by phone or email. Returns first match."""
+        """Find the customer partner by phone, else email.
+
+        Returns a partner only when the identifier resolves to exactly ONE
+        non-staff record; otherwise None, and the caller creates a clean
+        customer instead.
+
+        Two guards, both deliberate:
+
+        * AMBIGUITY — a bare limit=1 silently picked an arbitrary row, and
+          shared phone numbers are common in this data (a 40k-partner sample
+          holds 1,232 numbers used by more than one partner, worst case 23).
+          Binding an order and its loyalty points to whichever row sorted
+          first is a coin flip, so an ambiguous identifier is refused. The
+          cost of refusing is a duplicate partner, which the roster sync
+          dedups; the cost of guessing is money and history on the wrong
+          customer.
+
+        * STAFF — never resolve a consumer order onto an employee identity.
+          This is the same posture auth.py::_create_web_user already
+          documents ("employees shopping the consumer site get a separate
+          customer identity from their staff partner"); matching staff here
+          contradicted it, and stamping consumer data on a staff partner also
+          hides that record under the customer-isolation rule. 'Staff' is
+          defined exactly as mint_pos_bridge does: flagged employee, or
+          backing a non-share (internal) user. Portal customers have
+          share=True and are unaffected.
+
+        Precedence is unchanged (phone, then email) — but a phone that is
+        ambiguous or staff-owned now falls through to email rather than
+        ending the search on a bad match.
+        """
         Partner = request.env['res.partner'].sudo()
+
+        def _unique_customer(domain):
+            # limit=2 is enough to distinguish "exactly one" from "ambiguous".
+            found = Partner.search(domain, limit=2)
+            if len(found) != 1:
+                return None
+            if found.employee or any(not u.share for u in found.user_ids):
+                return None
+            return found
+
         partner = None
 
         if phone and len(phone) >= 10:
-            partner = Partner.search([
-                ('phone', 'ilike', phone[-10:]),
-            ], limit=1)
+            partner = _unique_customer([('phone', 'ilike', phone[-10:])])
 
         if not partner and email:
-            partner = Partner.search([
-                ('email', '=ilike', email),
-            ], limit=1)
+            partner = _unique_customer([('email', '=ilike', email)])
 
         return partner
 

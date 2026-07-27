@@ -125,12 +125,33 @@ def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=N
 
     partner = None
 
+    def _unique(domain):
+        """Resolve a domain to exactly one partner, else None.
+
+        limit=2 distinguishes "exactly one" from "ambiguous". A bare limit=1
+        silently bound the order to whichever row sorted first, and shared
+        contact details are common here (a 40k-partner sample holds 1,232
+        phone numbers used by more than one partner, worst case 23). An
+        ambiguous identifier is refused so the caller falls through to a
+        stronger one — or creates a clean customer — rather than
+        misattributing the order and its loyalty points.
+
+        Note this deliberately does NOT exclude staff: unlike the consumer
+        web path, an in-store purchase by an employee really is theirs and
+        should attach to their partner. The is_staff guard below already
+        stops Dutchie customer identity being stamped onto that record.
+        """
+        found = Partner.search(domain, limit=2)
+        return found if len(found) == 1 else None
+
     if dutchie_customer_id:
+        # x_dutchie_customer_id carries a DB UNIQUE constraint, so an exact
+        # match cannot be ambiguous — limit=1 is safe and stays.
         partner = Partner.search(
             [('x_dutchie_customer_id', '=', dutchie_customer_id)], limit=1)
     if not partner and dutchie_loyalty_id:
-        partner = Partner.search(
-            [('x_dutchie_loyalty_id', '=', dutchie_loyalty_id)], limit=1)
+        # x_dutchie_loyalty_id has NO unique constraint, so it gets the guard.
+        partner = _unique([('x_dutchie_loyalty_id', '=', dutchie_loyalty_id)])
     # Require a full 10 digits before matching on phone. _normalize_phone
     # returns a SHORT string unchanged when the payload carries fewer than 10
     # digits, and 'ilike' is a substring match — so an unguarded short value
@@ -139,9 +160,9 @@ def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=N
     # to an arbitrary stranger. Mirrors the guard checkout.py::_find_partner
     # already applies.
     if not partner and len(phone) >= 10:
-        partner = Partner.search([('phone', 'ilike', phone[-10:])], limit=1)
+        partner = _unique([('phone', 'ilike', phone[-10:])])
     if not partner and email:
-        partner = Partner.search([('email', '=ilike', email)], limit=1)
+        partner = _unique([('email', '=ilike', email)])
 
     if partner:
         # Never stamp Dutchie customer identity onto a staff/employee contact
