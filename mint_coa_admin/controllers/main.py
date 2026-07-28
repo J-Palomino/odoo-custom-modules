@@ -70,6 +70,48 @@ class CoaAdmin(http.Controller):
             out[a["res_id"]] = a["id"]
         return out
 
+    # --------------------------------------------------------- short links
+    # Staff hand COA links to customers, so each certificate gets a tracked
+    # /r/<code> short link instead of a raw /web/content/<id> URL — same Odoo
+    # Link Tracker the rest of the business uses, so clicks are counted.
+    #
+    # link.tracker is reached with sudo() deliberately: per the standing
+    # agents-only policy the tracker is not exposed to ordinary internal users
+    # (no group, no menus), so a COA member has no rights on the model. This
+    # mirrors the access-management actions below — elevate only after
+    # _require_member() has proved the caller is a COA member, and only for
+    # this one narrow operation.
+
+    def _public_base(self):
+        """Canonical public base for shareable links. host_url is whatever host
+        the staffer happens to be on; the short link's target must be the public
+        site, so prefer web.base.url."""
+        base = request.env["ir.config_parameter"].sudo().get_param("web.base.url")
+        return (base or request.httprequest.host_url).rstrip("/")
+
+    def _content_url(self, attachment_id):
+        return "%s/web/content/%s" % (self._public_base(), attachment_id)
+
+    def _short_link_map(self, attachment_ids):
+        """attachment id -> existing short URL, for the ones already shortened.
+
+        One batched search so listing a folder costs a single query and does NOT
+        mint trackers as a side effect of browsing — links are created on demand
+        by the `short_link` action. Keyed on `url` because `code`/`short_url` are
+        non-stored computes and cannot be searched.
+        """
+        out = {}
+        if not attachment_ids:
+            return out
+        by_url = {self._content_url(a): a for a in attachment_ids}
+        rows = request.env["link.tracker"].sudo().search_read(
+            [("url", "in", list(by_url))], ["url", "short_url"])
+        for r in rows:
+            att = by_url.get(r["url"])
+            if att and r.get("short_url"):
+                out[att] = r["short_url"]
+        return out
+
     # ------------------------------------------------------------------ page
     @http.route("/coa/admin", type="http", auth="user", website=False, csrf=False)
     def page(self, **kw):
@@ -110,9 +152,11 @@ class CoaAdmin(http.Controller):
                 ["id", "name", "human_size", "write_date"],
                 limit=5000, order="name")
             att = self._attachment_map([f["id"] for f in files])
+            short = self._short_link_map([a for a in att.values() if a])
             return {"files": [{
                 "id": f["id"], "name": f["name"], "size": f["human_size"],
                 "updated": f["write_date"], "attachmentId": att.get(f["id"]),
+                "shortUrl": short.get(att.get(f["id"])),
             } for f in files]}
 
         if action == "upload":
@@ -153,6 +197,42 @@ class CoaAdmin(http.Controller):
                 raise UserError("fileId required")
             request.env["dms.file"].browse(file_id).write({"active": False})
             return {"ok": True}
+
+        if action == "short_link":
+            # Find-or-create the tracked short link for one certificate.
+            file_id = int(params.get("fileId") or 0)
+            if not file_id:
+                raise UserError("fileId required")
+            rec = request.env["dms.file"].browse(file_id)
+            if not rec.exists():
+                raise UserError("That certificate no longer exists")
+            att_id = self._attachment_map([file_id]).get(file_id)
+            if not att_id:
+                raise UserError("That certificate has no stored PDF to link to")
+
+            # The short link is meant to be handed to customers, so the target
+            # has to be readable without an Odoo session. Uploads already set
+            # this; older rows may predate that.
+            att = request.env["ir.attachment"].browse(att_id)
+            if not att.public:
+                att.write({"public": True})
+
+            target = self._content_url(att_id)
+            tracker = request.env["link.tracker"].sudo()
+            existing = tracker.search([("url", "=", target)], limit=1)
+            if existing:
+                link = existing
+            else:
+                # NB: passing `code` to create() is silently ignored (it is a
+                # non-stored compute whose inverse doesn't run on create), so we
+                # take Odoo's generated code rather than pretending to set one.
+                link = tracker.create({"url": target, "title": rec.name})
+            return {
+                "ok": True,
+                "shortUrl": link.short_url,
+                "clicks": link.count,
+                "existed": bool(existing),
+            }
 
         if action == "create_brand":
             name = _sanitize(params.get("name"))
