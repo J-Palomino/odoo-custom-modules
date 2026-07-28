@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Lives under Settings > Technical, gated to provider administrators. -->
+    <menuitem id="menu_mint_identity_root"
+              name="Identity Provider"
+              parent="base.menu_administration"
+              groups="mint_oauth_provider.group_oidc_manager"
+              sequence="90"/>
+
+    <menuitem id="menu_mint_oauth_client"
+              name="OIDC Clients"
+              parent="menu_mint_identity_root"
+              action="action_mint_oauth_client"
+              sequence="10"/>
+
+    <menuitem id="menu_mint_oauth_token"
+              name="Issued Tokens"
+              parent="menu_mint_identity_root"
+              action="action_mint_oauth_token"
+              sequence="20"/>
+
+    <menuitem id="menu_mint_oauth_keypair"
+              name="Signing Keys"
+              parent="menu_mint_identity_root"
+              action="action_mint_oauth_keypair"
+              sequence="30"/>
+
+</odoo>

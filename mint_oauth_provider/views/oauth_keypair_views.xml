@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_mint_oauth_keypair_list" model="ir.ui.view">
+        <field name="name">mint.oauth.keypair.list</field>
+        <field name="model">mint.oauth.keypair</field>
+        <field name="arch" type="xml">
+            <!-- create=false: keys are minted through action_rotate so the
+                 previous signing key is demoted in the same transaction. -->
+            <list string="Signing Keys" create="false">
+                <field name="kid"/>
+                <field name="is_signing"/>
+                <field name="active"/>
+                <field name="create_date"/>
+                <button name="action_rotate" type="object" string="Rotate"
+                        icon="fa-refresh" invisible="not is_signing"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_oauth_keypair_form" model="ir.ui.view">
+        <field name="name">mint.oauth.keypair.form</field>
+        <field name="model">mint.oauth.keypair</field>
+        <field name="arch" type="xml">
+            <form string="Signing Key" create="false">
+                <sheet>
+                    <div class="alert alert-warning" role="alert">
+                        Rotating mints a new signing key and leaves this one
+                        <strong>active for verification</strong>. Only clear
+                        "Active" once every token signed by this key has
+                        expired — doing it sooner breaks live sessions.
+                    </div>
+                    <group>
+                        <field name="kid" readonly="1"/>
+                        <field name="is_signing" readonly="1"/>
+                        <field name="active"/>
+                        <field name="create_date" readonly="1"/>
+                    </group>
+                    <group string="Public Key">
+                        <!-- The private half is never placed on a view; it is
+                             restricted to base.group_system at the field level. -->
+                        <field name="public_pem" nolabel="1" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_oauth_keypair" model="ir.actions.act_window">
+        <field name="name">Signing Keys</field>
+        <field name="res_model">mint.oauth.keypair</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

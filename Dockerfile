@@ -7,7 +7,7 @@
 # staging-smoke-test. Digest resolved 2026-06-13 (== what `odoo:19` pointed to).
 FROM odoo:19@sha256:3eede45a6be2a1fe4dc2911b7fc5caa8c6d5999e8f56ed8e3135160d6dc115c7
 
-ARG CACHEBUST=129
+ARG CACHEBUST=130
 # Force Docker to bust cache for all subsequent layers when CACHEBUST changes
 # Touch timestamp forces layer invalidation even if BuildKit thinks nothing changed
 RUN echo "Build cache key: $CACHEBUST — $(date +%s)"
@@ -82,6 +82,7 @@ COPY --chown=odoo:odoo patches/outdated_page_watcher_service.js \
 
 COPY --chown=odoo:odoo mint_embed /opt/extra-addons/mint_embed
 COPY --chown=odoo:odoo mint_oauth_only /opt/extra-addons/mint_oauth_only
+COPY --chown=odoo:odoo mint_oauth_provider /opt/extra-addons/mint_oauth_provider
 COPY --chown=odoo:odoo mint_customer_api /opt/extra-addons/mint_customer_api
 COPY --chown=odoo:odoo mint_dutchie_sync /opt/extra-addons/mint_dutchie_sync
 COPY --chown=odoo:odoo mint_pos_bridge /opt/extra-addons/mint_pos_bridge

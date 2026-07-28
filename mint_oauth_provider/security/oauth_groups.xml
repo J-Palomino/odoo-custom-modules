@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!--
+        Access model for the OIDC provider.
+
+        Two distinct concerns, deliberately separated:
+
+          * group_oidc_user  — may OBTAIN a token, i.e. may log into a relying
+            party such as Penpot. This is the audience gate enforced in
+            /oauth2/authorize. Membership is the whole access-control story
+            for the design tool, so it is hand-curated, not inherited.
+
+          * group_oidc_manager — may ADMINISTER the provider: register
+            clients, rotate signing keys, revoke tokens. This is effectively
+            "can mint credentials for any relying party", so it implies
+            base.group_system and is not something to hand out.
+
+        Being an internal user is explicitly NOT sufficient for either.
+    -->
+    <data noupdate="1">
+
+        <record id="priv_mint_identity" model="res.groups.privilege">
+            <field name="name">Mint Identity</field>
+        </record>
+
+        <!-- Audience gate: who may log into relying parties -->
+        <record id="group_oidc_user" model="res.groups">
+            <field name="name">Identity / Design Studio Users</field>
+            <field name="privilege_id" ref="priv_mint_identity"/>
+            <field name="comment">
+                Members may authenticate into Penpot (ux.letsgomint.us) via
+                Odoo. Grant this to designers and anyone who needs the design
+                tool. Removing a user here revokes their access at the next
+                authorization request; run "Revoke tokens" on their existing
+                sessions to cut access immediately.
+            </field>
+        </record>
+
+        <!-- Provider administration -->
+        <record id="group_oidc_manager" model="res.groups">
+            <field name="name">Identity / Provider Administrator</field>
+            <field name="privilege_id" ref="priv_mint_identity"/>
+            <field name="implied_ids" eval="[(4, ref('group_oidc_user'))]"/>
+            <field name="comment">
+                Can register OIDC clients, rotate signing keys and revoke
+                tokens. Equivalent to being able to issue credentials for any
+                connected application — restrict to platform administrators.
+            </field>
+        </record>
+
+        <!-- Sysadmins administer the provider by default. -->
+        <record id="base.group_system" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('group_oidc_manager'))]"/>
+        </record>
+
+    </data>
+</odoo>

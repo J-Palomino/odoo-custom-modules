@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_oauth_client_manager,mint.oauth.client.manager,model_mint_oauth_client,mint_oauth_provider.group_oidc_manager,1,1,1,1
+access_mint_oauth_redirect_uri_manager,mint.oauth.redirect.uri.manager,model_mint_oauth_redirect_uri,mint_oauth_provider.group_oidc_manager,1,1,1,1
+access_mint_oauth_keypair_manager,mint.oauth.keypair.manager,model_mint_oauth_keypair,mint_oauth_provider.group_oidc_manager,1,1,1,0
+access_mint_oauth_token_manager,mint.oauth.token.manager,model_mint_oauth_token,mint_oauth_provider.group_oidc_manager,1,1,0,1
+access_mint_oauth_code_manager,mint.oauth.code.manager,model_mint_oauth_code,mint_oauth_provider.group_oidc_manager,1,0,0,0
