@@ -6,6 +6,7 @@ All endpoints require JWT authentication via Authorization header.
 """
 import json
 import logging
+import math
 
 from odoo import http
 from odoo.http import request, Response
@@ -96,19 +97,30 @@ class MintCustomerProfile(http.Controller):
             ('program_id', '=', program.id),
         ], limit=1)
 
-        # Dutchie is the source of truth for loyalty points. When the partner is
-        # linked to a Dutchie customer (x_dutchie_customer_id set), surface the
-        # mirrored native balance (x_dutchie_loyalty_balance, kept in sync from
-        # the Backoffice loyalty ledger). Fall back to the legacy computed
-        # loyalty.card only for partners not yet linked to Dutchie.
-        if getattr(partner, 'x_dutchie_customer_id', False):
-            points = getattr(partner, 'x_dutchie_loyalty_balance', 0) or 0
+        # Dutchie is the source of truth for loyalty points: prefer the mirrored
+        # native balance (x_dutchie_loyalty_balance, synced from the Backoffice
+        # loyalty ledger) over the legacy computed loyalty.card.
+        #
+        # IMPORTANT: only trust the mirror once this partner has actually been
+        # synced. x_dutchie_loyalty_balance defaults to 0, and ~1.8M partners
+        # carry an x_dutchie_customer_id while only a handful are synced so far,
+        # so keying purely on "is linked" would display 0 for ~42k customers who
+        # currently have a non-zero loyalty.card balance. A partner counts as
+        # synced when x_dutchie_last_sync is set (or the balance is already
+        # positive); everyone else keeps the legacy card value until the
+        # backfill reaches them.
+        mirrored = getattr(partner, 'x_dutchie_loyalty_balance', 0) or 0
+        synced = bool(getattr(partner, 'x_dutchie_last_sync', False)) or mirrored > 0
+        if getattr(partner, 'x_dutchie_customer_id', False) and synced:
+            points = mirrored
         else:
             points = card.points if card else 0
 
-        # Display whole points only — round the balance DOWN to the nearest
-        # integer (never over-state redeemable points). Balances are non-negative.
-        points = int(points)
+        # Display whole points only — round DOWN so we never over-state
+        # redeemable points. math.floor (not int()) because int() truncates
+        # toward zero, which would round a negative balance UP; clamp at 0 so a
+        # negative adjustment ledger can never render as a negative balance.
+        points = max(0, int(math.floor(points or 0)))
 
         # Get available rewards
         rewards = []
