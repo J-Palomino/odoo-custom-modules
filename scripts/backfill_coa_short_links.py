@@ -59,6 +59,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="report only, write nothing")
     ap.add_argument("--limit", type=int, default=0, help="cap how many links to create")
+    ap.add_argument("--fix-codes", action="store_true",
+                    help="repair COA links left on a random auto code and exit")
     opts = ap.parse_args()
 
     load_env()
@@ -81,6 +83,44 @@ def main():
     base = call("ir.config_parameter", "get_param", ["web.base.url"]) or url
     root = int(call("ir.config_parameter", "get_param", ["coa_admin.root_dir_id", "17"]))
     print(f"base={base} coaRoot={root}")
+
+    if opts.fix_codes:
+        # The main pass skips any file that already has a tracker, so a link
+        # whose code write failed mid-run (502/timeout) would keep its random
+        # auto code forever. This repairs those in place.
+        #
+        # NB: `code` is not stored on link.tracker, so it cannot appear in a
+        # search domain — read the codes back and filter in Python.
+        links = call("link.tracker", "search_read", [[("url", "like", "/web/content/")]],
+                     fields=["id", "url", "code", "title"])
+        bad = [t for t in links if not str(t.get("code") or "").startswith(CODE_PREFIX)]
+        print(f"COA links on an auto code: {len(bad)}")
+        if not bad:
+            return
+        att_ids = [int(t["url"].rsplit("/", 1)[-1]) for t in bad]
+        owner = {a["id"]: a["res_id"] for a in
+                 call("ir.attachment", "search_read", [[("id", "in", att_ids)]],
+                      fields=["id", "res_id", "res_model"])
+                 if a["res_model"] == "dms.file"}
+        fixed = skipped = 0
+        for t in bad:
+            file_id = owner.get(int(t["url"].rsplit("/", 1)[-1]))
+            if not file_id:
+                skipped += 1
+                print(f"  no dms.file behind {t['url']}")
+                continue
+            if opts.dry_run:
+                print(f"  would set {t['code']} -> {CODE_PREFIX}{file_id}  ({t['title']})")
+                continue
+            try:
+                call("link.tracker", "write", [[t["id"]], {"code": f"{CODE_PREFIX}{file_id}"}])
+                fixed += 1
+                print(f"  {t['code']} -> {CODE_PREFIX}{file_id}  ({t['title']})")
+            except Exception as exc:  # noqa: BLE001
+                skipped += 1
+                print(f"  FAILED {CODE_PREFIX}{file_id}: {str(exc)[:100]}")
+        print(f"\ndone: repaired={fixed} skipped={skipped}")
+        return
 
     # 1. every certificate under the COA root
     files = call("dms.file", "search_read", [[("directory_id.parent_id", "=", root)]],
