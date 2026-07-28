@@ -10,11 +10,18 @@ caller is themselves a COA member.
 """
 
 import base64
+import logging
 import os
 
 from odoo import http
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request
+
+_logger = logging.getLogger(__name__)
+
+# Short links read as /r/coa-<dms.file id>. Keep in sync with
+# scripts/backfill-coa-short-links.mjs.
+COA_CODE_PREFIX = "coa-"
 
 _HTML_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "src", "index.html")
 _HTML_CACHE = None
@@ -70,6 +77,80 @@ class CoaAdmin(http.Controller):
             out[a["res_id"]] = a["id"]
         return out
 
+    # --------------------------------------------------------- short links
+    # Staff hand COA links to customers, so each certificate gets a tracked
+    # /r/<code> short link instead of a raw /web/content/<id> URL — same Odoo
+    # Link Tracker the rest of the business uses, so clicks are counted.
+    #
+    # link.tracker is reached with sudo() deliberately: per the standing
+    # agents-only policy the tracker is not exposed to ordinary internal users
+    # (no group, no menus), so a COA member has no rights on the model. This
+    # mirrors the access-management actions below — elevate only after
+    # _require_member() has proved the caller is a COA member, and only for
+    # this one narrow operation.
+
+    def _public_base(self):
+        """Canonical public base for shareable links. host_url is whatever host
+        the staffer happens to be on; the short link's target must be the public
+        site, so prefer web.base.url."""
+        base = request.env["ir.config_parameter"].sudo().get_param("web.base.url")
+        return (base or request.httprequest.host_url).rstrip("/")
+
+    def _content_url(self, attachment_id):
+        return "%s/web/content/%s" % (self._public_base(), attachment_id)
+
+    def _mint_short_link(self, attachment_id, title, file_id):
+        """Find-or-create the tracked link for one certificate, return the
+        link.tracker record.
+
+        Idempotent: keyed on the stored `url`, so calling twice returns the same
+        record rather than a duplicate.
+
+        The short code is ``coa-<dms.file id>`` — readable, and derived from the
+        file rather than a counter so the backfill is resumable and concurrent
+        uploads can't race for the same number. Odoo's random 3-char codes are
+        unusable in anything staff have to read out or print.
+        """
+        target = self._content_url(attachment_id)
+        tracker = request.env["link.tracker"].sudo()
+        link = tracker.search([("url", "=", target)], limit=1)
+        if link:
+            return link
+
+        # `code` passed to create() is silently ignored — it is a non-stored
+        # compute whose inverse doesn't run on create — so set it with a
+        # follow-up write(), which replaces the auto-generated code in place.
+        link = tracker.create({"url": target, "title": title})
+        try:
+            link.write({"code": "%s%s" % (COA_CODE_PREFIX, file_id)})
+        except Exception:  # noqa: BLE001
+            # Codes are unique-constrained. If ours is somehow taken, keep the
+            # auto-generated one rather than losing the link entirely.
+            _logger.warning(
+                "COA short link: code %s%s unavailable, keeping %s",
+                COA_CODE_PREFIX, file_id, link.code)
+        return link
+
+    def _short_link_map(self, attachment_ids):
+        """attachment id -> existing short URL, for the ones already shortened.
+
+        One batched search so listing a folder costs a single query and does NOT
+        mint trackers as a side effect of browsing — links are created on demand
+        by the `short_link` action. Keyed on `url` because `code`/`short_url` are
+        non-stored computes and cannot be searched.
+        """
+        out = {}
+        if not attachment_ids:
+            return out
+        by_url = {self._content_url(a): a for a in attachment_ids}
+        rows = request.env["link.tracker"].sudo().search_read(
+            [("url", "in", list(by_url))], ["url", "short_url"])
+        for r in rows:
+            att = by_url.get(r["url"])
+            if att and r.get("short_url"):
+                out[att] = r["short_url"]
+        return out
+
     # ------------------------------------------------------------------ page
     @http.route("/coa/admin", type="http", auth="user", website=False, csrf=False)
     def page(self, **kw):
@@ -110,9 +191,11 @@ class CoaAdmin(http.Controller):
                 ["id", "name", "human_size", "write_date"],
                 limit=5000, order="name")
             att = self._attachment_map([f["id"] for f in files])
+            short = self._short_link_map([a for a in att.values() if a])
             return {"files": [{
                 "id": f["id"], "name": f["name"], "size": f["human_size"],
                 "updated": f["write_date"], "attachmentId": att.get(f["id"]),
+                "shortUrl": short.get(att.get(f["id"])),
             } for f in files]}
 
         if action == "upload":
@@ -125,10 +208,20 @@ class CoaAdmin(http.Controller):
                 "name": name, "directory_id": directory_id, "content": content_b64,
             })
             att = self._attachment_map([rec.id]).get(rec.id)
+            short_url = None
             if att:
                 # Make the content public so /web/content and /coa can serve it.
                 request.env["ir.attachment"].browse(att).write({"public": True})
-            return {"ok": True, "fileId": rec.id, "attachmentId": att}
+                # Every certificate gets its tracked short link at upload time,
+                # so staff never have to mint one before sharing.
+                try:
+                    short_url = self._mint_short_link(att, rec.name, rec.id).short_url
+                except Exception:  # noqa: BLE001
+                    # A tracker failure must not lose the uploaded PDF — the row
+                    # simply falls back to its "Shorten" button.
+                    _logger.exception("COA upload %s: short link minting failed", rec.id)
+            return {"ok": True, "fileId": rec.id, "attachmentId": att,
+                    "shortUrl": short_url}
 
         if action == "rename":
             file_id = int(params.get("fileId") or 0)
@@ -153,6 +246,60 @@ class CoaAdmin(http.Controller):
                 raise UserError("fileId required")
             request.env["dms.file"].browse(file_id).write({"active": False})
             return {"ok": True}
+
+        if action == "short_link":
+            # Find-or-create the tracked short link for one certificate.
+            file_id = int(params.get("fileId") or 0)
+            if not file_id:
+                raise UserError("fileId required")
+            rec = request.env["dms.file"].browse(file_id)
+            if not rec.exists():
+                raise UserError("That certificate no longer exists")
+            att_id = self._attachment_map([file_id]).get(file_id)
+            if not att_id:
+                raise UserError("That certificate has no stored PDF to link to")
+
+            # The short link is meant to be handed to customers, so the target
+            # has to be readable without an Odoo session. Uploads already set
+            # this; older rows may predate that.
+            att = request.env["ir.attachment"].browse(att_id)
+            if not att.public:
+                att.write({"public": True})
+
+            existed = bool(request.env["link.tracker"].sudo().search_count(
+                [("url", "=", self._content_url(att_id))]))
+            link = self._mint_short_link(att_id, rec.name, rec.id)
+            return {
+                "ok": True,
+                "shortUrl": link.short_url,
+                "clicks": link.count,
+                "existed": existed,
+            }
+
+        if action == "qr_code":
+            # QR for the certificate's short link. mint_link_tracker_qr adds
+            # qr_code/qr_code_filename to link.tracker as NON-STORED computes,
+            # so they are rendered per read — fetched on demand for one row
+            # rather than for every row in a folder listing.
+            file_id = int(params.get("fileId") or 0)
+            if not file_id:
+                raise UserError("fileId required")
+            rec = request.env["dms.file"].browse(file_id)
+            if not rec.exists():
+                raise UserError("That certificate no longer exists")
+            att_id = self._attachment_map([file_id]).get(file_id)
+            if not att_id:
+                raise UserError("That certificate has no stored PDF to link to")
+            link = self._mint_short_link(att_id, rec.name, rec.id)
+            qr = link.qr_code
+            if isinstance(qr, bytes):
+                qr = qr.decode()
+            return {
+                "ok": True,
+                "shortUrl": link.short_url,
+                "qrBase64": qr or None,
+                "filename": link.qr_code_filename or ("qr-%s.png" % link.code),
+            }
 
         if action == "create_brand":
             name = _sanitize(params.get("name"))

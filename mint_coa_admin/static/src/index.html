@@ -83,6 +83,24 @@
       </div>
     </div>
 
+    <!-- QR + short link for one certificate -->
+    <div id="qrModal" class="modal hidden">
+      <div class="modalBox" style="width:min(380px,92vw); text-align:center">
+        <div class="modalHead">
+          <strong id="qrTitle" style="font-size:14px; text-align:left"></strong>
+          <button id="qrClose" class="ghost">✕</button>
+        </div>
+        <img id="qrImg" alt="QR code for this certificate" style="width:230px; height:230px; margin:10px auto; display:block; image-rendering:pixelated" />
+        <div><a id="qrLink" class="link" target="_blank" rel="noopener"></a></div>
+        <div class="acts" style="justify-content:center; margin-top:14px">
+          <button id="qrCopyLink" class="ghost">Copy link</button>
+          <button id="qrCopyImg" class="ghost">Copy QR</button>
+          <a id="qrDownload" class="ghost" style="text-decoration:none; padding:7px 12px; border:1px solid var(--line); border-radius:7px; color:var(--mint-d)" download>Download</a>
+        </div>
+        <div id="qrStatus" class="status"></div>
+      </div>
+    </div>
+
     <!-- No-access notice (signed in, but not a COA member) -->
     <div id="gate" class="gate hidden">
       <h2>No COA access</h2>
@@ -108,8 +126,8 @@
         </div>
         <div id="status" class="status"></div>
         <table>
-          <thead><tr><th>Certificate</th><th>Size</th><th>Updated</th><th style="width:280px">Actions</th></tr></thead>
-          <tbody id="files"><tr><td colspan="4" style="color:#9ca3af">Select a brand folder to view its certificates.</td></tr></tbody>
+          <thead><tr><th>Certificate</th><th>Size</th><th>Updated</th><th style="width:190px">Short link</th><th style="width:280px">Actions</th></tr></thead>
+          <tbody id="files"><tr><td colspan="5" style="color:#9ca3af">Select a brand folder to view its certificates.</td></tr></tbody>
         </table>
       </main>
     </div>
@@ -249,10 +267,10 @@
           els.curBrand.textContent = name;
           els.upload.disabled = false;
           Array.prototype.forEach.call(els.brands.children, function (c) { c.classList.toggle('active', c.querySelector('span').textContent === name); });
-          els.files.innerHTML = '<tr><td colspan="4" style="color:#9ca3af">Loading…</td></tr>';
+          els.files.innerHTML = '<tr><td colspan="5" style="color:#9ca3af">Loading…</td></tr>';
           api('list_files', { directoryId: id }).then(function (j) {
             var rows = (j.files || []);
-            if (!rows.length) { els.files.innerHTML = '<tr><td colspan="4" style="color:#9ca3af">No certificates in this folder.</td></tr>'; return; }
+            if (!rows.length) { els.files.innerHTML = '<tr><td colspan="5" style="color:#9ca3af">No certificates in this folder.</td></tr>'; return; }
             els.files.innerHTML = '';
             rows.forEach(function (f) { els.files.appendChild(fileRow(f)); });
           }).catch(handleErr);
@@ -265,16 +283,130 @@
             '<td>' + esc(f.name) + '</td>' +
             '<td>' + esc(f.size) + '</td>' +
             '<td>' + esc((f.updated || '').slice(0, 10)) + '</td>' +
+            '<td class="shortCell"></td>' +
             '<td><div class="acts">' +
               '<a class="link" href="' + view + '" target="_blank" rel="noopener">View</a>' +
+              '<button class="ghost" data-act="qr">QR</button>' +
               '<button class="ghost" data-act="rename">Rename</button>' +
               '<button class="ghost" data-act="move">Move</button>' +
               '<button class="danger" data-act="archive">Archive</button>' +
             '</div></td>';
+          renderShort(f, tr.querySelector('.shortCell'));
+          tr.querySelector('[data-act=qr]').addEventListener('click', function () { doQr(f, tr); });
           tr.querySelector('[data-act=rename]').addEventListener('click', function () { doRename(f, tr); });
           tr.querySelector('[data-act=move]').addEventListener('click', function () { doMove(f, tr); });
           tr.querySelector('[data-act=archive]').addEventListener('click', function () { doArchive(f, tr); });
           return tr;
+        }
+
+        // Tracked /r/<code> link for one certificate. Rows that already have one
+        // render it immediately (list_files resolves them in a single query);
+        // the rest offer a Shorten button so browsing a folder never mints
+        // trackers for certificates nobody shares.
+        function renderShort(f, cell) {
+          cell.innerHTML = '';
+          if (!f.attachmentId) { cell.innerHTML = '<span style="color:#9ca3af">—</span>'; return; }
+          if (!f.shortUrl) {
+            var mk = document.createElement('button');
+            mk.className = 'ghost'; mk.textContent = 'Shorten';
+            mk.addEventListener('click', function () {
+              mk.disabled = true; mk.textContent = 'Shortening…';
+              api('short_link', { fileId: f.id }).then(function (j) {
+                f.shortUrl = j.shortUrl;
+                renderShort(f, cell);
+                setStatus(j.existed ? 'Short link retrieved.' : 'Short link created.');
+              }).catch(function (e) { mk.disabled = false; mk.textContent = 'Shorten'; handleErr(e); });
+            });
+            cell.appendChild(mk);
+            return;
+          }
+          var a = document.createElement('a');
+          a.className = 'link'; a.href = f.shortUrl; a.target = '_blank'; a.rel = 'noopener';
+          // Show just the /r/<code> tail — the full origin is noise in a table.
+          a.textContent = f.shortUrl.replace(/^https?:\/\/[^/]+/, '');
+          a.title = f.shortUrl;
+          var copy = document.createElement('button');
+          copy.className = 'ghost'; copy.textContent = 'Copy';
+          copy.style.marginLeft = '8px'; copy.style.padding = '2px 7px'; copy.style.fontSize = '12px';
+          copy.addEventListener('click', function () { copyText(f.shortUrl, copy); });
+          cell.appendChild(a); cell.appendChild(copy);
+        }
+
+        // QR for one certificate. The image is a non-stored compute on
+        // link.tracker, so it is fetched per row on click rather than for the
+        // whole folder. Minting is shared with Shorten — opening the QR for a
+        // not-yet-shortened certificate creates its link too.
+        function doQr(f, tr) {
+          var btn = tr.querySelector('[data-act=qr]');
+          btn.disabled = true;
+          var was = btn.textContent; btn.textContent = '…';
+          api('qr_code', { fileId: f.id }).then(function (j) {
+            btn.disabled = false; btn.textContent = was;
+            if (f.shortUrl !== j.shortUrl) {
+              f.shortUrl = j.shortUrl;
+              renderShort(f, tr.querySelector('.shortCell'));
+            }
+            if (!j.qrBase64) { setStatus('No QR available for this certificate.'); return; }
+            var dataUri = 'data:image/png;base64,' + j.qrBase64;
+            document.getElementById('qrTitle').textContent = f.name;
+            document.getElementById('qrImg').src = dataUri;
+            var link = document.getElementById('qrLink');
+            link.href = j.shortUrl; link.textContent = j.shortUrl;
+            var dl = document.getElementById('qrDownload');
+            dl.href = dataUri; dl.setAttribute('download', j.filename || 'qr.png');
+            document.getElementById('qrStatus').textContent = '';
+            document.getElementById('qrCopyLink').onclick = function () {
+              copyText(j.shortUrl, document.getElementById('qrCopyLink'));
+            };
+            document.getElementById('qrCopyImg').onclick = function () {
+              copyImage(dataUri, document.getElementById('qrCopyImg'));
+            };
+            document.getElementById('qrModal').classList.remove('hidden');
+          }).catch(function (e) { btn.disabled = false; btn.textContent = was; handleErr(e); });
+        }
+
+        function closeQr() { document.getElementById('qrModal').classList.add('hidden'); }
+        document.getElementById('qrClose').addEventListener('click', closeQr);
+        document.getElementById('qrModal').addEventListener('click', function (e) {
+          if (e.target === this) closeQr();
+        });
+
+        // Copying an IMAGE needs ClipboardItem, which text copy doesn't. It is
+        // unavailable on insecure origins and in some browsers, so fall back to
+        // telling the user to use Download rather than silently doing nothing.
+        function copyImage(dataUri, btn) {
+          if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) {
+            document.getElementById('qrStatus').textContent =
+              'This browser can’t copy images — use Download instead.';
+            return;
+          }
+          fetch(dataUri).then(function (r) { return r.blob(); }).then(function (blob) {
+            return navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          }).then(function () {
+            var was = btn.textContent; btn.textContent = 'Copied';
+            setTimeout(function () { btn.textContent = was; }, 1200);
+          }).catch(function () {
+            document.getElementById('qrStatus').textContent =
+              'Copy failed — use Download instead.';
+          });
+        }
+
+        function copyText(text, btn) {
+          function done() {
+            var was = btn.textContent; btn.textContent = 'Copied';
+            setTimeout(function () { btn.textContent = was; }, 1200);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () { fallback(); });
+          } else { fallback(); }
+          function fallback() {
+            // http:// origins and older browsers have no async clipboard API.
+            var t = document.createElement('textarea');
+            t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+            document.body.appendChild(t); t.select();
+            try { document.execCommand('copy'); done(); } catch (e) { setStatus('Copy failed — the link is ' + text); }
+            document.body.removeChild(t);
+          }
         }
 
         function doRename(f, tr) {
