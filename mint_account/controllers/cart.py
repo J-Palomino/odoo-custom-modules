@@ -8,6 +8,10 @@ Customer cart endpoints. JWT-authenticated (Bearer via mint_customer_api).
   POST   /api/v1/cart/merge             — body: {store_id, items[]}; unions
                                            local items with server cart
 
+`store_id` may be either the integer Odoo company id or the store's Dutchie
+store UUID (res.company.dutchie_store_id) — the FE keys stores by the UUID.
+See _resolve_store_id.
+
 Cart is keyed by (partner_id, company_id) for Florida-compliant per-region
 isolation. A partner has one cart per store; moving stores does not destroy
 the cart at the old store.
@@ -39,12 +43,34 @@ def _serialize_cart(cart):
     }
 
 
-def _parse_store_id(raw):
-    """Coerce store_id from query string / body to an int. Returns None on bad input."""
-    try:
-        return int(raw) if raw is not None else None
-    except (TypeError, ValueError):
+def _resolve_store_id(env, raw):
+    """Resolve a store_id to an Odoo company id (int).
+
+    The FE identifies a store by its Dutchie store UUID
+    (``res.company.dutchie_store_id``), but carts are keyed by the integer
+    ``company_id``. Accept either form:
+
+      - a numeric company id  -> returned as-is (fast path, no query)
+      - a Dutchie store UUID   -> looked up and resolved to the company id
+
+    Returns None on missing / unresolvable input, which the callers turn into
+    a 400. Previously this only did ``int(raw)``, so a UUID raised ValueError
+    and every authenticated cart call from the FE 400'd.
+    """
+    if raw is None:
         return None
+    # Numeric company id — fast path, no DB hit.
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        pass
+    # Non-numeric: treat as a Dutchie store UUID.
+    token = str(raw).strip()
+    if not token:
+        return None
+    company = env['res.company'].sudo().search(
+        [('dutchie_store_id', '=', token)], limit=1)
+    return company.id or None
 
 
 def _validate_items(items):
@@ -90,7 +116,7 @@ class MintCartController(http.Controller):
         return error_response('Method not allowed', 405)
 
     def _get(self, partner, kw):
-        store_id = _parse_store_id(kw.get('store_id'))
+        store_id = _resolve_store_id(request.env, kw.get('store_id'))
         if not store_id:
             return error_response('store_id query param is required')
         cart = request.env['mint.cart'].sudo().search([
@@ -103,7 +129,7 @@ class MintCartController(http.Controller):
         data, err = read_json_body()
         if err:
             return err
-        store_id = _parse_store_id(data.get('store_id'))
+        store_id = _resolve_store_id(request.env, data.get('store_id'))
         if not store_id:
             return error_response('store_id is required')
 
@@ -122,7 +148,7 @@ class MintCartController(http.Controller):
         return json_response({'cart': _serialize_cart(cart)})
 
     def _delete(self, partner, kw):
-        store_id = _parse_store_id(kw.get('store_id'))
+        store_id = _resolve_store_id(request.env, kw.get('store_id'))
         if not store_id:
             return error_response('store_id query param is required')
         cart = request.env['mint.cart'].sudo().search([
@@ -155,7 +181,7 @@ class MintCartController(http.Controller):
         if err:
             return err
 
-        store_id = _parse_store_id(data.get('store_id'))
+        store_id = _resolve_store_id(request.env, data.get('store_id'))
         if not store_id:
             return error_response('store_id is required')
 
