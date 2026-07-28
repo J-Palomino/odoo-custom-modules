@@ -10,11 +10,18 @@ caller is themselves a COA member.
 """
 
 import base64
+import logging
 import os
 
 from odoo import http
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request
+
+_logger = logging.getLogger(__name__)
+
+# Short links read as /r/coa-<dms.file id>. Keep in sync with
+# scripts/backfill-coa-short-links.mjs.
+COA_CODE_PREFIX = "coa-"
 
 _HTML_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "src", "index.html")
 _HTML_CACHE = None
@@ -91,6 +98,38 @@ class CoaAdmin(http.Controller):
 
     def _content_url(self, attachment_id):
         return "%s/web/content/%s" % (self._public_base(), attachment_id)
+
+    def _mint_short_link(self, attachment_id, title, file_id):
+        """Find-or-create the tracked link for one certificate, return the
+        link.tracker record.
+
+        Idempotent: keyed on the stored `url`, so calling twice returns the same
+        record rather than a duplicate.
+
+        The short code is ``coa-<dms.file id>`` — readable, and derived from the
+        file rather than a counter so the backfill is resumable and concurrent
+        uploads can't race for the same number. Odoo's random 3-char codes are
+        unusable in anything staff have to read out or print.
+        """
+        target = self._content_url(attachment_id)
+        tracker = request.env["link.tracker"].sudo()
+        link = tracker.search([("url", "=", target)], limit=1)
+        if link:
+            return link
+
+        # `code` passed to create() is silently ignored — it is a non-stored
+        # compute whose inverse doesn't run on create — so set it with a
+        # follow-up write(), which replaces the auto-generated code in place.
+        link = tracker.create({"url": target, "title": title})
+        try:
+            link.write({"code": "%s%s" % (COA_CODE_PREFIX, file_id)})
+        except Exception:  # noqa: BLE001
+            # Codes are unique-constrained. If ours is somehow taken, keep the
+            # auto-generated one rather than losing the link entirely.
+            _logger.warning(
+                "COA short link: code %s%s unavailable, keeping %s",
+                COA_CODE_PREFIX, file_id, link.code)
+        return link
 
     def _short_link_map(self, attachment_ids):
         """attachment id -> existing short URL, for the ones already shortened.
@@ -169,10 +208,20 @@ class CoaAdmin(http.Controller):
                 "name": name, "directory_id": directory_id, "content": content_b64,
             })
             att = self._attachment_map([rec.id]).get(rec.id)
+            short_url = None
             if att:
                 # Make the content public so /web/content and /coa can serve it.
                 request.env["ir.attachment"].browse(att).write({"public": True})
-            return {"ok": True, "fileId": rec.id, "attachmentId": att}
+                # Every certificate gets its tracked short link at upload time,
+                # so staff never have to mint one before sharing.
+                try:
+                    short_url = self._mint_short_link(att, rec.name, rec.id).short_url
+                except Exception:  # noqa: BLE001
+                    # A tracker failure must not lose the uploaded PDF — the row
+                    # simply falls back to its "Shorten" button.
+                    _logger.exception("COA upload %s: short link minting failed", rec.id)
+            return {"ok": True, "fileId": rec.id, "attachmentId": att,
+                    "shortUrl": short_url}
 
         if action == "rename":
             file_id = int(params.get("fileId") or 0)
@@ -217,21 +266,14 @@ class CoaAdmin(http.Controller):
             if not att.public:
                 att.write({"public": True})
 
-            target = self._content_url(att_id)
-            tracker = request.env["link.tracker"].sudo()
-            existing = tracker.search([("url", "=", target)], limit=1)
-            if existing:
-                link = existing
-            else:
-                # NB: passing `code` to create() is silently ignored (it is a
-                # non-stored compute whose inverse doesn't run on create), so we
-                # take Odoo's generated code rather than pretending to set one.
-                link = tracker.create({"url": target, "title": rec.name})
+            existed = bool(request.env["link.tracker"].sudo().search_count(
+                [("url", "=", self._content_url(att_id))]))
+            link = self._mint_short_link(att_id, rec.name, rec.id)
             return {
                 "ok": True,
                 "shortUrl": link.short_url,
                 "clicks": link.count,
-                "existed": bool(existing),
+                "existed": existed,
             }
 
         if action == "create_brand":
