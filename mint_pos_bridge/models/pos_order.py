@@ -364,6 +364,17 @@ class MintPosOrder(models.Model):
         if vals.get('state') in self._TERMINAL_STATES:
             vals['lane_id'] = False
 
+        # Snapshot state BEFORE the write so the push below can tell a real
+        # transition from a no-op re-write of the same state. Callers are not
+        # consistent about this: the lane watcher and orderSync both skip
+        # unchanged states, but the frontend's /api/checkout/complete PUTs
+        # state='confirmed' unconditionally, so a retry — or that call landing
+        # after the lane watcher already moved the order to confirmed — used to
+        # fire a second identical "Order Confirmed" push for one transition.
+        prev_states = (
+            {o.id: o.state for o in self} if vals.get('state') else {}
+        )
+
         res = super().write(vals)
         new_state = vals.get('state')
         if not new_state:
@@ -404,7 +415,8 @@ class MintPosOrder(models.Model):
         if (new_state in self._get_notification_messages()
                 and not self.env.context.get('mint_pos_silent')):
             for order in self:
-                if order.partner_id:
+                # Only on an actual transition — see prev_states above.
+                if order.partner_id and prev_states.get(order.id) != new_state:
                     self._send_order_notification(order, new_state)
 
         # Real-time bus.bus notification for Odoo UI

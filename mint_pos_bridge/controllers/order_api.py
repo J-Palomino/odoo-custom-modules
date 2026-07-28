@@ -948,32 +948,15 @@ class MintPosOrderAPI(http.Controller):
             order.name, new_state, user_initiated,
         )
 
-        # Send push notification directly from controller (belt + suspenders)
-        if order.partner_id:
-            try:
-                msgs = order._get_notification_messages()
-                msg = msgs.get(new_state)
-                if msg:
-                    store_name = order.company_id.name or ''
-                    ref = order.name or ''
-                    title = msg['title']
-                    body = msg['body'].format(store=store_name, ref=ref)
-                    order_url = '/orders?ref=%s' % ref
-
-                    sent = request.env['mint.push.subscription'].sudo().send_to_partner(
-                        partner_id=order.partner_id.id,
-                        title=title,
-                        body=body,
-                        url=order_url,
-                    )
-                    _logger.info(
-                        'Push [%s] sent for order %s to partner %s (%d delivered)',
-                        new_state, order.name, order.partner_id.id, sent,
-                    )
-            except Exception:
-                _logger.exception(
-                    'Failed to send push for order %s', order.name,
-                )
+        # NO push notification here. The write() above already fired
+        # _send_order_notification() for this exact state change, using this
+        # same _get_notification_messages() dict — a second send from the
+        # controller was pure duplication and every customer whose order moved
+        # through this endpoint (the lane watcher mirrors Dutchie lane moves
+        # here every minute) got two identical "Order Confirmed" / "Ready for
+        # Pickup" notifications. The model hook is the single sender: it covers
+        # every writer (kanban drag, sync jobs, frontend endpoints) and honors
+        # the mint_pos_silent suppression that this block ignored.
 
         return _json({
             'success': True,
@@ -1337,27 +1320,15 @@ class MintPosOrderAPI(http.Controller):
             'notes': (order.notes or '') + '\nCancelled: ' + (data.get('reason') or 'No reason'),
         })
 
-        # Send push notification if configured
-        if order.partner_id:
-            config = request.env['mint.web.order.config'].sudo().search([
-                ('company_id', '=', order.company_id.id),
-                ('active', '=', True),
-            ], limit=1)
-            if config and config.auto_push_notifications:
-                title, body = config.format_push_message(
-                    'cancelled',
-                    store_name=order.company_id.name,
-                    order_ref=order.name,
-                    customer_name=order.partner_id.name,
-                )
-                if title:
-                    try:
-                        request.env['mint.push.subscription'].sudo().send_to_partner(
-                            order.partner_id.id, title, body,
-                            url='/order/' + (order.name or ''),
-                        )
-                    except Exception as e:
-                        _logger.warning('Push notification failed: %s', e)
+        # NO push notification here — same duplication as PUT /state. The
+        # write() above already sent the 'cancelled' notification via
+        # _send_order_notification(), so this second config-templated send made
+        # every cancellation arrive twice. Sending only from the model hook
+        # keeps one message per state change; if the per-store template and the
+        # auto_push_notifications toggle should govern cancels, that belongs in
+        # _send_order_notification() where it applies to every state, not here.
+        # (38 of 66 store companies have a mint.web.order.config row, so gating
+        # the model hook on that config today would silence the rest.)
 
         return _json({'success': True, 'order_id': order.id, 'state': 'cancelled'})
 
