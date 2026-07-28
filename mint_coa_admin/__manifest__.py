@@ -9,7 +9,9 @@
     "category": "Document Management",
     # link_tracker: each certificate row exposes a tracked /r/<code> short link
     # to its PDF, minted on demand via link.tracker.
-    "depends": ["dms", "web", "link_tracker"],
+    # mint_link_tracker_qr: adds qr_code/qr_code_filename to link.tracker, which
+    # the panel serves as a downloadable/copyable QR per certificate.
+    "depends": ["dms", "web", "link_tracker", "mint_link_tracker_qr"],
     "data": [],
     "installable": True,
     "application": False,

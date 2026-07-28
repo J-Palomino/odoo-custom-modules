@@ -276,6 +276,31 @@ class CoaAdmin(http.Controller):
                 "existed": existed,
             }
 
+        if action == "qr_code":
+            # QR for the certificate's short link. mint_link_tracker_qr adds
+            # qr_code/qr_code_filename to link.tracker as NON-STORED computes,
+            # so they are rendered per read — fetched on demand for one row
+            # rather than for every row in a folder listing.
+            file_id = int(params.get("fileId") or 0)
+            if not file_id:
+                raise UserError("fileId required")
+            rec = request.env["dms.file"].browse(file_id)
+            if not rec.exists():
+                raise UserError("That certificate no longer exists")
+            att_id = self._attachment_map([file_id]).get(file_id)
+            if not att_id:
+                raise UserError("That certificate has no stored PDF to link to")
+            link = self._mint_short_link(att_id, rec.name, rec.id)
+            qr = link.qr_code
+            if isinstance(qr, bytes):
+                qr = qr.decode()
+            return {
+                "ok": True,
+                "shortUrl": link.short_url,
+                "qrBase64": qr or None,
+                "filename": link.qr_code_filename or ("qr-%s.png" % link.code),
+            }
+
         if action == "create_brand":
             name = _sanitize(params.get("name"))
             if not name:
