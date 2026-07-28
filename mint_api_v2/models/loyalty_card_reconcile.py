@@ -34,8 +34,18 @@ class LoyaltyCard(models.Model):
 
     @api.model
     def _mint_earned_by_partner(self):
-        """partner_id -> SUM(loyalty_points) from the purchase ledger."""
+        """partner_id -> SUM(loyalty_points) from the purchase ledger.
+
+        Returns {} when mint_dutchie_sync is absent. mint_api_v2 does not
+        depend on it — adding the dependency would couple this module to the
+        roster importer — so the model may genuinely not be in the registry.
+        Probe rather than raise, the same defensive pattern auth.py uses for
+        the x_dutchie_* fields. A caller seeing {} treats every card as "no
+        ground truth" and skips it, which is the safe direction to fail.
+        """
         earned = {}
+        if 'mint.dutchie.purchase' not in self.env:
+            return earned
         groups = self.env['mint.dutchie.purchase'].sudo().read_group(
             [], ['loyalty_points'], ['partner_id'], lazy=False)
         for row in groups:

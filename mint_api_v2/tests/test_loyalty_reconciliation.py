@@ -8,9 +8,18 @@ more than the arithmetic: each one below prevented real damage.
 Every test uses dry_run where a write is not the subject, so a failure here
 never depends on mutation succeeding.
 """
+from odoo import fields
+from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
 
+# These fixtures need models from modules mint_api_v2 does NOT depend on
+# (mint.dutchie.purchase from mint_dutchie_sync; the day-of-week fields
+# create_redemption writes come from mint_command_center). Odoo runs a
+# module's tests immediately after that module loads, so at_install would
+# execute before those modules are in the registry. post_install defers
+# until the whole registry is built.
+@tagged('post_install', '-at_install')
 class TestLoyaltyReconciliation(TransactionCase):
 
     def setUp(self):
@@ -38,6 +47,10 @@ class TestLoyaltyReconciliation(TransactionCase):
             'loyalty_points': points,
             'receipt_no': receipt,
             'net_total': points,
+            # company_id is NOT NULL (and scopes UNIQUE(receipt_no, company_id));
+            # date is required=True on the model.
+            'company_id': self.env.company.id,
+            'date': fields.Date.today(),
         })
 
     def _set_points(self, card, points):

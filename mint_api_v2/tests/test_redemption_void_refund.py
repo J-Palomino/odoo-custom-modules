@@ -20,9 +20,17 @@ cannot be voided again), which is asserted explicitly — a double refund would
 mint points out of nothing.
 """
 from odoo.exceptions import UserError
+from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
 
+# These fixtures need models from modules mint_api_v2 does NOT depend on
+# (mint.dutchie.purchase from mint_dutchie_sync; the day-of-week fields
+# create_redemption writes come from mint_command_center). Odoo runs a
+# module's tests immediately after that module loads, so at_install would
+# execute before those modules are in the registry. post_install defers
+# until the whole registry is built.
+@tagged('post_install', '-at_install')
 class TestRedemptionVoidRefund(TransactionCase):
 
     def setUp(self):
