@@ -77,9 +77,14 @@
         <field name="name">mint.oauth.token.list</field>
         <field name="model">mint.oauth.token</field>
         <field name="arch" type="xml">
+            <!-- Revoking here cuts access immediately: access tokens are
+                 opaque and checked against this table on every /userinfo call,
+                 rather than being self-contained JWTs that stay valid until
+                 they expire. -->
             <list string="Issued Tokens" create="false">
                 <field name="user_id"/>
                 <field name="client_id"/>
+                <field name="token_type"/>
                 <field name="scope"/>
                 <field name="expires_at"/>
                 <field name="revoked"/>

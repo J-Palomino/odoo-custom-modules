@@ -103,10 +103,18 @@ class MintOauthCode(models.Model):
 
 class MintOauthToken(models.Model):
     _name = "mint.oauth.token"
-    _description = "OIDC Refresh Token"
+    _description = "OIDC Issued Token"
     _order = "create_date desc"
     _rec_name = "token_hash"
 
+    # Access tokens are opaque and stored, rather than self-contained JWTs, so
+    # that removing someone from the access group cuts them off immediately.
+    # A stateless JWT access token would stay valid until expiry no matter what
+    # we did in Odoo, which contradicts how the access group is documented.
+    token_type = fields.Selection(
+        [("access", "Access Token"), ("refresh", "Refresh Token")],
+        required=True, default="refresh", index=True,
+    )
     token_hash = fields.Char(required=True, index=True, readonly=True)
     client_id = fields.Many2one(
         "mint.oauth.client", required=True, ondelete="cascade", index=True
@@ -121,28 +129,39 @@ class MintOauthToken(models.Model):
     revoked = fields.Boolean(default=False, index=True)
 
     @api.model
-    def _issue(self, client, user, scope, code=None):
+    def _issue(self, client, user, scope, token_type="refresh", code=None):
         raw = secrets.token_urlsafe(48)
+        ttl = (
+            client.access_token_ttl or 3600
+            if token_type == "access"
+            else client.refresh_token_ttl or 1209600
+        )
         self.sudo().create({
+            "token_type": token_type,
             "token_hash": hash_token(raw),
             "client_id": client.id,
             "user_id": user.id,
             "code_id": code.id if code else False,
             "scope": scope,
-            "expires_at": fields.Datetime.now() + timedelta(
-                seconds=client.refresh_token_ttl or 1209600
-            ),
+            "expires_at": fields.Datetime.now() + timedelta(seconds=ttl),
         })
         return raw
 
     @api.model
-    def _resolve(self, raw_token, client):
-        """Return a live, unrevoked token record, or empty."""
-        record = self.sudo().search([
+    def _resolve(self, raw_token, client=None, token_type="refresh"):
+        """Return a live, unrevoked token record, or empty.
+
+        `client` is optional because /userinfo authenticates with a bearer
+        token alone and has no client context.
+        """
+        domain = [
             ("token_hash", "=", hash_token(raw_token or "")),
-            ("client_id", "=", client.id),
+            ("token_type", "=", token_type),
             ("revoked", "=", False),
-        ], limit=1)
+        ]
+        if client:
+            domain.append(("client_id", "=", client.id))
+        record = self.sudo().search(domain, limit=1)
         if not record or record.expires_at < fields.Datetime.now():
             return self.browse()
         return record

@@ -52,7 +52,9 @@ class MintOidcDiscovery(http.Controller):
             "token_endpoint": "%s/oauth2/token" % issuer,
             "userinfo_endpoint": "%s/oauth2/userinfo" % issuer,
             "jwks_uri": "%s/oauth2/jwks" % issuer,
-            "end_session_endpoint": "%s/oauth2/logout" % issuer,
+            # No end_session_endpoint: RP-initiated logout is not implemented,
+            # and advertising an endpoint that 404s makes conforming clients
+            # fail at sign-out. Add the key only alongside the route.
             "scopes_supported": ["openid", "profile", "email"],
             "response_types_supported": ["code"],
             "response_modes_supported": ["query"],
