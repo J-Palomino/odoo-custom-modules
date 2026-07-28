@@ -10,6 +10,33 @@ from .pos_lane import CATEGORY_TO_STATE, STATE_TO_CATEGORY
 
 _logger = logging.getLogger(__name__)
 
+# How far along the customer-facing journey each notified state sits. Used to
+# refuse a push for a BACKWARD move: an order sliding from 'pickup' back to
+# 'online_orders' is a sync artifact (Dutchie lane flapping), not something the
+# customer did or needs to hear about. Two lanes that mean the same thing to a
+# customer share a rank, so drifting between them stays silent.
+# 'cancelled' is deliberately ranked above everything: a cancellation must
+# always reach the customer, from any prior state.
+NOTIFY_RANK = {
+    'online_orders': 10,
+    'confirmed': 20,
+    'lobby': 30,
+    'sales_floor': 40,
+    'pickup': 50,
+    'deli_counter': 50,
+    'ready': 50,
+    # Delivery branch
+    'delivery': 60,
+    'delivery_progress': 70,
+    'delivery_completed': 80,
+    # Terminal — never treated as backward
+    'cancelled': 999,
+}
+
+# Minutes before the SAME state may notify the same order again. Overridable
+# via ir.config_parameter 'mint_pos_bridge.push_cooldown_minutes'.
+PUSH_COOLDOWN_DEFAULT_MINUTES = 30
+
 ORDER_STATES = [
     # Dutchie POS swimlane states
     ('lobby', 'Lobby'),
@@ -92,6 +119,23 @@ class MintPosOrder(models.Model):
         tracking=True,
         index=True,
         group_expand='_read_group_state',
+    )
+    # Push de-duplication bookkeeping. Written only by
+    # _send_order_notification() after a push actually goes out, so they record
+    # what the CUSTOMER last heard — which is not the same as the order's
+    # current state once suppression is in play.
+    last_push_state = fields.Char(
+        string='Last Notified State',
+        readonly=True,
+        copy=False,
+        help='Order state of the most recent push actually sent to the '
+             'customer. Drives the cooldown and backward-move suppression.',
+    )
+    last_push_at = fields.Datetime(
+        string='Last Notified At',
+        readonly=True,
+        copy=False,
+        help='When the most recent push was sent for this order.',
     )
     lane_id = fields.Many2one(
         'mint.pos.lane',
@@ -563,11 +607,65 @@ class MintPosOrder(models.Model):
             },
         }
 
+    def _push_cooldown_minutes(self):
+        """Minutes before the same state may re-notify the same order."""
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            'mint_pos_bridge.push_cooldown_minutes', '',
+        )
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return PUSH_COOLDOWN_DEFAULT_MINUTES
+        # A negative value would invert the comparison and suppress forever;
+        # 0 is a legitimate "disable the cooldown" setting.
+        return value if value >= 0 else PUSH_COOLDOWN_DEFAULT_MINUTES
+
+    def _push_suppress_reason(self, order, state):
+        """Why this push should NOT be sent, or None to allow it.
+
+        Both rules only ever suppress a REPEAT or a REGRESSION — neither can
+        swallow a customer's first notification for a new forward milestone,
+        which is the failure mode that actually costs someone their order.
+        """
+        last_state = order.last_push_state
+        last_at = order.last_push_at
+        if not last_state or not last_at:
+            return None
+
+        # 1. Same state again inside the cooldown window. This is the
+        #    oscillation guard: a lane that flaps away and back re-enters the
+        #    state it already announced.
+        if last_state == state:
+            minutes = self._push_cooldown_minutes()
+            if minutes and (fields.Datetime.now() - last_at) < timedelta(minutes=minutes):
+                return 'cooldown — %s already sent %s ago (window %sm)' % (
+                    state, fields.Datetime.now() - last_at, minutes,
+                )
+
+        # 2. Backward move. Unranked states are left alone rather than guessed
+        #    at, so a new state added to the messages dict without a rank stays
+        #    noisy instead of silently going dark.
+        new_rank = NOTIFY_RANK.get(state)
+        old_rank = NOTIFY_RANK.get(last_state)
+        if new_rank is not None and old_rank is not None and new_rank < old_rank:
+            return 'backward move %s -> %s (sync artifact, not a customer event)' % (
+                last_state, state,
+            )
+
+        return None
+
     def _send_order_notification(self, order, state):
         """Send push notification to customer on state change."""
         messages = self._get_notification_messages()
         msg = messages.get(state)
         if not msg:
+            return
+
+        reason = self._push_suppress_reason(order, state)
+        if reason:
+            _logger.info(
+                'Push [%s] SUPPRESSED for order %s: %s', state, order.name, reason,
+            )
             return
 
         try:
@@ -593,6 +691,15 @@ class MintPosOrder(models.Model):
                 'Push [%s] sent for order %s to partner %s',
                 state, order.name, order.partner_id.id,
             )
+            # Stamp only after a successful send, so a failed push does not
+            # start a cooldown that would swallow the retry. sudo(): write()
+            # runs as the triggering user, who may not own the order's company.
+            # This re-enters write() with no 'state' key, which returns before
+            # the notification block — no recursion.
+            order.sudo().write({
+                'last_push_state': state,
+                'last_push_at': fields.Datetime.now(),
+            })
         except Exception:
             _logger.exception(
                 'Failed to send push notification for order %s', order.name,
