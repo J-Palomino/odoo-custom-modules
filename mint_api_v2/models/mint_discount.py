@@ -530,7 +530,12 @@ class MintDiscount(models.Model):
         label = (product.name if product else None) or (reward.display_name if reward else _("Reward"))
         expires = fields.Datetime.now() + timedelta(days=REDEMPTION_DEFAULT_TTL_DAYS)
         vals = {
-            'name': _("Redemption: %s") % label,
+            # Code FIRST. This name is what the Dutchie payload builder sends as
+            # OnlineName / MenuDisplayName (and as the DiscountDescription
+            # fallback), all truncated to 120 chars — so leading with the code
+            # keeps it searchable in the Dutchie admin and guarantees it survives
+            # truncation on long product names.
+            'name': _("%s - Redemption: %s") % (code, label),
             'discount_type': 'loyalty_redemption',
             'is_published': True,
             'monday': True, 'tuesday': True, 'wednesday': True, 'thursday': True,
