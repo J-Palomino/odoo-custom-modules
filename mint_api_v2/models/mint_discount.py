@@ -522,6 +522,7 @@ class MintDiscount(models.Model):
         if not reward and not product:
             raise UserError(_("Either reward or product is required."))
 
+        code = self._generate_redemption_code()
         label = (product.name if product else None) or (reward.display_name if reward else _("Reward"))
         expires = fields.Datetime.now() + timedelta(days=REDEMPTION_DEFAULT_TTL_DAYS)
         vals = {
@@ -533,7 +534,17 @@ class MintDiscount(models.Model):
             'is_available_online': False,
             'valid_from': fields.Date.today(),
             'valid_until': expires.date(),
-            'redemption_code': self._generate_redemption_code(),
+            # ONE token, two fields. redemption_code is what /rewards shows the
+            # customer; dutchie_discount_code is what the pusher sends verbatim
+            # as the Dutchie `DiscountCode`. They were previously allowed to
+            # diverge — redemption_code was documented as "never sent to
+            # Dutchie" while the UI told the customer to read it out at the
+            # register — so every code was rejected at the POS. Same value in
+            # both, and application_method='code' so Dutchie expects a typed
+            # code rather than applying automatically.
+            'redemption_code': code,
+            'dutchie_discount_code': code,
+            'application_method': 'code',
             'redemption_partner_id': partner.id,
             'redemption_reward_id': reward.id if reward else False,
             'redemption_product_id': product.id if product else False,
@@ -555,7 +566,76 @@ class MintDiscount(models.Model):
             _logger.warning('create_redemption: no store supplied for partner %s — '
                             'redemption is NOT location-locked (redeemable at any store)',
                             partner.id)
-        return self.sudo().create(vals)
+        rec = self.sudo().create(vals)
+        rec._push_redemption_to_dutchie(store)
+        return rec
+
+    def action_push_redemption_to_dutchie(self):
+        """Public entry point: (re)create these redemptions in Dutchie.
+
+        Exists because Odoo refuses to dispatch underscore-prefixed methods
+        over RPC, and the only public alternative — mint.ptl.day.action_publish
+        — republishes that whole day's PTL deals as a side effect. Without this,
+        codes already issued to customers could not be repaired without a
+        deploy. Safe to re-run: the pusher is keyed on the discount and updates
+        dutchie_discount_id in place.
+        """
+        pushed = 0
+        for rec in self:
+            if rec.discount_type != 'loyalty_redemption':
+                continue
+            # The redemption is locked to its state's stores; any one of them
+            # carries the region the push gates on.
+            if rec._push_redemption_to_dutchie(rec.store_ids[:1]):
+                pushed += 1
+        return pushed
+
+    def _push_redemption_to_dutchie(self, store=None):
+        """Create this redemption as a real discount in Dutchie.
+
+        A code that exists only in Odoo is rejected at the register — the
+        budtender types it into Dutchie, which has never heard of it. Pushing
+        here is what makes the coupon usable; the welcome pre-roll already does
+        the same thing, which is why those codes work and redemptions did not.
+
+        Failures are logged, never raised: the points are already deducted and
+        the redemption record already exists inside the caller's transaction, so
+        aborting here would cost the customer their points AND their coupon. The
+        push log (mint.dutchie.discount.push.log) is the audit trail, and an
+        un-pushed redemption still has dutchie_discount_id unset for a sweeper
+        to retry.
+        """
+        self.ensure_one()
+        # mint_command_center is not in this module's depends (mint_api_v2 must
+        # not require the command centre to install), so probe the registry the
+        # same way the identity-key writes elsewhere do.
+        if 'mint.ptl.day' not in self.env:
+            _logger.warning('Redemption %s: mint.ptl.day unavailable, not pushed '
+                            'to Dutchie', self.redemption_code)
+            return False
+        # _push_discounts_to_dutchie gates on the PTL day's market_id, so it
+        # needs a day record carrying the right market. Derive it from the store
+        # the customer redeemed at.
+        region = store.region_id if store else False
+        if not region:
+            _logger.warning('Redemption %s: no store/region supplied, not pushed '
+                            'to Dutchie (code would be rejected at the register)',
+                            self.redemption_code)
+            return False
+        day = self.env['mint.ptl.day'].sudo().search(
+            [('market_id', '=', region.id)], limit=1)
+        if not day:
+            _logger.warning('Redemption %s: no mint.ptl.day for market %s, not '
+                            'pushed to Dutchie', self.redemption_code, region.code)
+            return False
+        try:
+            day._push_discounts_to_dutchie(self.ids)
+        except Exception:
+            _logger.exception('Redemption %s: Dutchie push failed; the code will '
+                              'not work at the register until re-pushed',
+                              self.redemption_code)
+            return False
+        return True
 
     def action_mark_redemption_used(self):
         """Budtender action: mark this redemption as used."""
