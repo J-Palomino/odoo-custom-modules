@@ -12,6 +12,9 @@ caller is themselves a COA member.
 import base64
 import logging
 import os
+import random
+import re
+import string
 
 from odoo import http
 from odoo.exceptions import AccessError, UserError
@@ -19,9 +22,19 @@ from odoo.http import request
 
 _logger = logging.getLogger(__name__)
 
-# Short links read as /r/coa-<dms.file id>. Keep in sync with
-# scripts/backfill-coa-short-links.mjs.
-COA_CODE_PREFIX = "coa-"
+# Short links read as /r/<4 random alphanumerics>, e.g. /r/k9Pq.
+#
+# 4 chars of base62 is 14,776,336 combinations against ~18k certificates
+# (~0.1% occupancy), so random assignment effectively never collides; the
+# unique constraint on link.tracker.code is the backstop either way. All /r/
+# codes share ONE namespace with the marketing links, so uniqueness is checked
+# globally, not per-prefix.
+#
+# Keep in sync with scripts/backfill_coa_short_links.py.
+COA_CODE_LENGTH = 4
+COA_CODE_ALPHABET = string.ascii_letters + string.digits
+COA_CODE_RE = re.compile(r"^[A-Za-z0-9]{%d}$" % COA_CODE_LENGTH)
+COA_CODE_ATTEMPTS = 8
 
 _HTML_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "src", "index.html")
 _HTML_CACHE = None
@@ -99,17 +112,38 @@ class CoaAdmin(http.Controller):
     def _content_url(self, attachment_id):
         return "%s/web/content/%s" % (self._public_base(), attachment_id)
 
-    def _mint_short_link(self, attachment_id, title, file_id):
+    def _assign_short_code(self, link):
+        """Give `link` a fresh 4-char alphanumeric code that is not already in
+        use. Returns True if one was assigned.
+
+        Each attempt runs in its own savepoint: the uniqueness check is a
+        validation raised on write, and without a savepoint a failed attempt
+        would poison the surrounding transaction and take the whole request
+        with it.
+        """
+        taken = request.env["link.tracker.code"].sudo()
+        for _attempt in range(COA_CODE_ATTEMPTS):
+            code = "".join(random.choice(COA_CODE_ALPHABET) for _ in range(COA_CODE_LENGTH))
+            if taken.search_count([("code", "=", code)]):
+                continue
+            try:
+                with request.env.cr.savepoint():
+                    link.write({"code": code})
+                return True
+            except Exception:  # noqa: BLE001
+                # Lost a race between the check and the write — try another.
+                continue
+        _logger.warning(
+            "COA short link %s: no free %d-char code after %d attempts, keeping %s",
+            link.id, COA_CODE_LENGTH, COA_CODE_ATTEMPTS, link.code)
+        return False
+
+    def _mint_short_link(self, attachment_id, title, file_id=None):
         """Find-or-create the tracked link for one certificate, return the
         link.tracker record.
 
         Idempotent: keyed on the stored `url`, so calling twice returns the same
         record rather than a duplicate.
-
-        The short code is ``coa-<dms.file id>`` — readable, and derived from the
-        file rather than a counter so the backfill is resumable and concurrent
-        uploads can't race for the same number. Odoo's random 3-char codes are
-        unusable in anything staff have to read out or print.
         """
         target = self._content_url(attachment_id)
         tracker = request.env["link.tracker"].sudo()
@@ -120,15 +154,10 @@ class CoaAdmin(http.Controller):
         # `code` passed to create() is silently ignored — it is a non-stored
         # compute whose inverse doesn't run on create — so set it with a
         # follow-up write(), which replaces the auto-generated code in place.
+        # If every attempt fails we keep Odoo's own 3-char code rather than
+        # losing the link entirely.
         link = tracker.create({"url": target, "title": title})
-        try:
-            link.write({"code": "%s%s" % (COA_CODE_PREFIX, file_id)})
-        except Exception:  # noqa: BLE001
-            # Codes are unique-constrained. If ours is somehow taken, keep the
-            # auto-generated one rather than losing the link entirely.
-            _logger.warning(
-                "COA short link: code %s%s unavailable, keeping %s",
-                COA_CODE_PREFIX, file_id, link.code)
+        self._assign_short_code(link)
         return link
 
     def _short_link_map(self, attachment_ids):

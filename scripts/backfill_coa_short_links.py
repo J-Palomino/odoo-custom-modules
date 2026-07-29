@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Backfill tracked /r/coa-<fileId> short links for certificates already in the
-COA document store.
+"""Backfill tracked short links (/r/<4 random alphanumerics>) for certificates
+already in the COA document store.
 
 Going forward ``mint_coa_admin`` mints a link at upload time; this catches the
 ~17.9k certificates that predate that. Safe to re-run: files that already have a
@@ -23,16 +23,45 @@ Usage:
     python3 scripts/backfill_coa_short_links.py --dry-run    # report only
     python3 scripts/backfill_coa_short_links.py --limit 25   # small live batch
     python3 scripts/backfill_coa_short_links.py              # full backfill
+    python3 scripts/backfill_coa_short_links.py --fix-codes  # re-code anything
+                                                             # not already a
+                                                             # 4-char code
 """
 
 import argparse
 import os
+import random
 import re
+import string
 import sys
 import xmlrpc.client
 
-CODE_PREFIX = "coa-"  # keep in sync with mint_coa_admin/controllers/main.py
+# Keep in sync with mint_coa_admin/controllers/main.py
+CODE_LENGTH = 4
+CODE_ALPHABET = string.ascii_letters + string.digits
+CODE_RE = re.compile(r"^[A-Za-z0-9]{%d}$" % CODE_LENGTH)
 CHUNK = 200           # ids per RPC round-trip
+
+
+class CodePool:
+    """Hands out unused short codes.
+
+    Every /r/ code shares one namespace with the marketing links, so the pool is
+    seeded with ALL existing codes, not just the COA ones. Generating locally
+    against that set avoids a per-record round-trip; the DB uniqueness
+    constraint is still the backstop if two runs overlap.
+    """
+
+    def __init__(self, existing):
+        self.used = set(existing)
+
+    def take(self):
+        for _ in range(10000):
+            code = "".join(random.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
+            if code not in self.used:
+                self.used.add(code)
+                return code
+        raise RuntimeError(f"no free {CODE_LENGTH}-char code left")
 
 
 def load_env():
@@ -84,42 +113,43 @@ def main():
     root = int(call("ir.config_parameter", "get_param", ["coa_admin.root_dir_id", "17"]))
     print(f"base={base} coaRoot={root}")
 
+    # Every existing code in the shared namespace, so generated codes never
+    # collide with a COA link OR a marketing link.
+    all_codes = [r["code"] for r in
+                 call("link.tracker.code", "search_read", [[]], fields=["code"])]
+    pool = CodePool(all_codes)
+    print(f"codes already in use (all link types): {len(all_codes)}")
+
     if opts.fix_codes:
-        # The main pass skips any file that already has a tracker, so a link
-        # whose code write failed mid-run (502/timeout) would keep its random
-        # auto code forever. This repairs those in place.
+        # Re-code any COA link whose code isn't a 4-char alphanumeric. Covers
+        # both the legacy coa-<id> codes and Odoo's own 3-char autos left behind
+        # when a code write failed mid-run.
         #
         # NB: `code` is not stored on link.tracker, so it cannot appear in a
         # search domain — read the codes back and filter in Python.
         links = call("link.tracker", "search_read", [[("url", "like", "/web/content/")]],
-                     fields=["id", "url", "code", "title"])
-        bad = [t for t in links if not str(t.get("code") or "").startswith(CODE_PREFIX)]
-        print(f"COA links on an auto code: {len(bad)}")
+                     fields=["id", "code", "title"])
+        bad = [t for t in links if not CODE_RE.match(str(t.get("code") or ""))]
+        print(f"COA links needing a {CODE_LENGTH}-char code: {len(bad)}")
         if not bad:
             return
-        att_ids = [int(t["url"].rsplit("/", 1)[-1]) for t in bad]
-        owner = {a["id"]: a["res_id"] for a in
-                 call("ir.attachment", "search_read", [[("id", "in", att_ids)]],
-                      fields=["id", "res_id", "res_model"])
-                 if a["res_model"] == "dms.file"}
+        if opts.limit > 0:
+            bad = bad[:opts.limit]
+            print(f"  capped by --limit {opts.limit}")
         fixed = skipped = 0
         for t in bad:
-            file_id = owner.get(int(t["url"].rsplit("/", 1)[-1]))
-            if not file_id:
-                skipped += 1
-                print(f"  no dms.file behind {t['url']}")
-                continue
             if opts.dry_run:
-                print(f"  would set {t['code']} -> {CODE_PREFIX}{file_id}  ({t['title']})")
+                print(f"  would recode {t['code']}  ({t['title']})")
                 continue
             try:
-                call("link.tracker", "write", [[t["id"]], {"code": f"{CODE_PREFIX}{file_id}"}])
+                call("link.tracker", "write", [[t["id"]], {"code": pool.take()}])
                 fixed += 1
-                print(f"  {t['code']} -> {CODE_PREFIX}{file_id}  ({t['title']})")
+                if fixed % 250 == 0:
+                    print(f"  …{fixed}/{len(bad)}")
             except Exception as exc:  # noqa: BLE001
                 skipped += 1
-                print(f"  FAILED {CODE_PREFIX}{file_id}: {str(exc)[:100]}")
-        print(f"\ndone: repaired={fixed} skipped={skipped}")
+                print(f"  FAILED link {t['id']} ({t['title']}): {str(exc)[:100]}")
+        print(f"\ndone: recoded={fixed} skipped={skipped}")
         return
 
     # 1. every certificate under the COA root
@@ -161,7 +191,7 @@ def main():
     if opts.dry_run:
         print("\n--dry-run: no writes. Sample of what would be created:")
         for f in todo[:5]:
-            print(f"  {CODE_PREFIX}{f['id']}  ->  {url_of(att_by_file[f['id']]['id'])}   ({f['name']})")
+            print(f"  {url_of(att_by_file[f['id']]['id'])}   ({f['name']})")
         print(f"\nattachments needing public=true: {len(not_public)}")
         return
 
@@ -179,10 +209,10 @@ def main():
             new_id = call("link.tracker", "create", [{"url": url_of(att_id), "title": f["name"]}])
             link_id = new_id[0] if isinstance(new_id, list) else new_id
             try:
-                call("link.tracker", "write", [[link_id], {"code": f"{CODE_PREFIX}{f['id']}"}])
+                call("link.tracker", "write", [[link_id], {"code": pool.take()}])
             except Exception as exc:  # noqa: BLE001
                 fell_back += 1
-                print(f"  code {CODE_PREFIX}{f['id']} unavailable, kept auto code ({str(exc)[:80]})")
+                print(f"  file {f['id']}: code write failed, kept auto code ({str(exc)[:80]})")
             created += 1
             if created % 250 == 0:
                 print(f"  …{created}/{len(todo)}")
