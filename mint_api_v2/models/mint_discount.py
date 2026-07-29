@@ -604,6 +604,33 @@ class MintDiscount(models.Model):
                 pushed += 1
         return pushed
 
+    def action_deactivate_redemption_in_dutchie(self):
+        """Public: pull these redemptions back out of Dutchie (IsDeleted=True).
+
+        Same RPC constraint as the push wrapper — the underlying
+        _deactivate_discounts_in_dutchie is private and cannot be dispatched
+        remotely, which would leave a bad live discount unfixable without a
+        deploy. Targets the push log's (discount, store, dutchie_discount_id)
+        rows, so anything never pushed live simply no-ops.
+        """
+        if 'mint.ptl.day' not in self.env:
+            _logger.warning('Deactivate: mint.ptl.day unavailable')
+            return 0
+        done = 0
+        for rec in self:
+            region = rec.store_ids[:1].region_id
+            day = self.env['mint.ptl.day'].sudo().search(
+                [('market_id', '=', region.id)], limit=1) if region else False
+            if not day:
+                _logger.warning('Deactivate: no ptl.day carrier for %s', rec.redemption_code)
+                continue
+            try:
+                day._deactivate_discounts_in_dutchie(rec)
+                done += 1
+            except Exception:
+                _logger.exception('Deactivate failed for %s', rec.redemption_code)
+        return done
+
     def _push_redemption_to_dutchie(self, store=None):
         """Create this redemption as a real discount in Dutchie.
 
