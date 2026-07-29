@@ -4,6 +4,8 @@ Customer profile endpoints for MintDeals frontend.
 
 All endpoints require JWT authentication via Authorization header.
 """
+import base64
+import hashlib
 import json
 import logging
 
@@ -13,6 +15,63 @@ from odoo.http import request, Response
 from .auth import json_response, error_response, _verify_and_get_user
 
 _logger = logging.getLogger(__name__)
+
+# md5 of Odoo's stock grey "no image" PNG, per resized field. The Dutchie sync
+# has historically downloaded this placeholder and stored the bytes verbatim,
+# so an image field being *set* does not mean a real photo is present — the
+# bytes have to be compared. Sizes differ because Odoo re-encodes per field.
+_PLACEHOLDER_IMAGE_MD5 = frozenset({
+    'ed4046b72d8bf5add8585af91355734c',  # image_1920 / image_512 / image_256
+    'e636a30b8a5a8ca4bbab480eafef8977',  # image_128
+})
+
+# Leading magic bytes -> mimetype. Stored product thumbnails are a mix of PNG
+# and JPEG, so the type must be sniffed rather than assumed.
+_IMAGE_MAGIC = (
+    (b'\xff\xd8\xff', 'image/jpeg'),
+    (b'\x89PNG\r\n\x1a\n', 'image/png'),
+    (b'GIF87a', 'image/gif'),
+    (b'GIF89a', 'image/gif'),
+)
+
+# Path of the public thumbnail route below, used to build image_url values.
+_REDEEMABLE_IMAGE_PATH = '/api/v1/customer/loyalty/redeemables/%d/image'
+
+
+def _is_placeholder_image(b64_value):
+    """True when a base64 image field holds Odoo's grey placeholder."""
+    try:
+        raw = base64.b64decode(b64_value)
+    except (TypeError, ValueError):
+        return False
+    return hashlib.md5(raw).hexdigest() in _PLACEHOLDER_IMAGE_MD5
+
+
+def _guess_image_mimetype(raw):
+    """Sniff an image mimetype from its magic bytes."""
+    for magic, mimetype in _IMAGE_MAGIC:
+        if raw.startswith(magic):
+            return mimetype
+    if raw[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+        return 'image/webp'
+    return 'application/octet-stream'
+
+
+def _redeemable_image_url(product):
+    """Public image URL for a redeemable product, or None if it has no photo.
+
+    Prefers Odoo's stored 256px thumbnail, served via the dedicated route
+    below rather than `/web/image`: these product.template records are not
+    website-published, so `/web/image` returns the grey placeholder (HTTP 200)
+    to anonymous visitors even though real bytes are on the record.
+
+    Falls back to the Dutchie CDN URL in `x_image_url`, which is public but
+    full-resolution (megabytes), so it is only used when no thumbnail exists.
+    """
+    thumbnail = product.image_256
+    if thumbnail and not _is_placeholder_image(thumbnail):
+        return _REDEEMABLE_IMAGE_PATH % product.id
+    return product.x_image_url or None
 
 
 def _serialize_redemption(rec):
@@ -204,14 +263,36 @@ class MintCustomerProfile(http.Controller):
                 'brand': p.brand_id.name if p.brand_id else None,
                 'category': p.master_category or (p.categ_id.name if p.categ_id else None),
                 'strain_type': p.strain_type or None,
-                'image_url': ('/web/image/product.template/%d/image_256' % p.id)
-                             if p.image_256 else None,
+                'image_url': _redeemable_image_url(p),
                 'points_cost': p.x_loyalty_points_cost,
                 'list_price': p.list_price,
                 'dutchie_product_id': p.dutchie_product_id or None,
                 'sku': p.default_code or None,
             } for p in products],
         })
+
+    @http.route('/api/v1/customer/loyalty/redeemables/<int:product_id>/image',
+                type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def redeemable_image(self, product_id, **kw):
+        """Serve a redeemable product's 256px thumbnail to anonymous visitors.
+
+        Exists because these product.template records are not website-published,
+        so Odoo's own `/web/image` route answers public requests with the grey
+        placeholder. Deliberately scoped to products flagged redeemable so this
+        cannot be used to read arbitrary product images.
+        """
+        product = request.env['product.template'].sudo().browse(product_id).exists()
+        if not product or not product.x_is_loyalty_redeemable:
+            return request.not_found()
+        if not product.image_256 or _is_placeholder_image(product.image_256):
+            return request.not_found()
+
+        raw = base64.b64decode(product.image_256)
+        return request.make_response(raw, headers=[
+            ('Content-Type', _guess_image_mimetype(raw)),
+            ('Content-Length', str(len(raw))),
+            ('Cache-Control', 'public, max-age=86400'),
+        ])
 
     @http.route('/api/v1/customer/loyalty/redeem', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
@@ -312,8 +393,7 @@ class MintCustomerProfile(http.Controller):
                 'name': product.name,
                 'brand': product.brand_id.name if product.brand_id else None,
                 'category': product.master_category or (product.categ_id.name if product.categ_id else None),
-                'image_url': ('/web/image/product.template/%d/image_256' % product.id)
-                             if product.image_256 else None,
+                'image_url': _redeemable_image_url(product),
                 'list_price': product.list_price,
                 'dutchie_product_id': product.dutchie_product_id or None,
                 'sku': product.default_code or None,
