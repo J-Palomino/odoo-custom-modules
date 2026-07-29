@@ -556,9 +556,15 @@ class MintDiscount(models.Model):
             # null value and NO product restriction — Dutchie warned
             # "SOP §10: no scope set", i.e. an unrestricted discount. Express it
             # as what it actually is: 100% off, that product only.
-            'calculation_method_id': 2,      # PERCENT_OFF
-            'discount_amount': 1.0,          # 1.0 -> 100%
-            'item_group_type_id': 5,         # single-item discount
+            # DO NOT set calculation_method_id here. mint_dutchie_discount_mirror
+            # treats it as the authoritative field and derives discount_type from
+            # it, so setting it retyped every redemption to 'percent' — which made
+            # the coupon invisible on /rewards and unconsumable at the register,
+            # because both queries filter discount_type='loyalty_redemption'.
+            # That normalizer is correct; its docstring states redemptions are
+            # expected to carry no calc id. The Dutchie reward shape (percent /
+            # 100% / single-item) belongs in the payload builder at push time,
+            # not on the record.
             'maximum_usage_count': 1,        # one-time
             'max_redemptions': 1,
             'redemption_limit': 1,
