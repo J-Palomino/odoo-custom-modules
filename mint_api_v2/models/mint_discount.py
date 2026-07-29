@@ -545,6 +545,20 @@ class MintDiscount(models.Model):
             'redemption_code': code,
             'dutchie_discount_code': code,
             'application_method': 'code',
+            # SCOPE + VALUE. The Dutchie payload builder reads these off the
+            # record (product_ids -> Reward.Restrictions.Product,
+            # calculation_method_id/discount_amount -> the Reward). A redemption
+            # previously set none of them, so it pushed as a discount with a
+            # null value and NO product restriction — Dutchie warned
+            # "SOP §10: no scope set", i.e. an unrestricted discount. Express it
+            # as what it actually is: 100% off, that product only.
+            'calculation_method_id': 2,      # PERCENT_OFF
+            'discount_amount': 1.0,          # 1.0 -> 100%
+            'item_group_type_id': 5,         # single-item discount
+            'maximum_usage_count': 1,        # one-time
+            'max_redemptions': 1,
+            'redemption_limit': 1,
+            'product_ids': [(6, 0, product.ids)] if product else [(5, 0, 0)],
             'redemption_partner_id': partner.id,
             'redemption_reward_id': reward.id if reward else False,
             'redemption_product_id': product.id if product else False,
@@ -590,6 +604,33 @@ class MintDiscount(models.Model):
                 pushed += 1
         return pushed
 
+    def action_deactivate_redemption_in_dutchie(self):
+        """Public: pull these redemptions back out of Dutchie (IsDeleted=True).
+
+        Same RPC constraint as the push wrapper — the underlying
+        _deactivate_discounts_in_dutchie is private and cannot be dispatched
+        remotely, which would leave a bad live discount unfixable without a
+        deploy. Targets the push log's (discount, store, dutchie_discount_id)
+        rows, so anything never pushed live simply no-ops.
+        """
+        if 'mint.ptl.day' not in self.env:
+            _logger.warning('Deactivate: mint.ptl.day unavailable')
+            return 0
+        done = 0
+        for rec in self:
+            region = rec.store_ids[:1].region_id
+            day = self.env['mint.ptl.day'].sudo().search(
+                [('market_id', '=', region.id)], limit=1) if region else False
+            if not day:
+                _logger.warning('Deactivate: no ptl.day carrier for %s', rec.redemption_code)
+                continue
+            try:
+                day._deactivate_discounts_in_dutchie(rec)
+                done += 1
+            except Exception:
+                _logger.exception('Deactivate failed for %s', rec.redemption_code)
+        return done
+
     def _push_redemption_to_dutchie(self, store=None):
         """Create this redemption as a real discount in Dutchie.
 
@@ -627,6 +668,17 @@ class MintDiscount(models.Model):
         if not day:
             _logger.warning('Redemption %s: no mint.ptl.day for market %s, not '
                             'pushed to Dutchie', self.redemption_code, region.code)
+            return False
+        # Fail closed on scope. An unscoped 100%-off discount live at a
+        # register discounts ANY item, so refuse to push rather than create it
+        # and hope Dutchie is strict. Leaving dutchie_discount_id unset marks it
+        # for retry once the product carries a Dutchie id.
+        scoped = self.product_ids.filtered(lambda p: p.dutchie_product_id)
+        if not scoped:
+            _logger.error(
+                'Redemption %s: refusing to push — no product scope resolvable '
+                '(product_ids=%s). An unscoped 100%%-off discount would apply to '
+                'any item.', self.redemption_code, self.product_ids.ids)
             return False
         try:
             day._push_discounts_to_dutchie(self.ids)
