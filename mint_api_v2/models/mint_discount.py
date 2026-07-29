@@ -11,8 +11,12 @@ PG with source='dutchie' and are mirrored here. Fields must map 1:1
 with the Dutchie-shape emitted to Redis; see the Shape Conformance
 mapping table in ARCHITECTURE.md before adding or renaming a field.
 """
+import json
 import logging
 import secrets
+import urllib.request as urlrequest
+from urllib.error import HTTPError
+from urllib.parse import quote as url_quote
 
 from odoo import api, fields, models, tools, _
 from odoo.exceptions import UserError
@@ -687,7 +691,81 @@ class MintDiscount(models.Model):
                               'not work at the register until re-pushed',
                               self.redemption_code)
             return False
-        return True
+        # A successful upsert proves Dutchie ACCEPTED the payload, not that the
+        # code works at a register — a hollow push returns ok:true and then
+        # fails at the till. Read it back before trusting it.
+        return self._verify_redemption_in_dutchie()
+
+    def _verify_redemption_in_dutchie(self):
+        """Read the discount back out of Dutchie and assert it is usable.
+
+        Ground truth check: fetches the stored record via
+        GET /api/admin/discounts/<id> and asserts it has a code, a value, a
+        product scope, and no online-platform lock. Returns True only when
+        Dutchie itself confirms all four.
+
+        The per-(discount, store) Dutchie id lives on the push log row, not on
+        mint.discount — a single field cannot represent N per-store ids, and
+        caching it there previously made store N target store 1's discount.
+        """
+        self.ensure_one()
+        Log = self.env['mint.dutchie.discount.push.log'].sudo()
+        row = Log.search([('discount_id', '=', self.id),
+                          ('dutchie_discount_id', '!=', 0),
+                          ('success', '=', True)], order='id desc', limit=1)
+        if not row:
+            _logger.error('Redemption %s: no successful push log row with a '
+                          'Dutchie id — treating as NOT verified',
+                          self.redemption_code)
+            return False
+        store = row.company_id
+        loc_id = getattr(store, 'dutchie_pos_location_id', 0)
+        lsp_id = getattr(store, 'dutchie_lsp_id', 0)
+        if not (loc_id and lsp_id):
+            _logger.error('Redemption %s: store %s missing loc/lsp id, cannot verify',
+                          self.redemption_code, store.display_name)
+            return False
+
+        ICP = self.env['ir.config_parameter'].sudo()
+        base = (ICP.get_param('mint.dutchie_discount_push.url')
+                or 'https://mintinvsvc-production-6aa5.up.railway.app/api/admin/discounts')
+        api_key = ICP.get_param('mint.dutchie_discount_push.api_key') or ''
+        product = self.product_ids[:1]
+        url = (
+            '%s/%s?locId=%s&lspId=%s&expectCode=%s' % (
+                base.rstrip('/'), row.dutchie_discount_id, loc_id, lsp_id,
+                url_quote(self.redemption_code or ''))
+        )
+        if product and product.dutchie_product_id:
+            url += '&expectProductId=%s' % url_quote(str(product.dutchie_product_id))
+
+        req = urlrequest.Request(url, headers={'x-api-key': api_key})
+        try:
+            with urlrequest.urlopen(req, timeout=45) as resp:
+                payload = json.loads(resp.read().decode('utf-8', errors='replace'))
+        except HTTPError as e:
+            # 422 is the endpoint's "found it, but it is not usable" answer and
+            # carries the failed checks — worth logging in full.
+            detail = ''
+            try:
+                detail = e.read().decode('utf-8', errors='replace')[:400]
+            except Exception:
+                pass
+            _logger.error('Redemption %s: Dutchie verify FAILED (%s) %s',
+                          self.redemption_code, e.code, detail)
+            return False
+        except Exception:
+            _logger.exception('Redemption %s: Dutchie verify call errored',
+                              self.redemption_code)
+            return False
+
+        if payload.get('verified'):
+            _logger.info('Redemption %s verified in Dutchie (discount %s)',
+                         self.redemption_code, row.dutchie_discount_id)
+            return True
+        _logger.error('Redemption %s: Dutchie says NOT usable — failed checks %s',
+                      self.redemption_code, payload.get('failed_checks'))
+        return False
 
     def action_mark_redemption_used(self):
         """Budtender action: mark this redemption as used."""
