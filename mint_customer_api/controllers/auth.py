@@ -36,6 +36,30 @@ def _lead_token(lead_id):
                     hashlib.sha256).hexdigest()
 
 
+def _loyalty_points(partner):
+    """Current Mint Rewards balance for a partner, 0 when there is no card.
+
+    The PWA top bar (MobileTopBar.astro) reads `user.loyalty_points` off these
+    auth payloads and falls back to 0, so omitting the field made every
+    customer's balance render 0 no matter what their card held. Card resolution
+    deliberately mirrors customer.py::get_loyalty (first program_type='loyalty'
+    program, one card per partner) so the ticker and /api/v1/customer/loyalty
+    can never disagree.
+    """
+    if not partner:
+        return 0
+    program = request.env['loyalty.program'].sudo().search(
+        [('program_type', '=', 'loyalty')], limit=1
+    )
+    if not program:
+        return 0
+    card = request.env['loyalty.card'].sudo().search([
+        ('partner_id', '=', partner.id),
+        ('program_id', '=', program.id),
+    ], limit=1)
+    return card.points or 0
+
+
 def _clean_token(v):
     """Coerce a client-supplied token to a stripped str; '' for non-strings.
     Guards against a JSON number/list/bool reaching .strip() (AttributeError)."""
@@ -213,6 +237,7 @@ class MintCustomerAuth(http.Controller):
                 'phone': user.partner_id.phone or '',
                 'partner_id': user.partner_id.id,
                 'is_internal': not user.share,
+                'loyalty_points': _loyalty_points(user.partner_id),
             },
         })
 
@@ -427,6 +452,7 @@ class MintCustomerAuth(http.Controller):
                     'phone': user.partner_id.phone or '',
                     'partner_id': user.partner_id.id,
                     'is_internal': not user.share,
+                    'loyalty_points': _loyalty_points(user.partner_id),
                 },
             }, status=201)
 
@@ -536,6 +562,7 @@ class MintCustomerAuth(http.Controller):
                 'phone': user.partner_id.phone or '',
                 'partner_id': user.partner_id.id,
                 'is_internal': not user.share,
+                'loyalty_points': _loyalty_points(user.partner_id),
             },
         })
 
@@ -1331,5 +1358,6 @@ class MintCustomerAuth(http.Controller):
                 'phone': user.partner_id.phone or '',
                 'partner_id': user.partner_id.id,
                 'is_internal': not user.share,
+                'loyalty_points': _loyalty_points(user.partner_id),
             },
         })
