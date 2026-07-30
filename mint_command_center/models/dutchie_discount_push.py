@@ -237,6 +237,20 @@ class PtlDayDutchiePush(models.Model):
         ], order='id desc', limit=1)
         existing_int = prior.dutchie_discount_id or 0
 
+        # Loyalty redemption: "this product, free, once". Branch here for the
+        # same reason as the welcome coupon — it has no market or plotted days,
+        # and the generic PTL path below produces a payload that cannot work:
+        #   * no Reward value or scope (the record carries neither, by design —
+        #     calculation_method_id on a redemption retypes it to 'percent' and
+        #     hides it from /rewards), so Dutchie stored a null-value discount
+        #     with NO restrictions: a 100%-off across the ENTIRE CATALOG;
+        #   * PlatformTypeRestrictions=[{PlatformTypeId: 2}] ("Online"), which on
+        #     an in-store coupon makes it redeemable NOWHERE — the register
+        #     answers "this coupon is not available on this origin platform".
+        # Both were observed live before this branch existed.
+        if discount.discount_type == 'loyalty_redemption':
+            return self._redemption_payload(discount, store, existing_int)
+
         # Welcome free pre-roll (task #102149): a standalone code coupon with a
         # fixed, live-verified reward shape (mirrors PHXNTPR 383481) and a per-LSP
         # pre-roll category. Branch BEFORE the PTL-specific logic below, which
@@ -386,6 +400,94 @@ class PtlDayDutchiePush(models.Model):
                 'MenuDisplayName': name,
                 'MenuDisplayDescription': '',
                 'DiscountMenuDisplayId': None,
+            },
+        }
+
+    def _redemption_payload(self, discount, store, existing_int):
+        """Dutchie payload for a loyalty redemption — one product, 100% off, once.
+
+        Mirrors the live-verified welcome-coupon shape (the only coupon shape
+        proven to work at these registers) and swaps its category/weight scope
+        for a single-product scope taken from the redeemed product.
+
+        Reward shape is expressed HERE rather than on mint.discount on purpose:
+        writing calculation_method_id onto the record makes
+        mint_dutchie_discount_mirror derive discount_type='percent', which drops
+        the coupon out of every /rewards and consume query.
+
+        Returns None when the product carries no Dutchie id — the caller must
+        not push an unscoped coupon, since with empty restrictions a 100%-off
+        applies to the whole catalog.
+        """
+        product = discount.product_ids[:1] or discount.redemption_product_id
+        dutchie_pid = getattr(product, 'dutchie_product_id', None)
+        if not dutchie_pid:
+            _logger.error(
+                'Redemption %s: product %s has no dutchie_product_id — refusing '
+                'to build an unscoped payload (would discount the entire catalog)',
+                discount.redemption_code, product.display_name if product else '-')
+            return None
+
+        empty = lambda: {'IsExclusion': False, 'RestrictionIds': []}
+        restrictions = {k: empty() for k in (
+            'Strain', 'Weight', 'Category', 'Tag', 'InventoryTag',
+            'Tier', 'Brand', 'Vendor', 'Product')}
+        restrictions['Product'] = {
+            'IsExclusion': False, 'RestrictionIds': [int(dutchie_pid)],
+        }
+
+        pid = discount.redemption_partner_id.id or discount.id
+        label = (product.name or 'Reward')[:60]
+        # One-time by construction: a redemption is a single earned coupon.
+        max_uses = int(discount.maximum_usage_count or 1) or 1
+        return {
+            'Id': existing_int,
+            # 3 = Code: the budtender types the code the customer shows.
+            'ApplicationMethodId': 3,
+            'CanStackAutomatically': False, 'Constraints': [],
+            # The code the customer sees IS the Dutchie code (create_redemption
+            # writes redemption_code to both fields).
+            'DiscountCode': discount.dutchie_discount_code or discount.redemption_code or '',
+            'DiscountDescription': f'lgm | loyalty redemption (partner {pid}, discount {discount.id})',
+            'ExternalId': f'lgm_redemption_{discount.id}',
+            'FirstTimeCustomerOnly': 0, 'IgnoreNetTax': False,
+            'IsAvailableOnline': False, 'IsBundledDiscount': False,
+            'LocationRestrictions': [], 'OnlineName': label,
+            'PaymentRestrictions': {'PayByBankSignupIncentive': False},
+            'RequireManagerApproval': False,
+            'RestrictToGroupIds': [], 'RestrictToSegmentIds': [],
+            # MUST stay empty — see the branch comment. PlatformTypeId 2 is
+            # "Online"; on an in-store coupon it makes the discount redeemable
+            # nowhere.
+            'PlatformTypeRestrictions': [],
+            'OrderTypeRestrictions': [],
+            'Reward': {
+                'DiscountRewardId': None, 'HasThreshold': True,
+                'ApplyToOnlyOneItem': False,
+                # 2 = PERCENT_OFF with DiscountValue 1 => 100% off, matching the
+                # welcome coupon that works at these registers.
+                'CalculationMethodId': 2, 'DiscountValue': 1,
+                'IncludeNonCannabis': True, 'ItemGroupTypeId': 5,
+                'ManualDefaultApplyTo': 1, 'Restrictions': restrictions,
+                # Exactly one item.
+                'ThresholdMax': 1, 'ThresholdMin': 1, 'ThresholdTypeId': 1,
+            },
+            'SavedWithAdvancedOptions': False,
+            'ValidDateFrom': self._format_dutchie_date(discount.valid_from),
+            'ValidDateTo': self._format_dutchie_date(discount.valid_until),
+            # MaxRedemptions / RedemptionLimit / counting mode come from the
+            # canonical registry so the single-use cap shape stays in one place.
+            **redemption_fields_for(max_uses),
+            # All-None = every day. A redemption is not day-scoped; sending all
+            # seven False would read to Dutchie as "every day" anyway, but None
+            # matches the working coupon payload exactly.
+            'Sunday': None, 'Monday': None, 'Tuesday': None, 'Wednesday': None,
+            'Thursday': None, 'Friday': None, 'Saturday': None,
+            'MenuDisplayRank': 0,
+            'DiscountMenuDisplayDetails': {
+                'DiscountId': existing_int, 'MenuDisplayImageUrl': '',
+                'MenuDisplayName': label,
+                'MenuDisplayDescription': '', 'DiscountMenuDisplayId': None,
             },
         }
 
@@ -768,6 +870,28 @@ class PtlDayDutchiePush(models.Model):
                     f'Skipped: store missing dutchie_pos_location_id ({loc_id}) '
                     f'or dutchie_lsp_id ({lsp_id}). Backfill required before '
                     f'this store can push to Dutchie.'
+                ),
+            })
+            return False
+
+        # Unbuildable payload guard: the builders return None when a required
+        # scope is missing (a redemption product with no dutchie_product_id, a
+        # welcome coupon with no per-LSP pre-roll category). POSTing that sends
+        # 'discount': null, and an accepted-but-unscoped coupon is worse than no
+        # coupon: with empty Restrictions, Dutchie applies the reward to the
+        # ENTIRE CATALOG. Fail closed and log which store needs the backfill.
+        if payload['discount'] is None:
+            Log.create({
+                'discount_id': discount.id,
+                'company_id': store.id,
+                'dutchie_loc_id': str(store.dutchie_store_id or ''),
+                'mode': mode,
+                'request_payload': json.dumps(payload, default=str)[:8000],
+                'success': False,
+                'error_message': (
+                    'Skipped: could not build a scoped payload for this discount '
+                    'at this store (missing product/category Dutchie id). '
+                    'Refusing to push an unscoped reward.'
                 ),
             })
             return False
