@@ -27,8 +27,8 @@
                             <field name="online" readonly="1"/>
                         </group>
                         <group>
-                            <field name="agent_url"/>
-                            <field name="token" password="True"/>
+                            <field name="token" password="True"
+                                   groups="point_of_sale.group_pos_manager"/>
                             <field name="active"/>
                         </group>
                     </group>

@@ -39,9 +39,6 @@ class MintPrintNode(models.Model):
              'that store\'s print queue. The agent controller reads it with '
              'sudo(), so restricting it here does not affect agent auth.')
     hostname = fields.Char(string='Machine', readonly=True)
-    agent_url = fields.Char(
-        string='Localhost Agent URL', default='http://127.0.0.1:17777',
-        help='Used by the on-node fast path (this machine prints directly).')
     last_seen = fields.Datetime(readonly=True)
     online = fields.Boolean(compute='_compute_online')
     active = fields.Boolean(default=True)

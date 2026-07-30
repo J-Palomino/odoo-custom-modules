@@ -50,10 +50,29 @@ class PosConfig(models.Model):
              'PrintNode. The PrintNode API key is stored globally in System '
              'Parameter "print_nodes.printnode_api_key".',
     )
+    mint_zebra_agent_url = fields.Char(
+        string='Local Agent URL',
+        default='http://127.0.0.1:17777',
+        help='Where this register reaches its local print agent. Per-register '
+             'rather than per-node, because a store can have several registers '
+             'each running their own agent.',
+    )
+    mint_zebra_agent_token = fields.Char(
+        string='Local Agent Token',
+        help='Must match MINT_AGENT_TOKEN in the agent\'s mint_print_agent.conf. '
+             'Leave empty only if the agent runs with authentication disabled. '
+             'Sent to the browser so the POS can authenticate to 127.0.0.1 — it '
+             'is a localhost shared secret, not a server credential.',
+    )
 
     @api.model
     def _load_pos_data_fields(self, config_id):
-        """Expose PrintNodes settings to the POS frontend (not the secret key)."""
+        """Expose PrintNodes settings to the POS frontend (not the secret key).
+
+        The agent token IS exposed: the POS runs in the cashier's browser and
+        must present it to the local agent on 127.0.0.1. It only authorises
+        printing on that machine. The PrintNode API key stays server-side.
+        """
         fields_list = super()._load_pos_data_fields(config_id)
         return fields_list + [
             'mint_zebra_enabled',
@@ -61,4 +80,6 @@ class PosConfig(models.Model):
             'mint_zebra_autoprint',
             'mint_zebra_print_label',
             'mint_zebra_print_receipt',
+            'mint_zebra_agent_url',
+            'mint_zebra_agent_token',
         ]
