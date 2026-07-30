@@ -81,4 +81,30 @@
             </field>
         </field>
     </record>
+
+    <!--
+      Show "Related Requests" on the request form, below Priority in the
+      right-hand column (clear of the conditional recurring-maintenance block).
+
+      no_create/no_quick_create are deliberate: without them, typing a name that
+      matches nothing silently CREATES a new maintenance request from the tag
+      box, which on a ticketing model is a footgun.
+
+      Adopts the manual view created live 2026-07-28; the 19.0.9.9.0 migration
+      drops that orphan so the field is not rendered twice.
+    -->
+    <record id="maintenance_request_form_related_requests" model="ir.ui.view">
+        <field name="name">maintenance.request.form.related.requests</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_request_view_form"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <field name="priority" position="after">
+                <field name="x_related_request_ids"
+                       widget="many2many_tags"
+                       options="{'no_create': True, 'no_quick_create': True}"
+                       placeholder="Link related requests..."/>
+            </field>
+        </field>
+    </record>
 </odoo>
