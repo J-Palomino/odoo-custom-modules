@@ -242,21 +242,63 @@ class MintCustomerProfile(http.Controller):
     @http.route('/api/v1/customer/loyalty/redeemables', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
     def list_redeemables(self, **kw):
-        """List products flagged as points-redeemable.
+        """List products flagged as points-redeemable, scoped to one location.
 
-        Optional query param `store_id` restricts to products available at
-        that store (future use — frontend can filter by availability).
+        Query params: `store_id` (res.company id) or `store_slug` (x_slug).
+
+        This used to return every flagged product to every caller, which was
+        wrong in a way customers could see: rewards are printed per state, the
+        catalogs differ completely between them, and a redemption is minted
+        against ONE product id and locked to the redeeming store's region. A
+        Florida customer shown an Arizona product could spend points on a coupon
+        no register of theirs would ever accept.
+
+        Scoping uses the link the product data already carries:
+            product.template.x_location_id -> res.company.dutchie_store_id
+
+        A store resolves to its whole region, so a customer sees what any store
+        in their state carries -- matching the redemption lock, which is
+        region-wide (create_redemption sets store_ids to the region's stores).
+
+        With NO store, the list is EMPTY rather than global. A caller that has
+        not told us where it is cannot be shown a state's catalog, and showing
+        the union would recreate the cross-state leak. States with no catalog
+        yet (FL, MI) therefore return empty, which is correct: nothing is
+        redeemable there until their rewards are set up.
         """
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
+
+        Company = request.env['res.company'].sudo()
+        store = Company.browse(int(kw['store_id'])).exists() \
+            if str(kw.get('store_id') or '').isdigit() else Company
+        if not store and kw.get('store_slug'):
+            store = Company.search([('x_slug', '=', kw['store_slug'])], limit=1)
+
+        if not store:
+            return json_response({'products': [], 'store_id': None, 'region': None,
+                                  'reason': 'no store specified'})
+
+        # The region's stores -- same set create_redemption locks a coupon to.
+        region = store.region_id
+        siblings = Company.search([('region_id', '=', region.id),
+                                   ('is_dispensary', '=', True)]) if region else store
+        uuids = [u for u in siblings.mapped('dutchie_store_id') if u]
+        if not uuids:
+            return json_response({'products': [], 'store_id': store.id,
+                                  'region': region.code if region else None,
+                                  'reason': 'store has no dutchie_store_id'})
 
         products = request.env['product.template'].sudo().search([
             ('x_is_loyalty_redeemable', '=', True),
             ('x_loyalty_points_cost', '>', 0),
             ('active', '=', True),
+            ('x_location_id', 'in', uuids),
         ], order='x_loyalty_points_cost asc, name asc')
 
         return json_response({
+            'store_id': store.id,
+            'region': region.code if region else None,
             'products': [{
                 'id': p.id,
                 'name': p.name,
