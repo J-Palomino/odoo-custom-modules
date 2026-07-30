@@ -52,6 +52,33 @@ class MaintenanceRequest(models.Model):
         "company_id.",
     )
 
+    # Cross-links between related tickets (shared root cause, compounding
+    # severity, or one shared fix). Base maintenance ships no request-to-request
+    # relation, so before this the only way to relate tickets was a chatter
+    # comment — invisible to list views, filters and reporting.
+    #
+    # Name kept as the manual field created live 2026-07-28 (same approach as
+    # x_sdlc_* and x_state_region above), so the module adopts the existing
+    # column and its data rather than creating a second one.
+    #
+    # The explicit relation/column names are required, not cosmetic: this is a
+    # self-referential m2m, and Odoo's default naming derives both columns from
+    # the comodel, which collides when source and target are the same model.
+    #
+    # NOTE: a plain m2m is NOT symmetric — writing A→B does not create B→A.
+    # Callers must set both sides. Kept deliberately simple rather than adding a
+    # mirroring write() override, which would surprise anyone doing a bulk load.
+    x_related_request_ids = fields.Many2many(
+        comodel_name="maintenance.request",
+        relation="maintenance_request_related_rel",
+        column1="request_id",
+        column2="related_request_id",
+        string="Related Requests",
+        help="Other maintenance requests related to this one (shared root "
+        "cause, compounding severity, or a shared fix). Non-symmetric: adding "
+        "B here does not add this record to B.",
+    )
+
     @api.model
     def _cron_unfollow_customers_from_internal(self):
         """Monitor + self-heal: drop customer partners from maintenance followers.
