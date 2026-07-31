@@ -330,12 +330,46 @@ class MintCustomerProfile(http.Controller):
                                   'region': region.code if region else None,
                                   'reason': 'store has no dutchie_store_id'})
 
-        products = request.env['product.template'].sudo().search([
+        Product = request.env['product.template'].sudo()
+        domain = [
             ('x_is_loyalty_redeemable', '=', True),
             ('x_loyalty_points_cost', '>', 0),
             ('active', '=', True),
             ('x_location_id', 'in', uuids),
-        ], order='x_loyalty_points_cost asc, name asc')
+        ]
+        products = Product.search(domain, order='x_loyalty_points_cost asc, name asc')
+
+        # These rows are PER LOCATION while the catalog above is region-wide, so
+        # a product every store carries arrives once per store: 3,656 rows for
+        # 644 real products in Arizona, i.e. the same card up to 9 times in the
+        # grid. Collapse to one row per product.
+        #
+        # The copies are not interchangeable — 87 of those 644 groups have a
+        # photo on some copies and not others — so prefer a copy that can
+        # actually render one. Presence is resolved in SQL because reading
+        # image_256 across every copy would pull thousands of binaries just to
+        # choose between them; only the survivors get serialized.
+        illustrated = set(Product.search(domain + [('image_256', '!=', False)]).ids)
+        illustrated |= set(Product.search(domain + [('x_image_url', '!=', False)]).ids)
+
+        deduped = {}
+        for product in products:
+            # dutchie_product_id is the identity the rest of the stack matches
+            # on; SKU and name only stand in for rows that predate a sync. Falls
+            # back to the id so anonymous rows stay distinct instead of
+            # collapsing into one another.
+            fingerprint = (product.dutchie_product_id
+                           or product.default_code
+                           or (product.name or '').strip().lower()
+                           or 'id:%d' % product.id)
+            kept = deduped.get(fingerprint)
+            if kept is None:
+                deduped[fingerprint] = product
+            elif kept.id not in illustrated and product.id in illustrated:
+                # Same product, better copy — keep the slot (dict preserves the
+                # cost-ascending order the search established).
+                deduped[fingerprint] = product
+        products = list(deduped.values())
 
         return json_response({
             'store_id': store.id,
