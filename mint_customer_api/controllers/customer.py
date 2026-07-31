@@ -260,11 +260,28 @@ class MintCustomerProfile(http.Controller):
         in their state carries -- matching the redemption lock, which is
         region-wide (create_redemption sets store_ids to the region's stores).
 
-        With NO store, the list is EMPTY rather than global. A caller that has
-        not told us where it is cannot be shown a state's catalog, and showing
-        the union would recreate the cross-state leak. States with no catalog
-        yet (FL, MI) therefore return empty, which is correct: nothing is
-        redeemable there until their rewards are set up.
+        Resolution order, most specific first:
+
+          1. `store_id` / `store_slug` query param — an explicit choice.
+          2. `region` — a region slug or code ("arizona" / "AZ"). The catalog is
+             region-wide anyway, so a region is all this endpoint actually needs;
+             demanding a specific store was stricter than the data requires.
+          3. The SIGNED-IN customer's saved store (res.partner.x_home_store_id).
+
+        (3) is what makes this durable. (1) and (2) both depend on the client
+        passing something it learned from localStorage, which is per-device,
+        cleared with site data, and absent on a first visit — so a customer who
+        arrived straight at /rewards on a new phone saw an empty grid. Only 24
+        of 533 portal users had a saved store when this was written, because
+        nothing but the POS sync ever wrote one; PUT /customer/profile now
+        accepts it, so a customer's choice persists server-side and follows them
+        to any device.
+
+        With none of the three the list is EMPTY rather than global. A caller we
+        cannot place must not be shown a state's catalog, and showing the union
+        would recreate the cross-state leak. States with no catalog yet (FL, MI)
+        therefore return empty, which is correct: nothing is redeemable there
+        until their rewards are set up.
         """
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
@@ -274,9 +291,33 @@ class MintCustomerProfile(http.Controller):
             if str(kw.get('store_id') or '').isdigit() else Company
         if not store and kw.get('store_slug'):
             store = Company.search([('x_slug', '=', kw['store_slug'])], limit=1)
+        resolved_from = 'param' if store else None
+
+        # A region is enough: the catalog below is region-wide regardless of
+        # which store in it we resolve to.
+        region_hint = (kw.get('region') or '').strip()
+        if not store and region_hint:
+            reg = request.env['mint.region'].sudo().search(
+                ['|', ('slug', '=ilike', region_hint), ('code', '=ilike', region_hint)], limit=1)
+            if reg:
+                store = Company.search([('region_id', '=', reg.id),
+                                        ('is_dispensary', '=', True)], limit=1)
+                resolved_from = 'region' if store else None
+
+        # Saved store on the customer record — survives new devices and cleared
+        # storage. Auth is optional on this route (the catalog is not private),
+        # so an anonymous caller just skips this step.
+        if not store:
+            user = _verify_and_get_user()
+            home = user and user.partner_id and getattr(
+                user.partner_id.sudo(), 'x_home_store_id', False)
+            if home:
+                store = home.sudo()
+                resolved_from = 'saved_store'
 
         if not store:
             return json_response({'products': [], 'store_id': None, 'region': None,
+                                  'resolved_from': None,
                                   'reason': 'no store specified'})
 
         # The region's stores -- same set create_redemption locks a coupon to.
@@ -299,6 +340,10 @@ class MintCustomerProfile(http.Controller):
         return json_response({
             'store_id': store.id,
             'region': region.code if region else None,
+            # Lets the client tell "you are seeing Arizona because you picked it"
+            # from "...because it is saved on your account" — and lets us measure
+            # how often the durable path is doing the work.
+            'resolved_from': resolved_from,
             'products': [{
                 'id': p.id,
                 'name': p.name,
@@ -494,9 +539,33 @@ class MintCustomerProfile(http.Controller):
         if 'phone' in data:
             vals['phone'] = data['phone'].strip()
         # NOTE: `mobile` was removed from res.partner in Odoo 19; clients
-        # may still send it but we silently drop the field. `preferred_store_id`
-        # is also a no-op until/unless x_preferred_store_id is added back to
-        # res.partner — currently only x_home_store_id exists.
+        # may still send it but we silently drop the field.
+
+        # Saved store. Until now nothing but the POS sync ever wrote
+        # x_home_store_id, so only 24 of 533 portal customers had one and the
+        # rest were placed purely by localStorage — per-device, cleared with
+        # site data, gone on a new phone. Accepting it here is what makes a
+        # customer's choice durable: /loyalty/redeemables falls back to this
+        # when the client passes no store, so the rewards grid fills in on any
+        # device they sign in from.
+        #
+        # Accepts an id or a slug. Must be a real dispensary — a bad id would
+        # otherwise persist and quietly place the customer in the wrong state
+        # for every future request.
+        #
+        # x_home_store_id lives in mint_dutchie_sync, which this module does not
+        # depend on, so the field may genuinely be absent from the registry —
+        # the same reason get_profile reads it through getattr. Probe rather
+        # than assume: writing a field that isn't there raises.
+        store_key = data.get('home_store_id', data.get('home_store_slug'))
+        if store_key not in (None, '') and 'x_home_store_id' in partner._fields:
+            Company = request.env['res.company'].sudo()
+            store = (Company.browse(int(store_key)).exists()
+                     if str(store_key).isdigit()
+                     else Company.search([('x_slug', '=', str(store_key))], limit=1))
+            if not store or not store.is_dispensary:
+                return error_response('Unknown store: %s' % store_key)
+            vals['x_home_store_id'] = store.id
 
         if vals:
             partner.write(vals)
@@ -508,5 +577,9 @@ class MintCustomerProfile(http.Controller):
                 'name': partner.name,
                 'email': partner.email,
                 'phone': partner.phone or '',
+                # getattr for the same reason as get_profile: the field is
+                # defined in mint_dutchie_sync, not a dependency of this module.
+                'home_store_id': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.id or None,
+                'home_store_name': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.name or None,
             },
         })
