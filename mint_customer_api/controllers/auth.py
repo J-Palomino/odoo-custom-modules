@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import time
+import uuid
 
 from odoo import http, fields
 from odoo.http import request, Response
@@ -146,6 +147,32 @@ def json_response(data, status=200):
 
 def error_response(message, status=400):
     return json_response({'error': message}, status=status)
+
+
+def unexpected_error_response(user_message, log_context, status=500):
+    """Log an unexpected exception and answer with text safe to show a customer.
+
+    Call from inside an `except` block. Interpolating str(exc) into the
+    response — which is what these handlers used to do — puts Python, psycopg
+    and Odoo internals in front of shoppers: /rewards alerted the `error` field
+    verbatim, so a failed redemption could read "Redemption failed: Odoo Server
+    Error". The storefront should never name the backend.
+
+    The exception text belongs in the log, where support can read it. The
+    customer gets a stable sentence plus a short reference that appears on both
+    sides, so a report of "reference 3f9a1c22" maps to one log line.
+
+    This is for UNEXPECTED failures only. A UserError is a deliberate,
+    human-readable message ("Email already registered") and should still be
+    passed through with str(e) — that is information the customer needs.
+    """
+    ref = uuid.uuid4().hex[:8]
+    # .exception() attaches the active traceback; the caller is in an except block.
+    _logger.exception('%s [ref=%s]', log_context, ref)
+    return error_response(
+        '%s Please try again — if it keeps happening, quote reference %s.' % (user_message, ref),
+        status,
+    )
 
 
 def _get_bearer_token():
@@ -457,10 +484,14 @@ class MintCustomerAuth(http.Controller):
             }, status=201)
 
         except UserError as e:
+            # Deliberate, human-readable validation ("Email already
+            # registered") — the customer needs to read this one.
             return error_response(str(e))
-        except Exception as e:
-            _logger.exception('Registration failed: %s', e)
-            return error_response('Registration failed: %s' % str(e), 500)
+        except Exception:
+            return unexpected_error_response(
+                'Could not complete your registration.',
+                'Registration failed',
+            )
 
     @http.route('/api/v1/auth/forgot-password', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')

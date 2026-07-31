@@ -12,7 +12,8 @@ import logging
 from odoo import fields, http
 from odoo.http import request, Response
 
-from .auth import json_response, error_response, _verify_and_get_user
+from .auth import (json_response, error_response, unexpected_error_response,
+                   _verify_and_get_user)
 
 _logger = logging.getLogger(__name__)
 
@@ -501,9 +502,11 @@ class MintCustomerProfile(http.Controller):
                     points_cost=points_cost,
                     store=store or None,
                 )
-        except Exception as e:
-            _logger.exception('Redemption failed for partner %s product %s', partner.id, product_id)
-            return error_response('Redemption failed: %s' % str(e), 500)
+        except Exception:
+            return unexpected_error_response(
+                'Could not redeem that reward right now.',
+                'Redemption failed for partner %s product %s' % (partner.id, product_id),
+            )
 
         _logger.info(
             'Loyalty redemption: partner=%s product=%s code=%s -%d pts',
