@@ -337,6 +337,44 @@ class MintCustomerProfile(http.Controller):
             ('x_location_id', 'in', uuids),
         ], order='x_loyalty_points_cost asc, name asc')
 
+        # Odoo carries many duplicate product.template rows per physical
+        # product — one WYLD gummy resolves to 18 templates covering just 2
+        # SKUs — and they stayed invisible until the catalogue was bulk-flagged
+        # redeemable. Measured on Tempe: 3,656 rows for 644 real products, so
+        # 82% of the grid was the same items repeated, and 82% of a 1.06 MB
+        # response was redundant. Collapse on dutchie_product_id, the canonical
+        # product key that every redeemable row carries.
+        #
+        # The tie-break matters. Duplicates never disagree on points_cost
+        # (checked across all 549 duplicated groups on prod), so the pick cannot
+        # change what a customer is charged. They DO disagree on images: 78
+        # groups carry a photo on only some rows, so choosing blindly would
+        # blank out products that actually have one. Prefer a row with a usable
+        # image, then the lowest id so the choice is stable between requests.
+        #
+        # image_url is resolved once per row here and reused in the payload —
+        # it md5s the stored thumbnail to detect placeholder bytes, which is not
+        # work worth doing twice per product.
+        rows = [(p, _redeemable_image_url(p)) for p in products]
+        best = {}
+        unkeyed = []
+        for product, image_url in rows:
+            key = product.dutchie_product_id
+            if not key:
+                # No canonical key — keep the row rather than collapsing every
+                # such product into a single bucket keyed on False.
+                unkeyed.append((product, image_url))
+                continue
+            incumbent = best.get(key)
+            if incumbent is None or (0 if image_url else 1, product.id) < \
+                    (0 if incumbent[1] else 1, incumbent[0].id):
+                best[key] = (product, image_url)
+
+        deduped = sorted(
+            list(best.values()) + unkeyed,
+            key=lambda row: (row[0].x_loyalty_points_cost, row[0].name or ''),
+        )
+
         return json_response({
             'store_id': store.id,
             'region': region.code if region else None,
@@ -350,12 +388,12 @@ class MintCustomerProfile(http.Controller):
                 'brand': p.brand_id.name if p.brand_id else None,
                 'category': p.master_category or (p.categ_id.name if p.categ_id else None),
                 'strain_type': p.strain_type or None,
-                'image_url': _redeemable_image_url(p),
+                'image_url': image_url,
                 'points_cost': p.x_loyalty_points_cost,
                 'list_price': p.list_price,
                 'dutchie_product_id': p.dutchie_product_id or None,
                 'sku': p.default_code or None,
-            } for p in products],
+            } for p, image_url in deduped],
         })
 
     @http.route('/api/v1/customer/loyalty/redeemables/<int:product_id>/image',
