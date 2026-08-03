@@ -303,13 +303,32 @@
                                         </div>
                                     </div>
 
-                                    <button type="submit" class="btn btn-primary btn-lg">
+                                    <button type="submit" class="btn btn-primary btn-lg" id="submit-btn">
                                         Submit Request
                                     </button>
                                 </form>
 
                                 <script>
                                     (function () {
+                                        /* Double-submit guard.  Attachments can be several MB, so
+                                           the POST stays in flight for seconds with no visible
+                                           feedback — without this, an impatient second click files
+                                           a second ticket. */
+                                        var reqForm = document.querySelector('form[method="post"]');
+                                        var submitBtn = document.getElementById('submit-btn');
+                                        if (reqForm &amp;&amp; submitBtn) {
+                                            var alreadySubmitted = false;
+                                            reqForm.addEventListener('submit', function (ev) {
+                                                if (alreadySubmitted) {
+                                                    ev.preventDefault();
+                                                    return false;
+                                                }
+                                                alreadySubmitted = true;
+                                                submitBtn.disabled = true;
+                                                submitBtn.textContent = 'Submitting…';
+                                            });
+                                        }
+
                                         var subtypeData = JSON.parse(
                                             document.getElementById('subtype-data').textContent || '{}'
                                         );
@@ -581,13 +600,29 @@
                                         </div>
                                     </div>
 
-                                    <button type="submit" class="btn btn-success btn-lg">
+                                    <button type="submit" class="btn btn-success btn-lg" id="submit-btn">
                                         Submit Request
                                     </button>
                                 </form>
 
                                 <script>
                                     (function () {
+                                        /* Double-submit guard — see the engineering form above. */
+                                        var reqForm = document.querySelector('form[method="post"]');
+                                        var submitBtn = document.getElementById('submit-btn');
+                                        if (reqForm &amp;&amp; submitBtn) {
+                                            var alreadySubmitted = false;
+                                            reqForm.addEventListener('submit', function (ev) {
+                                                if (alreadySubmitted) {
+                                                    ev.preventDefault();
+                                                    return false;
+                                                }
+                                                alreadySubmitted = true;
+                                                submitBtn.disabled = true;
+                                                submitBtn.textContent = 'Submitting…';
+                                            });
+                                        }
+
                                         var subtypeData = JSON.parse(
                                             document.getElementById('subtype-data').textContent || '{}'
                                         );
