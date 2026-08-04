@@ -646,6 +646,50 @@ class MintDiscount(models.Model):
                 _logger.exception('Deactivate failed for %s', rec.redemption_code)
         return done
 
+    @api.model
+    def redemption_push_blocked_reason(self, store=None):
+        """Why a redemption at `store` could NOT reach Dutchie, or None if it can.
+
+        Mirrors the gate chain in _push_redemption_to_dutchie and the pusher it
+        calls, so it can be asked BEFORE any points are spent.
+
+        This exists because the push deliberately fails soft: by the time it
+        runs the points are already deducted and the mint.discount already
+        exists in the caller's transaction, so raising there would cost the
+        customer their points AND their coupon. The consequence is that a
+        blocked push is invisible — the customer is debited and handed a code
+        no register will accept. Worse, the market gate returns before any
+        push-log row is written, so there is not even an audit trail, and
+        nothing sweeps failed pushes for retry.
+
+        Today only Arizona can push: 1 of 43 stores carries
+        dutchie_discount_push_enabled and the other five regions have the market
+        gate off, while reward catalogs are live in IL/MO/NV. Without this check
+        the first redemption in those states silently burns a customer.
+
+        Returns a short reason string for logging, or None when the push would
+        go through.
+        """
+        if 'mint.ptl.day' not in self.env:
+            return 'command_center_absent'
+        if not store:
+            return 'no_store'
+        region = store.region_id
+        if not region:
+            return 'store_has_no_region'
+        if not self.env['mint.ptl.day'].sudo().search(
+                [('market_id', '=', region.id)], limit=1):
+            return 'no_ptl_day_for_market:%s' % (region.code or region.id)
+        if not region.dutchie_discount_push_enabled:
+            return 'market_push_disabled:%s' % (region.code or region.id)
+        if not self.env['res.company'].sudo().search_count([
+                ('is_dispensary', '=', True),
+                ('dutchie_store_id', '!=', False),
+                ('region_id', '=', region.id),
+                ('dutchie_discount_push_enabled', '=', True)]):
+            return 'no_push_enabled_store_in_market:%s' % (region.code or region.id)
+        return None
+
     def _push_redemption_to_dutchie(self, store=None):
         """Create this redemption as a real discount in Dutchie.
 
