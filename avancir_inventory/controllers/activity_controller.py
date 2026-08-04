@@ -8,9 +8,32 @@ from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
 
+# Group required to read RFID inventory/activity data. Mirrors the read access
+# granted to avancir.sync in security/ir.model.access.csv.
+RFID_READ_GROUP = 'stock.group_stock_user'
+
 
 class AvancirHistoryController(http.Controller):
     """REST API endpoints for fetching RFID activity history from Avancir."""
+
+    def _check_access(self):
+        """Return an error Response if the caller may not read RFID data, else None.
+
+        The handlers below run their Avancir calls through sudo(), so the group
+        check here is the only thing standing between a logged-in user and the
+        full RFID inventory. Keep it as the first statement in every handler.
+        """
+        user = request.env.user
+        if not user or not user.has_group(RFID_READ_GROUP):
+            _logger.warning(
+                'Denied RFID API access for uid=%s on %s',
+                user.id if user else None,
+                request.httprequest.path,
+            )
+            return self._error_response(
+                'Forbidden: RFID inventory access required', 403
+            )
+        return None
 
     def _json_response(self, data, status=200):
         """Return a JSON response."""
@@ -37,7 +60,7 @@ class AvancirHistoryController(http.Controller):
     # HISTORY FETCH ENDPOINTS
     # ================================================================
 
-    @http.route('/api/v1/rfid/history', type='http', auth='public', methods=['GET'], csrf=False)
+    @http.route('/api/v1/rfid/history', type='http', auth='user', methods=['GET'], csrf=False)
     def get_history_by_items(self, **kwargs):
         """
         Fetch activity history from Avancir for specific items.
@@ -48,6 +71,10 @@ class AvancirHistoryController(http.Controller):
         Returns:
             Activity history from Avancir's /items/history/batch endpoint
         """
+        denied = self._check_access()
+        if denied:
+            return denied
+
         try:
             item_ids_param = kwargs.get('item_ids', '')
             if not item_ids_param:
@@ -83,7 +110,7 @@ class AvancirHistoryController(http.Controller):
             _logger.error(f'Error fetching item history: {e}')
             return self._error_response(str(e), 500)
 
-    @http.route('/api/v1/rfid/history/location/<string:location_name>', type='http', auth='public', methods=['GET'], csrf=False)
+    @http.route('/api/v1/rfid/history/location/<string:location_name>', type='http', auth='user', methods=['GET'], csrf=False)
     def get_history_by_location(self, location_name, **kwargs):
         """
         Fetch activity history for all items at a location.
@@ -97,6 +124,10 @@ class AvancirHistoryController(http.Controller):
         Returns:
             Activity history from Avancir for items at that location
         """
+        denied = self._check_access()
+        if denied:
+            return denied
+
         try:
             if not location_name:
                 return self._error_response('location_name is required', 400)
@@ -133,7 +164,7 @@ class AvancirHistoryController(http.Controller):
             _logger.error(f'Error fetching history for location {location_name}: {e}')
             return self._error_response(str(e), 500)
 
-    @http.route('/api/v1/rfid/items/<string:item_id>/history', type='http', auth='public', methods=['GET'], csrf=False)
+    @http.route('/api/v1/rfid/items/<string:item_id>/history', type='http', auth='user', methods=['GET'], csrf=False)
     def get_single_item_history(self, item_id, **kwargs):
         """
         Fetch activity history for a single item.
@@ -144,6 +175,10 @@ class AvancirHistoryController(http.Controller):
         Returns:
             Activity history for the specified item
         """
+        denied = self._check_access()
+        if denied:
+            return denied
+
         try:
             if not item_id:
                 return self._error_response('item_id is required', 400)
@@ -177,7 +212,7 @@ class AvancirHistoryController(http.Controller):
     # INVENTORY ENDPOINTS (retained for convenience)
     # ================================================================
 
-    @http.route('/api/v1/rfid/inventory/<string:location_name>', type='http', auth='public', methods=['GET'], csrf=False)
+    @http.route('/api/v1/rfid/inventory/<string:location_name>', type='http', auth='user', methods=['GET'], csrf=False)
     def get_inventory_by_location(self, location_name, **kwargs):
         """
         Get current inventory at a location from Avancir.
@@ -191,6 +226,10 @@ class AvancirHistoryController(http.Controller):
         Returns:
             List of items at the location
         """
+        denied = self._check_access()
+        if denied:
+            return denied
+
         try:
             if not location_name:
                 return self._error_response('location_name is required', 400)

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'RFID Inventory Integration',
-    'version': '19.0.5.0.0',
+    'version': '19.0.6.0.0',
     'category': 'Inventory',
     'summary': 'RFID-based inventory sync and tracking',
     'description': """
