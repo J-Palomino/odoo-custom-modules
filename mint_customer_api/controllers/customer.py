@@ -484,18 +484,39 @@ class MintCustomerProfile(http.Controller):
                 'points': points,
             })
 
+        # Location-lock the redemption to the selected store's STATE so it can
+        # only be consumed at stores in the same market (per-state separation).
+        # Resolved BEFORE the deduction below, because the push gate is checked
+        # against it and a blocked push must cost the customer nothing.
+        store = False
+        if data.get('store_id'):
+            store = request.env['res.company'].sudo().browse(int(data['store_id']))
+        elif data.get('store_slug'):
+            store = request.env['res.company'].sudo().search(
+                [('x_slug', '=', data['store_slug'])], limit=1)
+
+        # FAIL CLOSED. The Dutchie push fails soft by design — by then the points
+        # are gone and the coupon exists, so raising would cost the customer
+        # both. That makes a blocked push invisible: debited, handed a code, and
+        # refused at the register, with no push-log row and no retry.
+        #
+        # Only Arizona can push today (1 of 43 stores enabled; the other five
+        # markets have the gate off) while reward catalogs are live in IL/MO/NV.
+        # Refusing here keeps the points instead of selling a dead code.
+        blocked = request.env['mint.discount'].sudo().redemption_push_blocked_reason(
+            store or None)
+        if blocked:
+            _logger.error(
+                'Redemption refused for partner %s at store %s: %s — points NOT '
+                'deducted (a coupon that cannot reach Dutchie is a dead code)',
+                partner.id, store.display_name if store else '(none)', blocked)
+            return error_response(
+                'Rewards cannot be redeemed at this store yet. Your points have '
+                'not been used — please try again later or ask a budtender.', 409)
+
         try:
             with request.env.cr.savepoint():
                 card.sudo().write({'points': points - points_cost})
-                # Location-lock the redemption to the selected store's STATE so
-                # it can only be consumed at stores in the same market (per-state
-                # separation). Resolve the store from the request body.
-                store = False
-                if data.get('store_id'):
-                    store = request.env['res.company'].sudo().browse(int(data['store_id']))
-                elif data.get('store_slug'):
-                    store = request.env['res.company'].sudo().search(
-                        [('x_slug', '=', data['store_slug'])], limit=1)
                 redemption = request.env['mint.discount'].sudo().create_redemption(
                     partner=partner,
                     product=product,
