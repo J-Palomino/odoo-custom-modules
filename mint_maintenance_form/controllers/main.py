@@ -242,6 +242,39 @@ class MaintenanceFormController(http.Controller):
             valid_files.append((f.filename, f.mimetype, data))
         return valid_files, None
 
+    def _submission_key(self, vals):
+        """Stable idempotency key for a submitted form payload.
+
+        Hashed rather than compared field by field, because the obvious
+        approach does not work: `description` is an HTML field with
+        sanitize=True, so Odoo rewrites the markup on write and the stored
+        string is never byte-identical to what was posted.  A `description =`
+        term therefore silently never matches — which is exactly how the
+        earlier guard came to be inert.  Hashing what the user supplied, and
+        storing the digest on the ticket, avoids HTML normalisation entirely.
+
+        The submitter is identified by uid, or by the submitted email for a
+        public visitor.  Deliberately NOT by owner_user_id: that field is
+        computed from employee_id, so the value the controller puts in vals is
+        discarded on create and the column is empty on 51% of production
+        web-intake tickets (89 of 174).  MR-1194 and MR-1195 — the same person
+        submitting the same form five minutes apart — stored False and 1985
+        respectively, so an owner_user_id term could never have linked them.
+        """
+        public_uid = request.env.ref("base.public_user").id
+        uid = request.env.uid
+        if uid and uid != public_uid:
+            submitter = f"uid:{uid}"
+        else:
+            submitter = "email:" + (vals.get("email_cc") or "").strip().lower()
+        seed = "|".join([
+            submitter,
+            str(vals.get("maintenance_team_id") or ""),
+            str(vals.get("company_id") or ""),
+            vals.get("description") or "",
+        ])
+        return hashlib.sha256(seed.encode()).hexdigest()
+
     def _find_recent_duplicate(self, vals):
         """Return an identical request submitted in the last few minutes, if any.
 
@@ -250,41 +283,36 @@ class MaintenanceFormController(http.Controller):
         uploading, a browser/proxy retry of the POST, and "Confirm Form
         Resubmission" on refresh.
 
-        Keyed on `description`, deliberately NOT on `name`: a Maintenance UI
-        automation rewrites `name` to "MR-<id> - ..." immediately after
-        create, so the title we submitted never matches what got stored.
+        Matched on the stored submission key, never on `name`: a Maintenance
+        UI automation rewrites `name` to "MR-<id> - ..." immediately after
+        create — it embeds the record's own id, so no two rows can ever share
+        a title and a name-keyed guard can never fire.
         """
-        description = vals.get("description")
-        if not description:
+        if not vals.get("description"):
             return None
+
+        key = vals.get("x_submission_key") or self._submission_key(vals)
 
         # Serialise identical submissions against each other.  A plain search
         # cannot see a row another worker has created but not yet committed,
         # so without this two near-simultaneous clicks both miss and both
         # create.  The lock is held until this transaction ends, so the second
         # request waits and then finds the first one's ticket.
-        submitter = vals.get("owner_user_id") or vals.get("email_cc") or ""
-        lock_seed = f"{submitter}|{vals.get('maintenance_team_id')}|{description}"
-        lock_key = int.from_bytes(
-            hashlib.sha1(lock_seed.encode()).digest()[:8], "big", signed=True
-        )
+        lock_key = int.from_bytes(bytes.fromhex(key)[:8], "big", signed=True)
         request.env.cr.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
 
         cutoff = fields.Datetime.to_string(
             fields.Datetime.now() - timedelta(seconds=DUPLICATE_WINDOW_SECONDS)
         )
         domain = [
-            ("description", "=", description),
-            ("maintenance_team_id", "=", vals.get("maintenance_team_id")),
+            ("x_submission_key", "=", key),
             ("create_date", ">=", cutoff),
+            # A ticket already resolved inside the window is not the same
+            # report.  If it was closed and the user is submitting again, they
+            # are telling us it is not actually fixed — that deserves its own
+            # ticket rather than being folded into the closed one.
+            ("stage_id.done", "=", False),
         ]
-        if vals.get("company_id"):
-            domain.append(("company_id", "=", vals["company_id"]))
-        # Identify the submitter by whichever handle we captured.
-        if vals.get("owner_user_id"):
-            domain.append(("owner_user_id", "=", vals["owner_user_id"]))
-        elif vals.get("email_cc"):
-            domain.append(("email_cc", "=", vals["email_cc"]))
 
         existing = request.env["maintenance.request"].sudo().search(
             domain, limit=1, order="create_date desc"
@@ -337,7 +365,10 @@ class MaintenanceFormController(http.Controller):
 
             # Idempotency: a repeat of an identical submission resolves to the
             # ticket already created rather than a second one.  Re-uploading
-            # the same attachments is skipped along with it.
+            # the same attachments is skipped along with it.  The key is
+            # stamped on the row so the next submission has something exact
+            # and indexed to match against.
+            vals["x_submission_key"] = self._submission_key(vals)
             duplicate = self._find_recent_duplicate(vals)
             if duplicate:
                 _logger.info(

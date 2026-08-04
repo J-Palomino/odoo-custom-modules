@@ -16,6 +16,31 @@ class MaintenanceRequest(models.Model):
     # the ~397 portal accounts — as assignable.
     user_id = fields.Many2one(domain="[('share', '=', False)]")
 
+    # Idempotency key for web-form submissions, stamped by the Fix-It
+    # controller. Hash of (submitter, team, company, description) as the user
+    # supplied it.
+    #
+    # A key exists because the obvious approach — comparing `description`
+    # directly — cannot work: description is an HTML field with sanitize=True,
+    # so Odoo rewrites the markup on write and what comes back out is never
+    # byte-identical to what was posted. An exact match on it silently never
+    # fires, which is precisely how the earlier guard came to be inert.
+    # Hashing the submitted payload sidesteps HTML normalisation entirely and
+    # gives an indexed equality lookup.
+    #
+    # copy=False so duplicating a ticket in the UI does not carry the original
+    # ticket's key onto the copy and make the next real submission look like a
+    # duplicate.
+    x_submission_key = fields.Char(
+        string="Submission Key",
+        index=True,
+        copy=False,
+        help="Idempotency key for tickets filed through the website request "
+        "forms. Identical resubmissions within a short window resolve to the "
+        "existing ticket instead of creating another one. Empty for tickets "
+        "created directly in Odoo or by the phone/SMS agents.",
+    )
+
     x_intake_channel = fields.Selection(
         selection=[
             ("phone", "Phone"),
