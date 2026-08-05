@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Recover redemptions that never reached Dutchie.
+
+             The push fails soft (points are already deducted when it runs), so a
+             blocked push leaves the customer holding a code no register accepts
+             and nothing retried it. This re-pushes any pending redemption whose
+             market has since been enabled, and reports the ones still gated.
+
+             noupdate="1" so an operator can deactivate or re-time it without a
+             module upgrade putting it back — same convention as the welcome
+             pre-roll crons. -->
+        <record id="cron_sweep_unpushed_redemptions" model="ir.cron">
+            <field name="name">Mint: Sweep redemptions that never reached Dutchie</field>
+            <field name="model_id" ref="mint_api_v2.model_mint_discount"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_sweep_unpushed_redemptions()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

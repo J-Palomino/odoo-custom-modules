@@ -364,6 +364,68 @@ class MintDiscountPTL(models.Model):
             if seen and total >= int(c.maximum_usage_count or 1):
                 c.write({'redemption_status': 'used', 'redemption_used_at': now})
 
+    def _cron_sweep_unpushed_redemptions(self):
+        """Retry redemptions that never reached Dutchie, and report the rest.
+
+        The push fails soft — the points are deducted before it runs — so a
+        redemption whose push was blocked leaves the customer holding a code no
+        register accepts. Nothing retried those until now.
+
+        Two populations, deliberately handled differently:
+
+          * market has since OPENED — re-push. This is the whole point: a
+            redemption taken while a market was gated off becomes usable the
+            moment that market is enabled, with no manual intervention.
+          * market still CLOSED — report only. Re-pushing would fail again and
+            fill the log with noise; the block is a rollout state, not an error.
+
+        Selection is "no successful live push log row" rather than
+        dutchie_discount_id, because the id deliberately lives on the log per
+        (discount, store) and never on mint.discount.
+
+        A 15-minute floor keeps the sweep off redemptions still inside their
+        own transaction's retry window.
+        """
+        Log = self.env['mint.dutchie.discount.push.log'].sudo()
+        cutoff = fields.Datetime.subtract(fields.Datetime.now(), minutes=15)
+        candidates = self.sudo().search([
+            ('discount_type', '=', 'loyalty_redemption'),
+            ('redemption_status', '=', 'pending'),
+            ('create_date', '<=', cutoff),
+        ], limit=500)
+        if not candidates:
+            return
+
+        pushed = blocked = 0
+        blocked_by_reason = {}
+        for rec in candidates:
+            if Log.search_count([('discount_id', '=', rec.id), ('mode', '=', 'live'),
+                                 ('success', '=', True), ('dutchie_discount_id', '!=', 0)]):
+                continue  # already live in Dutchie
+            store = rec.store_ids[:1]
+            reason = self.env['mint.discount'].sudo().redemption_push_blocked_reason(store)
+            if reason:
+                blocked += 1
+                blocked_by_reason[reason] = blocked_by_reason.get(reason, 0) + 1
+                continue
+            # The gate is open now — the block was transient (or the market was
+            # opened after the customer redeemed). Push it.
+            try:
+                if rec._push_redemption_to_dutchie(store):
+                    pushed += 1
+                else:
+                    blocked += 1
+                    blocked_by_reason['push_failed'] = blocked_by_reason.get('push_failed', 0) + 1
+            except Exception:
+                _logger.exception('redemption_sweep: push raised for %s', rec.redemption_code)
+                blocked += 1
+
+        if pushed or blocked:
+            _logger.warning(
+                'redemption_sweep: %d recovered, %d still unpushed %s. Unpushed '
+                'redemptions are codes customers already paid points for that no '
+                'register will accept.', pushed, blocked, blocked_by_reason or '')
+
     def action_publish_to_dutchie(self):
         """Manual 'Publish to Dutchie' button for a standalone (one-off) coupon.
 
