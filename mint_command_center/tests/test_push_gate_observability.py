@@ -141,6 +141,46 @@ class TestPushGateObservability(TransactionCase):
         self.assertEqual(len(rows), 1, 'an empty store intersection must be logged')
         self.assertIn('no_target_store_overlap', rows.error_message)
 
+    def test_P0_10_a_bulk_publish_writes_ONE_row_not_one_per_discount(self):
+        """Capacity regression guard.
+
+        The first cut of this logged one row per discount. The PTL path
+        publishes a whole day at once — FL alone carries 3,347 deals against a
+        push-log of roughly 1,500 rows total — so a single publish in a gated
+        market could have multiplied the audit table it exists to make
+        readable. The mode/market/store gates are facts about the CALL, so they
+        get one row that names the count.
+        """
+        ds = self.Discount
+        for i in range(4):
+            ds |= self._redemption(self.store_off, 'PGOBULK%d' % i)
+        self.env['ir.config_parameter'].sudo().set_param(
+            'mint.dutchie_discount_push.mode', 'live')
+        before = self.Log.search_count([])
+        self.day_off._push_discounts_to_dutchie(ds.ids)
+        written = self.Log.search_count([]) - before
+        self.assertEqual(written, 1,
+                         'a 4-discount publish must write ONE summary row, got %d' % written)
+        row = self.Log.search([], order='id desc', limit=1)
+        self.assertIn('market_push_disabled:PC', row.error_message)
+        self.assertIn('4 discount(s)', row.error_message,
+                      'the summary row must name how many discounts it covers')
+        self.assertFalse(row.discount_id,
+                         'a bulk row is a market fact, not a per-discount one')
+
+    def test_P0_11_a_single_discount_call_stays_filterable_by_discount(self):
+        """The bulk fix must not cost the redemption path its per-discount row —
+        every redemption push carries exactly one discount, and AC06 depends on
+        being able to filter the log by discount_id."""
+        d = self._redemption(self.store_off, 'PGOSINGLE')
+        self.env['ir.config_parameter'].sudo().set_param(
+            'mint.dutchie_discount_push.mode', 'live')
+        self.day_off._push_discounts_to_dutchie(d.ids)
+        rows = self._rows(d)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows.discount_id.id, d.id,
+                         'a single-discount call must stay attached to it')
+
     # ---- AC08: per-market mode override ------------------------------------
 
     def test_P0_5_market_mode_overrides_the_global(self):

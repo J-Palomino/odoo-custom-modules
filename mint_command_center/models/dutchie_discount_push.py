@@ -685,10 +685,22 @@ class PtlDayDutchiePush(models.Model):
         "never attempted". That is how five markets could silently fail to
         publish redemption codes while the customer was already debited.
 
-        One row per discount so the log can be filtered by discount_id the same
-        way a real push can. company_id is required for the row to be readable
-        in the per-store views, so fall back to any store in the market when the
-        block happened before a target store was chosen.
+        ONE row per call, not per discount. The mode/market/store gates are
+        facts about the *call* — "FL is gated off" — not about each discount in
+        it, and the PTL path publishes a whole day at once: FL alone carries
+        3,347 deals against a push-log of ~1,500 rows total, so a row per
+        discount would let a single publish multiply the audit table it is
+        supposed to make readable.
+
+        When the call carries exactly one discount — every redemption push —
+        the row is still attached to it and stays filterable by discount_id.
+        For a bulk call the row is deliberately discount-less and names the
+        count instead: the answer to "why didn't discount X publish" is a
+        property of its market, and is discoverable from the market.
+
+        company_id makes the row readable in the per-store views, so fall back
+        to any store in the market when the block happened before a target
+        store was chosen.
         """
         if not discounts:
             return
@@ -696,15 +708,17 @@ class PtlDayDutchiePush(models.Model):
             company = self.env['res.company'].sudo().search(
                 [('region_id', '=', self.market_id.id), ('is_dispensary', '=', True)],
                 limit=1) if self.market_id else self.env['res.company'].sudo()
-        for discount in discounts:
-            Log.create({
-                'discount_id': discount.id,
-                'company_id': company[:1].id or False,
-                'dutchie_loc_id': str(company[:1].dutchie_store_id or ''),
-                'mode': mode,
-                'success': False,
-                'error_message': '[%s] %s' % (reason, message),
-            })
+        single = discounts[:1] if len(discounts) == 1 else None
+        if not single:
+            message = '%s (%d discount(s) in this publish)' % (message, len(discounts))
+        Log.create({
+            'discount_id': single.id if single else False,
+            'company_id': company[:1].id or False,
+            'dutchie_loc_id': str(company[:1].dutchie_store_id or ''),
+            'mode': mode,
+            'success': False,
+            'error_message': '[%s] %s' % (reason, message),
+        })
 
     # ─── Deactivate (expire / revoke) — the inverse of the push ──────────
 

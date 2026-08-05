@@ -708,12 +708,21 @@ class MintDiscount(models.Model):
         self.ensure_one()
         if 'mint.dutchie.discount.push.log' not in self.env:
             return
+        # Record the mode that was actually in force. Hardcoding 'live' would
+        # mislabel a block that happened during a dry-run — and this table is
+        # the audit trail the whole change exists to create, so a wrong value
+        # here is worse than a missing one. mode is required on the model, so
+        # fall back to 'live' only if the resolver is unreachable.
+        try:
+            mode = self.env['mint.ptl.day'].sudo()._get_dutchie_push_mode()
+        except Exception:
+            mode = 'live'
         try:
             self.env['mint.dutchie.discount.push.log'].sudo().create({
                 'discount_id': self.id,
                 'company_id': store[:1].id if store else False,
                 'dutchie_loc_id': str(store[:1].dutchie_store_id or '') if store else '',
-                'mode': 'live',
+                'mode': mode,
                 'success': False,
                 'error_message': (
                     '[%s] Redemption %s was NOT pushed to Dutchie. The code exists '
