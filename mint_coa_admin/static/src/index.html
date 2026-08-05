@@ -29,7 +29,10 @@
       table { width:100%; border-collapse:collapse; font-size:14px; }
       th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
       th { color:#6b7280; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
-      td .acts { display:flex; gap:6px; flex-wrap:wrap; }
+      td .acts { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+      /* Row actions are a dense toolbar, not page-level buttons: keep all of
+         them on one line now that Replace sits alongside the other four. */
+      td .acts button { padding:5px 9px; font-size:12.5px; }
       .uploadbar { display:flex; gap:8px; align-items:center; margin:0 0 16px; padding:12px; background:#fff; border:1px solid var(--line); border-radius:9px; flex-wrap:wrap; }
       .gate { max-width:460px; margin:80px auto; background:#fff; padding:26px; border:1px solid var(--line); border-radius:12px; }
       .gate h2 { margin:0 0 6px; }
@@ -50,6 +53,10 @@
       .results div:hover { background:#f0fdfa; }
       .you { font-size:11px; color:var(--mint-d); background:#ccfbf1; padding:1px 6px; border-radius:99px; margin-left:6px; }
       .status { font-size:13px; color:#6b7280; margin:8px 0; min-height:18px; }
+      .conflict { margin:0 0 12px; padding:12px 14px; background:#fffbeb; border:1px solid #fcd34d; border-radius:9px; font-size:14px; }
+      .conflict p { margin:0 0 4px; }
+      .conflict .why { color:#92400e; font-size:12.5px; margin:0 0 10px; line-height:1.5; }
+      .conflict .acts { display:flex; gap:8px; flex-wrap:wrap; }
       .hidden { display:none; }
       a.link { color:var(--mint-d); font-weight:600; text-decoration:none; }
       a.link:hover { text-decoration:underline; }
@@ -124,9 +131,10 @@
           <input id="file" type="file" accept="application/pdf" multiple />
           <button id="upload" disabled>Upload PDFs</button>
         </div>
+        <div id="conflict" class="conflict hidden"></div>
         <div id="status" class="status"></div>
         <table>
-          <thead><tr><th>Certificate</th><th>Size</th><th>Updated</th><th style="width:190px">Short link</th><th style="width:280px">Actions</th></tr></thead>
+          <thead><tr><th>Certificate</th><th>Size</th><th>Updated</th><th style="width:190px">Short link</th><th style="width:360px">Actions</th></tr></thead>
           <tbody id="files"><tr><td colspan="5" style="color:#9ca3af">Select a brand folder to view its certificates.</td></tr></tbody>
         </table>
       </main>
@@ -145,6 +153,7 @@
           brands: document.getElementById('brands'), files: document.getElementById('files'),
           curBrand: document.getElementById('curBrand'), status: document.getElementById('status'),
           file: document.getElementById('file'), upload: document.getElementById('upload'),
+          conflict: document.getElementById('conflict'),
           newBrand: document.getElementById('newBrand'), addBrand: document.getElementById('addBrand'),
         };
         var state = { name: '', brandId: null, brandName: '' };
@@ -263,6 +272,7 @@
         }
 
         function selectBrand(id, name) {
+          hideConflict();
           state.brandId = id; state.brandName = name;
           els.curBrand.textContent = name;
           els.upload.disabled = false;
@@ -287,12 +297,14 @@
             '<td><div class="acts">' +
               '<a class="link" href="' + view + '" target="_blank" rel="noopener">View</a>' +
               '<button class="ghost" data-act="qr">QR</button>' +
+              '<button class="ghost" data-act="replace" title="Upload a corrected PDF for this certificate. Its short link and QR stay the same.">Replace</button>' +
               '<button class="ghost" data-act="rename">Rename</button>' +
               '<button class="ghost" data-act="move">Move</button>' +
               '<button class="danger" data-act="archive">Archive</button>' +
             '</div></td>';
           renderShort(f, tr.querySelector('.shortCell'));
           tr.querySelector('[data-act=qr]').addEventListener('click', function () { doQr(f, tr); });
+          tr.querySelector('[data-act=replace]').addEventListener('click', function () { doReplace(f); });
           tr.querySelector('[data-act=rename]').addEventListener('click', function () { doRename(f, tr); });
           tr.querySelector('[data-act=move]').addEventListener('click', function () { doMove(f, tr); });
           tr.querySelector('[data-act=archive]').addEventListener('click', function () { doArchive(f, tr); });
@@ -412,7 +424,37 @@
         function doRename(f, tr) {
           var name = prompt('Rename certificate:', f.name);
           if (!name || name === f.name) return;
-          api('rename', { fileId: f.id, name: name }).then(function () { f.name = name; tr.cells[0].textContent = name; setStatus('Renamed.'); }).catch(handleErr);
+          api('rename', { fileId: f.id, name: name }).then(function (j) {
+            if (j.code === 'name_exists') { setStatus('“' + j.name + '” is already in this folder — a batch search could not tell them apart.'); return; }
+            f.name = name; tr.cells[0].textContent = name; setStatus('Renamed.');
+          }).catch(handleErr);
+        }
+
+        /**
+         * Corrected PDF for an existing certificate. Writing new bytes onto the
+         * same dms.file keeps its attachment — and therefore its /r/<code> short
+         * link and any QR already printed on a package — pointing at the new
+         * document. Re-uploading a second copy would mint a second code and
+         * leave the printed one on the superseded PDF.
+         */
+        function doReplace(f) {
+          var picker = document.createElement('input');
+          picker.type = 'file'; picker.accept = 'application/pdf';
+          picker.addEventListener('change', function () {
+            var file = picker.files[0];
+            if (!file) return;
+            setStatus('Replacing ' + f.name + '…');
+            readAsBase64(file)
+              .then(function (b64) { return api('replace', { fileId: f.id, contentBase64: b64 }); })
+              .then(function (j) {
+                if (j.attachmentId) f.attachmentId = j.attachmentId;
+                if (j.shortUrl) f.shortUrl = j.shortUrl;
+                setStatus('Replaced ' + f.name + ' — its short link and QR are unchanged.');
+                selectBrand(state.brandId, state.brandName);
+              })
+              .catch(handleErr);
+          });
+          picker.click();
         }
         function doMove(f) {
           var name = prompt('Move to which brand folder? (exact name)');
@@ -420,7 +462,10 @@
           api('list_brands').then(function (j) {
             var b = (j.brands || []).find(function (x) { return x.name.toLowerCase() === name.trim().toLowerCase(); });
             if (!b) { setStatus('Brand "' + name + '" not found.'); return; }
-            return api('move', { fileId: f.id, directoryId: b.id }).then(function () { setStatus('Moved to ' + b.name + '.'); selectBrand(state.brandId, state.brandName); loadBrands(); });
+            return api('move', { fileId: f.id, directoryId: b.id }).then(function (j) {
+              if (j.code === 'name_exists') { setStatus(j.error || ('“' + j.name + '” is already in ' + b.name + '.')); return; }
+              setStatus('Moved to ' + b.name + '.'); selectBrand(state.brandId, state.brandName); loadBrands();
+            });
           }).catch(handleErr);
         }
         function doArchive(f, tr) {
@@ -437,19 +482,81 @@
           });
         }
 
+        function hideConflict() { els.conflict.classList.add('hidden'); els.conflict.innerHTML = ''; }
+
+        /**
+         * Two certificates whose names collide answer the same batch search, so
+         * a customer cannot tell which link is theirs. Make the choice explicit
+         * instead of silently filing a duplicate: replacing swaps the PDF and
+         * keeps the certificate's existing short link and QR working, which is
+         * what a corrected copy of the same COA needs.
+         */
+        function showConflict(info, choices, remaining) {
+          els.conflict.classList.remove('hidden');
+          var html =
+            '<p><strong>' + esc(info.name || 'That name') + '</strong> is already in ' + esc(state.brandName) + '.</p>' +
+            '<p class="why">Both would answer the same batch search, so customers could not tell them apart. ' +
+            'Replacing keeps the existing short link and QR pointing at the new PDF — use it for a corrected copy of the same certificate.</p>' +
+            '<div class="acts">' +
+              '<button data-act="replace">Replace it (keeps the link)</button>' +
+              (remaining > 0 ? '<button class="ghost" data-act="replaceAll">Replace all ' + (remaining + 1) + ' remaining</button>' : '') +
+              '<button class="ghost" data-act="both">Keep both as ' + esc(info.suggestedName || 'a new name') + '</button>' +
+              '<button class="ghost" data-act="skip">Skip this file</button>' +
+            '</div>';
+          els.conflict.innerHTML = html;
+          function on(act, fn) {
+            var b = els.conflict.querySelector('[data-act=' + act + ']');
+            if (b) b.addEventListener('click', function () { hideConflict(); fn(); });
+          }
+          on('replace', choices.replace);
+          on('replaceAll', choices.replaceAll);
+          on('both', choices.keepBoth);
+          on('skip', choices.skip);
+        }
+
         function doUpload() {
           var files = Array.prototype.slice.call(els.file.files);
           if (!files.length || !state.brandId) return;
+          hideConflict();
           els.upload.disabled = true;
-          var total = files.length, failed = [];
+          var total = files.length, failed = [], skipped = [], replaced = 0;
+          // Set once the staffer picks "Replace all remaining", so a folder of
+          // corrected certificates does not prompt for every single file.
+          var batchDefault = null;
 
           function finish() {
             els.file.value = '';
             els.upload.disabled = false;
             selectBrand(state.brandId, state.brandName);
             loadBrands();
-            if (failed.length) setStatus('Uploaded ' + (total - failed.length) + '/' + total + '. Failed: ' + failed.join(', '));
-            else setStatus('Uploaded ' + total + ' file' + (total === 1 ? '' : 's') + '.');
+            var parts = ['Uploaded ' + (total - failed.length - skipped.length) + '/' + total];
+            if (replaced) parts.push(replaced + ' replaced in place (links unchanged)');
+            if (skipped.length) parts.push('skipped: ' + skipped.join(', '));
+            if (failed.length) parts.push('failed: ' + failed.join(', '));
+            setStatus(parts.join(' — ') + '.');
+          }
+
+          function send(i, file, b64, onConflict) {
+            return api('upload', {
+              directoryId: state.brandId, name: file.name,
+              contentBase64: b64, onConflict: onConflict,
+            }).then(function (j) {
+              if (j.code === 'name_exists') {
+                setStatus('');
+                showConflict(j, {
+                  replace: function () { send(i, file, b64, 'replace'); },
+                  replaceAll: function () { batchDefault = 'replace'; send(i, file, b64, 'replace'); },
+                  keepBoth: function () { send(i, file, b64, 'keep_both'); },
+                  skip: function () { skipped.push(file.name); step(i + 1); },
+                }, total - i - 1);
+                return;
+              }
+              if (j.replaced) replaced++;
+              step(i + 1);
+            }).catch(function (e) {
+              if (e && e.message === 'unauthorized') { els.upload.disabled = false; handleErr(e); return; }
+              failed.push(file.name); step(i + 1);
+            });
           }
 
           // Upload one at a time so we never post a huge multi-file payload and each
@@ -457,10 +564,9 @@
           function step(i) {
             if (i >= total) { finish(); return; }
             var file = files[i];
-            setStatus('Uploading ' + (i + 1) + '/' + total + ': ' + file.name + '…');
+            setStatus('Uploading ' + (i + 1) + '/' + total + ': ' + file.name + '\u2026');
             readAsBase64(file)
-              .then(function (b64) { return api('upload', { directoryId: state.brandId, name: file.name, contentBase64: b64 }); })
-              .then(function () { step(i + 1); })
+              .then(function (b64) { return send(i, file, b64, batchDefault || 'error'); })
               .catch(function (e) {
                 if (e && e.message === 'unauthorized') { els.upload.disabled = false; handleErr(e); return; }
                 failed.push(file.name); step(i + 1);

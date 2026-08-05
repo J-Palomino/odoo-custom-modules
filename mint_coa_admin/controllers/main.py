@@ -7,6 +7,15 @@ as ``request.env.user`` so Odoo's own DMS access rules decide what they may
 touch, and edits are audited to them. Only the narrow COA access-group
 membership writes are elevated with ``sudo()`` — and only after proving the
 caller is themselves a COA member.
+
+Two behaviours here exist to keep a certificate's public links trustworthy:
+
+* Names are checked against the /coa search key before any write, because two
+  certificates that normalise alike are indistinguishable to a customer
+  searching their batch number (see the ``_search_key`` block below).
+* ``replace`` writes new bytes onto an existing dms.file rather than filing a
+  second one, so the certificate's ``/r/<code>`` short link — and any QR already
+  printed on a package — keeps resolving to the corrected PDF.
 """
 
 import base64
@@ -54,6 +63,60 @@ def _sanitize(name):
     return " ".join(str(name or "").replace("/", "-").split())[:200]
 
 
+# --------------------------------------------------------------- name clashes
+# Two certificates whose names collide inside one brand folder are
+# indistinguishable to a customer: the /coa index derives its batch tokens from
+# the filename and normalises them before matching, so both answer the same
+# batch search as "exact" hits, auto-open stops, and whoever scanned the label
+# has to guess. Odoo's dms `_check_name` constraint only rejects byte-identical
+# names, so "ABC B12.pdf", "abc b12.pdf" and "ABC-B12.pdf" all get through it.
+#
+# "Collide" is therefore defined by the search index rather than by string
+# equality. Keep in sync with src/lib/coa/names.ts in the letsgomint-us repo,
+# which enforces the identical rule for the Astro panel.
+
+_NON_ALNUM_RE = re.compile(r"[^A-Z0-9]")
+
+
+def _search_key(name):
+    """The form /coa actually matches on: uppercase, alphanumerics only.
+
+    Mirrors ``norm()`` in src/pages/coa.astro — if two names share this key, no
+    batch search can tell them apart.
+    """
+    return _NON_ALNUM_RE.sub("", str(name or "").upper())
+
+
+def _stem(name):
+    """Split off the extension so "ABC.pdf" and "ABC(2).pdf" stay comparable."""
+    base, dot, ext = str(name).rpartition(".")
+    if not dot or not base:  # no extension, or a leading-dot name like ".x"
+        return str(name), ""
+    return base, "." + ext
+
+
+def _clash_in(rows, name, exclude_id=0):
+    """The row already holding this name, ignoring ``exclude_id``."""
+    target = _search_key(name)
+    if not target:
+        return None
+    for row in rows:
+        if row["id"] != exclude_id and _search_key(row["name"]) == target:
+            return row
+    return None
+
+
+def _unique_name(rows, name):
+    """"ABC.pdf" -> "ABC(2).pdf", matching the dms module's own copy
+    convention (see dms/tools/file.py:compute_name)."""
+    base, ext = _stem(name)
+    for i in range(2, 500):
+        candidate = "%s(%d)%s" % (base, i, ext)
+        if not _clash_in(rows, candidate):
+            return candidate
+    raise UserError("Too many certificates already share that name")
+
+
 class CoaAdmin(http.Controller):
     # Prod ids by default; overridable per-env (e.g. staging fixtures) via
     # ir.config_parameter so the module is testable where the COA data differs.
@@ -89,6 +152,46 @@ class CoaAdmin(http.Controller):
         for a in atts:
             out[a["res_id"]] = a["id"]
         return out
+
+    def _names_in_directory(self, directory_id):
+        """Every name in a directory, for ``_clash_in`` to compare on.
+
+        Deliberately unfiltered: an ``ilike`` seed cannot find the collisions
+        that matter, because "WYLD-B126.pdf" is not LIKE "WYLD B126" yet both
+        reduce to the same batch token. Same shape and limit as the `list_files`
+        query the panel already runs whenever a folder is opened.
+        """
+        return request.env["dms.file"].search_read(
+            [("directory_id", "=", directory_id)], ["id", "name"],
+            limit=5000, order="id asc")
+
+    def _replace_content(self, rec, content_b64):
+        """Write new bytes onto an existing dms.file and return the panel row.
+
+        The dms.file id is preserved, and with it the ir.attachment behind
+        content_file: Odoo rewrites that attachment in place rather than making
+        a new one (verified on production — the attachment id is unchanged and
+        `public` survives, only the store_fname revision bumps). That is what
+        keeps a certificate's /r/<code> short link — and any QR already printed
+        on a package — resolving to the corrected PDF, because the tracker is
+        keyed on /web/content/<attachment id>. Uploading a second copy instead
+        mints a NEW attachment, hence a NEW code, orphaning the printed one.
+        """
+        rec.write({"content": content_b64})
+        att_id = self._attachment_map([rec.id]).get(rec.id)
+        short_url = None
+        if att_id:
+            att = request.env["ir.attachment"].browse(att_id)
+            if not att.public:
+                att.write({"public": True})
+            try:
+                # Find-or-create: the target URL is unchanged, so this returns
+                # the certificate's existing link rather than minting a new one.
+                short_url = self._mint_short_link(att_id, rec.name, rec.id).short_url
+            except Exception:  # noqa: BLE001
+                _logger.exception("COA replace %s: short link lookup failed", rec.id)
+        return {"ok": True, "fileId": rec.id, "attachmentId": att_id,
+                "shortUrl": short_url, "replaced": True}
 
     # --------------------------------------------------------- short links
     # Staff hand COA links to customers, so each certificate gets a tracked
@@ -231,10 +334,39 @@ class CoaAdmin(http.Controller):
             directory_id = int(params.get("directoryId") or 0)
             name = _sanitize(params.get("name"))
             content_b64 = params.get("contentBase64") or ""
+            # "error" (default) reports the clash so the UI can ask; "replace"
+            # keeps the certificate's existing short link and swaps the bytes;
+            # "keep_both" files it alongside under "name(2).pdf" — a NEW link,
+            # so only for genuinely distinct certificates.
+            on_conflict = params.get("onConflict") or "error"
             if not directory_id or not name or not content_b64:
                 raise UserError("directoryId, name and contentBase64 required")
+
+            siblings = self._names_in_directory(directory_id)
+            clash = _clash_in(siblings, name)
+            final_name = name
+            if clash:
+                if on_conflict == "replace":
+                    return self._replace_content(
+                        request.env["dms.file"].browse(clash["id"]), content_b64)
+                if on_conflict == "keep_both":
+                    # Number off the name already in the folder, not the one just
+                    # typed, so one casing/spelling per folder wins and the name
+                    # the UI offered is the name that gets created.
+                    final_name = _unique_name(siblings, clash["name"])
+                else:
+                    # A normal outcome for the UI to act on, not an exception:
+                    # raising would lose the structured payload.
+                    return {
+                        "ok": False,
+                        "code": "name_exists",
+                        "fileId": clash["id"],
+                        "name": clash["name"],
+                        "suggestedName": _unique_name(siblings, clash["name"]),
+                    }
+
             rec = request.env["dms.file"].create({
-                "name": name, "directory_id": directory_id, "content": content_b64,
+                "name": final_name, "directory_id": directory_id, "content": content_b64,
             })
             att = self._attachment_map([rec.id]).get(rec.id)
             short_url = None
@@ -250,22 +382,53 @@ class CoaAdmin(http.Controller):
                     # simply falls back to its "Shorten" button.
                     _logger.exception("COA upload %s: short link minting failed", rec.id)
             return {"ok": True, "fileId": rec.id, "attachmentId": att,
-                    "shortUrl": short_url}
+                    "shortUrl": short_url, "name": rec.name}
+
+        if action == "replace":
+            # Corrected PDF for a certificate that is already published: same
+            # dms.file, same attachment, so the same /r/<code> and the same QR.
+            # Use this rather than re-uploading, which mints a second link.
+            file_id = int(params.get("fileId") or 0)
+            content_b64 = params.get("contentBase64") or ""
+            if not file_id or not content_b64:
+                raise UserError("fileId and contentBase64 required")
+            rec = request.env["dms.file"].browse(file_id)
+            if not rec.exists():
+                raise UserError("That certificate no longer exists")
+            return self._replace_content(rec, content_b64)
 
         if action == "rename":
             file_id = int(params.get("fileId") or 0)
             name = _sanitize(params.get("name"))
             if not file_id or not name:
                 raise UserError("fileId and name required")
-            request.env["dms.file"].browse(file_id).write({"name": name})
-            return {"ok": True}
+            rec = request.env["dms.file"].browse(file_id)
+            if not rec.exists():
+                raise UserError("That certificate no longer exists")
+            clash = _clash_in(
+                self._names_in_directory(rec.directory_id.id), name, file_id)
+            if clash:
+                return {"ok": False, "code": "name_exists",
+                        "fileId": clash["id"], "name": clash["name"]}
+            rec.write({"name": name})
+            return {"ok": True, "name": name}
 
         if action == "move":
             file_id = int(params.get("fileId") or 0)
             directory_id = int(params.get("directoryId") or 0)
             if not file_id or not directory_id:
                 raise UserError("fileId and directoryId required")
-            request.env["dms.file"].browse(file_id).write({"directory_id": directory_id})
+            rec = request.env["dms.file"].browse(file_id)
+            if not rec.exists():
+                raise UserError("That certificate no longer exists")
+            clash = _clash_in(
+                self._names_in_directory(directory_id), rec.name, file_id)
+            if clash:
+                return {"ok": False, "code": "name_exists",
+                        "fileId": clash["id"], "name": clash["name"],
+                        "error": "The destination folder already has “%s”. "
+                                 "Rename one of them first." % clash["name"]}
+            rec.write({"directory_id": directory_id})
             return {"ok": True}
 
         if action == "archive":
@@ -334,10 +497,14 @@ class CoaAdmin(http.Controller):
             name = _sanitize(params.get("name"))
             if not name:
                 raise UserError("name required")
-            existing = request.env["dms.directory"].search(
-                [("parent_id", "=", root), ("name", "=", name)], limit=1)
-            if existing:
-                return {"ok": True, "directoryId": existing.id, "existed": True}
+            # Same key as the files: a second "Stiiizy" next to "STIIIZY" splits
+            # one brand's certificates across two folders that look identical.
+            existing = request.env["dms.directory"].search_read(
+                [("parent_id", "=", root)], ["id", "name"], limit=1000)
+            same = _clash_in(existing, name)
+            if same:
+                return {"ok": True, "directoryId": same["id"],
+                        "name": same["name"], "existed": True}
             rec = request.env["dms.directory"].create({
                 "name": name, "parent_id": root,
                 "group_ids": [(6, 0, [self._access_group_id()])],
