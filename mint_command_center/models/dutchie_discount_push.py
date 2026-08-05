@@ -62,7 +62,24 @@ class MintRegionDutchiePush(models.Model):
         help='Master gate for this market. Even with mode=live, no push '
              'happens unless this flag AND res.company.dutchie_discount_push_enabled '
              'are both True. Per dutchie-sandbox-locids-not-isolated.md, '
-             'AZ should be the LAST market enabled.',
+             'AZ should be the LAST market enabled.\n\n'
+             'NOTE: a Dutchie discount is scoped to the LSP, not the location — '
+             'verified by reading one back from all 9 AZ LocIds on lsp 575 and '
+             'finding it absent from IL (805) and MI (576). Enabling ONE store in '
+             'a market therefore makes the coupon live at EVERY store in that '
+             'market. The per-store flag selects which store\'s credentials push; '
+             'it is not a containment boundary.',
+    )
+
+    dutchie_push_mode = fields.Selection(
+        [('off', 'Off'), ('dry-run', 'Dry Run'), ('live', 'Live')],
+        string='Push Mode (this market)',
+        help='Overrides the global mint.dutchie_discount_push.mode for THIS '
+             'market only. Leave empty to inherit the global setting.\n\n'
+             'Exists so a new market can be dry-run validated without flipping '
+             'the global flag — which is currently "live", so a global dry-run '
+             'would silently suppress Arizona pushes for the duration of the '
+             'test.',
     )
 
 
@@ -134,7 +151,25 @@ class PtlDayDutchiePush(models.Model):
     # ─── Mode + URL helpers ──────────────────────────────────────────────
 
     def _get_dutchie_push_mode(self):
-        """Return one of: 'off' (default), 'dry-run', 'live'."""
+        """Return one of: 'off' (default), 'dry-run', 'live'.
+
+        A per-market override on mint.region wins over the global parameter, so
+        one market can be dry-run validated while the others keep pushing. The
+        global flag is currently 'live'; without this, dry-running a new market
+        would mean flipping it globally and suppressing Arizona for the duration.
+
+        Reads from this PTL day's market when there is one — the pusher always
+        runs on a mint.ptl.day carrying the market it is publishing for.
+        """
+        # len(self) == 1, not bool(self): this is also called on an EMPTY
+        # mint.ptl.day (the welcome-coupon sync does exactly that), and reading
+        # a m2o off a multi-record set raises "Expected singleton".
+        market_mode = (self.market_id.dutchie_push_mode
+                       if len(self) == 1 and self.market_id else False)
+        if market_mode:
+            _logger.info('Dutchie push: market %s overrides mode -> %s',
+                         self.market_id.code, market_mode)
+            return market_mode
         get_param = self.env['ir.config_parameter'].sudo().get_param
         mode = (get_param(PUSH_MODE_PARAM, 'off') or 'off').strip().lower()
         if mode not in ('off', 'dry-run', 'live'):
