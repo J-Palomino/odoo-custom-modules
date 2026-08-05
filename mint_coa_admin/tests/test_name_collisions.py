@@ -15,7 +15,9 @@ import re
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
-from ..controllers.main import _clash_in, _search_key, _stem, _unique_name
+from ..controllers.main import (
+    _clash_in, _matches_query, _search_fragments, _search_key, _stem, _unique_name,
+)
 
 
 class TestCoaNameCollisions(TransactionCase):
@@ -74,3 +76,63 @@ class TestCoaNameCollisions(TransactionCase):
         self.assertEqual(_stem("A.v2.pdf"), ("A.v2", ".pdf"))
         self.assertEqual(_stem("ABC"), ("ABC", ""))
         self.assertEqual(_stem(".hidden"), (".hidden", ""))
+
+
+class TestCoaStaffSearch(TransactionCase):
+    """Staff search matches on the same key as /coa, so the certificate a
+    customer finds by batch number is the one staff find to replace."""
+
+    NAME = "22RED 01062026-ACLR.pdf"
+
+    def test_finds_a_certificate_however_it_is_punctuated(self):
+        for query in ["01062026ACLR", "01062026-ACLR", "0106 2026 aclr",
+                      "22red 01062026aclr"]:
+            self.assertTrue(_matches_query(self.NAME, query), query)
+
+    def test_matches_a_fragment(self):
+        self.assertTrue(_matches_query(self.NAME, "01062026"))
+
+    def test_does_not_match_an_unrelated_certificate(self):
+        self.assertFalse(_matches_query(self.NAME, "01062026XXXX"))
+
+    def test_an_empty_query_is_never_match_all(self):
+        for query in ["", "   ", "---"]:
+            self.assertFalse(_matches_query(self.NAME, query), repr(query))
+
+    def test_ands_the_runs_when_separators_were_typed(self):
+        self.assertEqual(_search_fragments("01062026-ACLR"), (["01062026", "ACLR"], "and"))
+
+    def test_ors_windows_for_an_unpunctuated_query(self):
+        """The case that regressed: the whole string is not ilike-found in
+        "22RED 01062026ACLR.pdf", but a window inside a run is."""
+        fragments, mode = _search_fragments("22RED01062026ACLR")
+        self.assertEqual(mode, "or")
+        self.assertGreater(len(fragments), 1)
+        self.assertTrue(any(f in "01062026ACLR" for f in fragments))
+
+    def test_no_fragment_ever_spans_a_separator(self):
+        """A fragment that straddles a separator would drop a true hit."""
+        for query in ["01062026-ACLR", "0106 2026 aclr", "WYLD BO B41 1 THC W41",
+                      "22RED01062026ACLR"]:
+            runs = re.findall(r"[A-Za-z0-9]+", query)
+            for frag in _search_fragments(query)[0]:
+                self.assertTrue(any(frag.upper() in r.upper() for r in runs),
+                                "%s from %s" % (frag, query))
+
+    def test_the_coarse_filter_retrieves_a_real_filename_however_typed(self):
+        stored = "22RED 01062026ACLR.pdf"
+        for query in ["22RED 01062026ACLR", "22red 01062026aclr",
+                      "22RED01062026ACLR", "22RED-01062026ACLR"]:
+            fragments, mode = _search_fragments(query)
+            up = stored.upper()
+            retrieved = (all(f.upper() in up for f in fragments) if mode == "and"
+                         else any(f.upper() in up for f in fragments))
+            self.assertTrue(retrieved, "coarse filter dropped %r" % query)
+            self.assertTrue(_matches_query(stored, query))
+
+    def test_a_short_run_is_used_as_is(self):
+        self.assertEqual(_search_fragments("B126"), (["B126"], "and"))
+
+    def test_nothing_to_filter_on_for_an_empty_query(self):
+        self.assertEqual(_search_fragments("   ")[0], [])
+        self.assertEqual(_search_fragments("--- ...")[0], [])

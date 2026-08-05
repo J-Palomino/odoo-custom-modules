@@ -45,6 +45,9 @@ COA_CODE_ALPHABET = string.ascii_letters + string.digits
 COA_CODE_RE = re.compile(r"^[A-Za-z0-9]{%d}$" % COA_CODE_LENGTH)
 COA_CODE_ATTEMPTS = 8
 
+# Rows returned by search_files; the UI reports when it caps.
+SEARCH_LIMIT = 200
+
 _HTML_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "src", "index.html")
 _HTML_CACHE = None
 
@@ -93,6 +96,59 @@ def _stem(name):
     if not dot or not base:  # no extension, or a leading-dot name like ".x"
         return str(name), ""
     return base, "." + ext
+
+
+# 4 characters is short enough to sit inside a batch run yet long enough to
+# stay selective across ~18k filenames.
+_WINDOW = 4
+_WINDOW_STRIDE = 2
+_MAX_WINDOWS = 8
+
+
+def _search_fragments(query):
+    """Coarse ``ilike`` fragments for a staff search — the SQL half of the lookup.
+
+    The precise test is ``_matches_query``, comparing on the search key, but
+    that cannot be expressed as an Odoo domain, so a candidate set has to be
+    fetched first. The one rule that matters: a fragment must never exclude a
+    row the precise test would accept. A fragment does that whenever it
+    straddles a separator in the stored filename — "22RED01062026ACLR" is not
+    ``ilike``-found in "22RED 01062026ACLR.pdf" even though it matches on the
+    search key.
+
+    So fragments only ever come from *within* one alphanumeric run:
+
+    * several runs (the staffer typed separators) -> AND the runs; each is
+      separator-free and the filename must contain all of them somewhere;
+    * one run (typed unpunctuated) -> OR short sliding windows of it, since we
+      cannot know where the filename puts its separators. Any window landing
+      inside a run of the filename retrieves it.
+
+    Returns ``(fragments, mode)``; an empty list means no coarse filter.
+    """
+    runs = [r for r in re.findall(r"[A-Za-z0-9]+", str(query or "")) if len(r) >= 2]
+    if len(runs) >= 2:
+        # The three longest are the most selective; more just costs query time.
+        return sorted(runs, key=len, reverse=True)[:3], "and"
+    run = runs[0] if runs else ""
+    if not run:
+        return [], "and"
+    if len(run) <= _WINDOW:
+        return [run], "and"
+    windows = []
+    i = 0
+    while i + _WINDOW <= len(run) and len(windows) < _MAX_WINDOWS:
+        windows.append(run[i:i + _WINDOW])
+        i += _WINDOW_STRIDE
+    return windows, "or"
+
+
+def _matches_query(name, query):
+    """Does this filename match what a staffer typed? Compared on the search
+    key, so the panel finds a certificate by the same batch number that works
+    on /coa — punctuation, case and spacing are irrelevant on both sides."""
+    q = _search_key(query)
+    return bool(q) and q in _search_key(name)
 
 
 def _clash_in(rows, name, exclude_id=0):
@@ -329,6 +385,43 @@ class CoaAdmin(http.Controller):
                 "updated": f["write_date"], "attachmentId": att.get(f["id"]),
                 "shortUrl": short.get(att.get(f["id"])),
             } for f in files]}
+
+        if action == "search_files":
+            # Cross-brand lookup. The panel is otherwise browse-only, and 86% of
+            # certificates sit in folders holding more than a hundred — finding
+            # the one to replace by scrolling STIIIZY's 1,412 rows is not a
+            # workflow. Matching is on the /coa search key, so a batch number
+            # off a package finds the same certificate the customer sees.
+            query = (params.get("query") or "").strip()
+            if len(_search_key(query)) < 3:
+                return {"files": [], "query": query, "truncated": False, "total": 0}
+            domain = [("root_directory_id", "=", root)]
+            fragments, mode = _search_fragments(query)
+            if mode == "or" and len(fragments) > 1:
+                # Odoo prefix notation: n-1 "|" operators in front of n leaves.
+                domain.extend(["|"] * (len(fragments) - 1))
+            domain.extend([("name", "ilike", f) for f in fragments])
+            candidates = request.env["dms.file"].search_read(
+                domain, ["id", "name", "human_size", "write_date", "directory_id"],
+                limit=2000, order="name")
+            hits = [f for f in candidates if _matches_query(f["name"], query)]
+            capped = hits[:SEARCH_LIMIT]
+            att = self._attachment_map([f["id"] for f in capped])
+            short = self._short_link_map([a for a in att.values() if a])
+            return {
+                "query": query,
+                # Say so rather than silently showing a subset — a staffer who
+                # cannot see their certificate needs to know the list was cut.
+                "truncated": len(hits) > len(capped),
+                "total": len(hits),
+                "files": [{
+                    "id": f["id"], "name": f["name"], "size": f["human_size"],
+                    "updated": f["write_date"], "attachmentId": att.get(f["id"]),
+                    "shortUrl": short.get(att.get(f["id"])),
+                    "directoryId": f["directory_id"] and f["directory_id"][0] or None,
+                    "brand": (f["directory_id"] and f["directory_id"][1].split(" / ")[-1] or "").strip(),
+                } for f in capped],
+            }
 
         if action == "upload":
             directory_id = int(params.get("directoryId") or 0)
