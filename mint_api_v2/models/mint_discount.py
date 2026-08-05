@@ -690,6 +690,40 @@ class MintDiscount(models.Model):
             return 'no_push_enabled_store_in_market:%s' % (region.code or region.id)
         return None
 
+    def _log_redemption_push_blocked(self, reason, store=None):
+        """Record a redemption push that was refused before it reached the pusher.
+
+        These guards used to only warn to the log file. A customer-visible
+        failure that leaves no queryable trace cannot be swept, counted, or
+        alerted on — and the points are already gone by the time we get here.
+        Writing the same mint.dutchie.discount.push.log row a real failure would
+        write makes "never pushed" a first-class, filterable state.
+
+        Best-effort by construction: the log model lives in mint_command_center,
+        which this module does not depend on (guard 1 exists precisely because
+        the command centre can be absent). If it is missing, or the write
+        fails, the caller must still return its own verdict — never raise from
+        an audit path.
+        """
+        self.ensure_one()
+        if 'mint.dutchie.discount.push.log' not in self.env:
+            return
+        try:
+            self.env['mint.dutchie.discount.push.log'].sudo().create({
+                'discount_id': self.id,
+                'company_id': store[:1].id if store else False,
+                'dutchie_loc_id': str(store[:1].dutchie_store_id or '') if store else '',
+                'mode': 'live',
+                'success': False,
+                'error_message': (
+                    '[%s] Redemption %s was NOT pushed to Dutchie. The code exists '
+                    'in Odoo only and will be rejected at the register.'
+                    % (reason, self.redemption_code or self.id)),
+            })
+        except Exception:
+            _logger.exception('Redemption %s: could not write the blocked-push log row',
+                              self.redemption_code)
+
     def _push_redemption_to_dutchie(self, store=None):
         """Create this redemption as a real discount in Dutchie.
 
@@ -712,6 +746,7 @@ class MintDiscount(models.Model):
         if 'mint.ptl.day' not in self.env:
             _logger.warning('Redemption %s: mint.ptl.day unavailable, not pushed '
                             'to Dutchie', self.redemption_code)
+            self._log_redemption_push_blocked('command_center_absent', store)
             return False
         # _push_discounts_to_dutchie gates on the PTL day's market_id, so it
         # needs a day record carrying the right market. Derive it from the store
@@ -721,12 +756,16 @@ class MintDiscount(models.Model):
             _logger.warning('Redemption %s: no store/region supplied, not pushed '
                             'to Dutchie (code would be rejected at the register)',
                             self.redemption_code)
+            self._log_redemption_push_blocked(
+                'no_store' if not store else 'store_has_no_region', store)
             return False
         day = self.env['mint.ptl.day'].sudo().search(
             [('market_id', '=', region.id)], limit=1)
         if not day:
             _logger.warning('Redemption %s: no mint.ptl.day for market %s, not '
                             'pushed to Dutchie', self.redemption_code, region.code)
+            self._log_redemption_push_blocked(
+                'no_ptl_day_for_market:%s' % (region.code or region.id), store)
             return False
         # Fail closed on scope. An unscoped 100%-off discount live at a
         # register discounts ANY item, so refuse to push rather than create it
@@ -738,6 +777,7 @@ class MintDiscount(models.Model):
                 'Redemption %s: refusing to push — no product scope resolvable '
                 '(product_ids=%s). An unscoped 100%%-off discount would apply to '
                 'any item.', self.redemption_code, self.product_ids.ids)
+            self._log_redemption_push_blocked('no_product_scope', store)
             return False
         try:
             day._push_discounts_to_dutchie(self.ids)
