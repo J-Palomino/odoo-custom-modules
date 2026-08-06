@@ -258,6 +258,24 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
             update_vals['state'] = new_state
         if receipt_no and not existing.dutchie_receipt_no:
             update_vals['dutchie_receipt_no'] = receipt_no
+        if checkout_id and not existing.dutchie_checkout_id:
+            # UNIQUE(company_id, dutchie_checkout_id): another order may
+            # already hold this checkout id (e.g. a lane-watcher stub created
+            # in parallel with a receipt-keyed transaction order). Backfill
+            # only when the id is free; a holder means a duplicate pair worth
+            # flagging, and writing anyway would abort the whole sync batch.
+            holder = Order.search([
+                ('dutchie_checkout_id', '=', checkout_id),
+                ('company_id', '=', company_id),
+                ('id', '!=', existing.id),
+            ], limit=1)
+            if holder:
+                _logger.warning(
+                    'checkout_id %s already held by %s -- possible duplicate '
+                    'of %s, not backfilled', checkout_id, holder.name,
+                    existing.name)
+            else:
+                update_vals['dutchie_checkout_id'] = checkout_id
         if order_data.get('dutchie_order_number') and not existing.dutchie_order_number:
             update_vals['dutchie_order_number'] = order_data['dutchie_order_number']
         if shipment_id and not existing.dutchie_shipment_id:
