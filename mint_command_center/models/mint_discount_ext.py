@@ -386,45 +386,81 @@ class MintDiscountPTL(models.Model):
         A 15-minute floor keeps the sweep off redemptions still inside their
         own transaction's retry window.
         """
+        return self._sweep_unpushed_redemptions()
+
+    def _sweep_unpushed_redemptions(self, extra_domain=None, limit=500):
+        """The sweep itself. See _cron_sweep_unpushed_redemptions for the why.
+
+        `extra_domain` narrows the candidate set. The cron passes nothing and
+        sweeps everything; a test passes a domain matching only its own
+        fixtures. Without that seam a test would invoke a globally-scoped cron
+        against whatever the test database happens to contain — and on a
+        prod-cloned DB that means real pending redemptions, in a market that
+        may be open, which would fire a REAL Dutchie write from a unit test.
+
+        Returns {'pushed': n, 'blocked': n, 'reasons': {...}} so callers and
+        tests can assert on the outcome instead of scraping the log.
+        """
         Log = self.env['mint.dutchie.discount.push.log'].sudo()
         cutoff = fields.Datetime.subtract(fields.Datetime.now(), minutes=15)
-        candidates = self.sudo().search([
+        domain = [
             ('discount_type', '=', 'loyalty_redemption'),
             ('redemption_status', '=', 'pending'),
             ('create_date', '<=', cutoff),
-        ], limit=500)
+        ] + (extra_domain or [])
+        candidates = self.sudo().search(domain, limit=limit)
+        result = {'pushed': 0, 'blocked': 0, 'reasons': {}}
         if not candidates:
-            return
+            return result
 
-        pushed = blocked = 0
-        blocked_by_reason = {}
+        # ONE query for "which of these already made it to Dutchie", instead of
+        # a search_count per candidate. At the 500-row limit that alone was 500
+        # round trips before the gate checks even started.
+        already = set()
+        for grp in Log.read_group(
+                [('discount_id', 'in', candidates.ids), ('mode', '=', 'live'),
+                 ('success', '=', True), ('dutchie_discount_id', '!=', 0)],
+                ['discount_id'], ['discount_id'], lazy=False):
+            if grp.get('discount_id'):
+                already.add(grp['discount_id'][0])
+
+        # The gate verdict is a property of the MARKET, not the redemption, and
+        # there are six markets. Cache it rather than re-deriving it (up to 3
+        # queries) for every candidate.
+        Discount = self.env['mint.discount'].sudo()
+        verdict_by_region = {}
+
         for rec in candidates:
-            if Log.search_count([('discount_id', '=', rec.id), ('mode', '=', 'live'),
-                                 ('success', '=', True), ('dutchie_discount_id', '!=', 0)]):
-                continue  # already live in Dutchie
+            if rec.id in already:
+                continue
             store = rec.store_ids[:1]
-            reason = self.env['mint.discount'].sudo().redemption_push_blocked_reason(store)
+            region_key = store.region_id.id if store and store.region_id else None
+            if region_key not in verdict_by_region:
+                verdict_by_region[region_key] = Discount.redemption_push_blocked_reason(store)
+            reason = verdict_by_region[region_key]
             if reason:
-                blocked += 1
-                blocked_by_reason[reason] = blocked_by_reason.get(reason, 0) + 1
+                result['blocked'] += 1
+                result['reasons'][reason] = result['reasons'].get(reason, 0) + 1
                 continue
             # The gate is open now — the block was transient (or the market was
             # opened after the customer redeemed). Push it.
             try:
                 if rec._push_redemption_to_dutchie(store):
-                    pushed += 1
+                    result['pushed'] += 1
                 else:
-                    blocked += 1
-                    blocked_by_reason['push_failed'] = blocked_by_reason.get('push_failed', 0) + 1
+                    result['blocked'] += 1
+                    result['reasons']['push_failed'] = result['reasons'].get('push_failed', 0) + 1
             except Exception:
                 _logger.exception('redemption_sweep: push raised for %s', rec.redemption_code)
-                blocked += 1
+                result['blocked'] += 1
 
-        if pushed or blocked:
+        if result['pushed'] or result['blocked']:
             _logger.warning(
                 'redemption_sweep: %d recovered, %d still unpushed %s. Unpushed '
                 'redemptions are codes customers already paid points for that no '
-                'register will accept.', pushed, blocked, blocked_by_reason or '')
+                'register will accept.',
+                result['pushed'], result['blocked'], result['reasons'] or '')
+        return result
 
     def action_publish_to_dutchie(self):
         """Manual 'Publish to Dutchie' button for a standalone (one-off) coupon.

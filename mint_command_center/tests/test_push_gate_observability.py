@@ -215,13 +215,30 @@ class TestPushGateObservability(TransactionCase):
             "WHERE id = %s", (minutes, record.id))
         record.invalidate_recordset(['create_date'])
 
+    def _sweep_only(self, discounts):
+        """Sweep ONLY these fixtures.
+
+        The cron is globally scoped by design. Calling it directly from a test
+        would sweep whatever the test database contains — and on a prod-cloned
+        DB that means real pending redemptions, in a market that may be open,
+        which would fire a REAL Dutchie write from a unit test. The scoped seam
+        makes "this suite performs no network I/O" structural rather than a
+        property of the fixture data.
+        """
+        return self.Discount._sweep_unpushed_redemptions(
+            extra_domain=[('id', 'in', discounts.ids)])
+
     def test_P0_7_sweeper_reports_a_blocked_redemption_without_pushing(self):
         """A closed market is a rollout state, not an error: re-pushing every
         hour would fail every hour and bury the real failures."""
         d = self._redemption(self.store_off, 'PGOSWEEPBLOCK')
         self._backdate(d)
         before = len(self._rows(d))
-        self.Discount._cron_sweep_unpushed_redemptions()
+        res = self._sweep_only(d)
+        self.assertEqual(res['pushed'], 0, 'a closed market must never be pushed')
+        self.assertEqual(res['blocked'], 1)
+        self.assertTrue(any(r.startswith('market_push_disabled') for r in res['reasons']),
+                        'the reason must say the market is gated, got %r' % res['reasons'])
         self.assertEqual(d.redemption_status, 'pending', 'must not be mutated')
         self.assertEqual(len(self._rows(d)), before,
                          'a still-blocked market must be reported, not retried into failure')
@@ -237,9 +254,27 @@ class TestPushGateObservability(TransactionCase):
             'mode': 'live', 'success': True, 'dutchie_discount_id': 987654,
         })
         before = len(self._rows(d))
-        self.Discount._cron_sweep_unpushed_redemptions()
-        self.assertEqual(len(self._rows(d)), before,
-                         'an already-pushed redemption must not be touched')
+        res = self._sweep_only(d)
+        self.assertEqual((res['pushed'], res['blocked']), (0, 0),
+                         'an already-pushed redemption must be skipped entirely, '
+                         'never re-pushed — that would duplicate a live coupon')
+        self.assertEqual(len(self._rows(d)), before)
+
+    def test_P0_12_the_already_pushed_lookup_is_one_query_not_per_record(self):
+        """R5 regression guard: the lookup was a search_count PER candidate,
+        which at the 500-row limit meant 500 round trips before the gate checks
+        even started. Ten seeded redemptions must not cost ten lookups."""
+        ds = self.Discount
+        for i in range(10):
+            ds |= self._redemption(self.store_off, 'PGOBATCH%d' % i)
+        for d in ds:
+            self._backdate(d)
+        res = self._sweep_only(ds)
+        self.assertEqual(res['blocked'], 10, 'all ten are in a gated market')
+        self.assertEqual(res['pushed'], 0)
+        # One reason bucket, because the verdict is cached per market rather
+        # than recomputed per redemption.
+        self.assertEqual(len(res['reasons']), 1, res['reasons'])
 
     # ---- AC10: flipping the gate back re-blocks ----------------------------
 
