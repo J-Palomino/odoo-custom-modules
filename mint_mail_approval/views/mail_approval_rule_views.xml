@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_approval_rule_list" model="ir.ui.view">
+        <field name="name">mint.mail.approval.rule.list</field>
+        <field name="model">mint.mail.approval.rule</field>
+        <field name="arch" type="xml">
+            <list string="Mail Approval Rules" editable="bottom"
+                  decoration-success="action == 'auto'"
+                  decoration-warning="action == 'hold'">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="action"/>
+                <field name="match_model"/>
+                <field name="match_subject"/>
+                <field name="match_recipient_domains"/>
+                <field name="match_author_id"/>
+                <field name="match_count" string="Matched"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_approval_rule_form" model="ir.ui.view">
+        <field name="name">mint.mail.approval.rule.form</field>
+        <field name="model">mint.mail.approval.rule</field>
+        <field name="arch" type="xml">
+            <form string="Mail Approval Rule">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Password reset mail"/></h1>
+                    </div>
+                    <group>
+                        <group string="Decision">
+                            <field name="action"/>
+                            <field name="sequence"/>
+                            <field name="active" widget="boolean_toggle"/>
+                            <field name="match_count" readonly="1"/>
+                        </group>
+                        <group string="Match Criteria">
+                            <field name="match_model" placeholder="res.users"/>
+                            <field name="match_subject" placeholder="^Welcome to Mint"/>
+                            <field name="match_recipient_domains"
+                                   placeholder="letsgomint.com,brightroot.com"/>
+                            <field name="match_author_id"/>
+                        </group>
+                    </group>
+                    <div class="alert alert-info" role="alert">
+                        Criteria are ANDed; an empty field is not tested. Rules are
+                        evaluated by sequence and the <b>first match wins</b>. A mail
+                        matching no rule falls back to the
+                        <code>mint_mail_approval.default_action</code> parameter,
+                        which ships as <b>hold</b>.
+                    </div>
+                    <group string="Notes">
+                        <field name="note" nolabel="1"
+                               placeholder="Why does this rule exist?"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_approval_rules" model="ir.actions.act_window">
+        <field name="name">Mail Approval Rules</field>
+        <field name="res_model">mint.mail.approval.rule</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create your first rule.</p>
+            <p>Rules decide which outgoing mail may send unattended and which is
+            held for a human. With no rules at all, everything is held.</p>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- No category_id: Odoo 19 dropped it from res.groups in favour of
+             privilege_id (res.groups.privilege). Leaving the group uncategorised
+             keeps this module independent of that new taxonomy. -->
+        <record id="group_mail_approver" model="res.groups">
+            <field name="name">Mail Approver</field>
+            <field name="comment">Members may approve or reject outgoing email
+held by the Mint Mail Approval Gate.</field>
+        </record>
+    </data>
+
+    <data noupdate="1">
+        <!-- Seed the admin so the queue is actionable the moment the module
+             installs. Odoo 19 renamed res.users.groups_id -> group_ids. -->
+        <record id="base.user_admin" model="res.users">
+            <field name="group_ids" eval="[(4, ref('mint_mail_approval.group_mail_approver'))]"/>
+        </record>
+    </data>
+</odoo>

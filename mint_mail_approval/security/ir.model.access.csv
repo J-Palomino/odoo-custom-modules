@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_mail_approval_rule_approver,mint.mail.approval.rule approver,model_mint_mail_approval_rule,mint_mail_approval.group_mail_approver,1,1,1,1
+access_mint_mail_approval_rule_system,mint.mail.approval.rule system,model_mint_mail_approval_rule,base.group_system,1,1,1,1
+access_mint_mail_approval_rule_user,mint.mail.approval.rule read,model_mint_mail_approval_rule,base.group_user,1,0,0,0

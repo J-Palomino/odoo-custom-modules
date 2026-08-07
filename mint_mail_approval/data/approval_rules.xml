@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Seed rules, deliberately conservative.
+
+    Only mail a user personally triggered and is actively waiting on is
+    auto-approved; everything else lands in the review queue. Tune these in the
+    UI (Settings > Technical > Email > Mail Approval Rules) rather than here —
+    noupdate="1" means a module upgrade will not clobber your edits.
+-->
+<odoo noupdate="1">
+
+    <!-- ============ auto-approve: user-initiated, time-critical ============ -->
+
+    <record id="rule_password_reset" model="mint.mail.approval.rule">
+        <field name="name">Password reset / security notices</field>
+        <field name="sequence">10</field>
+        <field name="action">auto</field>
+        <field name="match_subject">^\s*(Security Update|Password Reset|Reset your password|Your password)</field>
+        <field name="note">The user clicked "forgot password" seconds ago and is
+waiting on this mail. Holding it for review would break account recovery.</field>
+    </record>
+
+    <record id="rule_signup_invite" model="mint.mail.approval.rule">
+        <field name="name">Odoo signup / invitation links</field>
+        <field name="sequence">20</field>
+        <field name="action">auto</field>
+        <field name="match_model">res.users</field>
+        <field name="match_subject">^\s*(Invitation to|You have been invited)</field>
+        <field name="note">Staff invitation links issued deliberately by an admin
+from the Users screen.</field>
+    </record>
+
+    <!-- ============ explicit holds: the noisy, auto-generated traffic ======= -->
+
+    <record id="rule_customer_welcome" model="mint.mail.approval.rule">
+        <field name="name">Customer welcome mail</field>
+        <field name="sequence">30</field>
+        <field name="action">hold</field>
+        <field name="match_model">res.users</field>
+        <field name="match_subject">Welcome to Mint</field>
+        <field name="note">Storefront signups generate these automatically (~133
+in a fortnight as of 2026-08-07). Review before any backlog is released, since a
+stale welcome mail confuses customers who signed up weeks earlier.</field>
+    </record>
+
+    <record id="rule_maintenance_chatter" model="mint.mail.approval.rule">
+        <field name="name">Maintenance ticket follower notifications</field>
+        <field name="sequence">40</field>
+        <field name="action">hold</field>
+        <field name="match_model">maintenance.request</field>
+        <field name="note">Follower-notify on every chatter post. The monitoring
+crons and agents post to tickets constantly, so this is the highest-volume
+source of accidental mail.</field>
+    </record>
+
+    <record id="rule_project_task_chatter" model="mint.mail.approval.rule">
+        <field name="name">Project task follower notifications</field>
+        <field name="sequence">50</field>
+        <field name="action">hold</field>
+        <field name="match_model">project.task</field>
+        <field name="note">Same amplification problem as maintenance requests.</field>
+    </record>
+
+    <!-- ============ catch-all ============================================== -->
+
+    <record id="rule_catch_all" model="mint.mail.approval.rule">
+        <field name="name">Everything else — hold for review</field>
+        <field name="sequence">999</field>
+        <field name="action">hold</field>
+        <field name="note">Backstop so a new mail source added by any future
+module is reviewed rather than silently sent. Matches every mail.</field>
+    </record>
+
+</odoo>

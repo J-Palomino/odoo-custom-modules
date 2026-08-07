@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- Master switch. '0' disables the gate entirely and every mail sends
+         as it would without this module. -->
+    <record id="param_enabled" model="ir.config_parameter">
+        <field name="key">mint_mail_approval.enabled</field>
+        <field name="value">1</field>
+    </record>
+
+    <!-- What happens to a mail that matches NO rule. 'hold' = fail closed.
+         Only set this to 'auto' once the rule set is trusted. -->
+    <record id="param_default_action" model="ir.config_parameter">
+        <field name="key">mint_mail_approval.default_action</field>
+        <field name="value">hold</field>
+    </record>
+
+    <!-- Pending mail older than this many days is cancelled by the cron.
+         0 disables expiry. -->
+    <record id="param_expire_days" model="ir.config_parameter">
+        <field name="key">mint_mail_approval.expire_days</field>
+        <field name="value">7</field>
+    </record>
+</odoo>

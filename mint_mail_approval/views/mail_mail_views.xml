@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Standalone views rather than inheriting mail.view_mail_tree /
+         mail.view_mail_form: core mail view xmlids have churned across
+         versions, and an unresolvable ref would break the whole install. -->
+
+    <record id="view_mail_approval_list" model="ir.ui.view">
+        <field name="name">mail.mail.approval.list</field>
+        <field name="model">mail.mail</field>
+        <field name="arch" type="xml">
+            <list string="Mail Approval Queue"
+                  create="false"
+                  decoration-muted="approval_state == 'rejected'"
+                  decoration-success="approval_state in ('approved', 'auto')"
+                  decoration-warning="approval_state == 'pending'">
+                <field name="create_date" string="Queued"/>
+                <field name="subject"/>
+                <field name="email_from" string="From"/>
+                <field name="email_to" string="To" optional="show"/>
+                <field name="recipient_ids" widget="many2many_tags" optional="show"/>
+                <field name="model" string="Source" optional="show"/>
+                <field name="approval_rule_id" string="Matched Rule" optional="show"/>
+                <field name="state" string="Send State"/>
+                <field name="approval_state"/>
+                <field name="approval_uid" optional="hide"/>
+                <field name="approval_date" optional="hide"/>
+                <button name="action_mma_approve" type="object"
+                        string="Approve" icon="fa-check" class="text-success"
+                        invisible="approval_state != 'pending'"/>
+                <button name="action_mma_reject" type="object"
+                        string="Reject" icon="fa-times" class="text-danger"
+                        invisible="approval_state != 'pending'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mail_approval_form" model="ir.ui.view">
+        <field name="name">mail.mail.approval.form</field>
+        <field name="model">mail.mail</field>
+        <field name="arch" type="xml">
+            <form string="Outgoing Mail" create="false">
+                <header>
+                    <button name="action_mma_approve" type="object"
+                            string="Approve &amp; Send" class="btn-primary"
+                            invisible="approval_state != 'pending'"/>
+                    <button name="action_mma_reject" type="object"
+                            string="Reject" class="btn-secondary"
+                            confirm="Reject this email? It will be cancelled and never sent."
+                            invisible="approval_state != 'pending'"/>
+                    <field name="approval_state" widget="statusbar"
+                           statusbar_visible="pending,approved,rejected"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="subject" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Envelope">
+                            <field name="email_from" readonly="1"/>
+                            <field name="email_to" readonly="1"/>
+                            <field name="email_cc" readonly="1"/>
+                            <field name="recipient_ids" widget="many2many_tags" readonly="1"/>
+                        </group>
+                        <group string="Review">
+                            <field name="state" readonly="1"/>
+                            <field name="model" readonly="1"/>
+                            <field name="res_id" readonly="1"/>
+                            <field name="approval_rule_id" readonly="1"/>
+                            <field name="approval_uid" readonly="1"/>
+                            <field name="approval_date" readonly="1"/>
+                            <field name="approval_note"/>
+                            <field name="failure_reason" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Body" name="body">
+                            <field name="body_html" widget="html" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_mail_approval_search" model="ir.ui.view">
+        <field name="name">mail.mail.approval.search</field>
+        <field name="model">mail.mail</field>
+        <field name="arch" type="xml">
+            <search string="Outgoing Mail">
+                <field name="subject"/>
+                <field name="email_to"/>
+                <field name="email_from"/>
+                <field name="model"/>
+                <filter name="f_pending" string="Pending Approval"
+                        domain="[('approval_state', '=', 'pending')]"/>
+                <filter name="f_approved" string="Approved"
+                        domain="[('approval_state', 'in', ('approved', 'auto'))]"/>
+                <filter name="f_rejected" string="Rejected"
+                        domain="[('approval_state', '=', 'rejected')]"/>
+                <separator/>
+                <filter name="f_unsent" string="Not Yet Sent"
+                        domain="[('state', 'in', ('outgoing', 'exception'))]"/>
+                <separator/>
+                <filter name="g_state" string="Approval State"
+                        context="{'group_by': 'approval_state'}"/>
+                <filter name="g_model" string="Source Model"
+                        context="{'group_by': 'model'}"/>
+                <filter name="g_rule" string="Matched Rule"
+                        context="{'group_by': 'approval_rule_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mail_approval_queue" model="ir.actions.act_window">
+        <field name="name">Mail Approval Queue</field>
+        <field name="res_model">mail.mail</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_mail_approval_search"/>
+        <field name="domain">[('approval_state', '=', 'pending')]</field>
+        <field name="context">{'search_default_f_pending': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Nothing waiting for review.</p>
+            <p>Outgoing email held by the approval gate shows up here. Approve to
+            send it, reject to cancel it permanently.</p>
+        </field>
+    </record>
+
+    <record id="action_mail_approval_queue_list" model="ir.actions.act_window.view">
+        <field name="sequence">1</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="view_mail_approval_list"/>
+        <field name="act_window_id" ref="action_mail_approval_queue"/>
+    </record>
+
+    <record id="action_mail_approval_queue_form" model="ir.actions.act_window.view">
+        <field name="sequence">2</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="view_mail_approval_form"/>
+        <field name="act_window_id" ref="action_mail_approval_queue"/>
+    </record>
+
+</odoo>

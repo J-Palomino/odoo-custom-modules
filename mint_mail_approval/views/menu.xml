@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_mail_approval_queue"
+              name="Mail Approval Queue"
+              parent="base.menu_email"
+              action="action_mail_approval_queue"
+              groups="mint_mail_approval.group_mail_approver"
+              sequence="5"/>
+
+    <menuitem id="menu_mail_approval_rules"
+              name="Mail Approval Rules"
+              parent="base.menu_email"
+              action="action_approval_rules"
+              groups="mint_mail_approval.group_mail_approver"
+              sequence="6"/>
+</odoo>
