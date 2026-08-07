@@ -57,6 +57,29 @@ def _normalize_phone(phone):
     return digits[-10:] if len(digits) >= 10 else digits
 
 
+def _partner_ids_by_phone(phone10):
+    """ids of active partners whose phone's last-10 digits equal phone10,
+    regardless of stored formatting.
+
+    res_partner.phone holds every format budtenders and syncs ever wrote
+    ("+1 (480) 555-1234", "480-555-1234", "4805551234"). The old
+    ('phone', 'ilike', last10) compiled to a substring match on the RAW
+    column, which can never match a formatted number — so the phone tier
+    silently failed for most rows and duplicate partners were minted
+    instead. Compare on digits at the SQL level. Oldest id first for a
+    deterministic pick.
+    """
+    if not phone10:
+        return []
+    request.env.cr.execute(
+        r"""SELECT id FROM res_partner
+             WHERE active AND phone IS NOT NULL
+               AND RIGHT(REGEXP_REPLACE(phone, '\D', '', 'g'), 10) = %s
+             ORDER BY id""",
+        (phone10,))
+    return [r[0] for r in request.env.cr.fetchall()]
+
+
 def _normalize_datetime(value):
     """Coerce various incoming datetime formats to Odoo's 'YYYY-MM-DD HH:MM:SS'.
 
@@ -122,6 +145,11 @@ def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=N
     first_name = (customer_data.get('first_name') or '').strip()
     last_name = (customer_data.get('last_name') or '').strip()
     full_name = ' '.join(filter(None, [first_name, last_name])).strip()
+    if not full_name:
+        # Some senders (bulk-sync normalizer cache path) only carry a whole
+        # name; without this fallback the partner is created as a nameless
+        # stub even though the customer was known.
+        full_name = (customer_data.get('name') or '').strip()
 
     partner = None
 
@@ -132,7 +160,9 @@ def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=N
         partner = Partner.search(
             [('x_dutchie_loyalty_id', '=', dutchie_loyalty_id)], limit=1)
     if not partner and phone:
-        partner = Partner.search([('phone', 'ilike', phone[-10:])], limit=1)
+        ids = _partner_ids_by_phone(phone[-10:])
+        if ids:
+            partner = Partner.browse(ids[0])
     if not partner and email:
         partner = Partner.search([('email', '=ilike', email)], limit=1)
 
@@ -741,15 +771,15 @@ class MintPosOrderAPI(http.Controller):
         if partner_id:
             domain.append(('partner_id', '=', int(partner_id)))
 
-        # Filter by phone (customer lookup)
+        # Filter by phone (customer lookup) — digits-normalized match, see
+        # _partner_ids_by_phone (the raw-column ilike never matched
+        # formatted numbers).
         if kw.get('phone'):
             phone = _normalize_phone(kw['phone'])
             if phone:
-                partners = request.env['res.partner'].sudo().search(
-                    [('phone', 'ilike', phone[-10:])]
-                )
-                if partners:
-                    domain.append(('partner_id', 'in', partners.ids))
+                partner_ids = _partner_ids_by_phone(phone[-10:])
+                if partner_ids:
+                    domain.append(('partner_id', 'in', partner_ids))
                 else:
                     return _json({'orders': [], 'total': 0, 'limit': 0, 'offset': 0})
 
