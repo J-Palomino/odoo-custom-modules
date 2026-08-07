@@ -1,12 +1,13 @@
 import base64
+import hashlib
 import json
 import logging
 from collections import OrderedDict
-from datetime import date
+from datetime import date, timedelta
 from html import escape as html_escape
 
 from markupsafe import Markup
-from odoo import http
+from odoo import fields, http
 from odoo.http import request
 
 _logger = logging.getLogger(__name__)
@@ -38,6 +39,12 @@ GRAPHICS_TEAM_ID = 12
 DUTCHIE_TEAM_ID = 16
 WEBSITES_TEAM_ID = 14
 NEW_REQUEST_STAGE = 1
+
+# How long an identical submission is treated as a duplicate rather than a
+# new report.  Long enough to absorb double-clicks and browser POST retries
+# on slow multipart uploads; short enough that a genuine re-report later in
+# the day still opens its own ticket.
+DUPLICATE_WINDOW_SECONDS = 600
 
 # Category-based team routing: when a ticket's equipment belongs to one of
 # these categories, override the assigned team regardless of which form
@@ -176,6 +183,11 @@ class MaintenanceFormController(http.Controller):
         }
         ctx.update(self._course_status())
         ctx.update(extra)
+        # Banner for the GET that follows a submission redirect (PRG).
+        if not ctx.get("success"):
+            banner = self._submitted_banner()
+            if banner:
+                ctx["success"] = banner
         return ctx
 
     def _get_user_prefill(self):
@@ -230,12 +242,141 @@ class MaintenanceFormController(http.Controller):
             valid_files.append((f.filename, f.mimetype, data))
         return valid_files, None
 
+    def _submission_key(self, vals):
+        """Stable idempotency key for a submitted form payload.
+
+        Hashed rather than compared field by field, because the obvious
+        approach does not work: `description` is an HTML field with
+        sanitize=True, so Odoo rewrites the markup on write and the stored
+        string is never byte-identical to what was posted.  A `description =`
+        term therefore silently never matches — which is exactly how the
+        earlier guard came to be inert.  Hashing what the user supplied, and
+        storing the digest on the ticket, avoids HTML normalisation entirely.
+
+        The submitter is identified by uid, or by the submitted email for a
+        public visitor.  Deliberately NOT by owner_user_id: that field is
+        computed from employee_id, so the value the controller puts in vals is
+        discarded on create and the column is empty on 51% of production
+        web-intake tickets (89 of 174).  MR-1194 and MR-1195 — the same person
+        submitting the same form five minutes apart — stored False and 1985
+        respectively, so an owner_user_id term could never have linked them.
+        """
+        public_uid = request.env.ref("base.public_user").id
+        uid = request.env.uid
+        if uid and uid != public_uid:
+            submitter = f"uid:{uid}"
+        else:
+            submitter = "email:" + (vals.get("email_cc") or "").strip().lower()
+        seed = "|".join([
+            submitter,
+            str(vals.get("maintenance_team_id") or ""),
+            str(vals.get("company_id") or ""),
+            vals.get("description") or "",
+        ])
+        return hashlib.sha256(seed.encode()).hexdigest()
+
+    def _find_recent_duplicate(self, vals):
+        """Return an identical request submitted in the last few minutes, if any.
+
+        Guards against the three ways one report becomes many tickets:
+        an impatient double-click while a large attachment is still
+        uploading, a browser/proxy retry of the POST, and "Confirm Form
+        Resubmission" on refresh.
+
+        Matched on the stored submission key, never on `name`: a Maintenance
+        UI automation rewrites `name` to "MR-<id> - ..." immediately after
+        create — it embeds the record's own id, so no two rows can ever share
+        a title and a name-keyed guard can never fire.
+        """
+        if not vals.get("description"):
+            return None
+
+        key = vals.get("x_submission_key") or self._submission_key(vals)
+
+        # Serialise identical submissions against each other.  A plain search
+        # cannot see a row another worker has created but not yet committed,
+        # so without this two near-simultaneous clicks both miss and both
+        # create.  The lock is held until this transaction ends, so the second
+        # request waits and then finds the first one's ticket.
+        lock_key = int.from_bytes(bytes.fromhex(key)[:8], "big", signed=True)
+        request.env.cr.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
+
+        cutoff = fields.Datetime.to_string(
+            fields.Datetime.now() - timedelta(seconds=DUPLICATE_WINDOW_SECONDS)
+        )
+        domain = [
+            ("x_submission_key", "=", key),
+            ("create_date", ">=", cutoff),
+            # A ticket already resolved inside the window is not the same
+            # report.  If it was closed and the user is submitting again, they
+            # are telling us it is not actually fixed — that deserves its own
+            # ticket rather than being folded into the closed one.
+            ("stage_id.done", "=", False),
+        ]
+
+        existing = request.env["maintenance.request"].sudo().search(
+            domain, limit=1, order="create_date desc"
+        )
+        return existing or None
+
+    def _success_redirect(self, maint_req, ctx, success_msg):
+        """POST/Redirect/GET.
+
+        Without this the browser sits on a POST result, so refresh /
+        back-forward re-submits the whole form and files another ticket.
+        The per-form wording is flashed through the session; the redirect
+        target only carries the ticket id.
+        """
+        request.session["mint_form_success"] = success_msg
+        path = ctx.get("form_action") or request.httprequest.path
+        return request.redirect(f"{path}?submitted={maint_req.id}")
+
+    def _submitted_banner(self):
+        """Success message for the GET that follows a submission redirect.
+
+        Only confirms a ticket the current user actually filed, so a guessed
+        `?submitted=` id cannot be used to probe other people's requests.
+        """
+        raw = request.httprequest.args.get("submitted")
+        if not raw or not raw.isdigit():
+            return None
+        maint_req = request.env["maintenance.request"].sudo().browse(int(raw))
+        if not maint_req.exists():
+            return None
+        flash = request.session.pop("mint_form_success", None)
+        user = request.env.user
+        user_email = (user.email or "").strip().lower()
+        owned = (
+            maint_req.owner_user_id.id == user.id
+            or maint_req.create_uid.id == user.id
+            or (user_email and (maint_req.email_cc or "").strip().lower() == user_email)
+        )
+        if not owned:
+            return None
+        base = flash or "Your request has been submitted successfully!"
+        return f"{base} Reference: {maint_req.name}"
+
     def _create_request(self, vals, valid_files, template, ctx, success_msg):
         """Create maintenance.request + attachments. Returns rendered response."""
         try:
             # Mark how the ticket came in so it's distinguishable from
             # agent-created (phone/sms) and Odoo-direct tickets.
             vals.setdefault("x_intake_channel", "web")
+
+            # Idempotency: a repeat of an identical submission resolves to the
+            # ticket already created rather than a second one.  Re-uploading
+            # the same attachments is skipped along with it.  The key is
+            # stamped on the row so the next submission has something exact
+            # and indexed to match against.
+            vals["x_submission_key"] = self._submission_key(vals)
+            duplicate = self._find_recent_duplicate(vals)
+            if duplicate:
+                _logger.info(
+                    "Duplicate submission suppressed — resolving to existing "
+                    "request %s (%s)", duplicate.id, duplicate.name,
+                )
+                return self._success_redirect(duplicate, ctx, success_msg)
+
             maint_req = request.env["maintenance.request"].sudo().create(vals)
 
             # Subscribe team members and notify
@@ -262,8 +403,7 @@ class MaintenanceFormController(http.Controller):
                     "mimetype": mimetype,
                 })
 
-            ctx["success"] = success_msg
-            ctx["form_values"] = {}
+            return self._success_redirect(maint_req, ctx, success_msg)
         except Exception as e:
             _logger.exception("Failed to create maintenance request: %s", e)
             ctx["error"] = (

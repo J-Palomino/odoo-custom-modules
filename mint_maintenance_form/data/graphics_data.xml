@@ -4,6 +4,13 @@
         <!-- Graphics Maintenance Team -->
         <record id="team_graphics" model="maintenance.team">
             <field name="name">Graphics</field>
+            <!-- Shared across companies, matching every other maintenance team
+                 in production and the equipment records below. Without this the
+                 team defaults to the installing company while its equipment is
+                 company-less, and _check_company aborts the install on any
+                 fresh database (a restore, a new environment, or a test run).
+                 noupdate="1" means existing production teams are untouched. -->
+            <field name="company_id" eval="False"/>
         </record>
 
         <!-- Graphics Equipment Categories -->
