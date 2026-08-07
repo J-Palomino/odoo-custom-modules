@@ -488,12 +488,7 @@ class MintCustomerProfile(http.Controller):
         # only be consumed at stores in the same market (per-state separation).
         # Resolved BEFORE the deduction below, because the push gate is checked
         # against it and a blocked push must cost the customer nothing.
-        store = False
-        if data.get('store_id'):
-            store = request.env['res.company'].sudo().browse(int(data['store_id']))
-        elif data.get('store_slug'):
-            store = request.env['res.company'].sudo().search(
-                [('x_slug', '=', data['store_slug'])], limit=1)
+        store = self._resolve_redemption_store(partner, data)
 
         # FAIL CLOSED. The Dutchie push fails soft by design — by then the points
         # are gone and the coupon exists, so raising would cost the customer
@@ -552,6 +547,60 @@ class MintCustomerProfile(http.Controller):
                 'program_name': program.name,
             },
         })
+
+    def _resolve_redemption_store(self, partner, data):
+        """Resolve the store a redemption is locked to, and gated against.
+
+        Order: explicit `store_id`, then `store_slug`, then the customer's
+        `x_home_store_id`.
+
+        The home-store leg exists because the frontend only sends a store when
+        the shopper has one selected, and /rewards deliberately supports
+        redeeming without picking one ("codes still work in-store"). Resolving
+        nothing is not neutral: redemption_push_blocked_reason answers 'no_store'
+        and the redeem is refused outright, so a customer whose store selection
+        was never made — or was cleared with their site data — is turned away
+        while holding enough points. Their saved store is the same signal, and
+        1.9M partners carry one.
+
+        Refuses a home store that cannot express a state (not a dispensary, or
+        no region): locking to such a company is not per-state separation, and
+        the gate would reject it a moment later anyway.
+
+        Returns a res.company recordset (possibly empty) — never None.
+        """
+        Company = request.env['res.company'].sudo()
+
+        raw_id = data.get('store_id')
+        if raw_id:
+            try:
+                store = Company.browse(int(raw_id)).exists()
+            except (TypeError, ValueError):
+                store = Company
+                _logger.warning('redeem: non-integer store_id %r for partner %s', raw_id, partner.id)
+            if store:
+                return store
+
+        slug = (data.get('store_slug') or '').strip()
+        if slug:
+            store = Company.search([('x_slug', '=', slug)], limit=1)
+            if store:
+                return store
+            _logger.warning('redeem: no company for store_slug %r (partner %s)', slug, partner.id)
+
+        home = getattr(partner, 'x_home_store_id', False)
+        if home and home.is_dispensary and home.region_id:
+            _logger.info(
+                'redeem: no store in request; using saved home store %s (%s) for partner %s',
+                home.id, home.region_id.code or home.region_id.name, partner.id,
+            )
+            return home
+
+        _logger.warning(
+            'redeem: no store and no usable home store for partner %s — the push '
+            'gate will refuse this redemption', partner.id,
+        )
+        return Company
 
     @http.route('/api/v1/customer/loyalty/redemptions', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
