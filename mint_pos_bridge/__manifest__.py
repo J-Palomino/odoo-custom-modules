@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint POS Bridge',
-    'version': '19.0.5.3.0',
+    'version': '19.0.6.0.0',
     'category': 'Operations',
     'summary': 'Dutchie POS ↔ Odoo order bridge — unified dispensary operations',
     'description': """
@@ -41,6 +41,7 @@
         'views/pos_order_views.xml',
         'views/pos_order_menus.xml',
         'views/web_order_config_views.xml',
+        'views/partner_views.xml',
     ],
     'assets': {
         'web.assets_backend': [
