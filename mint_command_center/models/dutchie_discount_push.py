@@ -62,7 +62,24 @@ class MintRegionDutchiePush(models.Model):
         help='Master gate for this market. Even with mode=live, no push '
              'happens unless this flag AND res.company.dutchie_discount_push_enabled '
              'are both True. Per dutchie-sandbox-locids-not-isolated.md, '
-             'AZ should be the LAST market enabled.',
+             'AZ should be the LAST market enabled.\n\n'
+             'NOTE: a Dutchie discount is scoped to the LSP, not the location — '
+             'verified by reading one back from all 9 AZ LocIds on lsp 575 and '
+             'finding it absent from IL (805) and MI (576). Enabling ONE store in '
+             'a market therefore makes the coupon live at EVERY store in that '
+             'market. The per-store flag selects which store\'s credentials push; '
+             'it is not a containment boundary.',
+    )
+
+    dutchie_push_mode = fields.Selection(
+        [('off', 'Off'), ('dry-run', 'Dry Run'), ('live', 'Live')],
+        string='Push Mode (this market)',
+        help='Overrides the global mint.dutchie_discount_push.mode for THIS '
+             'market only. Leave empty to inherit the global setting.\n\n'
+             'Exists so a new market can be dry-run validated without flipping '
+             'the global flag — which is currently "live", so a global dry-run '
+             'would silently suppress Arizona pushes for the duration of the '
+             'test.',
     )
 
 
@@ -134,7 +151,25 @@ class PtlDayDutchiePush(models.Model):
     # ─── Mode + URL helpers ──────────────────────────────────────────────
 
     def _get_dutchie_push_mode(self):
-        """Return one of: 'off' (default), 'dry-run', 'live'."""
+        """Return one of: 'off' (default), 'dry-run', 'live'.
+
+        A per-market override on mint.region wins over the global parameter, so
+        one market can be dry-run validated while the others keep pushing. The
+        global flag is currently 'live'; without this, dry-running a new market
+        would mean flipping it globally and suppressing Arizona for the duration.
+
+        Reads from this PTL day's market when there is one — the pusher always
+        runs on a mint.ptl.day carrying the market it is publishing for.
+        """
+        # len(self) == 1, not bool(self): this is also called on an EMPTY
+        # mint.ptl.day (the welcome-coupon sync does exactly that), and reading
+        # a m2o off a multi-record set raises "Expected singleton".
+        market_mode = (self.market_id.dutchie_push_mode
+                       if len(self) == 1 and self.market_id else False)
+        if market_mode:
+            _logger.info('Dutchie push: market %s overrides mode -> %s',
+                         self.market_id.code, market_mode)
+            return market_mode
         get_param = self.env['ir.config_parameter'].sudo().get_param
         mode = (get_param(PUSH_MODE_PARAM, 'off') or 'off').strip().lower()
         if mode not in ('off', 'dry-run', 'live'):
@@ -562,21 +597,28 @@ class PtlDayDutchiePush(models.Model):
             return
 
         mode = self._get_dutchie_push_mode()
+        Discount = self.env['mint.discount'].sudo()
+        Log = self.env['mint.dutchie.discount.push.log'].sudo()
+        discounts = Discount.browse(discount_ids)
+
         if mode == 'off':
-            return  # ZERO behavior change in this branch
+            self._log_push_blocked(Log, discounts, mode, 'push_mode_off',
+                                   'Skipped: global push mode is "off".')
+            return
 
         url = self._get_dutchie_push_url()
         api_key = self._get_dutchie_push_api_key()
-        Discount = self.env['mint.discount'].sudo()
-        Log = self.env['mint.dutchie.discount.push.log'].sudo()
-
-        discounts = Discount.browse(discount_ids)
 
         # Per-market gate (this PTL day's market)
         market_enabled = bool(self.market_id and self.market_id.dutchie_discount_push_enabled)
         if not market_enabled:
+            code = self.market_id.code if self.market_id else '?'
             _logger.info('Dutchie push: market %s not enabled, skipping %d discount(s)',
-                         self.market_id.code if self.market_id else '?', len(discounts))
+                         code, len(discounts))
+            self._log_push_blocked(
+                Log, discounts, mode, 'market_push_disabled:%s' % code,
+                'Skipped: market %s has dutchie_discount_push_enabled=False. A code '
+                'that never reaches Dutchie is rejected at the register.' % code)
             return
 
         # Per-store gate
@@ -588,7 +630,12 @@ class PtlDayDutchiePush(models.Model):
         ]
         enabled_stores = self.env['res.company'].sudo().search(store_domain)
         if not enabled_stores:
-            _logger.info('Dutchie push: no enabled stores in market %s', self.market_id.code)
+            code = self.market_id.code if self.market_id else '?'
+            _logger.info('Dutchie push: no enabled stores in market %s', code)
+            self._log_push_blocked(
+                Log, discounts, mode, 'no_push_enabled_store_in_market:%s' % code,
+                'Skipped: market %s is enabled but no store in it carries '
+                'dutchie_discount_push_enabled.' % code)
             return
 
         for discount in discounts:
@@ -616,8 +663,62 @@ class PtlDayDutchiePush(models.Model):
             # Honor per-discount store filter if set
             target_stores = discount.store_ids & enabled_stores if discount.store_ids \
                             else enabled_stores
+            if not target_stores:
+                # The discount is scoped to stores, none of which are push-enabled.
+                # Silent before: the loop simply never ran and no row was written,
+                # so the discount looked untouched rather than skipped.
+                self._log_push_blocked(
+                    Log, discount, mode, 'no_target_store_overlap',
+                    'Skipped: this discount is scoped to %d store(s), none of which '
+                    'have dutchie_discount_push_enabled. Enable one, or widen the '
+                    'discount scope.' % len(discount.store_ids),
+                    company=enabled_stores[:1])
+                continue
             for store in target_stores:
                 self._push_one_discount(discount, store, mode, url, api_key, Log)
+
+    def _log_push_blocked(self, Log, discounts, mode, reason, message, company=None):
+        """Write a push-log row for a push that was refused before it was built.
+
+        Every gate above used to `return` before reaching Log.create, so a
+        blocked market produced NO audit row at all — indistinguishable from
+        "never attempted". That is how five markets could silently fail to
+        publish redemption codes while the customer was already debited.
+
+        ONE row per call, not per discount. The mode/market/store gates are
+        facts about the *call* — "FL is gated off" — not about each discount in
+        it, and the PTL path publishes a whole day at once: FL alone carries
+        3,347 deals against a push-log of ~1,500 rows total, so a row per
+        discount would let a single publish multiply the audit table it is
+        supposed to make readable.
+
+        When the call carries exactly one discount — every redemption push —
+        the row is still attached to it and stays filterable by discount_id.
+        For a bulk call the row is deliberately discount-less and names the
+        count instead: the answer to "why didn't discount X publish" is a
+        property of its market, and is discoverable from the market.
+
+        company_id makes the row readable in the per-store views, so fall back
+        to any store in the market when the block happened before a target
+        store was chosen.
+        """
+        if not discounts:
+            return
+        if company is None:
+            company = self.env['res.company'].sudo().search(
+                [('region_id', '=', self.market_id.id), ('is_dispensary', '=', True)],
+                limit=1) if self.market_id else self.env['res.company'].sudo()
+        single = discounts[:1] if len(discounts) == 1 else None
+        if not single:
+            message = '%s (%d discount(s) in this publish)' % (message, len(discounts))
+        Log.create({
+            'discount_id': single.id if single else False,
+            'company_id': company[:1].id or False,
+            'dutchie_loc_id': str(company[:1].dutchie_store_id or ''),
+            'mode': mode,
+            'success': False,
+            'error_message': '[%s] %s' % (reason, message),
+        })
 
     # ─── Deactivate (expire / revoke) — the inverse of the push ──────────
 
