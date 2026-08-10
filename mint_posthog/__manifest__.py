@@ -1,6 +1,6 @@
 {
     'name': 'Mint PostHog Analytics',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.1.0',
     'category': 'Tools',
     'summary': 'PostHog error tracking and session recording for Odoo backend',
     'description': """
@@ -10,7 +10,8 @@
           - Session recordings for debugging
           - Page navigation and user identification
 
-        Uses the same PostHog project as the MintDeals frontend.
+        Sends data to the dedicated "LetsGoMint" PostHog project,
+        separate from the MintDeals storefront project.
         Admins are identified by their Odoo login for easy filtering.
     """,
     'author': 'Mint Dispensaries',

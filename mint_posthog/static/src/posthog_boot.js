@@ -5,15 +5,16 @@
  * Captures JS errors, RPC failures, and session recordings
  * so we can see exactly what errors admins encounter.
  *
- * Same PostHog project as MintDeals frontend — filter by
- * person property `odoo_user` or `app: "odoo-backend"`.
+ * Dedicated "LetsGoMint" PostHog project (544449) — separate from the
+ * MintDeals2.0 storefront project so Odoo backend data stays isolated.
+ * Filter by person property `odoo_user` or `app: "odoo-backend"`.
  */
 
 import { registry } from "@web/core/registry";
 import { session } from "@web/session";
 import { browser } from "@web/core/browser/browser";
 
-const POSTHOG_KEY = "phc_vyugaiKB9tUrsMo57fawrH5KXGetBNJpxBAjWRSJbkh";
+const POSTHOG_KEY = "phc_pn6qyCiqURG5TQodSwspowqCYQiKGz92tD3N2GeCjRBT";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
 let _posthogReady = false;
