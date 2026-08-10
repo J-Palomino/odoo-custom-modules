@@ -35,15 +35,55 @@
                      t-att-aria-checked="stateSelectIcon(entry.stateName).includes('fa-check-square') ? 'true' : 'false'"
                      t-att-aria-label="'Select all in ' + entry.stateName"
                      t-att-title="'Select all in ' + entry.stateName"
-                     style="cursor: pointer;"
+                     t-attf-style="cursor: pointer; border-inline-start: 3px solid {{ stateAccentColor(entry.stateName) }};"
                      t-on-click="() => this.selectState(entry.stateName)">
                     <span class="btn border-0 py-0 px-1">
                         <i class="fa fa-fw" t-att-class="stateSelectIcon(entry.stateName)"/>
                     </span>
+                    <span class="o_region_dot me-1" t-attf-style="background-color: {{ stateAccentColor(entry.stateName) }};"/>
                     <span class="text-uppercase small fw-bold text-muted"><t t-esc="entry.stateName"/></span>
                 </div>
                 <SwitchCompanyItem company="entry.company" level="entry.level"/>
             </t>
+        </xpath>
+
+        <!--
+            Preview the staged selection above Confirm so users see what the
+            switch is about to do before applying it. Only rendered while a
+            change is pending (same condition as the Confirm/Reset buttons).
+        -->
+        <xpath expr="//div[hasclass('o_switch_company_menu_buttons')]" position="before">
+            <div t-if="companySelector.hasSelectionChanged"
+                 class="o_switch_company_preview small text-muted px-2 pt-2 pb-1 border-top">
+                <i class="fa fa-eye me-1" role="img" aria-hidden="true"/>
+                <t t-esc="stagedPreviewText"/>
+            </div>
+        </xpath>
+    </t>
+
+    <!--
+        Relabel the systray trigger as a location filter: a map-marker icon, a
+        region colour dot (when a single region is active), and a plain-language
+        label ("Arizona · 3 stores") in place of the bare active-company name.
+        The title tooltip spells out that this control filters records by
+        location.
+    -->
+    <t t-name="daisydo_theme.SwitchCompanyMenuTrigger"
+       t-inherit="web.SwitchCompanyMenu"
+       t-inherit-mode="extension">
+        <xpath expr="//button[@data-hotkey='shift+u']" position="attributes">
+            <attribute name="t-att-title">locationTitle</attribute>
+        </xpath>
+        <xpath expr="//button[@data-hotkey='shift+u']/i[hasclass('fa-building')]" position="replace">
+            <i class="fa fa-map-marker d-lg-none"/>
+        </xpath>
+        <xpath expr="//button[@data-hotkey='shift+u']/span[hasclass('oe_topbar_name')]" position="replace">
+            <span class="oe_topbar_name d-none d-lg-flex align-items-center text-truncate">
+                <span t-if="activeRegionColor" class="o_region_dot me-1"
+                      t-attf-style="background-color: {{ activeRegionColor }};"/>
+                <i class="fa fa-map-marker me-1" role="img" aria-hidden="true"/>
+                <t t-esc="locationLabel"/>
+            </span>
         </xpath>
     </t>
 

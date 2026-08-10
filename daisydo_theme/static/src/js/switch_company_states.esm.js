@@ -6,6 +6,23 @@ import { _t } from "@web/core/l10n/translation";
 import { SwitchCompanyMenu } from "@web/webclient/switch_company_menu/switch_company_menu";
 
 /**
+ * Region accent colours for the company switcher.
+ *
+ * Named states get a fixed brand-ish colour; any state not listed falls back to
+ * a deterministic hue derived from its name, so a new region still gets a stable
+ * distinct accent with no code change. Consumed by the systray trigger dot and
+ * the state subheaders (switch_company_menu.xml); styled in theme.scss.
+ */
+const REGION_COLORS = {
+    Arizona: "#d9822b",
+    Michigan: "#2b6cd9",
+    Florida: "#d92b6c",
+    Illinois: "#6c2bd9",
+    Nevada: "#1f9d6b",
+    Missouri: "#b59a14",
+};
+
+/**
  * Group the multi-company switcher list by US state.
  *
  * Odoo's base `computeVisibleCompanies()` returns a flat, hierarchy-ordered
@@ -112,5 +129,106 @@ patch(SwitchCompanyMenu.prototype, {
             return "fa-minus-square-o";
         }
         return "fa-square-o";
+    },
+
+    // ---- Location-filter UX affordances (labelled trigger, preview, colour) ----
+
+    /**
+     * Accent colour for a state: fixed brand colour, else a deterministic hue
+     * derived from the name so unlisted regions are still stable and distinct.
+     */
+    stateAccentColor(stateName) {
+        if (!stateName) {
+            return "transparent";
+        }
+        if (REGION_COLORS[stateName]) {
+            return REGION_COLORS[stateName];
+        }
+        let hash = 0;
+        for (let i = 0; i < stateName.length; i++) {
+            hash = (hash * 31 + stateName.charCodeAt(i)) >>> 0;
+        }
+        return `hsl(${hash % 360}, 55%, 42%)`;
+    },
+
+    /** Distinct region names among the currently *active* (applied) stores. */
+    activeRegionNames() {
+        const states = session.company_states || {};
+        const rootId = session.company_root_id;
+        const names = (this.user.activeCompanies || [])
+            .filter((company) => company.id !== rootId)
+            .map((company) => states[company.id])
+            .filter(Boolean);
+        return [...new Set(names)];
+    },
+
+    /** Colour dot for the systray trigger when exactly one region is active. */
+    get activeRegionColor() {
+        const names = this.activeRegionNames();
+        return names.length === 1 ? this.stateAccentColor(names[0]) : "";
+    },
+
+    /**
+     * Location-first label for the systray trigger, e.g. "Arizona · 3 stores"
+     * or "2 regions · 12 stores". Falls back to the active company name when no
+     * state-bearing store is active (corporate-only context).
+     */
+    get locationLabel() {
+        const rootId = session.company_root_id;
+        const stores = (this.user.activeCompanies || []).filter(
+            (company) => company.id !== rootId
+        );
+        const regions = this.activeRegionNames();
+        const noun = stores.length === 1 ? _t("store") : _t("stores");
+        let region;
+        if (regions.length === 1) {
+            region = regions[0];
+        } else if (regions.length === 0) {
+            return this.user.activeCompany.name;
+        } else {
+            region = `${regions.length} ${_t("regions")}`;
+        }
+        return `${region} · ${stores.length} ${noun}`;
+    },
+
+    /** Tooltip that frames the switcher as the location filter it actually is. */
+    get locationTitle() {
+        return `${_t("Filter records by location — currently showing")}: ${this.locationLabel}`;
+    },
+
+    /**
+     * Plain-language preview of the *staged* selection, shown above Confirm so
+     * users see what the switch will do before applying it. Built from
+     * `allowedCompaniesWithAncestors` (not the filtered visible list) so the
+     * preview is accurate even while the search box is filtering the rows.
+     */
+    get stagedPreviewText() {
+        const states = session.company_states || {};
+        const rootId = session.company_root_id;
+        const OTHER = _t("Other");
+        const byId = {};
+        for (const company of this.user.allowedCompaniesWithAncestors || []) {
+            byId[company.id] = company;
+        }
+        const stores = (this.companySelector.selectedCompaniesIds || [])
+            .map((id) => byId[id])
+            .filter(Boolean)
+            .filter((company) => company.id !== rootId);
+        if (!stores.length) {
+            return _t("No locations selected — records will be hidden until you pick at least one.");
+        }
+        const byState = {};
+        for (const company of stores) {
+            const stateName = states[company.id] || OTHER;
+            if (!byState[stateName]) {
+                byState[stateName] = [];
+            }
+            byState[stateName].push(company.name);
+        }
+        const parts = Object.keys(byState)
+            .sort()
+            .map((stateName) => `${stateName} (${byState[stateName].join(", ")})`);
+        const noun = stores.length === 1 ? _t("store") : _t("stores");
+        return `${_t("About to show records for")}: ${parts.join("; ")} — ${stores.length} ${noun}`;
     },
 });
