@@ -195,6 +195,20 @@ def migrate(cr, version):
     from odoo import api, SUPERUSER_ID
     env = api.Environment(cr, SUPERUSER_ID, {})
 
+    # Defensive: this migration keys store-specific lane seeding off
+    # res.company.x_slug. A freshly-reset / minimally-seeded environment
+    # (e.g. staging) may not have that field yet, and an unguarded
+    # `company.x_slug` access raises AttributeError that rolls back the entire
+    # module-upgrade transaction (blocking every module's upgrade, not just
+    # this one). Without slugs there is no meaningful slug-based seeding to do,
+    # so skip cleanly.
+    if 'x_slug' not in env['res.company']._fields:
+        _logger.warning(
+            'mint_pos_bridge 19.0.5.0.0: res.company.x_slug missing — skipping '
+            'lane seeding (environment is not slug-configured)'
+        )
+        return
+
     # 1. Seed lanes for every company that has a web_order_config (the set of
     #    companies that route to a Dutchie POS).
     companies = env['res.company'].sudo().search([])
