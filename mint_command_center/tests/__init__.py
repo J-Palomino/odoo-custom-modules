@@ -8,3 +8,4 @@ from . import test_weekday_bools
 from . import test_dutchie_claim
 from . import test_publish_mode
 from . import test_redemption_payload
+from . import test_ptl_deal_tabs
