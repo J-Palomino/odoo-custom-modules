@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ────────────────────────────────────────────────────────────────
+         Partner identity + merge review UI (Phase 6, issue #278).
+         Menus live under Point of Sale > Customers, manager-gated.
+         ──────────────────────────────────────────────────────────────── -->
+
+    <!-- POS Identity group on the partner form -->
+    <record id="view_partner_form_pos_identity" model="ir.ui.view">
+        <field name="name">res.partner.form.pos.identity</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="POS Identity" name="pos_identity" groups="mint_pos_bridge.group_pos_manager">
+                    <group>
+                        <group string="Identity Keys">
+                            <field name="x_dutchie_loyalty_id"/>
+                            <field name="x_partner_origin"/>
+                            <field name="x_first_seen_at" readonly="1"/>
+                        </group>
+                        <group string="Merge">
+                            <field name="x_is_stub"/>
+                            <field name="x_merge_needs_review"/>
+                            <field name="x_merge_candidate_count"/>
+                            <field name="x_last_merged_at" readonly="1"/>
+                        </group>
+                    </group>
+                    <button name="action_find_merge_candidates" type="object"
+                            string="Find and Merge Duplicates" class="btn-primary"
+                            groups="mint_pos_bridge.group_pos_manager"/>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Walk-in stubs -->
+    <record id="view_pos_partner_stub_list" model="ir.ui.view">
+        <field name="name">res.partner.pos.stub.list</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <list default_order="create_date desc">
+                <field name="name"/>
+                <field name="phone" optional="show"/>
+                <field name="email" optional="hide"/>
+                <field name="x_partner_origin"/>
+                <field name="x_first_seen_at"/>
+                <field name="create_date"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_partner_stubs" model="ir.actions.act_window">
+        <field name="name">Walk-in Stubs</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="view_pos_partner_stub_list"/>
+        <field name="domain">[('x_is_stub', '=', True)]</field>
+        <field name="context">{'group_by': 'x_partner_origin'}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No stub partners</p>
+            <p>Anonymous walk-ins observed by the lane watcher land here until
+               the nightly dedupe reconciles them with full records.</p>
+        </field>
+    </record>
+
+    <!-- Needs Merge Review -->
+    <record id="view_pos_partner_review_list" model="ir.ui.view">
+        <field name="name">res.partner.pos.review.list</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <list default_order="write_date asc">
+                <field name="name"/>
+                <field name="phone" optional="show"/>
+                <field name="email" optional="hide"/>
+                <field name="x_merge_candidate_count"/>
+                <field name="x_partner_origin" optional="show"/>
+                <field name="x_is_stub" optional="hide"/>
+                <field name="write_date" string="Flagged"/>
+                <button name="action_mark_merge_reviewed" type="object"
+                        string="Mark Reviewed" icon="fa-check"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_partner_merge_review" model="ir.actions.act_window">
+        <field name="name">Needs Merge Review</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="view_pos_partner_review_list"/>
+        <field name="domain">[('x_merge_needs_review', '=', True)]</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Nothing to review</p>
+            <p>Partners with ambiguous duplicate candidates (2+ strong-key
+               matches, weak-key-only matches, or identity collisions from
+               web signup) queue here for a human decision.</p>
+        </field>
+    </record>
+
+    <!-- Merge audit log -->
+    <record id="view_partner_merge_log_list" model="ir.ui.view">
+        <field name="name">mint.partner.merge.log.list</field>
+        <field name="model">mint.partner.merge.log</field>
+        <field name="arch" type="xml">
+            <list create="false" edit="false" delete="false">
+                <field name="merged_at"/>
+                <field name="dst_partner_id"/>
+                <field name="src_partner_desc"/>
+                <field name="matched_key"/>
+                <field name="mode"/>
+                <field name="notes" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_partner_merge_log" model="ir.actions.act_window">
+        <field name="name">Merge Log</field>
+        <field name="res_model">mint.partner.merge.log</field>
+        <field name="view_mode">list</field>
+    </record>
+
+    <!-- Menus: Point of Sale > Customers -->
+    <menuitem id="menu_pos_customers"
+              name="Customers"
+              parent="point_of_sale.menu_point_root"
+              groups="group_pos_manager"
+              sequence="40"/>
+
+    <menuitem id="menu_partner_merge_review"
+              name="Needs Merge Review"
+              parent="menu_pos_customers"
+              action="action_partner_merge_review"
+              sequence="10"/>
+
+    <menuitem id="menu_partner_stubs"
+              name="Walk-in Stubs"
+              parent="menu_pos_customers"
+              action="action_partner_stubs"
+              sequence="20"/>
+
+    <menuitem id="menu_partner_merge_log"
+              name="Merge Log"
+              parent="menu_pos_customers"
+              action="action_partner_merge_log"
+              sequence="30"/>
+
+</odoo>
