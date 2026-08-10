@@ -1,0 +1,33 @@
+// Company switcher — location-filter affordances.
+//
+// Kept in its own file (NOT theme.scss) because generate-theme.sh rewrites
+// theme.scss wholesale from a heredoc and would clobber anything appended there.
+// Pairs with switch_company_states.esm.js (getters) and switch_company_menu.xml
+// (markup). Backend-only.
+
+// Region colour dot — used on the systray trigger and the state subheaders.
+// Fill colour is set inline per region via t-attf-style.
+.o_region_dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.o_switch_company_menu_dropdown {
+    // State subheaders carry a per-region accent border (set inline). Give the
+    // border room and a little breathing space so each region reads as a group.
+    .o_switch_company_state_header {
+        border-inline-start-width: 3px;
+        border-inline-start-style: solid;
+        margin-block-start: 2px;
+    }
+
+    // "About to show records for…" preview above the Confirm/Reset buttons.
+    .o_switch_company_preview {
+        max-width: 24rem;
+        white-space: normal;
+        line-height: 1.3;
+    }
+}
