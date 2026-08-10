@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MinTask Theme',
-    'version': '19.0.1.0.8',
+    'version': '19.0.1.0.9',
     'category': 'Themes',
     'summary': 'Customizable Odoo theme with brand color configuration',
     'description': """
@@ -18,6 +18,7 @@
     'depends': ['web'],
     'data': [
         'views/templates.xml',
+        'views/company_relabel.xml',
     ],
     'assets': {
         'web._assets_primary_variables': [

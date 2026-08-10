@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- C-Suite allow-list: comma-separated logins or emails. Edit in
+             Settings → Technical → System Parameters (no code change needed).
+             Verified internal res.users accounts (2026-06-23):
+               Eivan Shahara   id 133  eivanshahara@gmail.com
+               Juan Palomino   id   2  jpalomino@brightroot.com
+               Pablo Palomino  id   5  pablo@brightroot.com
+               Rudy Molina     id 149  rudy@brightroot.com
+             Raul: no Odoo account exists yet — add his login/email here
+             once provisioned. -->
+        <record id="csuite_logins_param" model="ir.config_parameter">
+            <field name="key">mint_decision_board.csuite_logins</field>
+            <field name="value">eivanshahara@gmail.com,jpalomino@brightroot.com,pablo@brightroot.com,rudy@brightroot.com</field>
+        </record>
+
+    </data>
+</odoo>

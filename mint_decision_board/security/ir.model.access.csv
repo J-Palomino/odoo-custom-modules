@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_decision_user,mint.decision.user,model_mint_decision,base.group_user,1,0,0,0
+access_mint_decision_manager,mint.decision.manager,model_mint_decision,base.group_system,1,1,1,1
+access_mint_decision_option_user,mint.decision.option.user,model_mint_decision_option,base.group_user,1,0,0,0
+access_mint_decision_option_manager,mint.decision.option.manager,model_mint_decision_option,base.group_system,1,1,1,1
+access_mint_decision_vote_user,mint.decision.vote.user,model_mint_decision_vote,base.group_user,1,1,1,0
+access_mint_decision_vote_manager,mint.decision.vote.manager,model_mint_decision_vote,base.group_system,1,1,1,1

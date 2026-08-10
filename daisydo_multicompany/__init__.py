@@ -102,14 +102,65 @@ def _fix_orphaned_company_records(env):
         _logger.info("Fixed %d project.task records (from creator) with NULL company_id", cr.rowcount)
 
     # slide_channel: set website_id if NULL (defaults to website 1)
+    # Only run if website_slides is installed (slide_channel table exists)
     cr.execute("""
-        UPDATE slide_channel
-        SET website_id = 1
-        WHERE website_id IS NULL
-          AND EXISTS (SELECT 1 FROM website WHERE id = 1)
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'slide_channel' AND table_schema = 'public'
     """)
-    if cr.rowcount:
-        _logger.info("Fixed %d slide_channel records with NULL website_id", cr.rowcount)
+    if cr.fetchone():
+        cr.execute("""
+            UPDATE slide_channel
+            SET website_id = 1
+            WHERE website_id IS NULL
+              AND EXISTS (SELECT 1 FROM website WHERE id = 1)
+        """)
+        if cr.rowcount:
+            _logger.info("Fixed %d slide_channel records with NULL website_id", cr.rowcount)
+
+
+def _ensure_slide_channel_rule(env):
+    """Create multi-company record rule for slide.channel if website_slides is installed.
+
+    Since website_slides is an optional dependency (not always installed),
+    we cannot reference its model via XML.  Instead we create the ir.rule
+    programmatically when the module is present.
+    """
+    installed = env['ir.module.module'].search([
+        ('name', '=', 'website_slides'),
+        ('state', '=', 'installed'),
+    ])
+    if not installed:
+        _logger.info("website_slides not installed — skipping slide.channel record rule")
+        return
+
+    model = env['ir.model'].search([('model', '=', 'slide.channel')], limit=1)
+    if not model:
+        _logger.warning("slide.channel model not found despite website_slides being installed")
+        return
+
+    xml_id = 'daisydo_multicompany.rule_slide_channel_company'
+    existing = env.ref(xml_id, raise_if_not_found=False)
+    if existing:
+        _logger.info("slide.channel record rule already exists (id=%s)", existing.id)
+        return
+
+    rule = env['ir.rule'].create({
+        'name': 'Course: multi-company isolation',
+        'model_id': model.id,
+        'domain_force': "[('website_id.company_id', 'in', company_ids + ([False] if 1 in company_ids else []))]",
+        'global': True,
+    })
+
+    # Register as ir.model.data so env.ref() can find it later
+    env['ir.model.data'].create({
+        'module': 'daisydo_multicompany',
+        'name': 'rule_slide_channel_company',
+        'model': 'ir.rule',
+        'res_id': rule.id,
+        'noupdate': True,
+    })
+
+    _logger.info("Created slide.channel multi-company rule (id=%s)", rule.id)
 
 
 def post_init_hook(env):
@@ -117,4 +168,5 @@ def post_init_hook(env):
     _logger.info("daisydo_multicompany post_init_hook starting...")
     _ensure_admin_all_companies(env)
     _fix_orphaned_company_records(env)
+    _ensure_slide_channel_rule(env)
     _logger.info("daisydo_multicompany post_init_hook complete")

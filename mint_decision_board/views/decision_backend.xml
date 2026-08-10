@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ── Decision ── -->
+    <record id="view_mint_decision_list" model="ir.ui.view">
+        <field name="name">mint.decision.list</field>
+        <field name="model">mint.decision</field>
+        <field name="arch" type="xml">
+            <list string="Decisions">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="slug"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'open'"
+                       decoration-muted="state == 'draft'"/>
+                <field name="vote_count" string="Votes"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_decision_form" model="ir.ui.view">
+        <field name="name">mint.decision.form</field>
+        <field name="model">mint.decision</field>
+        <field name="arch" type="xml">
+            <form string="Decision">
+                <header>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,open,closed"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box"/>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Decision title"/></h1>
+                        <label for="slug" class="oe_edit_only"/>
+                        <h3>
+                            <span class="text-muted">/decision/</span>
+                            <field name="slug" nolabel="1" placeholder="auto-from-title"
+                                   style="display:inline-block;width:auto;"/>
+                        </h3>
+                    </div>
+                    <group>
+                        <group string="Masthead">
+                            <field name="kicker"/>
+                            <field name="subtitle"/>
+                            <field name="question"/>
+                        </group>
+                        <group string="Ballot">
+                            <field name="audience"/>
+                            <field name="ballot_heading"/>
+                            <field name="choice_label"/>
+                            <field name="allow_comment"/>
+                            <field name="comment_label" invisible="not allow_comment"/>
+                            <field name="comment_placeholder" invisible="not allow_comment"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Options" name="options">
+                            <field name="option_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="description"/>
+                                    <field name="vote_count" string="Votes"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Body (rich content)" name="body">
+                            <field name="body_html" widget="html"/>
+                        </page>
+                        <page string="Footer" name="footer">
+                            <field name="takeaway" placeholder="One-line takeaway shown at the bottom of the page."/>
+                        </page>
+                        <page string="Votes" name="votes">
+                            <field name="vote_ids" readonly="1">
+                                <list>
+                                    <field name="voter_name"/>
+                                    <field name="option_id"/>
+                                    <field name="comment"/>
+                                    <field name="write_date" string="Updated"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_decision" model="ir.actions.act_window">
+        <field name="name">Decisions</field>
+        <field name="res_model">mint.decision</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create a decision board</p>
+            <p>Add options, set it to <b>Open</b>, then share <code>/decision/&lt;slug&gt;</code>.</p>
+        </field>
+    </record>
+
+    <!-- ── Votes (flat review) ── -->
+    <record id="view_mint_decision_vote_list" model="ir.ui.view">
+        <field name="name">mint.decision.vote.list</field>
+        <field name="model">mint.decision.vote</field>
+        <field name="arch" type="xml">
+            <list string="Votes">
+                <field name="decision_id"/>
+                <field name="voter_name"/>
+                <field name="option_id"/>
+                <field name="comment"/>
+                <field name="write_date" string="Updated"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_mint_decision_vote" model="ir.actions.act_window">
+        <field name="name">All Votes</field>
+        <field name="res_model">mint.decision.vote</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ── Menus ── -->
+    <menuitem id="menu_decision_root" name="Decision Boards"
+              web_icon="base,static/description/settings.png"
+              groups="base.group_system" sequence="95"/>
+    <menuitem id="menu_decision_decisions" name="Decisions"
+              parent="menu_decision_root" action="action_mint_decision"
+              groups="base.group_system" sequence="10"/>
+    <menuitem id="menu_decision_votes" name="All Votes"
+              parent="menu_decision_root" action="action_mint_decision_vote"
+              groups="base.group_system" sequence="20"/>
+
+</odoo>

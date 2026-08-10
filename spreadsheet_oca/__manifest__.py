@@ -2,10 +2,10 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 {
-    "name": "Spreadsheet Oca",
+    "name": "Smartsheets",
     "summary": """
-        Allow to edit spreadsheets""",
-    "version": "19.0.1.0.2",
+        Allow to edit smartsheets""",
+    "version": "19.0.1.0.3",
     "license": "AGPL-3",
     "author": "CreuBlanca,Odoo Community Association (OCA)",
     "website": "https://github.com/OCA/spreadsheet",
