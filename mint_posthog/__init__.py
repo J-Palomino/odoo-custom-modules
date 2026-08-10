@@ -1,1 +1,1 @@
-# PostHog analytics — JS-only module, no Python models
+# PostHog analytics - JS-only module, no Python models

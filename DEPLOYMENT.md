@@ -305,8 +305,91 @@ scripts/railway-api.sh \
   '{"environmentId": "ENV_ID", "patch": {"services": {"SERVICE_ID": {"source": {"commitSHA": "COMMIT_HASH"}}}}, "commitMessage": "Deploy update"}'
 ```
 
+## OCA Pipeline Modules (Ported 18.0 → 19.0)
+
+Added 2026-03-12 to support a full initiative pipeline:
+**Ideas → Proposals → Approved → Funded → Planned → Scheduled → Executed → Tested → Documented**
+
+These 13 modules were ported from OCA 18.0 branches because no official 19.0 ports exist yet. Version strings bumped to `19.0.x.x.x`, JS compatibility patched for Odoo 19.
+
+### Tier 1: Approval Workflows (fills "Approved" gate)
+
+| Module | Source | Purpose |
+|--------|--------|---------|
+| `base_tier_validation` | OCA/server-ux | Multi-tier approval framework — adds approve/reject buttons to any model with configurable reviewer chains, sequential approval, notifications |
+| `base_tier_validation_formula` | OCA/server-ux | Dynamic approval rules using Python expressions instead of static filters |
+
+**Install order:** `base_tier_validation` first, then `base_tier_validation_formula`
+
+**After install:** Go to Settings → Technical → Tier Validations → Tier Definition to create approval rules on `project.task` or any model.
+
+### Tier 2: Internal Documentation (fills "Documented" stage)
+
+| Module | Source | Purpose |
+|--------|--------|---------|
+| `document_knowledge` | OCA/knowledge | Base knowledge app — security groups and menu structure |
+| `document_page` | OCA/knowledge | Internal wiki — categories, versioning, history diffs, rich-text editor, kanban view |
+
+**Install order:** `document_knowledge` first, then `document_page`
+
+**After install:** Knowledge menu appears in top nav. Create categories and pages for SOPs, runbooks, and project documentation.
+
+### Tier 3: Quality Management System (fills "Tested" stage)
+
+| Module | Source | Purpose |
+|--------|--------|---------|
+| `mgmtsystem` | OCA/management-system | Base management system framework |
+| `mgmtsystem_action` | OCA/management-system | Corrective and preventive actions |
+| `mgmtsystem_nonconformity` | OCA/management-system | Track nonconformities (defects, deviations) |
+| `document_page_procedure` | OCA/management-system | Procedure documentation pages |
+| `mgmtsystem_manual` | OCA/management-system | Quality manuals |
+| `document_page_quality_manual` | OCA/management-system | Quality manual document pages |
+| `mgmtsystem_audit` | OCA/management-system | Schedule and track audits with verification lines |
+| `mgmtsystem_review` | OCA/management-system | Management review meetings |
+| `mgmtsystem_quality` | OCA/management-system | Meta-package — installs the full QMS chain |
+
+**Install order:** Just install `mgmtsystem_quality` — it pulls in the full dependency chain.
+
+**After install:** Management System menu appears. Create audits, track nonconformities, write procedures, and run management reviews.
+
+### Porting Notes
+
+- **Version bump:** All `__manifest__.py` files changed from `"version": "18.0.x.x.x"` to `"19.0.x.x.x"`
+- **JS fix:** `base_tier_validation` systray component uses `useDiscussSystray` from `@mail/utils/common/hooks` which may not exist in Odoo 19. Wrapped in try/catch with fallback `{menuClass: "", contentClass: ""}`.
+- **Dependencies:** All satisfied — modules depend only on each other and core Odoo modules (`base`, `mail`, `web_editor`, `base_automation`), all of which are already installed.
+- **No deprecated APIs:** Checked for `api.one`, `api.multi`, `fields_view_get` — none found. Modules use modern OWL components and standard ORM.
+
+### Installing on Staging
+
+```bash
+# Via environment variable
+ODOO_INIT_MODULES=base_tier_validation,document_knowledge,document_page,mgmtsystem_quality
+
+# Or via JSON-RPC after deploy
+curl -X POST "https://lets-go-mint-staging.up.railway.app/jsonrpc" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"call","params":{"service":"object","method":"execute_kw","args":["odoo",2,"API_KEY","ir.module.module","update_list",[]]},"id":1}'
+```
+
+### Pipeline Gap Coverage Summary
+
+| Pipeline Stage | Before | After |
+|---------------|--------|-------|
+| Ideas | Project kanban ✓ | No change |
+| Proposals | Project stages ✓ | No change |
+| **Approved** | No enforcement ✗ | `base_tier_validation` ✓ |
+| Funded | Budget + Analytic ✓ | No change |
+| Planned | Project tasks ✓ | No change |
+| Scheduled | Calendar ✓ | No change |
+| Executed | Timesheets ✓ | No change |
+| **Tested** | No QA module ✗ | `mgmtsystem_quality` ✓ |
+| **Documented** | Blog only (public) ✗ | `document_page` (internal wiki) ✓ |
+
 ## References
 
 - [Odoo Docker Documentation](https://hub.docker.com/_/odoo)
 - [Railway PostgreSQL Guide](https://docs.railway.app/databases/postgresql)
 - [Odoo Module Development](https://www.odoo.com/documentation/19.0/developer/tutorials/backend.html)
+- [OCA/server-ux (base_tier_validation)](https://github.com/OCA/server-ux/tree/18.0/base_tier_validation)
+- [OCA/knowledge (document_page)](https://github.com/OCA/knowledge/tree/18.0/document_page)
+- [OCA/management-system (mgmtsystem_quality)](https://github.com/OCA/management-system/tree/18.0/mgmtsystem_quality)

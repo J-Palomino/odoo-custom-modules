@@ -122,11 +122,10 @@ const vaultService = {
                     return false;
                 }
 
-                // There are no keys in the database — skip silently
-                // (set VAULT_PROMPT_KEYS=1 in browser console to re-enable)
-                // return await this.generate_keys();
-                console.info("Vault: no keys found — key generation suppressed");
-                return false;
+                // No keypair exists in the database yet — generate one on first
+                // use. generate_keys() prompts the user to set a vault master
+                // password and stores the wrapped private key in res.users.key.
+                return await this.generate_keys();
             }
 
             /**
@@ -151,9 +150,18 @@ const vaultService = {
 
                 // Import the keys from the database
                 if (!(await this._import_from_database())) {
-                    // No keys found — suppress prompt for demo
-                    console.info("Vault: no keys — suppressed (demo mode)");
-                    return;
+                    // Import failed. If the user simply has no keypair yet,
+                    // generate one (first-run onboarding). If a keypair exists
+                    // but could not be decrypted (e.g. wrong master password),
+                    // surface a clear error instead of leaving this.keys null.
+                    if (!(await this._check_database())) {
+                        await this.generate_keys();
+                        return;
+                    }
+                    throw Error(
+                        _t("Could not load your vault encryption keys. ") +
+                        _t("Please refresh the page and enter your vault password when prompted.")
+                    );
                 }
 
                 // Store the imported keys in the object store for the next calls

@@ -56,11 +56,11 @@
                             <field name="line_ids">
                                 <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
-                                    <field name="product_id" readonly="state not in ('draft','sent')"/>
+                                    <field name="product_id" readonly="parent.state not in ('draft','sent')"/>
                                     <field name="description"/>
-                                    <field name="qty_expected" readonly="state not in ('draft','sent')"/>
+                                    <field name="qty_expected" readonly="parent.state not in ('draft','sent')"/>
                                     <field name="qty_received"/>
-                                    <field name="uom_id" readonly="state not in ('draft','sent')"/>
+                                    <field name="uom_id" readonly="parent.state not in ('draft','sent')"/>
                                     <field name="is_match" widget="boolean_toggle" readonly="1"/>
                                     <field name="discrepancy_note"
                                         placeholder="Note any issues..."/>
@@ -120,12 +120,11 @@
                     domain="[('has_discrepancy', '=', True)]"/>
                 <filter name="pending" string="Pending Verification"
                     domain="[('state', '=', 'received')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_state" string="Status"
-                        context="{'group_by': 'state'}"/>
-                    <filter name="group_vendor" string="Vendor"
-                        context="{'group_by': 'partner_id'}"/>
-                </group>
+                <separator/>
+                <filter name="group_state" string="Status"
+                    context="{'group_by': 'state'}"/>
+                <filter name="group_vendor" string="Vendor"
+                    context="{'group_by': 'partner_id'}"/>
             </search>
         </field>
     </record>

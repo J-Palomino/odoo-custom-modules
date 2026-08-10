@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+<!-- Shared dark "decision board" theme. -->
+<template id="decision_styles" name="Decision Board Styles">
+    <style>
+      :root{
+        --bg:#0d1411; --panel:#13201a; --panel2:#16271f; --edge:#27463a;
+        --mint:#54d7a5; --mint-bright:#7ff0c3; --gold:#d8b54a; --cream:#f4efe2;
+        --muted:#9bb3a8; --red:#e0795f;
+      }
+      *{box-sizing:border-box;margin:0;padding:0;}
+      html,body{background:#070c0a;font-family:'Montserrat',system-ui,sans-serif;color:var(--cream);-webkit-font-smoothing:antialiased;}
+      a{color:var(--mint);text-decoration:none;}
+      .page{max-width:920px;margin:24px auto;background:
+          radial-gradient(1200px 500px at 50% -10%, rgba(84,215,165,.10), transparent 60%),
+          linear-gradient(180deg,#0e1612 0%, #0b110e 100%);
+        border:1px solid var(--edge);border-radius:14px;padding:34px 40px 30px;
+        box-shadow:0 30px 80px rgba(0,0,0,.6);position:relative;overflow:hidden;}
+      .page::before{content:"";position:absolute;inset:14px;border:1px solid rgba(216,181,74,.28);border-radius:8px;pointer-events:none;}
+      .mast{text-align:center;position:relative;z-index:2;padding-bottom:14px;border-bottom:2px solid var(--edge);}
+      .kicker{font-size:11px;letter-spacing:.42em;text-transform:uppercase;color:var(--mint);font-weight:700;margin-bottom:10px;}
+      .leaf{color:var(--gold);font-size:15px;margin-bottom:4px;}
+      .title{font-family:'Bebas Neue',sans-serif;font-size:56px;line-height:.92;letter-spacing:1px;color:var(--cream);}
+      .subtitle{margin-top:8px;font-size:13px;color:var(--muted);font-weight:500;font-style:italic;}
+      .q{margin-top:10px;display:inline-block;font-size:13px;font-weight:600;color:var(--gold);border:1px dashed rgba(216,181,74,.55);border-radius:999px;padding:6px 16px;}
+      .content{position:relative;z-index:2;margin-top:20px;}
+      /* Body-supplied helper classes (decisions may use these in body_html). */
+      .cols{display:grid;grid-template-columns:1fr 1fr;gap:26px;}
+      .sec-head{font-family:'Bebas Neue',sans-serif;font-size:25px;letter-spacing:1.5px;color:var(--gold);display:flex;align-items:baseline;gap:10px;margin:4px 0 10px;}
+      .sec-head small{font-family:'Montserrat';font-size:9.5px;letter-spacing:.28em;color:var(--muted);font-weight:600;text-transform:uppercase;}
+      .sec-head.pos{color:var(--mint);} .sec-head.neg{color:var(--red);}
+      .item{margin-bottom:11px;}
+      .item .row{display:flex;align-items:baseline;gap:6px;}
+      .item .name{font-weight:700;font-size:12.5px;color:var(--cream);}
+      .lead{flex:1;border-bottom:1px dotted rgba(155,179,168,.45);transform:translateY(-3px);}
+      .price{font-weight:800;font-size:11px;white-space:nowrap;} .price.up{color:var(--mint-bright);} .price.down{color:var(--red);}
+      .item .desc{font-size:10.5px;line-height:1.45;color:var(--muted);margin-top:2px;}
+      .facts{background:var(--panel);border:1px solid var(--edge);border-left:4px solid var(--mint);border-radius:8px;padding:14px 16px;margin-bottom:18px;}
+      .facts h4{font-family:'Bebas Neue',sans-serif;font-size:19px;letter-spacing:1px;color:var(--mint);margin-bottom:8px;}
+      .fact{display:flex;gap:9px;font-size:10.6px;line-height:1.4;color:var(--cream);margin-bottom:7px;} .fact b{color:var(--gold);} .dot{color:var(--mint);font-weight:900;}
+      .pick{background:linear-gradient(160deg,#16271f,#101b16);border:1px solid var(--gold);border-radius:10px;padding:15px 17px;position:relative;}
+      .pick .ribbon{position:absolute;top:-11px;left:16px;background:var(--gold);color:#1a1206;font-size:9.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:3px 11px;border-radius:4px;}
+      .pick h4{font-family:'Bebas Neue',sans-serif;font-size:23px;letter-spacing:1px;color:var(--cream);margin:6px 0 7px;} .pick h4 span{color:var(--mint);}
+      .pick p{font-size:10.8px;line-height:1.5;color:var(--muted);} .pick p b{color:var(--cream);}
+      /* Ballot + tally. */
+      .ballot{margin-top:26px;position:relative;z-index:2;border-top:2px solid var(--edge);padding-top:22px;}
+      .ballot h3{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:1px;color:var(--gold);margin-bottom:4px;}
+      .who{font-size:11px;color:var(--muted);margin-bottom:16px;} .who b{color:var(--mint);}
+      .alert{border-radius:8px;padding:11px 15px;font-size:11.5px;font-weight:600;margin-bottom:16px;}
+      .alert.ok{background:rgba(84,215,165,.12);border:1px solid var(--mint);color:var(--mint-bright);}
+      .alert.err{background:rgba(224,121,95,.12);border:1px solid var(--red);color:var(--red);}
+      .field{margin-bottom:15px;}
+      .field > label.lbl{display:block;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:8px;}
+      .opt{display:flex;align-items:flex-start;gap:10px;background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:10px 13px;margin-bottom:8px;cursor:pointer;transition:border-color .15s;}
+      .opt:hover{border-color:var(--mint);}
+      .opt input{margin-top:2px;accent-color:var(--mint);}
+      .opt .ol{font-size:12px;font-weight:600;color:var(--cream);} .opt .od{font-size:10.5px;color:var(--muted);margin-top:2px;}
+      textarea.txt{width:100%;background:var(--panel);border:1px solid var(--edge);border-radius:8px;color:var(--cream);font-family:'Montserrat';font-size:12px;padding:10px 12px;min-height:84px;resize:vertical;}
+      textarea.txt:focus{outline:none;border-color:var(--mint);}
+      .btn{margin-top:6px;background:var(--mint);color:#08110d;border:none;border-radius:8px;font-family:'Bebas Neue';font-size:18px;letter-spacing:1px;padding:11px 28px;cursor:pointer;}
+      .btn:hover{background:var(--mint-bright);}
+      .bar{margin-bottom:11px;} .bar .barrow{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;color:var(--cream);margin-bottom:5px;} .bar .barrow .n{color:var(--gold);}
+      .track{height:9px;background:var(--panel2);border:1px solid var(--edge);border-radius:999px;overflow:hidden;} .fill{height:100%;background:linear-gradient(90deg,var(--mint),var(--mint-bright));}
+      .log{margin-top:16px;} .logitem{background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:10px 13px;margin-bottom:8px;}
+      .logitem .lh{display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:4px;} .logitem .lh .vn{color:var(--cream);} .logitem .lh .vd{color:var(--mint);}
+      .logitem .lc{font-size:11px;line-height:1.45;color:var(--muted);} .empty{font-size:11px;color:var(--muted);font-style:italic;}
+      .foot{margin-top:22px;padding-top:13px;border-top:2px solid var(--edge);font-size:10.5px;line-height:1.45;color:var(--muted);position:relative;z-index:2;} .foot b{color:var(--mint);}
+      .cardlist{position:relative;z-index:2;margin-top:20px;}
+      .dcard{display:block;background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:16px 18px;margin-bottom:12px;}
+      .dcard:hover{border-color:var(--mint);} .dcard .dt{font-family:'Bebas Neue';font-size:22px;letter-spacing:1px;color:var(--cream);} .dcard .ds{font-size:11px;color:var(--muted);margin-top:4px;}
+      @media (max-width:680px){.cols{grid-template-columns:1fr;}.page{padding:24px 18px;}}
+    </style>
+</template>
+
+<template id="decision_head" name="Decision Board Head">
+    <t>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <link rel="preconnect" href="https://fonts.googleapis.com"/>
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin"/>
+        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&amp;family=Bebas+Neue&amp;display=swap" rel="stylesheet"/>
+        <t t-call="mint_decision_board.decision_styles"/>
+    </t>
+</template>
+
+<!-- ── Index of open boards ── -->
+<template id="decision_index" name="Decision Boards Index">
+<html lang="en">
+<head>
+    <title>Decision Boards · Mint Cannabis</title>
+    <t t-call="mint_decision_board.decision_head"/>
+</head>
+<body>
+<div class="page">
+    <div class="mast">
+        <div class="kicker">Mint Cannabis · Decision Boards</div>
+        <div class="leaf">❧ ⬩ ❧</div>
+        <div class="title">DECISIONS ON THE TABLE</div>
+        <div class="subtitle">Weigh in — every voice is recorded.</div>
+    </div>
+    <div class="cardlist">
+        <t t-if="decisions">
+            <t t-foreach="decisions" t-as="d">
+                <a t-att-href="'/decision/%s' % d.slug" class="dcard">
+                    <div class="dt"><t t-out="d.name"/></div>
+                    <div class="ds">
+                        <t t-out="d.question or d.subtitle or ''"/>
+                        <t t-if="d.state == 'closed'"> · (closed)</t>
+                    </div>
+                </a>
+            </t>
+        </t>
+        <t t-else=""><div class="empty">No open decisions right now.</div></t>
+    </div>
+</div>
+</body>
+</html>
+</template>
+
+<!-- ── A single decision board ── -->
+<template id="decision_page" name="Decision Board Page">
+<html lang="en">
+<head>
+    <title t-out="decision.name"/>
+    <t t-call="mint_decision_board.decision_head"/>
+</head>
+<body>
+<div class="page">
+
+    <div class="mast">
+        <div class="kicker"><t t-out="decision.kicker or 'Mint Cannabis · Decision Board'"/></div>
+        <div class="leaf">❧ ⬩ ❧</div>
+        <div class="title"><t t-out="decision.name"/></div>
+        <t t-if="decision.subtitle"><div class="subtitle"><t t-out="decision.subtitle"/></div></t>
+        <t t-if="decision.question"><div class="q"><t t-out="decision.question"/></div></t>
+    </div>
+
+    <t t-if="decision.body_html">
+        <div class="content"><t t-out="decision.body_html"/></div>
+    </t>
+
+    <!-- ===================== BALLOT ===================== -->
+    <div class="ballot">
+        <h3><t t-out="decision.ballot_heading or 'Cast Your Vote'"/></h3>
+        <div class="who">
+            Signed in as <b><t t-out="user.name"/></b>.
+            <t t-if="can_vote"> One vote per person — submitting again updates your choice.</t>
+            <t t-else=""> Voting is closed — results below.</t>
+        </div>
+
+        <t t-if="error"><div class="alert err"><t t-out="error"/></div></t>
+        <t t-if="success"><div class="alert ok"><t t-out="success"/></div></t>
+
+        <t t-if="can_vote">
+            <form method="POST" t-att-action="'/decision/%s' % decision.slug">
+                <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                <div class="field">
+                    <label class="lbl"><t t-out="decision.choice_label or 'Your choice'"/></label>
+                    <t t-foreach="options" t-as="opt">
+                        <label class="opt">
+                            <input type="radio" name="option_id" t-att-value="opt.id"
+                                   t-att-checked="my_vote.option_id.id == opt.id or None"/>
+                            <span>
+                                <span class="ol" t-out="opt.name"/>
+                                <t t-if="opt.description"><span class="od" t-out="opt.description"/></t>
+                            </span>
+                        </label>
+                    </t>
+                </div>
+                <t t-if="decision.allow_comment">
+                    <div class="field">
+                        <label class="lbl"><t t-out="decision.comment_label or 'Reasoning / input'"/></label>
+                        <textarea class="txt" name="comment"
+                                  t-att-placeholder="decision.comment_placeholder or ''"><t t-out="my_vote.comment or ''"/></textarea>
+                    </div>
+                </t>
+                <button type="submit" class="btn">Submit Decision</button>
+            </form>
+        </t>
+
+        <!-- ===================== TALLY ===================== -->
+        <div style="margin-top:26px;">
+            <h3>Boardroom Tally</h3>
+            <div class="who"><b t-out="total_votes"/> vote(s) recorded.</div>
+            <t t-foreach="tally" t-as="row">
+                <div class="bar">
+                    <div class="barrow"><span t-out="row['label']"/><span class="n"><t t-out="row['count']"/> · <t t-out="row['percent']"/>%</span></div>
+                    <div class="track"><div class="fill" t-att-style="'width:%s%%' % row['percent']"/></div>
+                </div>
+            </t>
+
+            <div class="log">
+                <label class="lbl">Input log</label>
+                <t t-if="votes">
+                    <t t-foreach="votes" t-as="vote">
+                        <div class="logitem">
+                            <div class="lh">
+                                <span class="vn" t-out="vote.voter_name"/>
+                                <span class="vd" t-out="vote.option_id.name"/>
+                            </div>
+                            <t t-if="vote.comment"><div class="lc" t-out="vote.comment"/></t>
+                        </div>
+                    </t>
+                </t>
+                <t t-else=""><div class="empty">No input yet — be the first to weigh in.</div></t>
+            </div>
+        </div>
+    </div>
+
+    <t t-if="decision.takeaway">
+        <div class="foot"><t t-out="decision.takeaway"/></div>
+    </t>
+
+</div>
+</body>
+</html>
+</template>
+
+</odoo>

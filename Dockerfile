@@ -69,6 +69,7 @@ COPY --chown=odoo:odoo mint_industry_trends /opt/extra-addons/mint_industry_tren
 COPY --chown=odoo:odoo mint_dutchie_discount_mirror /opt/extra-addons/mint_dutchie_discount_mirror
 COPY --chown=odoo:odoo mint_redis_push /opt/extra-addons/mint_redis_push
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
+COPY --chown=odoo:odoo mint_decision_board /opt/extra-addons/mint_decision_board
 COPY --chown=odoo:odoo mint_visual_cms /opt/extra-addons/mint_visual_cms
 COPY --chown=odoo:odoo mint_recruitment_portal /opt/extra-addons/mint_recruitment_portal
 COPY --chown=odoo:odoo mint_hr_complaints /opt/extra-addons/mint_hr_complaints
@@ -209,6 +210,7 @@ RUN grep "version" /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUS
 RUN grep "version" /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
 RUN grep "push_subscription_views" /opt/extra-addons/mint_push/__manifest__.py | head -1 && echo "LOAD ORDER CHECK OK"
 RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_decision_board/__manifest__.py && echo "MINT_DECISION_BOARD VERIFIED" || (echo "MINT_DECISION_BOARD MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_visual_cms/__manifest__.py && echo "MINT_VISUAL_CMS MODULE VERIFIED" || (echo "MINT_VISUAL_CMS MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)

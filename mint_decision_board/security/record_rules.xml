@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Internal users manage only their own vote in the backend. The
+             public page tally is read via sudo() in the controller, so this
+             rule does not hide the boardroom counts. -->
+        <record id="decision_vote_own" model="ir.rule">
+            <field name="name">Decision: own vote only</field>
+            <field name="model_id" ref="model_mint_decision_vote"/>
+            <field name="domain_force">[('voter_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <!-- Settings administrators see and manage every vote. -->
+        <record id="decision_vote_admin_all" model="ir.rule">
+            <field name="name">Decision: admins see all votes</field>
+            <field name="model_id" ref="model_mint_decision_vote"/>
+            <field name="domain_force">[('id', '!=', -1)]</field>
+            <field name="groups" eval="[(4, ref('base.group_system'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+    </data>
+</odoo>
