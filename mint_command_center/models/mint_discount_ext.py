@@ -275,6 +275,19 @@ class MintDiscountPTL(models.Model):
             except Exception as e:
                 _logger.warning('welcome_preroll: publish failed for partner %s LSP %s: %s',
                                 partner.id, lsp, e)
+        # Announce now if the partner already holds a push subscription. The
+        # subscribe-time announce (push_subscription_ext) only helps when the
+        # coupon exists BEFORE the opt-in — true for form signups (inline
+        # issue), inverted for Google signups, whose coupon arrives from the
+        # sweep cron up to 30 min after onboarding asked for push. Best-effort:
+        # _send_welcome_coupon_push no-ops without a subscription and flips
+        # welcome_push_sent only on confirmed delivery.
+        if mode == 'live':
+            try:
+                self._send_welcome_coupon_push(partner)
+            except Exception as e:
+                _logger.warning('welcome_preroll: announce failed for partner %s: %s',
+                                partner.id, e)
         return coupon
 
     @api.model
@@ -305,6 +318,25 @@ class MintDiscountPTL(models.Model):
                 self._issue_welcome_preroll(p)
             except Exception as e:
                 _logger.warning('welcome_preroll: issue failed for partner %s: %s', p.id, e)
+
+        # Retry announcements that had nothing to attach to at subscribe time:
+        # a coupon issued after its partner opted into push (the Google-signup
+        # order) sits with welcome_push_sent=False forever unless something
+        # re-attempts. _send_welcome_coupon_push re-checks usability, no-ops
+        # without a subscription, and marks sent only on confirmed delivery,
+        # so this sweep is idempotent and bounded.
+        unsent = self.sudo().search([
+            ('is_welcome_preroll', '=', True),
+            ('welcome_push_sent', '=', False),
+            ('redemption_status', '=', 'pending'),
+            ('redemption_partner_id', '!=', False),
+        ], limit=200)
+        for c in unsent:
+            try:
+                self._send_welcome_coupon_push(c.redemption_partner_id)
+            except Exception as e:
+                _logger.warning('welcome_preroll: announce retry failed for partner %s: %s',
+                                c.redemption_partner_id.id, e)
 
     @api.model
     def _cron_sync_welcome_redemptions(self):
