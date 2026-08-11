@@ -119,3 +119,43 @@ class TestDlBlindIndex(TransactionCase):
         self.env['res.partner']._backfill_dl_index(batch=50)
         p.invalidate_recordset()
         self.assertEqual(p.x_dutchie_identity_key, 'dl:D55501234')
+
+    def test_backfill_terminates_with_unusable_rows(self):
+        """Regression: unusable keys can never be indexed.
+
+        A loop paginating on "index is still unset" re-selects them forever.
+        Pagination is by ascending id for exactly this reason.
+        """
+        for junk in ('   ', '---', ''):
+            self.env['res.partner'].create({
+                'name': 'Junk %r' % junk, 'x_dutchie_identity_key': 'dl:%s' % junk})
+        res = self.env['res.partner']._backfill_dl_index(batch=2)
+        self.assertGreaterEqual(res['skipped'], 3)
+
+    def test_guard_clears_flags_when_collision_resolves(self):
+        """Idempotent in both directions — a fixed record must become matchable."""
+        a = self._partner('D4242-01')
+        b = self._partner('D424201')
+        Partner = self.env['res.partner']
+        Partner._backfill_dl_index(batch=50)
+        Partner._flag_ambiguous_dl_index()
+        a.invalidate_recordset()
+        self.assertTrue(a.x_dl_ambiguous)
+        # Resolve the collision by correcting one licence.
+        b.x_dl_index = pii_crypto.blind_index(self.env, 'D999900042')
+        res = Partner._flag_ambiguous_dl_index()
+        a.invalidate_recordset(); b.invalidate_recordset()
+        self.assertEqual(res['cleared'], 2, 'both sides stop being ambiguous')
+        self.assertFalse(a.x_dl_ambiguous)
+        self.assertFalse(b.x_dl_ambiguous)
+
+    def test_collision_count_is_read_only(self):
+        a = self._partner('D7070-11')
+        self._partner('D707011')
+        Partner = self.env['res.partner']
+        Partner._backfill_dl_index(batch=50)
+        before = Partner._dl_index_collision_count()
+        self.assertGreaterEqual(before['partners'], 2)
+        self.assertGreaterEqual(before['indexes'], 1)
+        a.invalidate_recordset()
+        self.assertFalse(a.x_dl_ambiguous, 'the dry run must not write')

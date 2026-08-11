@@ -9,6 +9,8 @@ exposed only through non-stored compute/inverse fields, both gated behind the
 """
 import logging
 
+from psycopg2.extras import execute_values
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
@@ -264,28 +266,84 @@ class ResPartner(models.Model):
                 'Dutchie PII encryption key is not configured; refusing to '
                 'build a blind index without a pepper.'
             ))
-        domain = [('x_dutchie_identity_key', 'like', 'dl:%'), ('x_dl_index', '=', False)]
+        # Paginate by ascending id, NOT by "x_dl_index is unset". The 3,393
+        # unusable keys can never be indexed, so a domain-based loop would
+        # re-select them on every pass and never terminate. An id cursor
+        # advances regardless of whether the row produced an index.
         done = skipped = 0
+        last_id = 0
         while True:
-            batch_ids = self.search(domain, limit=batch)
-            if not batch_ids:
+            rows = self.search_read(
+                [('x_dutchie_identity_key', 'like', 'dl:%'),
+                 ('x_dl_index', '=', False),
+                 ('id', '>', last_id)],
+                ['id', 'x_dutchie_identity_key'],
+                limit=batch, order='id asc',
+            )
+            if not rows:
                 break
-            for rec in batch_ids:
-                raw = (rec.x_dutchie_identity_key or '')[3:]
-                idx = blind_index(self.env, raw)
-                if not idx:
+            last_id = rows[-1]['id']
+            pairs = []
+            for r in rows:
+                idx = blind_index(self.env, (r['x_dutchie_identity_key'] or '')[3:])
+                if idx:
+                    pairs.append((r['id'], idx))
+                else:
                     # Unusable source (measured: 3,393 barcode fragments and
-                    # over/under-length keys). Leave the index unset — it would
-                    # never have matched anything anyway.
+                    # over/under-length keys). Left unset deliberately — it
+                    # would never have matched anything anyway.
                     skipped += 1
-                    continue
-                rec.with_context(tracking_disable=True, mail_notrack=True).x_dl_index = idx
-                done += 1
+            if pairs:
+                # One statement per batch rather than 5,000 ORM writes: at
+                # 1.66M rows the per-record path is the difference between
+                # minutes and hours, and every ORM write would also fire
+                # compute/tracking machinery this column does not need.
+                execute_values(
+                    self.env.cr,
+                    'UPDATE res_partner p SET x_dl_index = v.idx '
+                    'FROM (VALUES %s) AS v(id, idx) WHERE p.id = v.id::int',
+                    pairs,
+                )
+                done += len(pairs)
             self.env.cr.commit()  # checkpoint: 1.66M rows is not one transaction
-            _logger.info('DL blind index: %d indexed, %d skipped', done, skipped)
+            _logger.info('DL blind index: %d indexed, %d skipped (through id %d)',
+                         done, skipped, last_id)
             if limit and done >= limit:
                 break
+        self.env['res.partner'].invalidate_model(['x_dl_index'])
         return {'indexed': done, 'skipped': skipped}
+
+    # SQL, not read_group. An ORM read_group over this column asks Postgres to
+    # build ~1.66M groups and then ships every one of them back through
+    # XML-RPC; measured against the same-cardinality x_dutchie_identity_key it
+    # had not returned after nine minutes. That matters more than it looks:
+    # if the guard times out, it does not fail loudly — it simply never runs,
+    # and the colliding partners stay unflagged and therefore auto-matchable.
+    # A guard that fails OPEN is worse than no guard, because it is trusted.
+    # These statements resolve entirely server-side and return a row count.
+    _DUPE_CTE = """
+        WITH dupes AS (
+            SELECT x_dl_index
+              FROM res_partner
+             WHERE x_dl_index IS NOT NULL AND x_dl_index != ''
+             GROUP BY x_dl_index
+            HAVING count(*) > 1
+        )
+    """
+
+    @api.model
+    def _dl_index_collision_count(self):
+        """Read-only: how many partners WOULD be flagged. Changes nothing.
+
+        Exists so the collision count can be inspected on production before
+        anything is written — a dry run for the guard.
+        """
+        self.env.cr.execute(self._DUPE_CTE + """
+            SELECT count(*) AS partners, count(DISTINCT p.x_dl_index) AS indexes
+              FROM res_partner p JOIN dupes d ON p.x_dl_index = d.x_dl_index
+        """)
+        row = self.env.cr.dictfetchone() or {}
+        return {'partners': row.get('partners', 0), 'indexes': row.get('indexes', 0)}
 
     @api.model
     def _flag_ambiguous_dl_index(self):
@@ -299,19 +357,37 @@ class ResPartner(models.Model):
         automatic linking, then confirmed by staff at the register through
         the existing x_merge_needs_review flow.
 
-        Returns the number of partners flagged.
+        Idempotent in BOTH directions: re-running clears flags that are no
+        longer ambiguous, so a collision resolved by correcting one record
+        does not leave the other permanently un-matchable.
+
+        Returns {'flagged': n, 'cleared': n}.
         """
-        groups = self.read_group(
-            [('x_dl_index', '!=', False)], ['id'], ['x_dl_index'], lazy=False,
-        )
-        dupes = [g['x_dl_index'] for g in groups if g['__count'] > 1]
-        if not dupes:
-            return 0
-        flagged = self.search([('x_dl_index', 'in', dupes)])
-        flagged.with_context(tracking_disable=True, mail_notrack=True).write(
-            {'x_dl_ambiguous': True})
-        _logger.warning(
-            'DL blind index: %d partners across %d colliding indexes flagged '
-            'ambiguous — excluded from auto-match', len(flagged), len(dupes),
-        )
-        return len(flagged)
+        # Set first, then clear, both scoped by the same CTE.
+        self.env.cr.execute(self._DUPE_CTE + """
+            UPDATE res_partner p
+               SET x_dl_ambiguous = true
+              FROM dupes d
+             WHERE p.x_dl_index = d.x_dl_index
+               AND p.x_dl_ambiguous IS DISTINCT FROM true
+        """)
+        flagged = self.env.cr.rowcount
+        self.env.cr.execute(self._DUPE_CTE + """
+            UPDATE res_partner p
+               SET x_dl_ambiguous = false
+             WHERE p.x_dl_ambiguous = true
+               AND NOT EXISTS (
+                   SELECT 1 FROM dupes d WHERE d.x_dl_index = p.x_dl_index
+               )
+        """)
+        cleared = self.env.cr.rowcount
+        # Raw SQL bypasses the ORM cache; without this, records already loaded
+        # in this transaction keep reporting the pre-update value.
+        self.env['res.partner'].invalidate_model(['x_dl_ambiguous'])
+        if flagged or cleared:
+            _logger.warning(
+                'DL blind index guard: %d partner(s) flagged ambiguous, %d '
+                'cleared — flagged rows are excluded from auto-match',
+                flagged, cleared,
+            )
+        return {'flagged': flagged, 'cleared': cleared}
