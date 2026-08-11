@@ -122,6 +122,11 @@ class MintCustomerProfile(http.Controller):
                 'state': partner.state_id.name if partner.state_id else '',
                 'zip': partner.zip or '',
                 'date_of_birth': fields.Date.to_string(partner.web_date_of_birth) if partner.web_date_of_birth else '',
+                # Text-consent state for the account page's "Text Notifications"
+                # section. getattr because sms_opt_in/_out live in
+                # mint_sms_telnyx, which is not a dependency of this module.
+                'sms_opt_in': bool(getattr(partner, 'sms_opt_in', False))
+                              and not bool(getattr(partner, 'sms_opt_out', False)),
                 'home_store_id': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.id or None,
                 'home_store_name': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.name or None,
                 'total_spend': getattr(partner, 'x_dutchie_total_spend', 0) or 0,
