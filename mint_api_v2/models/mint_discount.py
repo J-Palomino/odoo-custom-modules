@@ -315,6 +315,12 @@ class MintDiscount(models.Model):
     )
     redemption_points_cost = fields.Integer(string="Points Cost")
     redemption_status = fields.Selection([
+        # A personal offer granted to one customer that has NO code yet: it
+        # shows under "Your personalized rewards" on /rewards and only becomes
+        # a live (pending) code — minted + pushed to Dutchie — when the
+        # customer slides to redeem it. Nothing exists at the register before
+        # that, so a granted offer can never be a dead code.
+        ('granted', 'Granted'),
         ('pending', 'Pending'),
         ('used', 'Used'),
         ('expired', 'Expired'),
@@ -598,6 +604,87 @@ class MintDiscount(models.Model):
         rec = self.sudo().create(vals)
         rec._push_redemption_to_dutchie(store)
         return rec
+
+    @api.model
+    def grant_personal_reward(self, partner, product, points_cost,
+                              store=None, ttl_days=None):
+        """Grant a per-customer offer, visible only to that customer.
+
+        Creates a `granted` loyalty_redemption with NO code: /rewards lists it
+        under "Your personalized rewards" for exactly this partner, and the
+        customer's slide-to-redeem calls activate_granted_redemption, which is
+        when points are charged and the code is minted and pushed to Dutchie.
+
+        Unlike create_redemption, a supplied `store` locks the offer to that
+        exact store, not its whole region — grants are targeted offers ("a
+        coupon at 75th Ave"), and the activation still region-gates the push.
+        Pass a res.company recordset of several stores to widen the lock, or
+        no store for redeemable-anywhere.
+        """
+        if not partner:
+            raise UserError(_("Partner is required."))
+        if not product and not points_cost:
+            raise UserError(_("A product (or at least a points cost) is required."))
+
+        label = product.name if product else _("Personal reward")
+        expires = fields.Datetime.now() + timedelta(days=ttl_days or REDEMPTION_DEFAULT_TTL_DAYS)
+        vals = {
+            'name': _("Personal reward: %s") % label,
+            'discount_type': 'loyalty_redemption',
+            'is_published': False,
+            'monday': True, 'tuesday': True, 'wednesday': True, 'thursday': True,
+            'friday': True, 'saturday': True, 'sunday': True,
+            'is_available_online': False,
+            'valid_from': fields.Date.today(),
+            'valid_until': expires.date(),
+            'product_ids': [(6, 0, product.ids)] if product else [(5, 0, 0)],
+            'redemption_partner_id': partner.id,
+            'redemption_product_id': product.id if product else False,
+            'redemption_points_cost': points_cost,
+            'redemption_status': 'granted',
+            'expires_at': expires,
+        }
+        if store:
+            vals['store_ids'] = [(6, 0, store.ids)]
+        return self.sudo().create(vals)
+
+    def activate_granted_redemption(self, store=None):
+        """Turn a granted personal offer into a live pending redemption code.
+
+        Mirrors what create_redemption does at mint time — same code in both
+        code fields, single-use caps, product scope — then pushes to Dutchie.
+        The caller (redeem_loyalty) is responsible for the points deduction and
+        the push gate, exactly as it is for the create_redemption path.
+        """
+        self.ensure_one()
+        if self.discount_type != 'loyalty_redemption' \
+                or self.redemption_status != 'granted':
+            raise UserError(_("Not an activatable granted reward."))
+        if self.expires_at and self.expires_at < fields.Datetime.now():
+            self.sudo().write({'redemption_status': 'expired'})
+            raise UserError(_("This personal reward expired on %s.", self.expires_at))
+
+        code = self._generate_redemption_code()
+        label = (self.redemption_product_id.name
+                 or (self.redemption_reward_id.display_name
+                     if self.redemption_reward_id else self.name))
+        vals = {
+            'name': _("%s - Redemption: %s") % (code, label),
+            'redemption_code': code,
+            'dutchie_discount_code': code,
+            'application_method': 'code',
+            'maximum_usage_count': 1,
+            'max_redemptions': 1,
+            'redemption_limit': 1,
+            'redemption_status': 'pending',
+            'valid_from': fields.Date.today(),
+            'is_published': True,
+        }
+        if not self.product_ids and self.redemption_product_id:
+            vals['product_ids'] = [(6, 0, self.redemption_product_id.ids)]
+        self.sudo().write(vals)
+        self._push_redemption_to_dutchie(store or self.store_ids[:1])
+        return self
 
     def action_push_redemption_to_dutchie(self):
         """Public entry point: (re)create these redemptions in Dutchie.
