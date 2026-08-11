@@ -8,6 +8,7 @@
                 <field name="create_date"/>
                 <field name="partner_id"/>
                 <field name="number"/>
+                <field name="category" optional="show"/>
                 <field name="body"/>
                 <field name="state" widget="badge"
                        decoration-success="state == 'sent'"
@@ -36,6 +37,7 @@
                         <group>
                             <field name="partner_id"/>
                             <field name="number"/>
+                            <field name="category"/>
                             <field name="channel"/>
                         </group>
                         <group>
