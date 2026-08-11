@@ -740,6 +740,19 @@ class MintPosOrder(models.Model):
     def action_cancel(self):
         self.filtered(lambda o: o.state not in ('completed', 'cancelled')).write({'state': 'cancelled'})
 
+    def action_open_add_item_wizard(self):
+        """Open the Add Item wizard for this order's live Dutchie cart."""
+        self.ensure_one()
+        wizard = self.env['mint.pos.add.item.wizard'].create({'order_id': self.id})
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Add Item to POS Cart',
+            'res_model': 'mint.pos.add.item.wizard',
+            'res_id': wizard.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
     # ── Cron: cancel abandoned active-lane orders ─────────────────────
     #
     # Customers sometimes hit lobby / sales_floor / pickup in Dutchie's
