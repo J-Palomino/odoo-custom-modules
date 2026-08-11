@@ -96,6 +96,11 @@ class ResPartner(models.Model):
         if add_whitelist and cat:
             vals["category_id"] = [(4, cat.id)]
         self.write(vals)
+        # Delivery-side gate: the proxy keeps its own whitelist; a grant
+        # must land there too or sends die at the proxy (MR-1250).
+        Msg = self.env["mint.sms.message"]
+        for partner in self:
+            Msg._bb_whitelist_sync(partner.phone_sanitized, "add")
         return True
 
     def clear_sms_consent(self, category):
@@ -106,6 +111,13 @@ class ResPartner(models.Model):
         if category not in SMS_CONSENT_CATEGORIES:
             raise ValueError("Unknown SMS consent category: %r" % (category,))
         self.write({"sms_consent_%s" % category: False})
+        # Only de-whitelist at the proxy when NO category consent remains —
+        # the other category may still be sendable.
+        Msg = self.env["mint.sms.message"]
+        for partner in self:
+            if not (partner.sms_consent_transactional
+                    or partner.sms_consent_marketing):
+                Msg._bb_whitelist_sync(partner.phone_sanitized, "remove")
         return True
 
     def set_sms_opt_in(self, source="manual", add_whitelist=True):
@@ -129,6 +141,9 @@ class ResPartner(models.Model):
             "sms_consent_transactional": False,
             "sms_consent_marketing": False,
         })
+        Msg = self.env["mint.sms.message"]
+        for partner in self:
+            Msg._bb_whitelist_sync(partner.phone_sanitized, "remove")
         return True
 
     # UI buttons (internal staff opt-in flow)
