@@ -128,6 +128,75 @@ class LoyaltyCard(models.Model):
         _logger.info('Loyalty audit: recorded %d point movement(s) [%s]',
                      len(rows), source)
 
+    # ------------------------------------------------------------------
+    # Customer notification (manual grants only)
+    # ------------------------------------------------------------------
+    def _mint_notify_points_issued(self, delta):
+        """Tell the customer their balance just went up.
+
+        Called ONLY from the manual-adjustment wizard below, deliberately not
+        from the write()/create() audit layer: the audit layer also sees bulk
+        reconciliations and importer runs, and a backfill touching 80k cards
+        must never fan out 80k text messages.
+
+        Consent is enforced by the channels themselves, not here:
+        - SMS: ``mint.sms.message.create()`` IS the send, and its
+          deterministic gate (SMS Whitelist tag + sms_opt_in + not
+          sms_opt_out + content guardrail) blocks unauthorized recipients
+          with state='blocked' — creating the row for a non-consenting
+          partner records the attempt without texting anyone.
+        - Push: a ``mint.push.subscription`` row only exists for a browser
+          whose user granted notification permission; no subscription, no
+          send.
+
+        Both channels are best-effort inside savepoints: a notification
+        failure must never roll back the grant itself. Neither module is a
+        dependency of this one (both are installed on prod), so each is
+        probed in the registry first.
+        """
+        self.ensure_one()
+        partner = self.partner_id
+        if not partner or delta <= 0:
+            return
+        balance = self.points or 0.0
+        body = ('You just received %g Mint Rewards points! Your balance is '
+                'now %g. View your rewards: '
+                'https://shop.letsgomint.us/rewards' % (delta, balance))
+
+        if 'mint.sms.message' in self.env:
+            try:
+                with self.env.cr.savepoint():
+                    # sudo: the operator granting points need not be an "SMS
+                    # Sender"; the consent gate inside create() is
+                    # user-independent. partner_id passed explicitly — number
+                    # -> partner resolution can pick a duplicate partner and
+                    # miss the whitelist (seen on prod 2026-08-11).
+                    self.env['mint.sms.message'].sudo().create({
+                        'partner_id': partner.id,
+                        'body': body,
+                    })
+            except Exception:
+                _logger.exception(
+                    'Points-issued SMS failed for partner %s (card %s)',
+                    partner.id, self.id)
+
+        if 'mint.push.subscription' in self.env:
+            try:
+                with self.env.cr.savepoint():
+                    sent = self.env['mint.push.subscription'].sudo().send_to_partner(
+                        partner.id,
+                        'Mint Rewards',
+                        '%g points added — your balance is now %g.' % (delta, balance),
+                        url='/rewards',
+                    )
+                    _logger.info(
+                        'Points-issued push: %s subscription(s) reached for '
+                        'partner %s (card %s)', sent, partner.id, self.id)
+            except Exception:
+                _logger.exception(
+                    'Points-issued push failed for partner %s (card %s)',
+                    partner.id, self.id)
+
 
 class LoyaltyCardUpdateBalance(models.TransientModel):
     """The manual-adjustment wizard already writes its own history row.
@@ -139,7 +208,18 @@ class LoyaltyCardUpdateBalance(models.TransientModel):
     _inherit = 'loyalty.card.update.balance'
 
     def action_update_card_point(self):
-        return super(
+        # Snapshot balances before the write so the issued delta is exact —
+        # new_balance is an absolute, not a delta.
+        before = {w.id: w.card_id.points or 0.0 for w in self}
+        res = super(
             LoyaltyCardUpdateBalance,
             self.with_context(**{SKIP_AUDIT_CTX: True}),
         ).action_update_card_point()
+        # Notify AFTER the grant is committed to the record: an increase in
+        # balance is customer-visible good news; decreases (corrections,
+        # zeroings) notify nobody.
+        for wizard in self:
+            delta = (wizard.card_id.points or 0.0) - before[wizard.id]
+            if delta > 0:
+                wizard.card_id._mint_notify_points_issued(delta)
+        return res
