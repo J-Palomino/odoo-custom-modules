@@ -32,6 +32,32 @@ def error_response(message, status=400):
     return json_response({'error': message, 'status': status}, status=status)
 
 
+def _partner_id_from_jwt():
+    """Partner id proven by the caller's Authorization: Bearer JWT, else False.
+
+    The JWT machinery lives in mint_customer_api, which this module does not
+    depend on — probe for it so mint_push still works standalone (no token
+    verification available ⇒ every subscribe is anonymous, never mis-bound).
+    """
+    auth_header = request.httprequest.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return False
+    Users = request.env['res.users'].sudo()
+    if not hasattr(Users, '_verify_jwt'):
+        return False
+    try:
+        payload = Users._verify_jwt(auth_header[7:])
+        if not payload:
+            return False
+        user = Users.browse(payload.get('user_id'))
+        if not user.exists() or not user.partner_id:
+            return False
+        return user.partner_id.id
+    except Exception as e:
+        _logger.warning('push subscribe: JWT verify failed: %s', e)
+        return False
+
+
 class MintPushAPI(http.Controller):
     """REST API Controller for push notification management."""
 
@@ -123,19 +149,15 @@ class MintPushAPI(http.Controller):
         latitude = data.get('latitude')
         longitude = data.get('longitude')
 
-        # Resolve partner by partner_id or email (links push to user account)
-        partner_id = False
-        raw_partner_id = data.get('partner_id')
-        email = data.get('email')
-        if raw_partner_id:
-            partner = request.env['res.partner'].sudo().browse(int(raw_partner_id))
-            if partner.exists():
-                partner_id = partner.id
-        elif email:
-            partner = request.env['res.partner'].sudo().search(
-                [('email', '=ilike', email)], limit=1)
-            if partner:
-                partner_id = partner.id
+        # Resolve partner from the verified JWT ONLY. The old behavior took
+        # partner_id/email straight from the request body — but this route is
+        # auth='none', so any caller could bind their device to any partner
+        # and then receive that partner's notifications (welcome coupon codes
+        # are bearer instruments at the register). Body identity fields are
+        # now deliberately ignored; a subscribe without a valid token is
+        # stored anonymous, and the binding upgrades on the next subscribe
+        # made while logged in.
+        partner_id = _partner_id_from_jwt()
 
         # Upsert: update existing or create new
         existing = Sub.search([('endpoint', '=', endpoint)], limit=1)
