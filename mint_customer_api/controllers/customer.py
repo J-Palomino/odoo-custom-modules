@@ -722,3 +722,72 @@ class MintCustomerProfile(http.Controller):
                 'home_store_name': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.name or None,
             },
         })
+
+    @http.route('/api/v1/customer/preferences', type='http', auth='none',
+                methods=['GET', 'PUT', 'OPTIONS'], csrf=False, cors='*')
+    def customer_preferences(self, **kw):
+        """Read/write the customer's SMS communication preferences (MR-1250).
+
+        GET → { "preferences": { "sms": {
+                  "marketing":     {"opted_in": bool, "date": iso|null},
+                  "transactional": {"opted_in": bool, "date": iso|null},
+                  "opted_out": bool } } }
+
+        PUT accepts { "sms": {"marketing": bool, "transactional": bool} };
+        either key may be omitted to leave that category unchanged. Grants
+        go through res.partner.set_sms_consent (stamps date + source
+        'external_web', clears a prior STOP, adds the whitelist tag);
+        revocations through clear_sms_consent (grant history retained).
+
+        The consent fields live in mint_sms_telnyx, which this module does
+        not depend on — probe partner._fields rather than assume, the same
+        reason update_profile probes x_home_store_id.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        partner = user.partner_id.sudo()
+        if 'sms_consent_marketing' not in partner._fields:
+            return error_response('SMS preferences unavailable', 503)
+
+        if request.httprequest.method == 'PUT':
+            try:
+                data = json.loads(request.httprequest.data)
+            except (json.JSONDecodeError, TypeError):
+                return error_response('Invalid JSON body')
+            sms = data.get('sms')
+            if not isinstance(sms, dict):
+                return error_response('Body must carry an "sms" object')
+            for category in ('marketing', 'transactional'):
+                if category not in sms:
+                    continue
+                wanted = sms[category]
+                if not isinstance(wanted, bool):
+                    return error_response('"%s" must be a boolean' % category)
+                if wanted:
+                    partner.set_sms_consent(category, source='external_web')
+                else:
+                    partner.clear_sms_consent(category)
+
+        def _pref(category):
+            date = partner['sms_consent_%s_date' % category]
+            return {
+                'opted_in': bool(partner['sms_consent_%s' % category]),
+                'date': date.isoformat() if date else None,
+            }
+
+        return json_response({
+            'preferences': {
+                'sms': {
+                    'marketing': _pref('marketing'),
+                    'transactional': _pref('transactional'),
+                    'opted_out': bool(partner.sms_opt_out),
+                },
+            },
+        })
