@@ -8,3 +8,7 @@ access_web_order_config_manager,mint.web.order.config.manager,model_mint_web_ord
 access_pos_lane_budtender,mint.pos.lane.budtender,model_mint_pos_lane,group_pos_budtender,1,0,0,0
 access_pos_lane_manager,mint.pos.lane.manager,model_mint_pos_lane,group_pos_manager,1,1,1,1
 access_pos_lane_system,mint.pos.lane.system,model_mint_pos_lane,base.group_system,1,1,1,1
+access_pos_add_item_wizard_budtender,mint.pos.add.item.wizard.budtender,model_mint_pos_add_item_wizard,group_pos_budtender,1,1,1,1
+access_pos_add_item_wizard_manager,mint.pos.add.item.wizard.manager,model_mint_pos_add_item_wizard,group_pos_manager,1,1,1,1
+access_pos_add_item_wizard_line_budtender,mint.pos.add.item.wizard.line.budtender,model_mint_pos_add_item_wizard_line,group_pos_budtender,1,1,1,1
+access_pos_add_item_wizard_line_manager,mint.pos.add.item.wizard.line.manager,model_mint_pos_add_item_wizard_line,group_pos_manager,1,1,1,1

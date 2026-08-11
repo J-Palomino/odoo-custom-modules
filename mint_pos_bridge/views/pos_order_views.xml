@@ -160,6 +160,9 @@
                             type="object" class="btn-danger"
                             invisible="state in ('completed', 'cancelled')"
                             confirm="Are you sure you want to cancel this order?"/>
+                    <button name="action_open_add_item_wizard" string="Add Item"
+                            type="object" icon="fa-cart-plus"
+                            invisible="not dutchie_shipment_id or state in ('completed', 'cancelled')"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="placed,confirmed,preparing,ready,completed"/>
                 </header>
