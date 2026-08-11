@@ -288,6 +288,57 @@ class MintCustomerProfile(http.Controller):
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
 
+        # Resolved once, up front: the saved-store fallback below needs it, and
+        # so do personal (granted) offers — those are per-partner, so an
+        # anonymous caller simply gets none.
+        user = _verify_and_get_user()
+
+        def _personal_offers(siblings):
+            """The signed-in customer's granted offers, honoring store locks.
+
+            These are `granted` loyalty_redemptions: per-customer offers with
+            no code yet. The frontend renders them under "Your personalized
+            rewards" at the top of /rewards; sliding to redeem POSTs
+            redemption_id, which is when the code is minted and pushed.
+
+            A store-locked grant is only offered when the caller's resolved
+            market overlaps the lock. An unplaced caller still sees every
+            offer — these are personal grants, not a state catalog, so the
+            cross-state-leak rule for the shared grid does not apply.
+            """
+            if not (user and user.partner_id):
+                return []
+            offers = request.env['mint.discount'].sudo().search([
+                ('discount_type', '=', 'loyalty_redemption'),
+                ('redemption_status', '=', 'granted'),
+                ('redemption_partner_id', '=', user.partner_id.id),
+                '|', ('expires_at', '=', False),
+                ('expires_at', '>', fields.Datetime.now()),
+            ], order='create_date desc')
+            out = []
+            for r in offers:
+                if r.store_ids and siblings is not None and \
+                        not (set(r.store_ids.ids) & set(siblings.ids)):
+                    continue
+                p = r.redemption_product_id
+                out.append({
+                    'redemption_id': r.id,
+                    'product_id': p.id if p else None,
+                    'name': (p.name if p else None) or r.name,
+                    'brand': p.brand_id.name if p and p.brand_id else None,
+                    'category': (p.master_category or
+                                 (p.categ_id.name if p.categ_id else None)) if p else None,
+                    'strain_type': (p.strain_type or None) if p else None,
+                    'image_url': _redeemable_image_url(p) if p else None,
+                    'points_cost': r.redemption_points_cost,
+                    'list_price': p.list_price if p else None,
+                    'dutchie_product_id': (p.dutchie_product_id or None) if p else None,
+                    'sku': (p.default_code or None) if p else None,
+                    'expires_at': r.expires_at.isoformat() if r.expires_at else None,
+                    'store_names': r.store_ids.mapped('name'),
+                })
+            return out
+
         Company = request.env['res.company'].sudo()
         store = Company.browse(int(kw['store_id'])).exists() \
             if str(kw.get('store_id') or '').isdigit() else Company
@@ -310,7 +361,6 @@ class MintCustomerProfile(http.Controller):
         # storage. Auth is optional on this route (the catalog is not private),
         # so an anonymous caller just skips this step.
         if not store:
-            user = _verify_and_get_user()
             home = user and user.partner_id and getattr(
                 user.partner_id.sudo(), 'x_home_store_id', False)
             if home:
@@ -320,6 +370,7 @@ class MintCustomerProfile(http.Controller):
         if not store:
             return json_response({'products': [], 'store_id': None, 'region': None,
                                   'resolved_from': None,
+                                  'personal': _personal_offers(None),
                                   'reason': 'no store specified'})
 
         # The region's stores -- same set create_redemption locks a coupon to.
@@ -330,6 +381,7 @@ class MintCustomerProfile(http.Controller):
         if not uuids:
             return json_response({'products': [], 'store_id': store.id,
                                   'region': region.code if region else None,
+                                  'personal': _personal_offers(siblings),
                                   'reason': 'store has no dutchie_store_id'})
 
         products = request.env['product.template'].sudo().search([
@@ -384,6 +436,7 @@ class MintCustomerProfile(http.Controller):
             # from "...because it is saved on your account" — and lets us measure
             # how often the durable path is doing the work.
             'resolved_from': resolved_from,
+            'personal': _personal_offers(siblings),
             'products': [{
                 'id': p.id,
                 'name': p.name,
@@ -409,7 +462,17 @@ class MintCustomerProfile(http.Controller):
         cannot be used to read arbitrary product images.
         """
         product = request.env['product.template'].sudo().browse(product_id).exists()
-        if not product or not product.x_is_loyalty_redeemable:
+        if not product:
+            return request.not_found()
+        # A personal (granted/pending) offer's product is legitimately shown on
+        # /rewards without carrying the catalog flag — allow those too. Still
+        # scoped: an arbitrary product image is only readable if some customer
+        # holds a live offer or code for it.
+        if not product.x_is_loyalty_redeemable and not \
+                request.env['mint.discount'].sudo().search_count([
+                    ('discount_type', '=', 'loyalty_redemption'),
+                    ('redemption_status', 'in', ('granted', 'pending')),
+                    ('redemption_product_id', '=', product.id)]):
             return request.not_found()
         if not product.image_256 or _is_placeholder_image(product.image_256):
             return request.not_found()
@@ -447,18 +510,42 @@ class MintCustomerProfile(http.Controller):
         except (json.JSONDecodeError, TypeError):
             return error_response('Invalid JSON body')
 
-        product_id = data.get('product_id')
-        if not product_id:
-            return error_response('product_id is required')
-
         partner = user.partner_id.sudo()
-        product = request.env['product.template'].sudo().browse(int(product_id))
-        if not product.exists():
-            return error_response('Product not found', 404)
-        if not product.x_is_loyalty_redeemable or product.x_loyalty_points_cost <= 0:
-            return error_response('Product is not redeemable with points', 400)
 
-        points_cost = product.x_loyalty_points_cost
+        # Two redeemable kinds share this route: catalog products (by
+        # product_id) and personal granted offers (by redemption_id — sent by
+        # the "Your personalized rewards" section). A granted offer carries its
+        # own points cost and product; the code is minted only here, on swipe.
+        granted = None
+        redemption_id = data.get('redemption_id')
+        product_id = data.get('product_id')
+        if redemption_id:
+            try:
+                redemption_id = int(redemption_id)
+            except (TypeError, ValueError):
+                return error_response('Invalid redemption_id')
+            granted = request.env['mint.discount'].sudo().search([
+                ('id', '=', redemption_id),
+                ('discount_type', '=', 'loyalty_redemption'),
+                ('redemption_status', '=', 'granted'),
+                ('redemption_partner_id', '=', partner.id),
+            ], limit=1)
+            if not granted:
+                return error_response('Personal reward not found', 404)
+            if granted.expires_at and granted.expires_at < fields.Datetime.now():
+                granted.write({'redemption_status': 'expired'})
+                return error_response('This personal reward has expired', 400)
+            product = granted.redemption_product_id
+            points_cost = granted.redemption_points_cost
+        elif product_id:
+            product = request.env['product.template'].sudo().browse(int(product_id))
+            if not product.exists():
+                return error_response('Product not found', 404)
+            if not product.x_is_loyalty_redeemable or product.x_loyalty_points_cost <= 0:
+                return error_response('Product is not redeemable with points', 400)
+            points_cost = product.x_loyalty_points_cost
+        else:
+            return error_response('product_id or redemption_id is required')
 
         program = request.env['loyalty.program'].sudo().search(
             [('program_type', '=', 'loyalty')], limit=1,
@@ -491,6 +578,17 @@ class MintCustomerProfile(http.Controller):
         # against it and a blocked push must cost the customer nothing.
         store = self._resolve_redemption_store(partner, data)
 
+        # A granted offer may be locked to specific stores; refuse a mismatched
+        # store rather than minting a code the lock would reject at consume
+        # time, and fall back to the lock itself when the caller sent none.
+        if granted and granted.store_ids:
+            if store and store not in granted.store_ids:
+                return error_response(
+                    'This reward can only be redeemed at %s'
+                    % ', '.join(granted.store_ids.mapped('name')), 400)
+            if not store:
+                store = granted.store_ids[:1]
+
         # FAIL CLOSED. The Dutchie push fails soft by design — by then the points
         # are gone and the coupon exists, so raising would cost the customer
         # both. That makes a blocked push invisible: debited, handed a code, and
@@ -513,16 +611,20 @@ class MintCustomerProfile(http.Controller):
         try:
             with request.env.cr.savepoint():
                 card.sudo().write({'points': points - points_cost})
-                redemption = request.env['mint.discount'].sudo().create_redemption(
-                    partner=partner,
-                    product=product,
-                    points_cost=points_cost,
-                    store=store or None,
-                )
+                if granted:
+                    redemption = granted.activate_granted_redemption(store or None)
+                else:
+                    redemption = request.env['mint.discount'].sudo().create_redemption(
+                        partner=partner,
+                        product=product,
+                        points_cost=points_cost,
+                        store=store or None,
+                    )
         except Exception:
             return unexpected_error_response(
                 'Could not redeem that reward right now.',
-                'Redemption failed for partner %s product %s' % (partner.id, product_id),
+                'Redemption failed for partner %s product %s redemption %s'
+                % (partner.id, product_id, redemption_id),
             )
 
         _logger.info(
@@ -542,7 +644,7 @@ class MintCustomerProfile(http.Controller):
                 'list_price': product.list_price,
                 'dutchie_product_id': product.dutchie_product_id or None,
                 'sku': product.default_code or None,
-            },
+            } if product else None,
             'loyalty': {
                 'points': card.points,
                 'program_name': program.name,
