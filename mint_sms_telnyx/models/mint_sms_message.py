@@ -13,9 +13,10 @@ not in an LLM prompt. A message is only delivered when the recipient:
     1. resolves to a res.partner, AND
     2. carries the "SMS Whitelist" partner category, AND
     3. is NOT opted out (res.partner.sms_opt_out), AND
-    4. passes the cannabis-content guardrail (reused from sms.sms).
-
-(Phase 2 adds an explicit opt-in requirement on top of the whitelist tag.)
+    4. has opted in (res.partner.sms_opt_in), AND
+    5. has consented to this message's CATEGORY (marketing vs transactional —
+       res.partner.sms_consent_{category}, MR-1250), AND
+    6. passes the cannabis-content guardrail (reused from sms.sms).
 
 HUGO and other agents send a text simply by creating a record of this model
 via the Odoo MCP `create_record` action — the gate + transport run here. The
@@ -52,6 +53,15 @@ class MintSmsMessage(models.Model):
              "recipient's sanitized phone.",
     )
     body = fields.Text(required=True)
+    category = fields.Selection(
+        [("transactional", "Transactional"), ("marketing", "Marketing")],
+        default="transactional",
+        required=True,
+        index=True,
+        help="Which consent bucket this text falls under. The send gate "
+             "requires the recipient's matching per-category consent "
+             "(res.partner.sms_consent_*).",
+    )
     channel = fields.Selection(
         [("imessage", "iMessage (BlueBubbles)")],
         default="imessage",
@@ -112,9 +122,22 @@ class MintSmsMessage(models.Model):
         if partner and not number:
             number = partner.phone_sanitized or ""
         if not partner and number:
-            # Prefer a contact that maps to a user (staff record over dupes).
+            # A number can match many partners (Dutchie-backfill duplicates).
+            # Prefer, in order: whitelisted+consented > any consented >
+            # internal-user record > any user record > first match. The old
+            # "prefer any user_ids" heuristic picked portal-user dupes over
+            # the consented contact (live incident: message #28, MR-1250).
             matches = Partner.search([("phone_sanitized", "=", number)])
-            partner = matches.filtered(lambda p: p.user_ids)[:1] or matches[:1]
+            consented = matches.filtered(
+                lambda p: p.sms_opt_in and not p.sms_opt_out)
+            cat = self._whitelist_category()
+            whitelisted = consented.filtered(
+                lambda p: cat and cat.id in p.category_id.ids)
+            internal = matches.filtered(
+                lambda p: any(not u.share for u in p.user_ids))
+            partner = (whitelisted[:1] or consented[:1] or internal[:1]
+                       or matches.filtered(lambda p: p.user_ids)[:1]
+                       or matches[:1])
         return partner, number
 
     def _check_sendable(self, partner, number):
@@ -134,6 +157,11 @@ class MintSmsMessage(models.Model):
 
         if not partner.sms_opt_in:
             return False, "Recipient has not opted in to texts (sms_opt_in)."
+
+        if not partner["sms_consent_%s" % self.category]:
+            return False, (
+                "Recipient has not consented to %s texts "
+                "(sms_consent_%s)." % (self.category, self.category))
 
         # Reuse the cannabis-content guardrail from the Telnyx transport so
         # there's a single blocklist + scan-mode setting for the module.
