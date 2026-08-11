@@ -121,6 +121,7 @@ class MintCustomerProfile(http.Controller):
                 'city': partner.city or '',
                 'state': partner.state_id.name if partner.state_id else '',
                 'zip': partner.zip or '',
+                'date_of_birth': fields.Date.to_string(partner.web_date_of_birth) if partner.web_date_of_birth else '',
                 'home_store_id': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.id or None,
                 'home_store_name': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.name or None,
                 'total_spend': getattr(partner, 'x_dutchie_total_spend', 0) or 0,
@@ -652,6 +653,32 @@ class MintCustomerProfile(http.Controller):
         # NOTE: `mobile` was removed from res.partner in Odoo 19; clients
         # may still send it but we silently drop the field.
 
+        # Date of birth — write-once. Checkout collects it when the account
+        # carries none and posts it here (form.astro persistDobToAccount) so
+        # the next order, on any device, autofills. Once set the value is the
+        # 21+ compliance record and later writes are silently dropped rather
+        # than rejected: the FE skips the request when a DOB is on file, so a
+        # duplicate here is a stale client, not a correction attempt. Same
+        # age gate and audit stamps as registration (auth.py).
+        dob_raw = str(data.get('date_of_birth') or '').strip()
+        if dob_raw and not partner.web_date_of_birth:
+            from datetime import date
+            try:
+                dob = date.fromisoformat(dob_raw[:10])
+            except (ValueError, TypeError):
+                return error_response('Invalid date of birth')
+            today = date.today()
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            if age < 21:
+                return error_response('You must be 21 or older', 403)
+            vals.update({
+                'web_date_of_birth': dob_raw[:10],
+                'age_verified': True,
+                'age_verified_at': fields.Datetime.now(),
+                'age_verification_method': 'self_attested',
+                'age_verification_source': 'web_profile',
+            })
+
         # Saved store. Until now nothing but the POS sync ever wrote
         # x_home_store_id, so only 24 of 533 portal customers had one and the
         # rest were placed purely by localStorage — per-device, cleared with
@@ -688,6 +715,7 @@ class MintCustomerProfile(http.Controller):
                 'name': partner.name,
                 'email': partner.email,
                 'phone': partner.phone or '',
+                'date_of_birth': fields.Date.to_string(partner.web_date_of_birth) if partner.web_date_of_birth else '',
                 # getattr for the same reason as get_profile: the field is
                 # defined in mint_dutchie_sync, not a dependency of this module.
                 'home_store_id': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.id or None,

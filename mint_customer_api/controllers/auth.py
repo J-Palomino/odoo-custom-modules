@@ -61,6 +61,29 @@ def _loyalty_points(partner):
     return card.points or 0
 
 
+def _user_json(user):
+    """Shared `user` payload for the login/register/google/verify responses.
+
+    `date_of_birth` feeds the storefront checkout autofill: form.astro fills
+    the 21+ birth-date field from this key and only makes the customer type
+    it when the account carries none. It reads web_date_of_birth — the same
+    write-once field registration stamps — serialized ISO (yyyy-mm-dd), empty
+    string when unset (the FE treats any falsy value as "not on file").
+    """
+    partner = user.partner_id
+    dob = partner.web_date_of_birth
+    return {
+        'id': user.id,
+        'name': partner.name,
+        'email': partner.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
+        'phone': partner.phone or '',
+        'partner_id': partner.id,
+        'is_internal': not user.share,
+        'loyalty_points': _loyalty_points(partner),
+        'date_of_birth': fields.Date.to_string(dob) if dob else '',
+    }
+
+
 def _clean_token(v):
     """Coerce a client-supplied token to a stripped str; '' for non-strings.
     Guards against a JSON number/list/bool reaching .strip() (AttributeError)."""
@@ -257,15 +280,7 @@ class MintCustomerAuth(http.Controller):
 
         return json_response({
             'token': token,
-            'user': {
-                'id': user.id,
-                'name': user.partner_id.name,
-                'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
-                'phone': user.partner_id.phone or '',
-                'partner_id': user.partner_id.id,
-                'is_internal': not user.share,
-                'loyalty_points': _loyalty_points(user.partner_id),
-            },
+            'user': _user_json(user),
         })
 
     @http.route('/api/v1/auth/register', type='http', auth='none',
@@ -472,15 +487,7 @@ class MintCustomerAuth(http.Controller):
 
             return json_response({
                 'token': token,
-                'user': {
-                    'id': user.id,
-                    'name': user.partner_id.name,
-                    'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
-                    'phone': user.partner_id.phone or '',
-                    'partner_id': user.partner_id.id,
-                    'is_internal': not user.share,
-                    'loyalty_points': _loyalty_points(user.partner_id),
-                },
+                'user': _user_json(user),
             }, status=201)
 
         except UserError as e:
@@ -586,15 +593,7 @@ class MintCustomerAuth(http.Controller):
         token = user._generate_jwt()
         return json_response({
             'token': token,
-            'user': {
-                'id': user.id,
-                'name': user.partner_id.name,
-                'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
-                'phone': user.partner_id.phone or '',
-                'partner_id': user.partner_id.id,
-                'is_internal': not user.share,
-                'loyalty_points': _loyalty_points(user.partner_id),
-            },
+            'user': _user_json(user),
         })
 
     def _require_fe_key(self):
@@ -1382,13 +1381,5 @@ class MintCustomerAuth(http.Controller):
             return error_response('Invalid or expired token', 401)
 
         return json_response({
-            'user': {
-                'id': user.id,
-                'name': user.partner_id.name,
-                'email': user.partner_id.email or user.login.removeprefix(WEB_LOGIN_PREFIX),
-                'phone': user.partner_id.phone or '',
-                'partner_id': user.partner_id.id,
-                'is_internal': not user.share,
-                'loyalty_points': _loyalty_points(user.partner_id),
-            },
+            'user': _user_json(user),
         })
