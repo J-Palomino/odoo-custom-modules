@@ -705,6 +705,54 @@ class MintPosOrder(models.Model):
                 'Failed to send push notification for order %s', order.name,
             )
 
+        # Transactional TEXT alongside the push (MR-1250). Rides the same
+        # suppression that vetted this transition above; its own try so a
+        # push failure and a text failure can't take each other down.
+        try:
+            self._send_order_sms(order, state)
+        except Exception:
+            _logger.exception('Failed to queue order SMS for %s', order.name)
+
+    def _send_order_sms(self, order, state):
+        """Create a transactional mint.sms.message for an order state change.
+
+        Off by default: mint_pos_bridge.order_sms_states is a CSV of states
+        that should text (e.g. "pickup,deli_counter,ready"); empty = disabled,
+        so a deploy can never start texting customers by surprise.
+
+        mint_pos_bridge does not depend on mint_sms_telnyx — probe for the
+        model (and for the category field, which arrives with 19.0.4.0.0).
+        Consent is enforced downstream by the mint.sms.message gate
+        (whitelist + opt-in + transactional consent): an unconsented partner
+        yields a blocked audit row, never a text.
+        """
+        if 'mint.sms.message' not in self.env:
+            return
+        ICP = self.env['ir.config_parameter'].sudo()
+        raw = ICP.get_param('mint_pos_bridge.order_sms_states', '') or ''
+        states = {s.strip() for s in raw.split(',') if s.strip()}
+        if state not in states or not order.partner_id:
+            return
+        msg = self._get_notification_messages().get(state)
+        if not msg:
+            return
+        store_name = order.company_id.name or ''
+        ref = order.name or ''
+        Sms = self.env['mint.sms.message'].sudo()
+        vals = {
+            'partner_id': order.partner_id.id,
+            'body': '%s — %s' % (
+                msg['title'], msg['body'].format(store=store_name, ref=ref)),
+        }
+        if 'category' in Sms._fields:
+            vals['category'] = 'transactional'
+        rec = Sms.create(vals)
+        _logger.info(
+            'Order SMS [%s] for order %s partner %s -> state %s%s',
+            state, ref, order.partner_id.id, rec.state,
+            (' (%s)' % rec.block_reason) if rec.block_reason else '',
+        )
+
     @api.depends('line_ids')
     def _compute_line_count(self):
         for order in self:

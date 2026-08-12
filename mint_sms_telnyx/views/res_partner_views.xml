@@ -22,6 +22,22 @@
                                    invisible="not sms_opt_out"/>
                         </group>
                     </group>
+                    <group>
+                        <group string="Transactional Texts">
+                            <field name="sms_consent_transactional"/>
+                            <field name="sms_consent_transactional_date"
+                                   invisible="not sms_consent_transactional"/>
+                            <field name="sms_consent_transactional_source"
+                                   invisible="not sms_consent_transactional"/>
+                        </group>
+                        <group string="Marketing Texts">
+                            <field name="sms_consent_marketing"/>
+                            <field name="sms_consent_marketing_date"
+                                   invisible="not sms_consent_marketing"/>
+                            <field name="sms_consent_marketing_source"
+                                   invisible="not sms_consent_marketing"/>
+                        </group>
+                    </group>
                     <button name="action_sms_opt_in" type="object"
                             string="Opt In (Internal)" class="btn-primary"
                             invisible="sms_opt_in"/>
