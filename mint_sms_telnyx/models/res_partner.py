@@ -28,6 +28,14 @@ CONSENT_CONFIRM_BODIES = {
                  "Mint. Reply STOP to opt out.",
 }
 
+# The single unsubscribe receipt the /sms landing page promises ("You will
+# receive a single confirmation message and no further texts"). Same
+# guardrail constraint as the bodies above: no blocklisted terms.
+OPTOUT_CONFIRM_BODY = (
+    "Mint: You're unsubscribed and will receive no further texts. "
+    "Reply START to resubscribe."
+)
+
 
 class ResPartner(models.Model):
     _inherit = "res.partner"
@@ -187,7 +195,15 @@ class ResPartner(models.Model):
         """Revoke consent entirely (STOP): set opt-out, clear the master
         opt-in AND both category consents — a full stop, not per-category.
         Whitelist tag retained.
+
+        The goodbye text goes FIRST, and the ordering is load-bearing: once
+        the flags below are written the send gate refuses this partner, and
+        _sync_proxy_whitelist("remove") closes delivery at the proxy — so
+        the single confirmation the /sms page promises ("You will receive a
+        single confirmation message and no further texts") can only leave
+        while consent still stands.
         """
+        self._send_opt_out_confirmation()
         self.write({
             "sms_opt_out": True,
             "sms_opt_out_date": fields.Datetime.now(),
@@ -197,6 +213,52 @@ class ResPartner(models.Model):
         })
         self._sync_proxy_whitelist("remove")
         return True
+
+    def _send_opt_out_confirmation(self):
+        """Text the single unsubscribe confirmation promised on /sms.
+
+        Gated by ir.config_parameter mint_sms_telnyx.optout_confirm_enabled
+        ('True' to enable) — deliberately separate from
+        consent_confirm_enabled so either direction can ship alone. Must be
+        called BEFORE the opt-out flags are written (see set_sms_opt_out).
+        Best-effort: a failed/blocked goodbye never fails the revocation —
+        the mint.sms.message row is the audit either way.
+
+        Skipped for partners who are already opted out (a repeated STOP gets
+        one confirmation, not one per STOP) and for partners holding no
+        category consent — they could never receive texts, so no
+        confirmation is owed, and the category gate would block it anyway.
+        """
+        enabled = self.env["ir.config_parameter"].sudo().get_param(
+            "mint_sms_telnyx.optout_confirm_enabled")
+        if enabled != "True":
+            return
+        Sms = self.env["mint.sms.message"].sudo()
+        for partner in self:
+            if partner.sms_opt_out or not partner.phone_sanitized:
+                continue
+            # Send in a category the partner actually holds, or the gate
+            # refuses it. Transactional preferred: an unsubscribe receipt is
+            # service messaging, not marketing.
+            category = (
+                "transactional" if partner.sms_consent_transactional
+                else "marketing" if partner.sms_consent_marketing
+                else None)
+            if not category:
+                continue
+            try:
+                rec = Sms.create({
+                    "partner_id": partner.id,
+                    "category": category,
+                    "body": OPTOUT_CONFIRM_BODY,
+                })
+                _logger.info(
+                    "Opt-out confirmation for partner %s -> %s%s",
+                    partner.id, rec.state,
+                    (" (%s)" % rec.block_reason) if rec.block_reason else "")
+            except Exception:
+                _logger.exception(
+                    "Opt-out confirmation failed for partner %s", partner.id)
 
     def _sync_proxy_whitelist(self, action):
         """Mirror consent to the BlueBubbles proxy's own delivery whitelist.
