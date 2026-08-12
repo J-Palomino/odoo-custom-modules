@@ -63,9 +63,80 @@ class ResPartner(models.Model):
         index=True,
     )
 
+    # Which partner this record appears to duplicate.
+    #
+    # Set by the receipt-based reconciliation: a partner's own purchases are
+    # looked up in Dutchie's check-in report (128), which returns the real
+    # customer id, and that id already belongs to a different partner. The
+    # two records are the same human — one built by the roster sync (carries
+    # the id), one spawned by the transaction importer when its name match
+    # missed and it created a fresh partner instead.
+    #
+    # Measured 2026-08-11: 118,649 of 119,115 unlinked point-holders resolve
+    # this way (99.6%), and 97.9% of those collide with an existing partner.
+    #
+    # A POINTER, not a merge — and deliberately NOT a write of
+    # x_dutchie_customer_id onto this record. That column carries
+    # UNIQUE(x_dutchie_customer_id) (res_partner_dutchie_customer_id_unique),
+    # so stamping the id here would raise on 97.9% of the population. Even
+    # without the constraint the importer looks that field up with limit=1,
+    # so duplicating it would resurrect the arbitrary-pick bug that created
+    # this mess. Under-merging is recoverable; mis-merging 118k records is not.
+    x_duplicate_of_id = fields.Many2one(
+        'res.partner',
+        string='Duplicate Of',
+        index=True,
+        ondelete='set null',
+        help='Partner this record appears to duplicate, identified from the '
+             'Dutchie customer id behind its own receipts. Advisory only — '
+             'nothing is merged automatically.',
+    )
+    x_duplicate_evidence = fields.Char(
+        string='Duplicate Evidence',
+        help='How the duplicate was identified (Dutchie customer id and the '
+             'receipt it came from), so a reviewer can check the claim '
+             'rather than trust it.',
+    )
+
     # Audit trail.
     x_first_seen_at = fields.Datetime(string='First Seen')
     x_last_merged_at = fields.Datetime(string='Last Merged')
+
+    @api.model
+    def _flag_duplicate_partners(self, pairs, batch=500):
+        """Flag partners as duplicates of another. Writes NO customer ids.
+
+        :param pairs: iterable of (partner_id, canonical_id, evidence)
+        :returns: {'flagged': n, 'skipped': n}
+
+        Idempotent — rerunning over the same pairs rewrites the same values.
+        Skips self-pairs, and skips any partner that already carries a login:
+        a claimed account is not something a batch job should relabel as a
+        duplicate behind the customer's back.
+        """
+        Partner = self.env['res.partner'].sudo()
+        flagged = skipped = 0
+        pairs = [p for p in pairs if p and p[0] and p[1] and p[0] != p[1]]
+        for i in range(0, len(pairs), batch):
+            chunk = pairs[i:i + batch]
+            claimed = set(self.env['res.users'].sudo().search(
+                [('partner_id', 'in', [c[0] for c in chunk])]
+            ).mapped('partner_id').ids)
+            for pid, canonical, evidence in chunk:
+                if pid in claimed:
+                    skipped += 1
+                    continue
+                Partner.browse(pid).with_context(
+                    tracking_disable=True, mail_notrack=True,
+                ).write({
+                    'x_duplicate_of_id': canonical,
+                    'x_duplicate_evidence': (evidence or '')[:255],
+                    'x_merge_needs_review': True,
+                })
+                flagged += 1
+            self.env.cr.commit()  # 118k records is not one transaction
+            _logger.info('duplicate flagging: %d flagged, %d skipped', flagged, skipped)
+        return {'flagged': flagged, 'skipped': skipped}
 
     def _recompute_stub_flag(self):
         """Clear x_is_stub when the partner has enough identifying data."""
