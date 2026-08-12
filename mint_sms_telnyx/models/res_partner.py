@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
+import logging
+
+import requests
+
 from odoo import fields, models
+
+_logger = logging.getLogger(__name__)
 
 # One source list shared by the master opt-in and both category consents.
 CONSENT_SOURCES = [
@@ -98,9 +104,7 @@ class ResPartner(models.Model):
         self.write(vals)
         # Delivery-side gate: the proxy keeps its own whitelist; a grant
         # must land there too or sends die at the proxy (MR-1250).
-        Msg = self.env["mint.sms.message"]
-        for partner in self:
-            Msg._bb_whitelist_sync(partner.phone_sanitized, "add")
+        self._sync_proxy_whitelist("add")
         return True
 
     def clear_sms_consent(self, category):
@@ -113,11 +117,10 @@ class ResPartner(models.Model):
         self.write({"sms_consent_%s" % category: False})
         # Only de-whitelist at the proxy when NO category consent remains —
         # the other category may still be sendable.
-        Msg = self.env["mint.sms.message"]
-        for partner in self:
-            if not (partner.sms_consent_transactional
-                    or partner.sms_consent_marketing):
-                Msg._bb_whitelist_sync(partner.phone_sanitized, "remove")
+        self.filtered(
+            lambda p: not (p.sms_consent_transactional
+                           or p.sms_consent_marketing)
+        )._sync_proxy_whitelist("remove")
         return True
 
     def set_sms_opt_in(self, source="manual", add_whitelist=True):
@@ -141,10 +144,64 @@ class ResPartner(models.Model):
             "sms_consent_transactional": False,
             "sms_consent_marketing": False,
         })
-        Msg = self.env["mint.sms.message"]
-        for partner in self:
-            Msg._bb_whitelist_sync(partner.phone_sanitized, "remove")
+        self._sync_proxy_whitelist("remove")
         return True
+
+    def _sync_proxy_whitelist(self, action):
+        """Mirror consent to the BlueBubbles proxy's own delivery whitelist.
+
+        The proxy in front of BlueBubbles keeps a SECOND whitelist and 403s
+        sends to numbers not on it — so Odoo-side consent alone leaves texts
+        silently failing at delivery (observed 2026-08-11: a fully opted-in,
+        Odoo-whitelisted customer got HTTP 403 until her number was added at
+        the proxy by hand). Mirroring here makes the client opt-in flow
+        end-to-end: consent recorded AND deliverable in one step.
+
+        Strictly best-effort, and called only AFTER the consent write: the
+        proxy lives behind a free-ngrok tunnel that comes and goes, and a
+        delivery-gate hiccup must never fail or roll back the consent
+        record. Failures are logged; the number can be replayed by calling
+        this method again (add/remove are idempotent on the proxy —
+        "changed" in its response says whether anything moved).
+        """
+        icp = self.env["ir.config_parameter"].sudo()
+        base = (icp.get_param("mint_sms_telnyx.bluebubbles_url") or "").rstrip("/")
+        token = icp.get_param("mint_sms_telnyx.proxy_whitelist_token")
+        if not base or not token:
+            _logger.warning(
+                "Proxy whitelist %s skipped: bluebubbles_url or "
+                "proxy_whitelist_token not configured", action)
+            return
+        for partner in self:
+            number = partner.phone_sanitized
+            if not number:
+                _logger.warning(
+                    "Proxy whitelist %s skipped for partner %s: no sanitized "
+                    "phone (raw %r)", action, partner.id, partner.phone)
+                continue
+            try:
+                resp = requests.post(
+                    base + "/admin/whitelist",
+                    json={"number": number, "action": action},
+                    headers={
+                        "Authorization": "Bearer %s" % token,
+                        "ngrok-skip-browser-warning": "true",
+                    },
+                    timeout=10,
+                )
+                if resp.ok:
+                    _logger.info(
+                        "Proxy whitelist %s for partner %s (%s): %s",
+                        action, partner.id, number, resp.text[:200])
+                else:
+                    _logger.warning(
+                        "Proxy whitelist %s FAILED for partner %s (%s): "
+                        "HTTP %s %s", action, partner.id, number,
+                        resp.status_code, resp.text[:200])
+            except Exception:
+                _logger.exception(
+                    "Proxy whitelist %s errored for partner %s (%s)",
+                    action, partner.id, number)
 
     # UI buttons (internal staff opt-in flow)
     def action_sms_opt_in(self):

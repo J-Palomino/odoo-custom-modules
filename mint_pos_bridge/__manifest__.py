@@ -41,6 +41,7 @@
         'views/pos_order_views.xml',
         'views/pos_order_menus.xml',
         'views/web_order_config_views.xml',
+        'views/pos_add_item_wizard_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

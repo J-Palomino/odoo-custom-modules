@@ -47,6 +47,34 @@ def _cors_preflight():
     )
 
 
+def _partner_id_from_jwt():
+    """Partner id proven by the caller's Authorization: Bearer JWT, else False.
+
+    The ONLY accepted identity for binding a push subscription to a customer.
+    Body-supplied partner_id/email are never trusted on this auth='none'
+    route: an unauthenticated caller could otherwise bind their device to an
+    arbitrary partner and receive that partner's notifications (welcome
+    coupon codes are bearer instruments at the register).
+    """
+    auth_header = request.httprequest.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return False
+    Users = request.env['res.users'].sudo()
+    if not hasattr(Users, '_verify_jwt'):
+        return False
+    try:
+        payload = Users._verify_jwt(auth_header[7:])
+        if not payload:
+            return False
+        user = Users.browse(payload.get('user_id'))
+        if not user.exists() or not user.partner_id:
+            return False
+        return user.partner_id.id
+    except Exception as e:
+        _logger.warning('push subscribe: JWT verify failed: %s', e)
+        return False
+
+
 class PushAPI(http.Controller):
 
     # ==================== CORS PREFLIGHT ====================
@@ -118,6 +146,9 @@ class PushAPI(http.Controller):
             latitude = data.get('latitude')
             longitude = data.get('longitude')
 
+            # Partner binding comes from the verified JWT only (see helper).
+            partner_id = _partner_id_from_jwt()
+
             # Upsert: reactivate if it already exists, or create new
             existing = Subscription.search([('endpoint', '=', endpoint)], limit=1)
             if existing:
@@ -127,6 +158,8 @@ class PushAPI(http.Controller):
                     'is_active': True,
                     'user_agent': request.httprequest.headers.get('User-Agent', ''),
                 }
+                if partner_id:
+                    vals['partner_id'] = partner_id
                 if site_id:
                     vals['site_id'] = site_id
                 if store_id:
@@ -149,6 +182,8 @@ class PushAPI(http.Controller):
                     'region': region,
                     'user_agent': request.httprequest.headers.get('User-Agent', ''),
                 }
+                if partner_id:
+                    create_vals['partner_id'] = partner_id
                 if latitude is not None and longitude is not None:
                     create_vals['latitude'] = float(latitude)
                     create_vals['longitude'] = float(longitude)

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_pos_add_item_wizard_form" model="ir.ui.view">
+        <field name="name">mint.pos.add.item.wizard.form</field>
+        <field name="model">mint.pos.add.item.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add Item to POS Cart">
+                <group>
+                    <field name="order_id"/>
+                    <field name="query" placeholder="Product name, SKU, barcode, or METRC tag"/>
+                    <field name="quantity"/>
+                </group>
+                <footer>
+                    <button name="action_search" string="Search" type="object" class="btn-primary"/>
+                    <button string="Close" special="cancel" class="btn-secondary"/>
+                </footer>
+                <field name="result_ids" nolabel="1">
+                    <list create="false" delete="false">
+                        <field name="name"/>
+                        <field name="brand" optional="show"/>
+                        <field name="category" optional="show"/>
+                        <field name="sku" optional="hide"/>
+                        <field name="price" widget="monetary"/>
+                        <button name="action_add_to_cart" string="Add" type="object"
+                                class="btn-primary" icon="fa-cart-plus"/>
+                    </list>
+                </field>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pos_add_item_wizard" model="ir.actions.act_window">
+        <field name="name">Add Item to POS Cart</field>
+        <field name="res_model">mint.pos.add.item.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="binding_model_id" ref="model_mint_pos_order"/>
+        <field name="binding_view_types">form</field>
+    </record>
+
+</odoo>

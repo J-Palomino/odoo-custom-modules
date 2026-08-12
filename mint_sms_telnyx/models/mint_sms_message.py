@@ -99,43 +99,6 @@ class MintSmsMessage(models.Model):
         }
 
     @api.model
-    def _bb_whitelist_sync(self, number, action):
-        """Best-effort sync of one number on the BlueBubbles proxy's OWN
-        whitelist — the delivery-side gate in front of the iMessage bridge
-        (MR-1250). Consent helpers call this right after the Odoo write:
-        grant -> "add", full revoke -> "remove". A proxy outage must never
-        fail a consent write, so failures only log.
-        """
-        if not number:
-            return False
-        cfg = self._bb_config()
-        ICP = self.env["ir.config_parameter"].sudo()
-        token = (ICP.get_param(
-            "mint_sms_telnyx.bluebubbles_whitelist_token", "") or "").strip()
-        if not (cfg["url"] and token):
-            return False
-        try:
-            resp = requests.post(
-                cfg["url"].rstrip("/") + "/admin/whitelist",
-                headers={
-                    "Authorization": "Bearer %s" % token,
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "true",
-                },
-                data=json.dumps({"number": number, "action": action}),
-                timeout=10,
-            )
-            if resp.status_code >= 400:
-                _logger.warning(
-                    "BB whitelist %s %s failed: HTTP %s %s",
-                    action, number, resp.status_code, resp.text[:200])
-                return False
-            return True
-        except requests.RequestException as e:
-            _logger.warning("BB whitelist %s %s failed: %s", action, number, e)
-            return False
-
-    @api.model
     def _whitelist_category(self):  # noqa: D401
         """Return the 'SMS Whitelist' partner category recordset (or empty)."""
         ICP = self.env["ir.config_parameter"].sudo()
