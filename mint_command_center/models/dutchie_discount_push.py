@@ -616,7 +616,20 @@ class PtlDayDutchiePush(models.Model):
             # Honor per-discount store filter if set
             target_stores = discount.store_ids & enabled_stores if discount.store_ids \
                             else enabled_stores
+            # Dutchie discounts are LSP-scoped — one write covers every store
+            # in the LSP (the welcome-coupon issuer has always relied on
+            # this). Pushing per STORE therefore creates one discount per
+            # store: same code N times in one LSP, each independently
+            # redeemable, so a "single-use" coupon becomes N-use (observed on
+            # prod 2026-08-12: redemption 3101 minted twice, 385624/385625,
+            # both live LSP-wide). Push once per distinct LSP instead.
+            seen_lsps = set()
             for store in target_stores:
+                lsp = self._resolve_lsp_id(store)
+                if lsp and lsp in seen_lsps:
+                    continue
+                if lsp:
+                    seen_lsps.add(lsp)
                 self._push_one_discount(discount, store, mode, url, api_key, Log)
 
     # ─── Deactivate (expire / revoke) — the inverse of the push ──────────
