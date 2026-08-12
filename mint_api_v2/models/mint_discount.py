@@ -38,17 +38,25 @@ def _find_matching_free_line(redemption, order_items):
     and is effectively free, or None. Matches on dutchie_product_id first,
     falls back to SKU (default_code). An item is free when
     ``unit_price * quantity - discount <= FREE_LINE_TOLERANCE``.
+
+    Matches against every template in ``product_ids``, not only
+    ``redemption_product_id``: create_redemption widens the scope to the
+    sibling templates of the redeemed product (same item at other stores in
+    the region, under that store's own Dutchie id/SKU), so an order at any of
+    those stores must still consume the coupon.
     """
-    product = redemption.redemption_product_id
-    if not product:
+    products = redemption.product_ids or redemption.redemption_product_id
+    if not products:
         return None
-    prod_pid = (product.dutchie_product_id or '').strip()
-    prod_sku = (product.default_code or '').strip().upper()
+    prod_pids = {pid for pid in
+                 ((p.dutchie_product_id or '').strip() for p in products) if pid}
+    prod_skus = {sku for sku in
+                 ((p.default_code or '').strip().upper() for p in products) if sku}
 
     for item in order_items or []:
         line_pid = str(item.get('dutchie_product_id') or '').strip()
         line_sku = str(item.get('sku') or '').strip().upper()
-        id_match = (prod_pid and line_pid == prod_pid) or (prod_sku and line_sku == prod_sku)
+        id_match = line_pid in prod_pids or line_sku in prod_skus
         if not id_match:
             continue
         try:
@@ -514,6 +522,50 @@ class MintDiscount(models.Model):
         raise UserError(_("Could not generate a unique redemption code."))
 
     @api.model
+    def _sibling_redeemable_templates(self, product, stores):
+        """The product's sibling templates across ``stores``, itself included.
+
+        Odoo carries one product.template per (product, Dutchie location) — the
+        same WYLD gummy at two stores is two templates with two different
+        dutchie_product_ids and SKUs. "Sibling" here means: same normalized
+        name and same brand, located at one of the given stores. Used to widen
+        a redemption's product scope so the coupon matches the product at every
+        store its region lock already says it is valid at.
+
+        Matching is deliberately conservative: a false negative just leaves
+        that store as unusable as it was before widening existed, while a
+        false positive would give the wrong product away free. The SQL
+        prefilter is `=ilike` with LIKE metacharacters escaped — case folds,
+        but a '%' or '_' in a product name can never wildcard-match unrelated
+        products into a 100%-off coupon — and the authoritative comparison is
+        the whitespace-normalized equality below.
+        """
+        if not product:
+            return product
+        uuids = [u for u in stores.mapped('dutchie_store_id') if u] if stores else []
+        escaped = (product.name or '').replace('\\', '\\\\') \
+                                      .replace('%', '\\%').replace('_', '\\_')
+        domain = [
+            ('active', '=', True),
+            ('name', '=ilike', escaped),
+            ('brand_id', '=', product.brand_id.id if product.brand_id else False),
+        ]
+        # x_location_id is a DB-created field (no module defines it); without
+        # it there is no per-store narrowing, so fall back to just the product.
+        if 'x_location_id' not in self.env['product.template']._fields:
+            return product
+        if uuids:
+            domain.append(('x_location_id', 'in', uuids))
+        siblings = self.env['product.template'].sudo().search(domain)
+        # Whitespace can still differ between two stores' imports ("WYLD  -"
+        # vs "WYLD -"); those pass or fail the prefilter as-is, so normalize
+        # what it did return rather than trying to widen SQL any further.
+        def norm(name):
+            return ' '.join((name or '').split()).lower()
+        siblings = siblings.filtered(lambda p: norm(p.name) == norm(product.name))
+        return (siblings | product) if siblings else product
+
+    @api.model
     def create_redemption(self, partner, points_cost, reward=None, product=None, store=None):
         """Create a loyalty_redemption discount for a customer.
 
@@ -531,6 +583,30 @@ class MintDiscount(models.Model):
             raise UserError(_("Partner is required."))
         if not reward and not product:
             raise UserError(_("Either reward or product is required."))
+
+        # Region store set is needed twice: the store_ids lock below, and the
+        # sibling-template scope — both must cover the same set of stores.
+        state_stores = self.env['res.company'].sudo()
+        if store:
+            region = store.region_id
+            if region:
+                state_stores = state_stores.search(
+                    [('region_id', '=', region.id), ('is_dispensary', '=', True)])
+            state_stores = state_stores or store
+
+        # Widen the coupon's product scope to the redeemed product's SIBLING
+        # templates: Dutchie product ids (and SKUs) are per-location, so the
+        # same physical product carried by another store in the region lives on
+        # a different template with a different id. The coupon is locked
+        # region-wide, and /rewards collapses those siblings into one card — so
+        # a coupon scoped to just the slid template would be valid at a sibling
+        # store yet match nothing in its register. product_ids drives both the
+        # Dutchie push restriction (resolved per store there) and
+        # _find_matching_free_line; redemption_product_id stays the single
+        # template the customer actually slid.
+        scope = product
+        if product:
+            scope = self._sibling_redeemable_templates(product, state_stores)
 
         code = self._generate_redemption_code()
         label = (product.name if product else None) or (reward.display_name if reward else _("Reward"))
@@ -579,7 +655,7 @@ class MintDiscount(models.Model):
             'maximum_usage_count': 1,        # one-time
             'max_redemptions': 1,
             'redemption_limit': 1,
-            'product_ids': [(6, 0, product.ids)] if product else [(5, 0, 0)],
+            'product_ids': [(6, 0, scope.ids)] if product else [(5, 0, 0)],
             'redemption_partner_id': partner.id,
             'redemption_reward_id': reward.id if reward else False,
             'redemption_product_id': product.id if product else False,
@@ -590,13 +666,7 @@ class MintDiscount(models.Model):
         # Lock to the store's STATE (all dispensary companies in its region), so
         # an AZ-issued reward can't be consumed at a FL/MI store.
         if store:
-            region = store.region_id
-            if region:
-                state_stores = self.env['res.company'].sudo().search(
-                    [('region_id', '=', region.id), ('is_dispensary', '=', True)])
-                vals['store_ids'] = [(6, 0, state_stores.ids or [store.id])]
-            else:
-                vals['store_ids'] = [(6, 0, [store.id])]
+            vals['store_ids'] = [(6, 0, state_stores.ids or [store.id])]
         else:
             _logger.warning('create_redemption: no store supplied for partner %s — '
                             'redemption is NOT location-locked (redeemable at any store)',
@@ -680,8 +750,20 @@ class MintDiscount(models.Model):
             'valid_from': fields.Date.today(),
             'is_published': True,
         }
-        if not self.product_ids and self.redemption_product_id:
-            vals['product_ids'] = [(6, 0, self.redemption_product_id.ids)]
+        # Widen the product scope to sibling templates across the offer's
+        # locked stores (or the redeeming store's state when unlocked), same as
+        # create_redemption: the grant was stored against ONE template, but the
+        # product lives on a different template (different Dutchie id/SKU) at
+        # each store the lock allows.
+        if self.redemption_product_id:
+            lock_stores = self.store_ids
+            if not lock_stores and store:
+                region = store.region_id
+                lock_stores = self.env['res.company'].sudo().search(
+                    [('region_id', '=', region.id), ('is_dispensary', '=', True)]
+                ) if region else store
+            vals['product_ids'] = [(6, 0, self._sibling_redeemable_templates(
+                self.redemption_product_id, lock_stores).ids)]
         self.sudo().write(vals)
         self._push_redemption_to_dutchie(store or self.store_ids[:1])
         return self
@@ -872,7 +954,15 @@ class MintDiscount(models.Model):
         base = (ICP.get_param('mint.dutchie_discount_push.url')
                 or 'https://mintinvsvc-production-6aa5.up.railway.app/api/admin/discounts')
         api_key = ICP.get_param('mint.dutchie_discount_push.api_key') or ''
-        product = self.product_ids[:1]
+        # The scope may hold one sibling template per store (per-location
+        # Dutchie ids), and the payload builder prefers the template located at
+        # the store it pushes to — so expect the id the same preference picks
+        # for THIS row's store, or any scoped id when none is store-local.
+        scoped = self.product_ids.filtered(lambda p: p.dutchie_product_id)
+        loc_uuid = getattr(store, 'dutchie_store_id', False)
+        local = scoped.filtered(lambda p: p.x_location_id == loc_uuid) \
+            if loc_uuid and 'x_location_id' in scoped._fields else scoped.browse()
+        product = (local or scoped)[:1]
         url = (
             '%s/%s?locId=%s&lspId=%s&expectCode=%s' % (
                 base.rstrip('/'), row.dutchie_discount_id, loc_id, lsp_id,

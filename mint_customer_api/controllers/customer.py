@@ -429,8 +429,38 @@ class MintCustomerProfile(http.Controller):
                     (0 if incumbent[1] else 1, incumbent[0].id):
                 best[key] = (product, image_url)
 
+        # Second pass: collapse on normalized (name, brand). Dutchie product ids
+        # are PER-LOCATION, so the same physical product carried by two stores
+        # in the region survives the pass above as two cards with different
+        # dutchie_product_ids and different SKUs (measured 2026-08-12: AZ 2
+        # pairs, NV 4 — one of them a genuine duplicate catalog entry within a
+        # single Dutchie store). The customer sees identical-looking cards and
+        # has no way to tell them apart; create_redemption widens the coupon's
+        # product scope to the whole sibling group, so one card is enough.
+        #
+        # Winner: lowest points_cost first (what is shown is what the slid card
+        # charges, so the pick must be the cheapest), then a usable image, then
+        # lowest id for stability. list_price is display-only on this page (the
+        # coupon is 100% off) and siblings DO disagree on it ($40 vs $50 Select
+        # cart on prod), so show the group minimum rather than the winner's.
+        def _name_key(p):
+            name = ' '.join((p.name or '').split()).lower()
+            brand = (p.brand_id.name or '').strip().lower() if p.brand_id else ''
+            return (name, brand)
+
+        groups = {}
+        for product, image_url in list(best.values()) + unkeyed:
+            groups.setdefault(_name_key(product), []).append((product, image_url))
+
+        collapsed = []
+        for rows_in_group in groups.values():
+            winner = min(rows_in_group, key=lambda row: (
+                row[0].x_loyalty_points_cost, 0 if row[1] else 1, row[0].id))
+            min_price = min(row[0].list_price for row in rows_in_group)
+            collapsed.append((winner[0], winner[1], min_price))
+
         deduped = sorted(
-            list(best.values()) + unkeyed,
+            collapsed,
             key=lambda row: (row[0].x_loyalty_points_cost, row[0].name or ''),
         )
 
@@ -450,10 +480,10 @@ class MintCustomerProfile(http.Controller):
                 'strain_type': p.strain_type or None,
                 'image_url': image_url,
                 'points_cost': p.x_loyalty_points_cost,
-                'list_price': p.list_price,
+                'list_price': list_price,
                 'dutchie_product_id': p.dutchie_product_id or None,
                 'sku': p.default_code or None,
-            } for p, image_url in deduped],
+            } for p, image_url, list_price in deduped],
         })
 
     @http.route('/api/v1/customer/loyalty/redeemables/<int:product_id>/image',

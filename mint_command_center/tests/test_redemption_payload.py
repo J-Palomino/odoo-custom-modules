@@ -136,6 +136,59 @@ class TestRedemptionPayload(TransactionCase):
         self.assertEqual(via_dispatch['Reward']['DiscountValue'], 1)
         self.assertEqual(via_dispatch['PlatformTypeRestrictions'], [])
 
+    def test_sibling_scope_resolves_per_store(self):
+        """A widened scope pushes each store its OWN product id.
+
+        create_redemption widens product_ids to the sibling templates of the
+        redeemed product — same item at the region's other stores, each under
+        that store's per-location Dutchie id. The payload for a store must
+        carry the id from that store's catalog, not the slid template's: a
+        foreign id matches nothing at the register.
+        """
+        Fields = self.env['ir.model.fields']
+        if 'x_location_id' not in self.env['product.template']._fields:
+            Fields.create({
+                'name': 'x_location_id',
+                'model': 'product.template',
+                'model_id': self.env['ir.model']._get_id('product.template'),
+                'ttype': 'char',
+                'state': 'manual',
+            })
+        self.product.x_location_id = 'rp-test-uuid'
+        sibling = self.env['product.template'].create({
+            'name': self.product.name,
+            'type': 'consu',
+            'dutchie_product_id': '13800001',
+            'x_location_id': 'rp-sibling-uuid',
+        })
+        other_store = self.env['res.company'].create({
+            'name': 'RP Sibling Store',
+            'dutchie_store_id': 'rp-sibling-uuid',
+        })
+        self.discount.product_ids = [(6, 0, (self.product + sibling).ids)]
+
+        at_home = self.carrier._redemption_payload(self.discount, self.store, 0)
+        self.assertEqual(
+            at_home['Reward']['Restrictions']['Product']['RestrictionIds'],
+            [13798789])
+        at_sibling = self.carrier._redemption_payload(
+            self.discount, other_store, 0)
+        self.assertEqual(
+            at_sibling['Reward']['Restrictions']['Product']['RestrictionIds'],
+            [13800001])
+
+        # A store carrying NO local template falls back to the whole group —
+        # ids foreign to it match nothing, which beats pushing unscoped.
+        stranger = self.env['res.company'].create({
+            'name': 'RP Stranger Store',
+            'dutchie_store_id': 'rp-stranger-uuid',
+        })
+        at_stranger = self.carrier._redemption_payload(
+            self.discount, stranger, 0)
+        self.assertEqual(
+            at_stranger['Reward']['Restrictions']['Product']['RestrictionIds'],
+            [13798789, 13800001])
+
     def test_record_keeps_its_loyalty_redemption_type(self):
         """PR #263 guard: the reward shape lives in the payload only.
 

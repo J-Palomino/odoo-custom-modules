@@ -418,22 +418,41 @@ class PtlDayDutchiePush(models.Model):
         Returns None when the product carries no Dutchie id — the caller must
         not push an unscoped coupon, since with empty restrictions a 100%-off
         applies to the whole catalog.
+
+        product_ids may hold SEVERAL templates: create_redemption widens the
+        scope to the redeemed product's siblings at the other stores in the
+        region, and each sibling carries that store's own per-location Dutchie
+        id. Resolve per store here — prefer the template(s) located at THIS
+        store, so the restriction sent to a register is an id from its own
+        catalog and cannot collide with an unrelated product on another LSP.
+        Only when no template belongs to this store fall back to the whole
+        group's ids: an id foreign to the store matches nothing there, which
+        is no worse than the single-id payload this replaced.
         """
-        product = discount.product_ids[:1] or discount.redemption_product_id
-        dutchie_pid = getattr(product, 'dutchie_product_id', None)
-        if not dutchie_pid:
+        group = discount.product_ids or discount.redemption_product_id
+        scoped = group.filtered(lambda p: p.dutchie_product_id)
+        # x_location_id is a DB-created field (no module defines it) — probe
+        # the registry the way the identity-key writes elsewhere do.
+        loc_uuid = getattr(store, 'dutchie_store_id', False)
+        local = scoped.filtered(lambda p: p.x_location_id == loc_uuid) \
+            if loc_uuid and 'x_location_id' in scoped._fields else scoped.browse()
+        chosen = local or scoped
+        if not chosen:
             _logger.error(
-                'Redemption %s: product %s has no dutchie_product_id — refusing '
-                'to build an unscoped payload (would discount the entire catalog)',
-                discount.redemption_code, product.display_name if product else '-')
+                'Redemption %s: no product in scope (%s) has a '
+                'dutchie_product_id — refusing to build an unscoped payload '
+                '(would discount the entire catalog)',
+                discount.redemption_code, group.ids)
             return None
+        product = chosen[:1]
 
         empty = lambda: {'IsExclusion': False, 'RestrictionIds': []}
         restrictions = {k: empty() for k in (
             'Strain', 'Weight', 'Category', 'Tag', 'InventoryTag',
             'Tier', 'Brand', 'Vendor', 'Product')}
         restrictions['Product'] = {
-            'IsExclusion': False, 'RestrictionIds': [int(dutchie_pid)],
+            'IsExclusion': False,
+            'RestrictionIds': sorted({int(p.dutchie_product_id) for p in chosen}),
         }
 
         pid = discount.redemption_partner_id.id or discount.id
