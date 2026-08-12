@@ -2,6 +2,7 @@
 import logging
 
 from odoo import models, fields, api, _
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -39,6 +40,14 @@ class PushSendWizardExt(models.TransientModel):
     def action_send(self):
         """Send the notification and create a campaign record."""
         self.ensure_one()
+
+        # A "Specific Contact" send must never reach the campaign path below:
+        # campaigns filter only by store/region, so it would broadcast to every
+        # subscriber. Route it through the base wizard's send_to_partner().
+        if self.target == 'partner':
+            if not self.partner_id:
+                raise UserError(_("Select a contact to send to."))
+            return super().action_send()
 
         # Create campaign record
         campaign_vals = {
