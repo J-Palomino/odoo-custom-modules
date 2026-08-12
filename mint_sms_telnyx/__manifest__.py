@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint SMS — Telnyx Gateway (Transactional Only)',
-    'version': '19.0.4.0.0',
+    'version': '19.0.4.1.0',
     'category': 'Tools',
     'summary': 'Transactional SMS via Telnyx + gated iMessage (BlueBubbles) — cannabis-content guardrail',
     'description': """

@@ -17,6 +17,17 @@ CONSENT_SOURCES = [
 
 SMS_CONSENT_CATEGORIES = ("transactional", "marketing")
 
+# Confirmation texted on a fresh grant of each category (MR-1250). Sent in
+# the granted category so it self-tests the exact permission just given.
+# Wording must stay clear of the sms.sms content guardrail's term blocklist
+# (e.g. "cannabis" blocks — learned live on message #38).
+CONSENT_CONFIRM_BODIES = {
+    "transactional": "Mint: You're set to receive order & account texts. "
+                     "Reply STOP to opt out.",
+    "marketing": "Mint: You're in! You'll get occasional deal texts from "
+                 "Mint. Reply STOP to opt out.",
+}
+
 
 class ResPartner(models.Model):
     _inherit = "res.partner"
@@ -89,6 +100,10 @@ class ResPartner(models.Model):
             raise ValueError("Unknown SMS consent category: %r" % (category,))
         cat = self.env["mint.sms.message"]._whitelist_category()
         now = fields.Datetime.now()
+        # Grant TRANSITIONS only (False -> True), captured before the write:
+        # re-saves and repeated PUTs must not re-text the confirmation.
+        newly_granted = self.filtered(
+            lambda p: not p["sms_consent_%s" % category])
         vals = {
             "sms_opt_in": True,
             "sms_opt_in_date": now,
@@ -105,7 +120,43 @@ class ResPartner(models.Model):
         # Delivery-side gate: the proxy keeps its own whitelist; a grant
         # must land there too or sends die at the proxy (MR-1250).
         self._sync_proxy_whitelist("add")
+        # Confirmation text AFTER the proxy add, so its own delivery path is
+        # already open — arriving is the end-to-end proof of the fresh grant.
+        newly_granted._send_consent_confirmation(category)
         return True
+
+    def _send_consent_confirmation(self, category):
+        """Text the customer that their consent is now active (MR-1250).
+
+        Gated by ir.config_parameter mint_sms_telnyx.consent_confirm_enabled
+        ('True' to enable) so environments never surprise-text. Best-effort:
+        a failed/blocked confirmation never fails the consent write — the
+        mint.sms.message row is the audit either way.
+        """
+        if not self:
+            return
+        enabled = self.env["ir.config_parameter"].sudo().get_param(
+            "mint_sms_telnyx.consent_confirm_enabled")
+        if enabled != "True":
+            return
+        Sms = self.env["mint.sms.message"].sudo()
+        for partner in self:
+            if not partner.phone_sanitized:
+                continue
+            try:
+                rec = Sms.create({
+                    "partner_id": partner.id,
+                    "category": category,
+                    "body": CONSENT_CONFIRM_BODIES[category],
+                })
+                _logger.info(
+                    "Consent confirmation [%s] for partner %s -> %s%s",
+                    category, partner.id, rec.state,
+                    (" (%s)" % rec.block_reason) if rec.block_reason else "")
+            except Exception:
+                _logger.exception(
+                    "Consent confirmation [%s] failed for partner %s",
+                    category, partner.id)
 
     def clear_sms_consent(self, category):
         """Revoke one category of consent. Last grant date/source are kept
