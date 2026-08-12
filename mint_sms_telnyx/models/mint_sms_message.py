@@ -120,7 +120,7 @@ class MintSmsMessage(models.Model):
         partner = self.partner_id
         number = (self.number or "").strip()
         if partner and not number:
-            number = partner.phone_sanitized or ""
+            number = partner._sms_e164()
         if not partner and number:
             # A number can match many partners (Dutchie-backfill duplicates).
             # Prefer, in order: whitelisted+consented > any consented >

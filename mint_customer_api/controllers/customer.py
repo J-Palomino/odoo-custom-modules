@@ -13,7 +13,7 @@ from odoo import fields, http
 from odoo.http import request, Response
 
 from .auth import (json_response, error_response, unexpected_error_response,
-                   _verify_and_get_user)
+                   _verify_and_get_user, normalize_phone_e164)
 
 _logger = logging.getLogger(__name__)
 
@@ -756,7 +756,7 @@ class MintCustomerProfile(http.Controller):
         if 'name' in data:
             vals['name'] = data['name'].strip()
         if 'phone' in data:
-            vals['phone'] = data['phone'].strip()
+            vals['phone'] = normalize_phone_e164(data['phone'])
         # NOTE: `mobile` was removed from res.partner in Odoo 19; clients
         # may still send it but we silently drop the field.
 
@@ -812,8 +812,16 @@ class MintCustomerProfile(http.Controller):
                 return error_response('Unknown store: %s' % store_key)
             vals['x_home_store_id'] = store.id
 
+        had_phone = bool(partner.phone)
         if vals:
             partner.write(vals)
+
+        # A phone added where there was none is the trigger for the one-time
+        # loyalty bonus (the "add your phone, get points" campaign). Checked
+        # on the pre-write state so an edit to an existing number never
+        # qualifies, and the grant itself re-checks the once-only flag.
+        if vals.get('phone') and not had_phone:
+            self._grant_phone_add_bonus(partner)
 
         return json_response({
             'message': 'Profile updated',
@@ -829,6 +837,61 @@ class MintCustomerProfile(http.Controller):
                 'home_store_name': getattr(partner, 'x_home_store_id', False) and partner.x_home_store_id.name or None,
             },
         })
+
+    def _grant_phone_add_bonus(self, partner):
+        """One-time loyalty bonus for adding a phone number to the account.
+
+        Enabled by ir.config_parameter
+        ``mint_customer_api.phone_add_bonus_points`` (integer; 0/unset =
+        off) so environments never surprise-grant. Grants through the
+        audited balance wizard, which writes the loyalty.history row and —
+        via mint_dutchie_sync's wizard hook — notifies the customer by
+        text/push automatically. Best-effort: a bonus failure must never
+        fail the profile save that triggered it.
+        """
+        env = request.env
+        try:
+            points = int(env['ir.config_parameter'].sudo().get_param(
+                'mint_customer_api.phone_add_bonus_points') or 0)
+        except (TypeError, ValueError):
+            points = 0
+        if points <= 0 or partner.phone_bonus_granted:
+            return
+        # loyalty is not in this module's depends (same posture as the
+        # x_home_store_id probe above) — skip cleanly where it's absent.
+        if ('loyalty.card' not in env
+                or 'loyalty.card.update.balance' not in env):
+            return
+        try:
+            with env.cr.savepoint():
+                program = env['loyalty.program'].sudo().search(
+                    [('program_type', '=', 'loyalty')], limit=1)
+                if not program:
+                    return
+                Card = env['loyalty.card'].sudo()
+                card = Card.search([
+                    ('partner_id', '=', partner.id),
+                    ('program_id', '=', program.id),
+                ], limit=1)
+                if not card:
+                    card = Card.create({
+                        'partner_id': partner.id,
+                        'program_id': program.id,
+                    })
+                wizard = env['loyalty.card.update.balance'].sudo().create({
+                    'card_id': card.id,
+                    'new_balance': (card.points or 0) + points,
+                    'description': 'Added a phone number in account settings '
+                                   '— %d bonus points (automatic)' % points,
+                })
+                wizard.action_update_card_point()
+                partner.phone_bonus_granted = True
+                _logger.info(
+                    'Phone-add bonus: %d points to partner %s (card %s)',
+                    points, partner.id, card.id)
+        except Exception:
+            _logger.exception(
+                'Phone-add bonus failed for partner %s', partner.id)
 
     @http.route('/api/v1/customer/preferences', type='http', auth='none',
                 methods=['GET', 'PUT', 'OPTIONS'], csrf=False, cors='*')

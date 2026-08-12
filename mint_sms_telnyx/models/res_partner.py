@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import re
 
 import requests
 
@@ -260,6 +261,26 @@ class ResPartner(models.Model):
                 _logger.exception(
                     "Opt-out confirmation failed for partner %s", partner.id)
 
+    def _sms_e164(self):
+        """Best-effort E.164 destination number for SMS delivery.
+
+        phone_sanitized when Odoo computed one; otherwise derived from the
+        raw phone assuming NANP. Web signups store bare 10-digit numbers on
+        partners with no country_id, which leaves phone_sanitized empty —
+        that made consented customers invisible to the proxy whitelist sync
+        and undeliverable by the automatic points text (both observed on
+        prod 2026-08-12, partner 2743079).
+        """
+        self.ensure_one()
+        if self.phone_sanitized:
+            return self.phone_sanitized
+        digits = re.sub(r"\D", "", self.phone or "")
+        if len(digits) == 10:
+            return "+1" + digits
+        if len(digits) == 11 and digits.startswith("1"):
+            return "+" + digits
+        return ""
+
     def _sync_proxy_whitelist(self, action):
         """Mirror consent to the BlueBubbles proxy's own delivery whitelist.
 
@@ -286,10 +307,10 @@ class ResPartner(models.Model):
                 "proxy_whitelist_token not configured", action)
             return
         for partner in self:
-            number = partner.phone_sanitized
+            number = partner._sms_e164()
             if not number:
                 _logger.warning(
-                    "Proxy whitelist %s skipped for partner %s: no sanitized "
+                    "Proxy whitelist %s skipped for partner %s: no usable "
                     "phone (raw %r)", action, partner.id, partner.phone)
                 continue
             try:
