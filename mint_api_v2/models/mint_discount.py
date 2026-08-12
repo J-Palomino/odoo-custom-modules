@@ -678,6 +678,17 @@ class MintDiscount(models.Model):
             'redemption_limit': 1,
             'redemption_status': 'pending',
             'valid_from': fields.Date.today(),
+            # A grant created without a validity end (manual grants skip it)
+            # must not activate into one: the Dutchie payload sends
+            # valid_until as ValidDateTo, and an empty ValidDateTo makes
+            # v2/discount/update-discount-item 500 with a null-reference —
+            # the code mints but never reaches the register (observed on
+            # prod 2026-08-12, discount 3101). Fall back to the offer's own
+            # expiry, then the standard TTL.
+            'valid_until': self.valid_until
+                or (self.expires_at and self.expires_at.date())
+                or fields.Date.today() + timedelta(
+                    days=REDEMPTION_DEFAULT_TTL_DAYS),
             'is_published': True,
         }
         if not self.product_ids and self.redemption_product_id:
