@@ -871,16 +871,23 @@ class MintCustomerProfile(http.Controller):
             sms = data.get('sms')
             if not isinstance(sms, dict):
                 return error_response('Body must carry an "sms" object')
-            for category in ('marketing', 'transactional'):
-                if category not in sms:
-                    continue
-                wanted = sms[category]
-                if not isinstance(wanted, bool):
-                    return error_response('"%s" must be a boolean' % category)
-                if wanted:
-                    partner.set_sms_consent(category, source='external_web')
-                else:
-                    partner.clear_sms_consent(category)
+            # Full stop first (the GUI "Stop all texts" action — MR-1250):
+            # equivalent to texting STOP. Sets sms_opt_out, clears both
+            # categories, de-whitelists at the proxy. Category keys in the
+            # same request are ignored — a stop is a stop.
+            if sms.get('opt_out') is True:
+                partner.set_sms_opt_out()
+            else:
+                for category in ('marketing', 'transactional'):
+                    if category not in sms:
+                        continue
+                    wanted = sms[category]
+                    if not isinstance(wanted, bool):
+                        return error_response('"%s" must be a boolean' % category)
+                    if wanted:
+                        partner.set_sms_consent(category, source='external_web')
+                    else:
+                        partner.clear_sms_consent(category)
 
         def _pref(category):
             date = partner['sms_consent_%s_date' % category]
