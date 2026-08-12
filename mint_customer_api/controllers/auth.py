@@ -37,6 +37,25 @@ def _lead_token(lead_id):
                     hashlib.sha256).hexdigest()
 
 
+def normalize_phone_e164(raw):
+    """NANP numbers to E.164; anything else passes through trimmed.
+
+    Web clients send bare 10-digit numbers. Stored that way on a partner
+    with no country_id they never produce a phone_sanitized, which breaks
+    everything keyed on it — SMS destination resolution and the proxy
+    whitelist consent sync both skipped such partners (the 2026-08-12
+    sync gap). Normalizing at the API edge fixes every downstream
+    consumer at once; Dutchie adoption matching is unaffected because it
+    extracts digits from whatever format it receives.
+    """
+    digits = re.sub(r'\D', '', raw or '')
+    if len(digits) == 10:
+        return '+1' + digits
+    if len(digits) == 11 and digits.startswith('1'):
+        return '+' + digits
+    return (raw or '').strip()
+
+
 def _loyalty_points(partner):
     """Current Mint Rewards balance for a partner, 0 when there is no card.
 
@@ -306,7 +325,7 @@ class MintCustomerAuth(http.Controller):
         name = data.get('name', '').strip()
         email = data.get('email', '').strip().lower()
         password = data.get('password', '')
-        phone = data.get('phone', '').strip()
+        phone = normalize_phone_e164(data.get('phone'))
 
         if not name or not email or not password:
             return error_response('Name, email, and password are required')
@@ -665,7 +684,7 @@ class MintCustomerAuth(http.Controller):
                 'name': 'Web signup: %s' % email,
                 'contact_name': (data.get('name') or '').strip() or False,
                 'email_from': email,
-                'phone': (data.get('phone') or '').strip() or False,
+                'phone': normalize_phone_e164(data.get('phone')) or False,
                 'type': 'lead',
                 'description': ('Web onboarding lead. age_verified=false. '
                                'consent_proof: ts=%s source=external_web ip=%s ua=%s'

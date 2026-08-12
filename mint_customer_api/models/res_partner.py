@@ -13,6 +13,14 @@ class ResPartner(models.Model):
              'Record rules restrict visibility to privileged users only.',
     )
 
+    phone_bonus_granted = fields.Boolean(
+        string='Phone-Add Bonus Granted',
+        default=False,
+        help='Set once the one-time loyalty bonus for adding a phone number '
+             'has been issued; prevents re-grants if the phone is removed '
+             'and re-added.',
+    )
+
     # --- Age-verification ledger -------------------------------------------
     # Odoo is the authoritative record of the web-side age check. The legally
     # binding verification still happens at the POS when a budtender scans the
