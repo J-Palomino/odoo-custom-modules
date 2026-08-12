@@ -28,6 +28,12 @@ _logger = logging.getLogger(__name__)
 # Loyalty redemption code: default 30-day expiry, prefixed for visual grouping.
 REDEMPTION_CODE_BYTES = 5   # 10 hex chars → ~1T space
 REDEMPTION_DEFAULT_TTL_DAYS = 30
+# valid_from is a Date and Dutchie evaluates ValidDateFrom in store wall clock,
+# while the server date rolls over at midnight UTC (5pm AZ). A redemption
+# minted in that evening window would start "tomorrow" and be refused at the
+# register all night. Back off by a slack day, as the welcome pre-roll issuer
+# does (WELCOME_VALID_FROM_SLACK_DAYS).
+REDEMPTION_VALID_FROM_SLACK_DAYS = 1
 
 # Cent tolerance for treating a line as "free" after per-line discount.
 FREE_LINE_TOLERANCE = 0.01
@@ -623,7 +629,8 @@ class MintDiscount(models.Model):
             'monday': True, 'tuesday': True, 'wednesday': True, 'thursday': True,
             'friday': True, 'saturday': True, 'sunday': True,
             'is_available_online': False,
-            'valid_from': fields.Date.today(),
+            'valid_from': (fields.Date.context_today(self)
+                           - timedelta(days=REDEMPTION_VALID_FROM_SLACK_DAYS)),
             'valid_until': expires.date(),
             # ONE token, two fields. redemption_code is what /rewards shows the
             # customer; dutchie_discount_code is what the pusher sends verbatim
@@ -705,7 +712,8 @@ class MintDiscount(models.Model):
             'monday': True, 'tuesday': True, 'wednesday': True, 'thursday': True,
             'friday': True, 'saturday': True, 'sunday': True,
             'is_available_online': False,
-            'valid_from': fields.Date.today(),
+            'valid_from': (fields.Date.context_today(self)
+                           - timedelta(days=REDEMPTION_VALID_FROM_SLACK_DAYS)),
             'valid_until': expires.date(),
             'product_ids': [(6, 0, product.ids)] if product else [(5, 0, 0)],
             'redemption_partner_id': partner.id,
@@ -747,7 +755,8 @@ class MintDiscount(models.Model):
             'max_redemptions': 1,
             'redemption_limit': 1,
             'redemption_status': 'pending',
-            'valid_from': fields.Date.today(),
+            'valid_from': (fields.Date.context_today(self)
+                           - timedelta(days=REDEMPTION_VALID_FROM_SLACK_DAYS)),
             # A grant created without a validity end (manual grants skip it)
             # must not activate into one: the Dutchie payload sends
             # valid_until as ValidDateTo, and an empty ValidDateTo makes
