@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Review surface for duplicate partners.
+
+        The model already carried x_merge_needs_review, but nothing rendered
+        it: the "POS Bridge > Customers > Needs Merge Review" screen referred
+        to in pos_partner.py never existed. Flagging 118,649 records into a
+        screen nobody can open is not a control, so the list ships with the
+        flag.
+
+        Read-only on purpose. Confirming a duplicate is a judgement call made
+        against the physical customer at the register, not something to be
+        done by bulk-editing a list.
+    -->
+    <record id="view_partner_merge_review_list" model="ir.ui.view">
+        <field name="name">res.partner.merge.review.list</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <list string="Needs Merge Review" create="false" delete="false" edit="false">
+                <field name="id" string="Partner"/>
+                <field name="name"/>
+                <field name="x_duplicate_of_id" string="Duplicate Of"/>
+                <field name="x_duplicate_evidence" string="Evidence"/>
+                <field name="x_home_store_id" optional="show"/>
+                <field name="x_dutchie_visit_count" string="Visits" optional="show"/>
+                <field name="x_dutchie_total_spend" string="Spend" optional="show"/>
+                <field name="create_date" string="Created" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_partner_merge_review" model="ir.actions.act_window">
+        <field name="name">Needs Merge Review</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('x_merge_needs_review', '=', True)]</field>
+        <field name="context">{'search_default_group_store': 1}</field>
+        <field name="view_id" ref="view_partner_merge_review_list"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Nothing awaiting review</p>
+            <p>
+                Partners appear here when reconciliation finds they duplicate
+                another record — same human, two rows. Nothing is merged
+                automatically; confirm against the physical ID at the register
+                before acting.
+            </p>
+        </field>
+    </record>
+
+    <!-- Hung under Point of Sale, matching how this module places its other
+         menus (the old mint_pos_bridge root was deliberately removed). -->
+    <menuitem id="menu_partner_merge_review"
+              name="Needs Merge Review"
+              parent="point_of_sale.menu_point_root"
+              action="action_partner_merge_review"
+              sequence="8"/>
+</odoo>
