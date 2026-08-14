@@ -85,6 +85,28 @@ class MintSmsMessage(models.Model):
     error_message = fields.Char(readonly=True, copy=False)
     response_payload = fields.Text(readonly=True, copy=False)
     sent_at = fields.Datetime(readonly=True, copy=False)
+    # Delivery verification (2026-08-13): BlueBubbles returning HTTP 200 only
+    # means Messages.app ACCEPTED the send — delivery can still fail afterward
+    # (observed live: every text to an Android number sat in Messages with
+    # error 4/22 while this model said 'sent'). The cron below re-reads each
+    # sent message from BlueBubbles and flips state to failed when Messages
+    # recorded a post-acceptance error.
+    bb_message_guid = fields.Char(
+        string="Messages GUID", readonly=True, copy=False,
+        help="GUID Messages.app assigned on acceptance; used by the "
+             "delivery-verification cron to re-read the true outcome.")
+    delivery_verified = fields.Boolean(
+        readonly=True, copy=False, default=False,
+        help="Set once the verification cron reached a final verdict "
+             "(delivered, failed, or aged out) — stops further polling.")
+    delivered_at = fields.Datetime(readonly=True, copy=False)
+
+    @api.onchange("partner_id")
+    def _onchange_partner_id(self):
+        """Compose GUI affordance: picking a contact fills their number."""
+        for msg in self:
+            if msg.partner_id and not msg.number:
+                msg.number = msg.partner_id._sms_e164()
 
     # ------------------------------------------------------------------
     # Config
@@ -236,6 +258,15 @@ class MintSmsMessage(models.Model):
             }
             if sent_ok:
                 vals.update({"state": "sent", "sent_at": fields.Datetime.now()})
+                # Keep the GUID Messages assigned so the verification cron
+                # can re-read the real outcome later.
+                try:
+                    guid = ((json.loads(resp_text or "{}") or {})
+                            .get("data") or {}).get("guid")
+                    if guid:
+                        vals["bb_message_guid"] = guid
+                except (ValueError, AttributeError):
+                    pass
             else:
                 vals.update({
                     "state": "failed",
@@ -245,6 +276,67 @@ class MintSmsMessage(models.Model):
                                 msg.id, status, (resp_text or "")[:200])
             msg.write(vals)
         return True
+
+    # ------------------------------------------------------------------
+    # Delivery verification cron
+    # ------------------------------------------------------------------
+    # Messages.app error codes seen live: 4 = SMS relay failure (no paired
+    # iPhone forwarding), 22 = iMessage handle undeliverable. Anything
+    # non-zero is a delivery failure regardless of code.
+    VERIFY_MAX_AGE_HOURS = 48
+
+    @api.model
+    def _cron_verify_delivery(self):
+        """Re-read 'sent' messages from BlueBubbles; fail the ones Messages
+        actually errored on. SMS relay produces no delivery receipt, so a
+        message with error 0 that never flips isDelivered is aged out as
+        verified after VERIFY_MAX_AGE_HOURS rather than polled forever."""
+        cfg = self._bb_config()
+        if not (cfg["enabled"] and cfg["url"] and cfg["password"]):
+            return
+        cutoff = fields.Datetime.subtract(
+            fields.Datetime.now(), hours=self.VERIFY_MAX_AGE_HOURS)
+        pending = self.search([
+            ("state", "=", "sent"),
+            ("delivery_verified", "=", False),
+            ("bb_message_guid", "!=", False),
+        ], limit=50, order="sent_at asc")
+        for msg in pending:
+            try:
+                resp = requests.get(
+                    cfg["url"].rstrip("/") + "/api/v1/message/%s" % msg.bb_message_guid,
+                    params={"password": cfg["password"]},
+                    headers={"ngrok-skip-browser-warning": "true"},
+                    timeout=15,
+                )
+                if resp.status_code >= 400:
+                    # Tunnel/service hiccup or unknown guid — retry next run,
+                    # unless the record has aged out.
+                    if msg.sent_at and msg.sent_at < cutoff:
+                        msg.delivery_verified = True
+                    continue
+                data = (resp.json() or {}).get("data") or {}
+            except (requests.RequestException, ValueError):
+                continue  # gateway unreachable — retry next run
+            error = data.get("error") or 0
+            if error:
+                msg.write({
+                    "state": "failed",
+                    "delivery_verified": True,
+                    "error_message": "Messages delivery error %s "
+                                     "(accepted, then failed to deliver)" % error,
+                })
+                _logger.warning(
+                    "mint.sms.message %s: Messages reported delivery error %s "
+                    "after acceptance (guid %s)", msg.id, error, msg.bb_message_guid)
+            elif data.get("isDelivered") or data.get("dateDelivered"):
+                msg.write({
+                    "delivery_verified": True,
+                    "delivered_at": fields.Datetime.now(),
+                })
+            elif msg.sent_at and msg.sent_at < cutoff:
+                # error 0, no receipt (normal for SMS relay) — stop polling.
+                msg.delivery_verified = True
 
     # ------------------------------------------------------------------
     # Auto-send on create (agents call create_record and expect delivery)

@@ -4,7 +4,13 @@
         <field name="name">mint.sms.message.list</field>
         <field name="model">mint.sms.message</field>
         <field name="arch" type="xml">
-            <list string="Outbound Texts" create="false">
+            <!-- Compose is allowed from here (2026-08-13): model access grants
+                 create only to the SMS Sender group, so the New button simply
+                 doesn't render for anyone else. The action's
+                 mint_sms_no_autosend context keeps a composed record in draft
+                 until its Send button is clicked — and action_send still runs
+                 the full consent/whitelist gate. -->
+            <list string="Outbound Texts">
                 <field name="create_date"/>
                 <field name="partner_id"/>
                 <field name="number"/>
@@ -42,6 +48,8 @@
                         </group>
                         <group>
                             <field name="sent_at"/>
+                            <field name="delivered_at" invisible="not delivered_at"/>
+                            <field name="delivery_verified" invisible="state != 'sent'"/>
                             <field name="block_reason" invisible="state != 'blocked'"/>
                             <field name="error_message" invisible="state != 'failed'"/>
                         </group>
