@@ -46,29 +46,33 @@ function bootPostHog() {
             maskTextSelector: ".o_data_cell.o_monetary_cell",  // Mask financial data
         },
         loaded: function (posthog) {
-            // Identify by Odoo user
             const login = session.username || session.login || "unknown";
-            const userId = session.uid || 0;
+            const userId = session.uid;
             const userName = session.name || login;
 
-            posthog.identify("odoo-" + userId, {
-                email: login.includes("@") ? login : undefined,
-                name: userName,
-                odoo_user: login,
-                odoo_uid: userId,
-                odoo_is_admin: session.is_admin || false,
-                odoo_is_system: session.is_system || false,
-                app: "odoo-backend",
-                odoo_url: window.location.origin,
-            });
+            // Identify ONLY when a real user is logged in. `session.uid` is
+            // absent on public pages, and the old `|| 0` fallback merged every
+            // anonymous visitor into one giant "odoo-0" person.
+            if (userId) {
+                posthog.identify("odoo-" + userId, {
+                    email: login.includes("@") ? login : undefined,
+                    name: userName,
+                    odoo_user: login,
+                    odoo_uid: userId,
+                    odoo_is_admin: session.is_admin || false,
+                    odoo_is_system: session.is_system || false,
+                    app: "odoo-backend",
+                    odoo_url: window.location.origin,
+                });
+            }
 
             posthog.register({
                 app: "odoo-backend",
                 app_version: session.server_version || "19.0",
-                odoo_user: login,
+                odoo_user: userId ? login : undefined,
             });
 
-            console.log("[PostHog] Odoo backend tracking active for", login);
+            console.log("[PostHog] Odoo backend tracking active for", userId ? login : "anonymous");
         },
     });
 
