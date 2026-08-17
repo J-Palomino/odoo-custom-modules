@@ -19,6 +19,11 @@
                         <field name="age_verification_method" readonly="1"/>
                         <field name="age_verification_source" readonly="1"/>
                     </group>
+                    <group string="Phone Verification">
+                        <field name="phone_verified" readonly="1"/>
+                        <field name="phone_verified_at" readonly="1"/>
+                        <field name="phone_verified_number" readonly="1"/>
+                    </group>
                 </page>
             </xpath>
         </field>

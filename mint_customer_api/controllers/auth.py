@@ -160,6 +160,11 @@ def _enqueue_dutchie_create(payload):
 # on the consumer site without colliding with their staff identity.
 WEB_LOGIN_PREFIX = 'web:'
 
+# Lifetime of the phone_verified proof token minted by otp/verify. Long
+# enough to finish filling the signup form after the code check, short
+# enough that a leaked proof goes stale the same session.
+PHONE_PROOF_TTL_SECONDS = 30 * 60
+
 
 def _web_login(email):
     """Return the prefixed res.users.login for a web customer email."""
@@ -372,6 +377,25 @@ class MintCustomerAuth(http.Controller):
         if existing:
             return error_response('An account with this email already exists', 409)
 
+        # Phone-ownership verification (OTP flow, see otp_request/otp_verify).
+        # The proof token is honored whenever presented; whether it is
+        # REQUIRED is flag-gated so the requirement only turns on once an SMS
+        # transport is confirmed healthy (Telnyx is currently disabled and
+        # BlueBubbles rides a best-effort tunnel — hard-requiring a text
+        # nobody can receive would close signups entirely).
+        phone_proof = _clean_token(data.get('phone_verification_token'))
+        phone_is_verified = bool(phone_proof) and self._check_phone_proof(
+            phone_proof, phone)
+        require_otp = (request.env['ir.config_parameter'].sudo().get_param(
+            'mint_customer_api.require_phone_verification') == 'True')
+        if require_otp:
+            if not phone:
+                return error_response(
+                    'A mobile number is required to create an account')
+            if not phone_is_verified:
+                return error_response(
+                    'Please verify your phone number to continue', 403)
+
         # Age-verification method. The web DOB is self-attested. We deliberately
         # do NOT honor a client-supplied 'id_scanned' claim: nothing server-side
         # has validated that an ID document was actually scanned, so trusting the
@@ -429,6 +453,24 @@ class MintCustomerAuth(http.Controller):
                 no_reset_password=True,
                 tracking_disable=True,
             ).write({'password': password})
+
+            # Phone-verification ledger. Stamped whenever the signup carried
+            # a valid proof — flag on or off — so accounts verified during a
+            # soft rollout keep the evidence. Guarded: a ledger write must
+            # never fail an already-created account.
+            if phone_is_verified:
+                try:
+                    user.partner_id.sudo().with_context(
+                        tracking_disable=True, mail_notrack=True,
+                    ).write({
+                        'phone_verified': True,
+                        'phone_verified_at': fields.Datetime.now(),
+                        'phone_verified_number': phone,
+                    })
+                except Exception:
+                    _logger.exception(
+                        'phone_verified stamp failed for partner %s',
+                        user.partner_id.id)
 
             # Provable marketing consent (opt-in, OFF by default). Reuses the
             # canonical consent ledgers: set_email_opt_in (mint_account) and
@@ -614,6 +656,187 @@ class MintCustomerAuth(http.Controller):
             'token': token,
             'user': _user_json(user),
         })
+
+    @http.route('/api/v1/auth/apple', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def apple_auth(self, **kw):
+        """Sign in with Apple. Called server-to-server by the Astro callback
+        after it verified Apple's identity token (RS256 against Apple's JWKS,
+        aud/iss/exp/nonce) — same trust model as google_auth: X-Api-Key plus
+        the FE's token validation.
+
+        Unlike Google, the lookup is sub-first: Hide My Email hands us a
+        per-app private-relay address the customer can rotate or disable, and
+        Apple omits the `user` payload after the first authorization — the
+        `sub` claim is the only durable identity. Email is only used to (a)
+        adopt a pre-existing password/Google account on first Apple sign-in
+        and (b) create the account when there is no match at all.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        apple_sub = (data.get('apple_sub') or '').strip()
+        email = (data.get('email') or '').strip().lower()
+        name = (data.get('name') or '').strip() or (email.split('@')[0] if email else '')
+
+        if not apple_sub:
+            return error_response('apple_sub is required')
+
+        Users = request.env['res.users'].sudo()
+        user = Users.search([
+            ('apple_sub', '=', apple_sub),
+            ('share', '=', True),
+            ('active', '=', True),
+        ], limit=1)
+
+        if not user and email:
+            user = Users.search([
+                ('login', 'in', [email, _web_login(email)]),
+                ('share', '=', True),
+                ('active', '=', True),
+            ], limit=1)
+            if user and user.apple_sub and user.apple_sub != apple_sub:
+                # Same email, different Apple identity — never silently hand
+                # over an account that is already bound to another Apple ID.
+                _logger.warning(
+                    'apple_auth: sub mismatch for %s (user %s)', email, user.id)
+                return error_response(
+                    'This email is already linked to a different Apple ID.', 403)
+
+        if not user:
+            if not email:
+                # Repeat authorization for an account we never stored (e.g.
+                # the sub was minted before this endpoint shipped): Apple only
+                # resends the email after the customer revokes the app grant.
+                return error_response(
+                    "Apple didn't share an email for this account. In your "
+                    "iPhone settings, remove Mint from 'Sign in with Apple', "
+                    'then try again.', 400)
+            try:
+                user = self._create_web_user(email=email, name=name)
+            except Exception:
+                return unexpected_error_response(
+                    'Could not create your account.',
+                    'Apple sign-in account creation failed',
+                )
+
+        if not user.apple_sub:
+            user.write({'apple_sub': apple_sub})
+
+        token = user._generate_jwt()
+        return json_response({
+            'token': token,
+            'user': _user_json(user),
+        })
+
+    # ------------------------------------------------------------------
+    # Signup phone verification (OTP) — see models/auth_otp.py for the
+    # rationale (email delivery is impossible on this instance; phone is
+    # also the loyalty key, so verifying it is worth more than email).
+    # ------------------------------------------------------------------
+
+    @http.route('/api/v1/auth/otp/request', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def otp_request(self, **kw):
+        """Text a one-time code to a signup's phone number."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        phone = normalize_phone_e164(data.get('phone'))
+        if not re.fullmatch(r'\+1\d{10}', phone or ''):
+            return error_response('A valid US mobile number is required')
+
+        ip = (request.httprequest.headers.get('CF-Connecting-IP')
+              or request.httprequest.remote_addr or '')
+        try:
+            ok, err, status = request.env['mint.auth.otp'].sudo().issue(
+                phone, request_ip=ip)
+        except Exception:
+            return unexpected_error_response(
+                'Could not send a verification code.',
+                'OTP issue failed',
+            )
+        if not ok:
+            return error_response(err, status)
+        return json_response({'sent': True})
+
+    @http.route('/api/v1/auth/otp/verify', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def otp_verify(self, **kw):
+        """Check a one-time code; on success mint a short-lived proof token.
+
+        The token (HS256, 30 min, purpose-scoped) is what register() accepts
+        as evidence — verifying and registering are separate requests, so the
+        proof has to survive statelessly between them. Signed with the same
+        mint.jwt_secret as session JWTs but never interchangeable with one:
+        _verify_jwt requires user_id/sv, and register checks purpose+phone.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        phone = normalize_phone_e164(data.get('phone'))
+        code = str(data.get('code') or '').strip()
+        if not phone or not code:
+            return error_response('Phone and code are required')
+
+        ok, err = request.env['mint.auth.otp'].sudo().check(phone, code)
+        if not ok:
+            return error_response(err, 400)
+
+        import jwt as pyjwt
+        secret = request.env['res.users'].sudo()._get_jwt_secret()
+        now = int(time.time())
+        token = pyjwt.encode({
+            'purpose': 'phone_verified',
+            'phone': phone,
+            'iat': now,
+            'exp': now + PHONE_PROOF_TTL_SECONDS,
+        }, secret, algorithm='HS256')
+        return json_response({
+            'verified': True,
+            'phone': phone,
+            'phone_verification_token': token,
+        })
+
+    def _check_phone_proof(self, token, phone):
+        """True when `token` is a live phone_verified proof for `phone`."""
+        if not token or not phone:
+            return False
+        import jwt as pyjwt
+        secret = request.env['res.users'].sudo()._get_jwt_secret()
+        try:
+            payload = pyjwt.decode(token, secret, algorithms=['HS256'])
+        except pyjwt.InvalidTokenError:
+            return False
+        return (payload.get('purpose') == 'phone_verified'
+                and payload.get('phone') == phone)
 
     def _require_fe_key(self):
         """Reject the request unless it carries the FE-shared rpc X-Api-Key.

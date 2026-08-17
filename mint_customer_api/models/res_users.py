@@ -26,6 +26,18 @@ class ResUsers(models.Model):
         help='Bump to revoke all of this user\'s outstanding JWT sessions.',
     )
 
+    # Sign in with Apple stable subject. Apple's `sub` claim is the ONLY
+    # durable identifier for an Apple user: with Hide My Email the id_token
+    # carries a per-app private-relay address the customer can disable at any
+    # time, so an email-keyed lookup (the Google pattern) would mint a second
+    # account the day the relay changes. /api/v1/auth/apple therefore matches
+    # on this field first and only falls back to email for first sign-ins.
+    apple_sub = fields.Char(
+        string='Apple Sign-In Subject', index=True, copy=False, readonly=True,
+        help="Stable `sub` claim from Apple's identity token. Set on first "
+             "Sign in with Apple; used as the primary lookup key thereafter.",
+    )
+
     def revoke_sessions(self):
         """Invalidate all outstanding JWT sessions for these users."""
         for user in self:

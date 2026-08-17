@@ -57,3 +57,27 @@ class ResPartner(models.Model):
         help='Provenance of the verification event, e.g. web_register, '
              'web_google, pos_import.',
     )
+
+    # --- Phone-verification ledger -----------------------------------------
+    # Set by the signup OTP flow (mint.auth.otp): the customer proved control
+    # of this number by echoing back a code we texted to it. Kept as a ledger
+    # (verified number + timestamp) rather than a bare boolean so a later
+    # phone edit doesn't silently keep the "verified" claim for a number we
+    # never texted — consumers must compare phone_verified_number to the
+    # current phone before trusting it.
+    phone_verified = fields.Boolean(
+        string='Phone Verified',
+        default=False,
+        index=True,
+        help='True once the customer confirmed an SMS one-time code sent to '
+             'phone_verified_number during web signup.',
+    )
+    phone_verified_at = fields.Datetime(
+        string='Phone Verified At',
+        help='Timestamp the OTP check passed (audit).',
+    )
+    phone_verified_number = fields.Char(
+        string='Verified Phone (E.164)',
+        help='The exact number the OTP was delivered to. If partner.phone is '
+             'later changed, phone_verified applies to THIS number only.',
+    )
