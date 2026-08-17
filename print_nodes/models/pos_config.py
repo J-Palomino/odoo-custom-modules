@@ -55,6 +55,12 @@ class PosConfig(models.Model):
     def _load_pos_data_fields(self, config_id):
         """Expose PrintNodes settings to the POS frontend (not the secret key)."""
         fields_list = super()._load_pos_data_fields(config_id)
+        if not fields_list:
+            # An empty list means "read ALL fields" (pos.load.mixin default for
+            # pos.config), which already includes our custom fields. Appending
+            # ours would narrow the read to only these five and break core's
+            # _load_pos_data_read (KeyError: 'use_pricelist') on POS open.
+            return fields_list
         return fields_list + [
             'mint_zebra_enabled',
             'mint_zebra_transport',
