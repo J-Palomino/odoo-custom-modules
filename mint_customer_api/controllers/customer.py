@@ -753,10 +753,17 @@ class MintCustomerProfile(http.Controller):
         if not user.partner_id:
             return error_response('No customer profile linked to this account', 400)
 
+        # A lapsed code may still carry redemption_status='pending': the flip to
+        # 'expired' happens in a cron / on register contact, not at the moment
+        # expires_at passes. Filter on the timestamp here so the rewards page
+        # never shows a code the register would refuse.
         redemptions = request.env['mint.discount'].sudo().search([
             ('discount_type', '=', 'loyalty_redemption'),
             ('redemption_partner_id', '=', user.partner_id.id),
             ('redemption_status', '=', 'pending'),
+            '|',
+            ('expires_at', '=', False),
+            ('expires_at', '>', fields.Datetime.now()),
         ], order='create_date desc')
 
         return json_response({
