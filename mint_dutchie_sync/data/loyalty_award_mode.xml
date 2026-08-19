@@ -14,5 +14,17 @@
             <field name="key">mint.loyalty.award_mode</field>
             <field name="value">off</field>
         </record>
+        <!--
+            Per-region award rates, JSON keyed by mint.region.code, in points
+            per net dollar. Michigan's program is cash-value at the register,
+            accrued at 2.5% of spend (Dutchie LSP 576 AccrualRate=0.025) — the
+            web balance mints at the same rate so the two ledgers track.
+            Existing databases: noupdate means an upgrade does NOT create this
+            row; set it once via Settings > Technical > System Parameters.
+        -->
+        <record id="param_mint_loyalty_region_award_rates" model="ir.config_parameter">
+            <field name="key">mint.loyalty.region_award_rates</field>
+            <field name="value">{"MI": 0.025}</field>
+        </record>
     </data>
 </odoo>
