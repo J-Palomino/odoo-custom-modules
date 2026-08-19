@@ -30,6 +30,7 @@ Until the reconciliation backfill runs, automatic awarding is gated off. The
 gate is a config parameter rather than deleted code so it is reversible
 without a deploy.
 """
+import json
 import logging
 
 from odoo import api, models
@@ -46,6 +47,17 @@ _logger = logging.getLogger(__name__)
 #: heard of this parameter is one that has not yet been reconciled against
 #: Dutchie, and minting into an unreconciled ledger is what caused the drift.
 AWARD_MODE_PARAM = 'mint.loyalty.award_mode'
+
+#: ``ir.config_parameter`` holding per-region award rates as JSON, keyed by
+#: ``mint.region.code`` with values in points per net dollar, e.g.
+#: ``{"MI": 0.025}``. Regions run different loyalty programs: Michigan is
+#: cash-value (a point is a dollar at the register, accrued at 2.5% of spend
+#: — Dutchie LSP 576's own ``AccrualRate``), while Arizona is poster-based
+#: product redemption at 1 pt/$1. A region listed here mints at its rate even
+#: while ``AWARD_MODE_PARAM`` is ``off``; regions not listed stay governed by
+#: the global mode. Unset/malformed reads as "no regional rates" — the gate
+#: fails closed, same as the global one.
+REGION_RATES_PARAM = 'mint.loyalty.region_award_rates'
 
 #: Context key that suppresses audit-row creation for one operation. Used by
 #: the balance wizard, which writes its own richer ``loyalty.history`` row and
@@ -74,6 +86,38 @@ class LoyaltyCard(models.Model):
     def _mint_awards_enabled(self):
         """True when automatic point awarding is permitted."""
         return self._mint_award_mode() == 'legacy'
+
+    @api.model
+    def _mint_region_award_rate(self, company):
+        """Points minted per net dollar for ``company``'s region, or 0.0.
+
+        Reads ``REGION_RATES_PARAM``. Never raises: a company without a
+        region, an unknown region code, or a malformed parameter all read
+        as 0.0. ``res.company.region_id`` is defined by ``mint_api_v2``,
+        which is not a dependency of this module — hence the ``getattr``.
+        """
+        raw = (self.env['ir.config_parameter'].sudo()
+               .get_param(REGION_RATES_PARAM, '') or '').strip()
+        if not raw:
+            return 0.0
+        try:
+            rates = json.loads(raw)
+        except ValueError:
+            _logger.warning(
+                'Loyalty: %s is not valid JSON — treating as no regional rates',
+                REGION_RATES_PARAM,
+            )
+            return 0.0
+        if not isinstance(rates, dict):
+            return 0.0
+        region = getattr(company, 'region_id', False)
+        code = (getattr(region, 'code', '') or '').strip() if region else ''
+        if not code:
+            return 0.0
+        try:
+            return float(rates.get(code) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
 
     # ------------------------------------------------------------------
     # Audit trail
