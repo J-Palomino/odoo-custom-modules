@@ -22,6 +22,32 @@
                 header#top nav.navbar, header#top nav.navbar a,
                 header#top nav.navbar span, header#top nav.navbar .nav-link,
                 header#top nav.navbar .fa { color: var(--daisy-text-on-primary) !important; }
+
+                /* The rule above also hits the mobile offcanvas (#top_menu_collapse_mobile)
+                   and Bootstrap dropdowns, which render on a WHITE panel inside the navbar —
+                   white-on-white. Re-darken them, and let label spans inherit (the direct
+                   span rule above otherwise beats the link color). Mirrors the
+                   "mobile-hamburger-white-on-white-fix v4" hotfix in website.custom_code_head. */
+                header#top nav.navbar #top_menu_collapse_mobile .nav-link,
+                header#top nav.navbar #top_menu_collapse_mobile .nav-link:visited,
+                header#top nav.navbar #top_menu_collapse_mobile a,
+                header#top nav.navbar #top_menu_collapse_mobile .dropdown-item,
+                header#top nav.navbar .js_usermenu .dropdown-item,
+                header#top nav.navbar .js_usermenu a,
+                header#top nav.navbar .dropdown-menu .dropdown-item,
+                header#top nav.navbar .dropdown-menu a { color: #212529 !important; }
+                header#top nav.navbar #top_menu_collapse_mobile .nav-link:hover,
+                header#top nav.navbar #top_menu_collapse_mobile .nav-link:focus,
+                header#top nav.navbar #top_menu_collapse_mobile .nav-link.active,
+                header#top nav.navbar #top_menu_collapse_mobile .dropdown-item:hover,
+                header#top nav.navbar .js_usermenu a:hover,
+                header#top nav.navbar .dropdown-menu a:hover,
+                header#top nav.navbar .dropdown-menu .dropdown-item:hover { color: var(--daisy-primary) !important; }
+                header#top nav.navbar #top_menu_collapse_mobile .btn-close { filter: none !important; }
+                header#top nav.navbar #top_menu_collapse_mobile span,
+                header#top nav.navbar .js_usermenu span,
+                header#top nav.navbar .dropdown-menu span { color: inherit !important; }
+
                 .btn-primary { background-color: var(--daisy-primary) !important; border-color: var(--daisy-hover) !important; color: var(--daisy-text-on-primary) !important; }
                 .btn-primary:hover { background-color: var(--daisy-hover) !important; }
 
