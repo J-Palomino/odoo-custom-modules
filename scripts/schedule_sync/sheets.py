@@ -6,9 +6,12 @@ service account and a `gcloud auth login --enable-gdrive-access` credential
 actually carry. XLSX also preserves the merged ranges these schedules rely on.
 
 Credential resolution order:
-  1. GOOGLE_SERVICE_ACCOUNT_JSON (path to a key file)
-  2. ~/gbp-metrics-key.json                      — needs the sheet shared to it
-  3. `gcloud auth print-access-token`            — whoever gcloud is logged in as
+  1. the OAuth refresh token stored in Odoo by oauth_setup.py — preferred, and
+     the only option that is both unattended and tied to a human who can
+     already see the sheets
+  2. GOOGLE_SERVICE_ACCOUNT_JSON (path to a key file)
+  3. ~/gbp-metrics-key.json                      — needs the sheet shared to it
+  4. `gcloud auth print-access-token`            — whoever gcloud is logged in as
 """
 
 import datetime as dt
@@ -48,8 +51,41 @@ def _gcloud_token():
     return out.stdout.strip() or None
 
 
+def _odoo_oauth_token():
+    """Exchange the refresh token stored in Odoo for an access token."""
+    try:
+        from odoo import Odoo
+        import oauth_setup as osu
+    except ImportError:
+        return None, None
+
+    try:
+        o = Odoo()
+        refresh = osu.get_param(o, osu.REFRESH_KEY)
+        if not refresh:
+            return None, None
+        client_id = osu.get_param(o, osu.CLIENT_ID_KEY)
+        client_secret = osu.get_param(o, osu.CLIENT_SECRET_KEY)
+        account = osu.get_param(o, osu.ACCOUNT_KEY) or 'stored account'
+        r = requests.post(osu.TOKEN_URL, timeout=60, data={
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'refresh_token': refresh,
+            'grant_type': 'refresh_token',
+        })
+        if r.status_code != 200:
+            return None, None
+        return r.json()['access_token'], f'Odoo OAuth token ({account})'
+    except Exception:
+        return None, None
+
+
 def get_token():
     """Return (token, description) or raise AuthError with what to do next."""
+    tok, how = _odoo_oauth_token()
+    if tok:
+        return tok, how
+
     explicit = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
     if explicit and os.path.exists(explicit):
         return _sa_token(explicit), f'service account ({explicit})'
@@ -67,7 +103,9 @@ def get_token():
 
     raise AuthError(
         'No usable Google credential.\n'
-        '  Either share the 8 sheets with the service account, or run:\n'
+        '  Preferred: python3 oauth_setup.py   (one-time browser consent,\n'
+        '  reuses the OAuth client already configured in Odoo)\n'
+        '  Alternatives: share the 8 sheets with the service account, or run\n'
         '    gcloud auth login --enable-gdrive-access')
 
 

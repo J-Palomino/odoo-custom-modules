@@ -47,23 +47,44 @@ python3 from_csv.py --store Mesa --b64 mesa.b64
 
 `sync.py` resolves a credential in this order:
 
-1. `GOOGLE_SERVICE_ACCOUNT_JSON` — path to a key file
-2. `~/gbp-metrics-key.json`
-3. `gcloud auth print-access-token`
+1. the OAuth refresh token stored in Odoo — **preferred**
+2. `GOOGLE_SERVICE_ACCOUNT_JSON` — path to a key file
+3. `~/gbp-metrics-key.json`
+4. `gcloud auth print-access-token`
 
-**Current state:** the service account
+### Setting up the OAuth path (one time)
+
+Reuses the Google OAuth client the Odoo/Daisy stack already owns
+(`google_calendar_client_id` / `_secret` in `ir.config_parameter`, project
+`letsgomint-us`) — no new credential is introduced. Consent once, and the
+refresh token is stored as `schedule_sync.google_refresh_token` for unattended
+runs thereafter.
+
+```bash
+python3 oauth_setup.py            # loopback listener on :8765
+python3 oauth_setup.py --manual   # paste the code instead
+python3 oauth_setup.py --check    # show state, prove the token still refreshes
+```
+
+Approve with the account that can see the sheets. `wizard@brightroot.com`
+resolves to the same Google identity as `jpalomino@brightroot.com`, which is
+why that account can read all eight.
+
+The default flow needs `http://localhost:8765/` registered on the OAuth client.
+Whether it is registered could not be determined from outside — Google defers
+`redirect_uri` validation until after sign-in, so probing the consent endpoint
+proves nothing. If you get `redirect_uri_mismatch`, either add that URI in the
+Cloud console or use `--manual`, which goes through
+`https://letsgomint.us/google_account/authentication` (already registered for
+the calendar integration) and has you copy the `code` out of the address bar.
+
+### Why not the service account
+
 `gbp-metrics@letsgomint-us.iam.gserviceaccount.com` authenticates fine and the
-APIs are enabled, but Drive returns 404 and Sheets 403 for all eight files —
-it simply has no access. Two ways to fix it:
-
-- **Unattended (preferred):** share the eight sheets with the service account
-  address as Viewer. Nothing else changes.
-- **Interactive:** `gcloud auth login --enable-gdrive-access`, which grants the
-  Drive scope the export endpoint needs. Note user credentials expire and need
-  periodic re-auth, so this suits manual runs rather than a cron.
-
-Domain-wide delegation is *not* a route here: the SA's DWD grant covers only
-`business.manage`, and requesting Drive scopes returns `unauthorized_client`.
+APIs are enabled, but Drive returns 404 and Sheets 403 for all eight files — it
+has no access. Sharing the sheets with that address would also work. Domain-wide
+delegation is *not* a route: the SA's DWD grant covers only `business.manage`,
+and requesting Drive scopes returns `unauthorized_client`.
 
 ## Design notes
 
