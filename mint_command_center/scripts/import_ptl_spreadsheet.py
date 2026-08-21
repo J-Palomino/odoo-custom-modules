@@ -178,11 +178,21 @@ class Odoo:
 
 # ── exact-only resolvers ─────────────────────────────────────────────────────
 
+# Group/collapse glyphs some workbooks prefix onto the Brand cell (the July
+# AZ workbook writes "▼ Sofa King"). These are spreadsheet UI markers, not part
+# of the brand name, so they are stripped before an exact lookup. Only these
+# specific glyphs are removed — general leading punctuation is NOT stripped,
+# because "&Shine" and "(the) Essence" are real brand names.
+MARKER_RE = re.compile(r'^[▶▼▸▾►◀‣•]+\s*')
+
+
 def norm_key(s):
-    """Casefold + collapse whitespace. This is normalisation for an EXACT
-    lookup (so "Alien Labs" == "alien  labs"), not fuzzy matching — no
-    token dropping, no substring or similarity logic."""
-    return re.sub(r'\s+', ' ', (s or '').strip()).casefold()
+    """Casefold + collapse whitespace + drop a leading collapse glyph. This is
+    normalisation for an EXACT lookup (so "Alien Labs" == "alien  labs" and
+    "▼ Sofa King" == "Sofa King"), not fuzzy matching — no token dropping, no
+    substring or similarity logic."""
+    s = MARKER_RE.sub('', (s or '').strip())
+    return re.sub(r'\s+', ' ', s.strip()).casefold()
 
 
 def build_brand_index(odoo):
