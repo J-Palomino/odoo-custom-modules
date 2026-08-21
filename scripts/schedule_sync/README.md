@@ -121,6 +121,43 @@ and requesting Drive scopes returns `unauthorized_client`.
   supported path, though it is readable afterwards.
 - Upsert is **by record name**, so re-runs update in place.
 
+## Scheduling
+
+**Nothing runs this automatically.** There is no `ir.cron`, no crontab entry
+and no launchd agent — every sync so far has been invoked by hand. Deciding
+where it runs is still open, and it turns on the credential:
+
+- The current credential is a **gcloud user token for
+  jpalomino@brightroot.com, which expires** and needs an interactive re-login.
+  That is fine for manual runs and unsuitable for a cron.
+- For anything unattended, share the eight sheets with the service account
+  first. Then the job has a credential that does not expire.
+
+Options, roughly in order of durability:
+
+| Where | Needs | Notes |
+|---|---|---|
+| Odoo `ir.cron` | code moved into an Odoo module + SA credential | Runs where the data lands; 54 crons already run there |
+| Railway / Coolify worker | SA credential | Independent of anyone's laptop |
+| launchd on this Mac | SA credential, machine awake | Simplest, least reliable |
+
+## Styling
+
+Cell styling **is** imported: fill colour, bold, italic and font colour, using
+the keys o-spreadsheet actually stores (`fillColor`, `textColor`, `bold`,
+verified against live records). Styles are deduplicated into a shared table —
+the same handful of fills repeats thousands of times, so 58,099 styled cells in
+Cave Creek collapse to 95 distinct styles.
+
+This matters because these schedules encode meaning in colour, not just text:
+Cave Creek's tabs carry four heavily-used fills, and a plain-text import
+silently drops whatever they signify.
+
+The Sheets API path fetches formatting via `includeGridData`, which is much
+heavier than values, so it is skipped when more than `style_tab_limit` (25)
+tabs are selected. In practice that means **Tempe's full archive has no
+styling** while its rolling window does.
+
 ## Verified coverage
 
 Audited 2026-08-20 with `audit.py`, comparing source sheets against what Odoo

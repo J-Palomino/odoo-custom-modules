@@ -110,11 +110,16 @@ def main():
                     tabs, back_days=args.back_days,
                     forward_days=args.forward_days)
 
+            # shared across every tab in this store — the same few fills and
+            # bold flags repeat thousands of times
+            style_table = {}
             osheets = [
-                build_sheet(t['title'], t['grid'], merges=t['merges'], index=i)
+                build_sheet(t['title'], t['grid'], merges=t['merges'], index=i,
+                            cell_styles=t.get('styles'), style_table=style_table)
                 for i, t in enumerate(picked)
             ]
             cells = sum(len(s['cells']) for s in osheets)
+            styled = sum(len(s['styles']) for s in osheets)
 
             if args.dry_run:
                 weeks = ', '.join(
@@ -124,13 +129,13 @@ def main():
                       f'dry-run [{weeks}]')
                 continue
 
-            doc = build_document(osheets)
+            doc = build_document(osheets, style_table=style_table)
             cid = odoo.company_id_by_name(st['company'])
             rid, created = odoo.upsert_spreadsheet(
                 odoo_name(name, archive=args.all_weeks), doc, company_id=cid)
             verb = 'created' if created else 'updated'
             print(f'{name:<12} {len(tabs):>5} {len(picked):>6} {cells:>8}  '
-                  f'{verb} id={rid}')
+                  f'{verb} id={rid} styles={styled}/{len(style_table)}')
 
         except Exception as e:
             failures.append((name, e))

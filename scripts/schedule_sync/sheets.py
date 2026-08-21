@@ -217,7 +217,7 @@ def _batch_get(sheet_id, ranges, token, chunk=40):
     return out
 
 
-def read_via_api(sheet_id, token, want_all=False, **week_kw):
+def read_via_api(sheet_id, token, want_all=False, style_tab_limit=25, **week_kw):
     """Read a workbook through the Sheets API instead of an XLSX export.
 
     Needed for workbooks Drive refuses to export (`exportSizeLimitExceeded` —
@@ -254,6 +254,7 @@ def read_via_api(sheet_id, token, want_all=False, **week_kw):
     # Range comes from each tab's real gridProperties rather than a fixed
     # A1:BZ200 — a hardcoded cap silently truncates any larger tab.
     by_title = {s['properties']['title']: s for s in sheets_meta}
+    full_ranges_meta = []
     full_ranges = []
     for t in picked:
         gp = (by_title.get(t['title'], {}).get('properties', {})
@@ -275,7 +276,61 @@ def read_via_api(sheet_id, token, want_all=False, **week_kw):
             f"{_a1(m.get('endRowIndex', 1) - 1, m.get('endColumnIndex', 1) - 1)}"
             for m in (by_title.get(t['title'], {}).get('merges') or [])
         ]
+        t['styles'] = {}
+
+    # Formatting needs includeGridData, which is far heavier than values — only
+    # worth it for a normal week window, not a 225-tab archive.
+    if len(picked) <= style_tab_limit:
+        try:
+            _attach_api_styles(sheet_id, picked, full_ranges, token)
+        except Exception as e:
+            print(f'  (styles unavailable via API: {type(e).__name__})')
     return picked
+
+
+def _gc(c):
+    """Sheets colour {red,green,blue} floats -> '#RRGGBB'."""
+    if not isinstance(c, dict):
+        return None
+    r, g, b = (int(round(255 * float(c.get(k, 0)))) for k in ('red', 'green', 'blue'))
+    return f'#{r:02X}{g:02X}{b:02X}'
+
+
+def _attach_api_styles(sheet_id, picked, ranges, token):
+    """Populate tab['styles'] from effectiveFormat for the selected tabs."""
+    fields = ('sheets(data(rowData(values(effectiveFormat('
+              'backgroundColor,textFormat)))))')
+    r = requests.get(
+        SHEETS_API.format(id=sheet_id),
+        params=[('ranges', x) for x in ranges] +
+               [('includeGridData', 'true'), ('fields', fields)],
+        headers={'Authorization': f'Bearer {token}'}, timeout=300)
+    if r.status_code != 200:
+        raise RuntimeError(f'HTTP {r.status_code} {r.text[:150]}')
+    got = r.json().get('sheets', [])
+    for tab, sh in zip(picked, got):
+        styles = {}
+        data = (sh.get('data') or [{}])[0]
+        for ri, row in enumerate(data.get('rowData') or []):
+            for ci, cell in enumerate(row.get('values') or []):
+                ef = cell.get('effectiveFormat') or {}
+                props = {}
+                bg = _gc(ef.get('backgroundColor'))
+                if bg and bg != '#FFFFFF':
+                    props['fillColor'] = bg
+                tf = ef.get('textFormat') or {}
+                if tf.get('bold'):
+                    props['bold'] = True
+                if tf.get('italic'):
+                    props['italic'] = True
+                fg = _gc(tf.get('foregroundColor'))
+                if fg and fg != '#000000':
+                    props['textColor'] = fg
+                if props and ri < len(tab['grid']) \
+                        and ci < len(tab['grid'][ri]) \
+                        and str(tab['grid'][ri][ci]).strip():
+                    styles[(ri, ci)] = props
+        tab['styles'] = styles
 
 
 def _merges_for(ws):
@@ -283,23 +338,79 @@ def _merges_for(ws):
     return [str(m) for m in ws.merged_cells.ranges]
 
 
-def read_workbook(path):
-    """-> [ {title, grid, merges, dates, week_start} ] in workbook tab order."""
+def _argb_to_hex(v):
+    """openpyxl gives ARGB ('FFB6D7A8'); o-spreadsheet wants '#B6D7A8'.
+    Theme/indexed colours come back as non-strings and are skipped."""
+    if not isinstance(v, str) or len(v) not in (6, 8):
+        return None
+    rgb = v[-6:].upper()
+    if rgb in ('FFFFFF', '000000') and len(v) == 8 and v[:2] == '00':
+        return None
+    return '#' + rgb
+
+
+def _cell_style(c):
+    """Extract the styling that carries meaning on these schedules."""
+    props = {}
+    try:
+        f = c.fill
+        if f is not None and getattr(f, 'patternType', None) and f.fgColor is not None:
+            hexv = _argb_to_hex(getattr(f.fgColor, 'rgb', None))
+            # white fill is the default ground; storing it adds noise only
+            if hexv and hexv != '#FFFFFF':
+                props['fillColor'] = hexv
+    except Exception:
+        pass
+    try:
+        fo = c.font
+        if fo is not None:
+            if fo.bold:
+                props['bold'] = True
+            if fo.italic:
+                props['italic'] = True
+            if fo.color is not None:
+                hexv = _argb_to_hex(getattr(fo.color, 'rgb', None))
+                if hexv and hexv != '#000000':
+                    props['textColor'] = hexv
+    except Exception:
+        pass
+    return props
+
+
+def read_workbook(path, with_styles=True):
+    """-> [ {title, grid, merges, styles, dates, week_start} ] in tab order.
+
+    `styles` maps (row, col) -> o-spreadsheet style props. These schedules use
+    fill colour to encode meaning (Cave Creek's current week alone carries four
+    fills across ~400 cells), so dropping it loses information the grid does
+    not otherwise carry.
+    """
     import openpyxl
     wb = openpyxl.load_workbook(path, data_only=True, read_only=False)
     tabs = []
     for ws in wb.worksheets:
         grid = []
-        for row in ws.iter_rows(values_only=True):
-            grid.append(['' if c is None else _fmt(c) for c in row])
+        styles = {}
+        for r, row in enumerate(ws.iter_rows()):
+            vals = []
+            for c, cell in enumerate(row):
+                v = cell.value
+                vals.append('' if v is None else _fmt(v))
+                if with_styles and v is not None and str(v).strip():
+                    props = _cell_style(cell)
+                    if props:
+                        styles[(r, c)] = props
+            grid.append(vals)
         # trim trailing fully-empty rows
         while grid and not any(c.strip() for c in grid[-1]):
             grid.pop()
+        styles = {k: v for k, v in styles.items() if k[0] < len(grid)}
         dates = _dates_in(grid)
         tabs.append({
             'title': ws.title,
             'grid': grid,
             'merges': _merges_for(ws),
+            'styles': styles,
             'dates': dates,
             'week_start': min(dates) if dates else None,
         })

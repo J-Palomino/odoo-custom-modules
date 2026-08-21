@@ -47,8 +47,16 @@ def _sheet_id(title, index):
     return f'wk_{index:03d}_{safe}'[:60] or f'wk_{index:03d}'
 
 
-def build_sheet(title, grid, merges=None, index=0, name_col_width=150):
-    """Turn one week's 2-D grid into an o-spreadsheet sheet dict."""
+def build_sheet(title, grid, merges=None, index=0, name_col_width=150,
+                cell_styles=None, style_table=None):
+    """Turn one week's 2-D grid into an o-spreadsheet sheet dict.
+
+    `cell_styles` maps (row, col) -> a style dict using the keys o-spreadsheet
+    actually stores (verified against live records): bold, fillColor,
+    textColor, fontSize, align, wrapping, verticalAlign. Styles are shared
+    through `style_table`, a dict used to deduplicate across sheets — the same
+    handful of colours repeats thousands of times.
+    """
     cells = {}
     max_cols = 0
     for r, row in enumerate(grid):
@@ -60,6 +68,18 @@ def build_sheet(title, grid, merges=None, index=0, name_col_width=150):
             if text:
                 cells[a1(r, c)] = text
 
+    sheet_styles = {}
+    if cell_styles and style_table is not None:
+        for (r, c), props in cell_styles.items():
+            if not props:
+                continue
+            key = json.dumps(props, sort_keys=True)
+            sid = style_table.get(key)
+            if sid is None:
+                sid = len(style_table) + 1
+                style_table[key] = sid
+            sheet_styles[a1(r, c)] = sid
+
     return {
         'id': _sheet_id(title, index),
         'name': title[:100],
@@ -70,7 +90,7 @@ def build_sheet(title, grid, merges=None, index=0, name_col_width=150):
         'cols': {'0': {'size': name_col_width}},
         'rows': {},
         'merges': list(merges or []),
-        'styles': {},
+        'styles': sheet_styles,
         'formats': {},
         'borders': {},
         'conditionalFormats': [],
@@ -83,13 +103,20 @@ def build_sheet(title, grid, merges=None, index=0, name_col_width=150):
     }
 
 
-def build_document(sheets):
-    """Wrap sheet dicts in the top-level o-spreadsheet document."""
+def build_document(sheets, style_table=None):
+    """Wrap sheet dicts in the top-level o-spreadsheet document.
+
+    `style_table` is the {props_json: id} map filled in by build_sheet; it is
+    inverted here into the document's {id: props} styles map.
+    """
+    styles = {}
+    if style_table:
+        styles = {str(sid): json.loads(key) for key, sid in style_table.items()}
     return {
         'version': OSPREADSHEET_VERSION,
         'revisionId': 'START_REVISION',
         'sheets': sheets,
-        'styles': {},
+        'styles': styles,
         'formats': {},
         'borders': {},
         'uniqueFigureIds': True,
