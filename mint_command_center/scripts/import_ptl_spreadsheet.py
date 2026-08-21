@@ -120,6 +120,33 @@ FORMAT_TO_DISCOUNT_TYPE = {
     'clearance': 'clearance',
 }
 
+# Spreadsheet "Category" -> mint.ptl.deal.product_category selection.
+#
+# This matters more than it looks. `product_category` is an input to the
+# existing product resolver (mint.ptl.deal._compute_matching_products and the
+# mintinvsvc-side resolver that stamps x_resolved_product_id), so a deal with
+# no category resolves to nothing. Measured on the AZ workbooks: the sheets use
+# "Edibles" (3,119 rows), "Concentrates" (1,347) and "Topicals" (594) while the
+# Odoo selection spells them "Edibles & Tinctures" and "Concentrates &
+# Topicals" — leaving 46.1% of rows category-less, which was the single biggest
+# reason the resolver only reached 32.8% of deals.
+#
+# Identity entries are listed explicitly so this dict is the whole contract.
+# "Pet Care" and "Other" are deliberately absent: there is no honest target in
+# the selection, and inventing one would mis-scope the deal.
+CATEGORY_MAP = {
+    'flower': 'Flower',
+    'pre-rolls': 'Pre-Rolls',
+    'prerolls': 'Pre-Rolls',
+    'vapes': 'Vapes',
+    'edibles': 'Edibles & Tinctures',
+    'edibles & tinctures': 'Edibles & Tinctures',
+    'concentrates': 'Concentrates & Topicals',
+    'topicals': 'Concentrates & Topicals',
+    'concentrates & topicals': 'Concentrates & Topicals',
+    'featured deals': 'Featured Deals',
+}
+
 VALID_WEIGHT_UNITS = {'g', 'mg', 'oz', 'ct'}
 WEIGHT_RE = re.compile(r'(\d+(?:\.\d+)?)\s*(g|mg|oz|ct)\b', re.I)
 MONTHS = ('january february march april may june july august september '
@@ -403,6 +430,7 @@ def main():
 
     stats = Counter()
     unresolved_brands, unmapped_formats = Counter(), Counter()
+    unmapped_categories = Counter()
     day_cache, deal_cache = {}, {}
     deal_days = defaultdict(set)
 
@@ -453,6 +481,12 @@ def main():
                 if row['product']:
                     stats['product_descriptor'] += 1
 
+                pcat = CATEGORY_MAP.get(norm_key(row['category']))
+                if pcat:
+                    stats['category_mapped'] += 1
+                elif row['category']:
+                    unmapped_categories[row['category']] += 1
+
                 dtype = FORMAT_TO_DISCOUNT_TYPE.get(norm_key(row['fmt']))
                 if row['fmt'] and not dtype:
                     unmapped_formats[row['fmt']] += 1
@@ -464,9 +498,7 @@ def main():
                     'display_text': row['deal'][:200] or None,
                     # Product-form descriptor ("Flower 3.5g"); see NOTE ON PRODUCTS.
                     'description': row['product'] or None,
-                    'product_category': row['category'] if row['category'] in (
-                        'Flower', 'Pre-Rolls', 'Vapes', 'Edibles & Tinctures',
-                        'Concentrates & Topicals', 'Featured Deals') else None,
+                    'product_category': pcat,
                 }
                 if bid:
                     vals['brand_id'] = bid
@@ -501,17 +533,25 @@ def main():
     print('=' * 66)
     for k in ('tabs', 'tabs_skipped', 'rows', 'days_created', 'duplicate_days',
               'deals_created', 'deals_updated', 'day_links',
-              'brand_resolved', 'weight_parsed', 'product_descriptor'):
+              'brand_resolved', 'weight_parsed', 'product_descriptor',
+              'category_mapped'):
         print(f'  {k:<20} {stats[k]}')
     if stats['rows']:
         print(f'\n  brand   resolved: {stats["brand_resolved"]/stats["rows"]*100:5.1f}%')
         print(f'  weight  parsed  : {stats["weight_parsed"]/stats["rows"]*100:5.1f}%')
         print(f'  product descr.  : {stats["product_descriptor"]/stats["rows"]*100:5.1f}%')
+        print(f'  category mapped : {stats["category_mapped"]/stats["rows"]*100:5.1f}%'
+              '   <- feeds the existing product resolver')
     if unresolved_brands:
         print(f'\n  UNRESOLVED BRANDS ({len(unresolved_brands)} distinct) — '
               f'add these as mint.brand.aliases, do not guess:')
         for b, n in unresolved_brands.most_common(25):
             print(f'     {n:>5}x  {b}')
+    if unmapped_categories:
+        print(f'\n  UNMAPPED CATEGORIES ({len(unmapped_categories)} distinct) — '
+              f'no honest target in the selection, left empty:')
+        for c, n in unmapped_categories.most_common(10):
+            print(f'     {n:>5}x  {c}')
     if unmapped_formats:
         print(f'\n  UNMAPPED FORMATS ({len(unmapped_formats)} distinct) — '
               f'left without a discount_type:')
