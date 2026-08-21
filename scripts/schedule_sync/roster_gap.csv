@@ -1,0 +1,201 @@
+store,name,employee_status,employee_match,user_status,user_match
+75th Ave,Annette,MISSING,,MISSING,
+75th Ave,Bre,MISSING,,MISSING,
+75th Ave,Guillermo,MISSING,,MISSING,
+75th Ave,Isaiah,MISSING,,MISSING,
+75th Ave,Max,MISSING,,MISSING,
+75th Ave,Taevien,MISSING,,MISSING,
+75th Ave,Thaddeus,MISSING,,MISSING,
+75th Ave,Zach,MISSING,,MISSING,
+Cave Creek,ANDREW GARCIA,MISSING,,MISSING,
+Cave Creek,ATREU GONZALEZ,MISSING,,MISSING,
+Cave Creek,DESAREE CALDWELL,MISSING,,MISSING,
+Cave Creek,ELIZABETH SANCHEZ,MISSING,,MISSING,
+Cave Creek,HADEN FISH,MISSING,,MISSING,
+Cave Creek,JESSICA VALDEZ,MISSING,,MISSING,
+Cave Creek,KRISTINA ODOM,MISSING,,MISSING,
+Cave Creek,KYLE LOUCAS,MISSING,,MISSING,
+Cave Creek,MATT OTTO,MISSING,,MISSING,
+Cave Creek,MATTHEW DEREZINSKI,MISSING,,MISSING,
+Cave Creek,MAXINE PEREZ,MISSING,,MISSING,
+Cave Creek,PALOMA PORRAS,MISSING,,MISSING,
+Cave Creek,RUFUS MUELLEN,MISSING,,MISSING,
+East Mesa,Brandon,MISSING,,MISSING,
+East Mesa,Chandler,MISSING,,MISSING,
+East Mesa,Diego,MISSING,,MISSING,
+East Mesa,Fabi,MISSING,,MISSING,
+East Mesa,Jessica,MISSING,,MISSING,
+East Mesa,Matt,MISSING,,MISSING,
+East Mesa,McKenna,MISSING,,MISSING,
+East Mesa,Noe,MISSING,,MISSING,
+East Mesa,Nolan,MISSING,,MISSING,
+East Mesa,Roman,MISSING,,MISSING,
+East Mesa,Stephen,MISSING,,MISSING,
+East Mesa,Sunshine,MISSING,,MISSING,
+El Mirage,Andreah Crowe,MISSING,,MISSING,
+El Mirage,Andrew Garcia,MISSING,,MISSING,
+El Mirage,Atreu Gonzalez,MISSING,,MISSING,
+El Mirage,Diego Hoyos,MISSING,,MISSING,
+El Mirage,Rufus,MISSING,,MISSING,
+Mesa,Angel,MISSING,,MISSING,
+Mesa,Becky,MISSING,,MISSING,
+Mesa,Bela,MISSING,,MISSING,
+Mesa,Coop,MISSING,,MISSING,
+Mesa,Crystallene,MISSING,,MISSING,
+Mesa,Dawna,MISSING,,MISSING,
+Mesa,Emma,MISSING,,MISSING,
+Mesa,GARRISON,MISSING,,MISSING,
+Mesa,Gio,MISSING,,MISSING,
+Mesa,Jackie,MISSING,,MISSING,
+Mesa,Katelyn,MISSING,,MISSING,
+Mesa,Katrina,MISSING,,MISSING,
+Mesa,Kristine,MISSING,,MISSING,
+Mesa,Lala,MISSING,,MISSING,
+Mesa,Oscar G,MISSING,,OK,Oscar Valdez
+Mesa,Raven,MISSING,,MISSING,
+Mesa,Shevy,MISSING,,MISSING,
+Mesa,Tiffany,MISSING,,MISSING,
+Northern,ALEXUS,MISSING,,MISSING,
+Northern,BOBBY (Luis R),MISSING,,MISSING,
+Northern,DWIGHT,MISSING,,MISSING,
+Northern,ELIANA,MISSING,,MISSING,
+Northern,ESI,MISSING,,MISSING,
+Northern,HERIBERTO,MISSING,,MISSING,
+Northern,HYDIE,MISSING,,MISSING,
+Northern,JON,MISSING,,MISSING,
+Northern,JULIAN,MISSING,,MISSING,
+Northern,MIRANDA,MISSING,,MISSING,
+Northern,NICK,MISSING,,MISSING,
+Northern,RAY,MISSING,,MISSING,
+Northern,RON,MISSING,,MISSING,
+Northern,WHIPPO,MISSING,,MISSING,
+Scottsdale,Alec,MISSING,,MISSING,
+Scottsdale,Audra,MISSING,,MISSING,
+Scottsdale,Boswell,MISSING,,MISSING,
+Scottsdale,Christina,MISSING,,MISSING,
+Scottsdale,Dairy,MISSING,,MISSING,
+Scottsdale,Emily,MISSING,,MISSING,
+Scottsdale,Erika,MISSING,,MISSING,
+Scottsdale,Helena W,MISSING,,MISSING,
+Scottsdale,Holly,MISSING,,MISSING,
+Scottsdale,Joe,MISSING,,MISSING,
+Scottsdale,Mars,MISSING,,MISSING,
+Scottsdale,Nick,MISSING,,MISSING,
+Scottsdale,Sebastian,MISSING,,MISSING,
+Scottsdale,Teresa,MISSING,,MISSING,
+Tempe,ARI,MISSING,,MISSING,
+Tempe,Angel,MISSING,,MISSING,
+Tempe,BENJAMIN,MISSING,,OK,Benjamin Martin
+Tempe,BERT,MISSING,,MISSING,
+Tempe,BRENT B,MISSING,,OK,Brent Barker
+Tempe,CHASE,MISSING,,MISSING,
+Tempe,COLE,MISSING,,MISSING,
+Tempe,CRIS,MISSING,,OK,Cris Reveles
+Tempe,DAYWAN,MISSING,,OK,Daywan Owens
+Tempe,ELZY,MISSING,,MISSING,
+Tempe,EPHRIAM,MISSING,,OK,Ephriam Graves
+Tempe,FELIPE,MISSING,,OK,Felipe Andrade
+Tempe,FISHER,MISSING,,OK,Fisher Mason
+Tempe,FRANKI,MISSING,,MISSING,
+Tempe,GABE,MISSING,,MISSING,
+Tempe,ISAAC,MISSING,,MISSING,
+Tempe,JADEN,MISSING,,OK,Jaden Roman
+Tempe,JAVI,MISSING,,MISSING,
+Tempe,JESSI,MISSING,,MISSING,
+Tempe,JOSH,MISSING,,MISSING,
+Tempe,KASS,MISSING,,MISSING,
+Tempe,KRIS,MISSING,,MISSING,
+Tempe,LEWIS,MISSING,,MISSING,
+Tempe,MONIQUE,MISSING,,OK,Monique Munoz
+Tempe,Manny,MISSING,,MISSING,
+Tempe,Maureen,MISSING,,OK,Maureen Hixon
+Tempe,N/A,MISSING,,MISSING,
+Tempe,Nick,MISSING,,MISSING,
+Tempe,RIVER,MISSING,,OK,River Peterson
+Tempe,Savannah,MISSING,,OK,Savannah Smith
+Tempe,Shane,MISSING,,OK,Shane Davey
+Tempe,VICTORIA,MISSING,,OK,Victoria Torres
+Tempe,YARACETH,MISSING,,OK,Yaraceth Chacon
+75th Ave,Ahleah,OK,Ahleah Reanne Coulson,OK,AHLEAH REANNE COULSON (EMP)
+75th Ave,Brie,OK,Brie Sides,MISSING,
+75th Ave,Carlos,AMBIGUOUS,Carlos Claudio; Carlos Toma,AMBIGUOUS,CARLOS (EMP) CLAUDIO; Carlos Toma
+75th Ave,Juan,AMBIGUOUS,Juan Herrera; Juan Palomino; Juan Rodriguez,AMBIGUOUS,Juan (EMP) Herrera; Juan Palomino; JUAN RODRIGUEZ (emp)
+75th Ave,Julius,OK,Julius Savaya,OK,Julius Savaya
+75th Ave,Maria,OK,Maria Gomez,OK,Maria Gomez
+75th Ave,Nathan,OK,Nathan Perez,OK,Nathan (EMP) Perez
+75th Ave,Sam,OK,Sam Cruz,OK,Sam Cruz
+Cave Creek,ASHLEY FILIUS,OK,Ashley Filius,OK,Ashley Filius
+Cave Creek,CHANCE PATRICK,OK,Chance Peters,OK,Chance Peters
+Cave Creek,CHRISTIAN TALLABAS,AMBIGUOUS,Christian Malave; Christian Murrieta,AMBIGUOUS,Christian Malave; Christian Murrieta
+Cave Creek,CHRISTOPHER PHELPS,OK,Christopher Elzy,AMBIGUOUS,Christopher Elzy; Christopher Elzy
+Cave Creek,DEMETRIUS PATTERSON,OK,Demetrius Patterson Sr,OK,DEMETRIUS (EMP) PATTERSON
+Cave Creek,FERNANDO LIZARRAGA,OK,Fernando Lizarraga,OK,Fernando Lizarraga
+Cave Creek,JASON RODRIGUEZ,OK,Jason Rodriguez,OK,jason Rodriguez (EMP)
+Cave Creek,MADISON MILLER,OK,Madison Guillen,OK,Madison Guillen
+Cave Creek,NICHOLAS SMOTHERS,OK,Nicholas Scavio,OK,Nicholas Scavio
+Cave Creek,RICHARD MONTEJANO,AMBIGUOUS,Richard Aviles; Richard Lee Orey,AMBIGUOUS,RICHARD LEE OREY (REC) (EMP); Richard Orey; Richard (Rick) Aviles
+Cave Creek,STEPHANIE OLIVAREZ,OK,Stephanie Olivarez,OK,STEPHANIE OLIVAREZ (EMP)
+East Mesa,Alannah,OK,Alannah Lee Lopez,OK,ALANNAH LEE LOPEZ (EMP)
+East Mesa,Alex,OK,Alex Clark,OK,Alex
+East Mesa,Chris,OK,Chris Armanious,OK,Chris Armanious
+East Mesa,Daniel,AMBIGUOUS,Daniel Fabian; Daniel Lee Hobbs,AMBIGUOUS,Daniel Fabian (emp); Daniel Hufford; Daniel Lee Hobbs; Daniel Nieto
+East Mesa,Evan,OK,Evan Brown,OK,EVAN (EMP) BROWN
+East Mesa,Gavin,OK,Gavin Dean Wichterman,OK,GAVIN DEAN WICHTERMAN (EMP)
+East Mesa,Juan,AMBIGUOUS,Juan Herrera; Juan Palomino; Juan Rodriguez,AMBIGUOUS,Juan (EMP) Herrera; Juan Palomino; JUAN RODRIGUEZ (emp)
+East Mesa,Milan,OK,Milan Lipovic,OK,milan lipovic (MED) (EMP)
+East Mesa,Nicole,AMBIGUOUS,Nicole Galindo; Nicole Linker,AMBIGUOUS,Nicole Galindo; NICOLE LINKER (EMP)
+East Mesa,Quinten,OK,Quinten Angelo Abeyta,OK,Quinten ANGELO Abeyta(EMP)
+East Mesa,SEAN,OK,Sean O'Neal,OK,Sean O'Neal
+East Mesa,Sam,OK,Sam Cruz,OK,Sam Cruz
+East Mesa,Thomas,OK,Thomas Hagen,AMBIGUOUS,Thomas Allen; Thomas Hagen (EMP)
+East Mesa,Tyler,AMBIGUOUS,Tyler D'Autorio; Tyler Willars,AMBIGUOUS,Tyler D'Autorio; Tyler (EMP) Willars; Tyler Tuma
+El Mirage,Ashley Filius,OK,Ashley Filius,OK,Ashley Filius
+El Mirage,James Dowling,OK,James Connery,OK,James Connery
+El Mirage,Jason Rodriguez,OK,Jason Rodriguez,OK,jason Rodriguez (EMP)
+El Mirage,Justin Massey,OK,Justin Robert Massey,OK,Justin ROBERT Massey (EMP)
+El Mirage,Stephanie Olivarez,OK,Stephanie Olivarez,OK,STEPHANIE OLIVAREZ (EMP)
+Mesa,Alicia,OK,Alicia Soto Palomino,OK,ALICIA SOTO PALOMINO (EMP)
+Mesa,Anthony,AMBIGUOUS,Anthony Beaudrie; Anthony Daniel Ramirez; Anthony Nelson; Anthony Perez; Anthony Rodriguez,AMBIGUOUS,Anthony Beaudrie; Anthony DANIEL Ramirez (emp); Anthony Nelson; Anthony Perez (EMP); Anthony Rodriguez
+Mesa,Carlos,AMBIGUOUS,Carlos Claudio; Carlos Toma,AMBIGUOUS,CARLOS (EMP) CLAUDIO; Carlos Toma
+Mesa,Jacob,OK,Jacob Holko,AMBIGUOUS,Jacob Diemer; Jacob Holko
+Mesa,Jeremy,OK,Jeremy Alvarez,OK,JEREMY ALVAREZ
+Mesa,Jordan L,OK,Jordan Perry Wilson,OK,JORDAN PERRY WILSON (EMP)
+Mesa,Maddison,OK,Maddison Wilda,OK,Maddison Wilda (EMP)
+Mesa,Michael,AMBIGUOUS,Michael Johnson; Michael Kalsek; Michael Tawfik,AMBIGUOUS,Michael Johnson; Michael Kalsek; Michael Tawfik
+Mesa,Nathan,OK,Nathan Perez,OK,Nathan (EMP) Perez
+Mesa,Shannon,OK,Shannon Clemonds,OK,Shannon Clemonds
+Mesa,Taija,OK,Taija Fortune,OK,TAIJA (EMP) FORTUNE
+Northern,JOANNA,OK,Joanna Vargas,OK,JOANNA VARGAS (EMP)
+Northern,KENIA,OK,Kenia Lizeth Varela Ramirez,MISSING,
+Northern,LUIS V,OK,Luis Leyva,OK,Luis Leyva
+Northern,MAYA,OK,Maya Nicole Sullivan,MISSING,
+Northern,RUSSELL,OK,Russell Rafiel Soto,OK,RUSSELL RAFIEL SOTO (EMP)
+Scottsdale,Bryan,AMBIGUOUS,Bryan Dickson; Bryan Zelaya,AMBIGUOUS,Bryan Dickson (REC) (EMP); Bryan Zelaya
+Scottsdale,Cameron,OK,Cameron Gillespie,OK,Cameron Gillespie
+Scottsdale,Joey,OK,Joey Baltazar,OK,Joey Baltazar (EMP)
+Scottsdale,Jordan,OK,Jordan Perry Wilson,OK,JORDAN PERRY WILSON (EMP)
+Scottsdale,Mike M,OK,Mike Ballen,OK,Mike Ballen
+Scottsdale,Pablo,OK,Pablo Palomino,AMBIGUOUS,Pablo Palomino; Pablo Palomino (Read-Only RPC)
+Scottsdale,Tia,OK,Tia Ickes,OK,Tia Ickes
+Tempe,ALEX,OK,Alex Clark,OK,Alex
+Tempe,Aaron,OK,Aaron Andres Jiminez,AMBIGUOUS,Aaron ANDRES Jiminez (EMP); Aaron Jiminez
+Tempe,BRIAN,OK,Brian Carlson,OK,Brian Carlson
+Tempe,Blanca,OK,Blanca Rojas,AMBIGUOUS,Blanca Burford; Blanca Rojas
+Tempe,Brittany,OK,Brittany Grant,AMBIGUOUS,Brittany Grant; BRITTANY GRANT (REC) (EMP)
+Tempe,Bryce,OK,Bryce Nathaniel Skaggs,AMBIGUOUS,BRYCE NATHANIEL SKAGGS (emp)(MED); Bryce Skaggs
+Tempe,CHAD,OK,Chad Nelson,AMBIGUOUS,Chad Nelson; CHAD NELSON (REC) (EMP)
+Tempe,DANIEL H,AMBIGUOUS,Daniel Fabian; Daniel Lee Hobbs,OK,Daniel Hufford
+Tempe,DANIEL N,AMBIGUOUS,Daniel Fabian; Daniel Lee Hobbs,OK,Daniel Nieto
+Tempe,KAYLOR,OK,Kaylor Garrett Wolfe,AMBIGUOUS,KAYLOR GARRETT WOLFE (MED) (EMP); Kaylor Wolfe
+Tempe,LOLA,OK,Lola Nielson,OK,Lola Nielson (EMP)
+Tempe,Lindsay,OK,Lindsay Keller,OK,Lindsay Keller
+Tempe,Lisa,OK,Lisa Vergara,OK,Lisa Vergara
+Tempe,MARK A,OK,Mark Rock,OK,Mark Amos
+Tempe,NICOLE,AMBIGUOUS,Nicole Galindo; Nicole Linker,AMBIGUOUS,Nicole Galindo; NICOLE LINKER (EMP)
+Tempe,RACHEL,OK,Rachel Benson,AMBIGUOUS,Rachel Baker; Rachel Benson
+Tempe,Richard,AMBIGUOUS,Richard Aviles; Richard Lee Orey,AMBIGUOUS,RICHARD LEE OREY (REC) (EMP); Richard Orey; Richard (Rick) Aviles
+Tempe,Roxanne,OK,Roxanne Gallardo,OK,Roxanne (EMP) Gallardo
+Tempe,SAV,OK,SAV PETRELLO,OK,SAV PETRELLO
+Tempe,TONI,OK,Toni Harrold,OK,Toni Harrold
+Tempe,TYLER,AMBIGUOUS,Tyler D'Autorio; Tyler Willars,AMBIGUOUS,Tyler D'Autorio; Tyler (EMP) Willars; Tyler Tuma
+Tempe,Xavier,OK,Xavier Goldtooth,AMBIGUOUS,Xavier Goldtooth; XAVIER GOLDTOOTH (REC) (EMP)

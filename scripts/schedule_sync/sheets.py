@@ -332,8 +332,15 @@ def _dates_in(grid, scan_rows=10):
 
 
 def select_weeks(tabs, today=None, back_days=7, forward_days=14, fallback=2):
-    """Pick the tabs worth syncing: those whose week overlaps a window around
-    today. Falls back to the last N dated tabs when nothing is in range."""
+    """Pick the tabs worth syncing: every tab whose week overlaps a window
+    around today. Falls back to the last N dated tabs when nothing is in range.
+
+    Deliberately does NOT de-duplicate on week_start. Two tabs sharing a week
+    are usually complementary rather than redundant — Tempe splits a single week
+    across `PSR 8/17-8/23` and `Non PSR 8/17-8/23`, so collapsing them drops an
+    entire staff group without any error. Importing a redundant tab is visible
+    and harmless; losing people is neither.
+    """
     today = today or dt.date.today()
     lo = today - dt.timedelta(days=back_days)
     hi = today + dt.timedelta(days=forward_days)
@@ -341,11 +348,7 @@ def select_weeks(tabs, today=None, back_days=7, forward_days=14, fallback=2):
     dated = [t for t in tabs if t['week_start']]
     hits = [t for t in dated if lo <= t['week_start'] <= hi]
     if hits:
-        # de-dup on week_start, keeping the last occurrence (later tabs win)
-        by_week = {}
-        for t in hits:
-            by_week[t['week_start']] = t
-        return [by_week[k] for k in sorted(by_week)]
+        return sorted(hits, key=lambda t: (t['week_start'], t['title']))
 
     dated.sort(key=lambda t: t['week_start'])
     return dated[-fallback:]
