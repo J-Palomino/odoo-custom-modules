@@ -33,6 +33,16 @@ MASTER_CATEGORY_PATTERNS = {
         'Gumm', 'Chocolat', 'Edible', 'Beverage', 'Syrup', 'Tincture',
         'Capsule', 'Drink', 'Cookie', 'Brownie', 'Sucker', 'Chew',
         'Lozenge', 'Mint', 'Tablet',
+        # AZ inventory files these under two names this list did not cover, so
+        # edible deals for these brands resolved to ZERO products (observed
+        # 2026-08-21: Keef Cola 176 SKUs and Sip 54 under 'Cannabis / Liquids';
+        # Decadent 27 and Gelato 54 under 'Cannabis / Sweets').
+        #
+        # PLURAL on purpose. These are `ilike` fragments, so the singular
+        # 'Liquid' would also capture vape categories such as "Liquid
+        # Diamonds" and silently pull carts into edible deals; 'Liquids'
+        # cannot. Same reasoning for 'Sweets' over 'Sweet'.
+        'Liquids', 'Sweets',
     ],
     'Concentrates & Topicals': [
         'Concentrate', 'Rosin', 'Hash', 'CNC-', 'Wax', 'Shatter',
