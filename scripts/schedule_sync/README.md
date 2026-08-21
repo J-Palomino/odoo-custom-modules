@@ -88,9 +88,15 @@ and requesting Drive scopes returns `unauthorized_client`.
 
 ## Design notes
 
-- Reads workbooks as **XLSX via the Drive export endpoint**, not the Sheets API
-  — export needs only a Drive scope, and XLSX preserves the merged ranges these
-  layouts depend on.
+- Reads workbooks as **XLSX via the Drive export endpoint** — export needs only
+  a Drive scope, and XLSX preserves the merged ranges these layouts depend on.
+- Falls back to the **Sheets API** when Drive refuses to export. Tempe carries
+  176 weeks and trips `exportSizeLimitExceeded`; the API path fetches only the
+  selected weeks, so it is both a workaround and cheaper.
+- **Credentials are probed, not assumed.** Sharing differs per sheet — the
+  service account can read Tempe but not Mesa — so every candidate credential
+  must read *all* target sheets before it is used. Picking one that works for
+  the first sheet leaves a run failing halfway through.
 - Week identity comes from the **dates embedded in the first rows**, never the
   tab title. Titles are inconsistent, and Tempe and 75th Ave both contain
   duplicate and missing week tabs.

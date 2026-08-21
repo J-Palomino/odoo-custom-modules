@@ -33,6 +33,10 @@ class AuthError(RuntimeError):
     pass
 
 
+class ExportTooLarge(RuntimeError):
+    """Drive won't export this workbook — use the Sheets API instead."""
+
+
 def _sa_token(key_path):
     from google.oauth2 import service_account
     import google.auth.transport.requests as gt
@@ -80,26 +84,72 @@ def _odoo_oauth_token():
         return None, None
 
 
-def get_token():
-    """Return (token, description) or raise AuthError with what to do next."""
+def can_read(token, file_id):
+    """A credential that exists is not necessarily a credential that works —
+    the service account authenticates fine but cannot see these files, so every
+    candidate is probed against a real file before being accepted."""
+    if not token or not file_id:
+        return False
+    try:
+        r = requests.get(
+            f'https://www.googleapis.com/drive/v3/files/{file_id}',
+            params={'fields': 'id'},
+            headers={'Authorization': f'Bearer {token}'}, timeout=30)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _candidates():
+    """Yield (token, description) in preference order, skipping ones that
+    cannot even be minted."""
     tok, how = _odoo_oauth_token()
     if tok:
-        return tok, how
+        yield tok, how
 
     explicit = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
     if explicit and os.path.exists(explicit):
-        return _sa_token(explicit), f'service account ({explicit})'
+        try:
+            yield _sa_token(explicit), f'service account ({explicit})'
+        except Exception:
+            pass
 
     key = os.path.expanduser(SERVICE_ACCOUNT_KEY)
     if os.path.exists(key):
         try:
-            return _sa_token(key), f'service account ({SERVICE_ACCOUNT_KEY})'
+            yield _sa_token(key), f'service account ({SERVICE_ACCOUNT_KEY})'
         except Exception:
             pass
 
     tok = _gcloud_token()
     if tok:
-        return tok, 'gcloud user credential'
+        yield tok, 'gcloud user credential'
+
+
+def get_token(probe_file_ids=None):
+    """Return (token, description) or raise AuthError with what to do next.
+
+    Every candidate must be able to read *all* the files we intend to sync, not
+    just the first. Sharing differs per sheet — the service account can read
+    Tempe but not Mesa — so probing a single file picks a credential that then
+    fails partway through the run.
+    """
+    probe = [p for p in (probe_file_ids or []) if p]
+    rejected = []
+    for tok, how in _candidates():
+        if not probe:
+            return tok, how
+        missing = [p for p in probe if not can_read(tok, p)]
+        if not missing:
+            return tok, how
+        rejected.append(f'{how} — cannot read {len(missing)}/{len(probe)} sheets')
+
+    if rejected:
+        raise AuthError(
+            'Found Google credentials but none can read every sheet:\n' +
+            ''.join(f'  - {r}\n' for r in rejected) +
+            '  Fix: gcloud auth login --enable-gdrive-access, or share the\n'
+            '  sheets with the service account.')
 
     raise AuthError(
         'No usable Google credential.\n'
@@ -118,14 +168,106 @@ def download_xlsx(sheet_id, dest, token=None):
                      headers={'Authorization': f'Bearer {token}'},
                      stream=True, timeout=180)
     if r.status_code != 200:
+        body = r.text
+        if r.status_code == 403 and ('exportSizeLimitExceeded' in body
+                                     or 'too large to be exported' in body):
+            raise ExportTooLarge(
+                f'{sheet_id} exceeds the Drive export size limit')
         raise RuntimeError(
             f'export failed for {sheet_id}: HTTP {r.status_code} '
-            f'{r.text[:200]}')
+            f'{body[:200]}')
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     with open(dest, 'wb') as fh:
         for chunk in r.iter_content(65536):
             fh.write(chunk)
     return dest
+
+
+SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets/{id}'
+
+
+def _a1(row, col):
+    s, idx = '', col + 1
+    while idx:
+        idx, rem = divmod(idx - 1, 26)
+        s = chr(65 + rem) + s
+    return f'{s}{row + 1}'
+
+
+def _quote_tab(title):
+    return "'" + title.replace("'", "''") + "'"
+
+
+def _batch_get(sheet_id, ranges, token, chunk=40):
+    """values.batchGet, chunked so the URL stays sane on 176-tab workbooks."""
+    out = {}
+    for i in range(0, len(ranges), chunk):
+        part = ranges[i:i + chunk]
+        r = requests.get(
+            SHEETS_API.format(id=sheet_id) + '/values:batchGet',
+            params=[('ranges', x) for x in part] +
+                   [('majorDimension', 'ROWS'),
+                    ('valueRenderOption', 'FORMATTED_VALUE')],
+            headers={'Authorization': f'Bearer {token}'}, timeout=180)
+        if r.status_code != 200:
+            raise RuntimeError(f'batchGet failed: HTTP {r.status_code} '
+                               f'{r.text[:200]}')
+        for rng, vr in zip(part, r.json().get('valueRanges', [])):
+            out[rng] = vr.get('values', [])
+    return out
+
+
+def read_via_api(sheet_id, token, want_all=False, **week_kw):
+    """Read a workbook through the Sheets API instead of an XLSX export.
+
+    Needed for workbooks Drive refuses to export (`exportSizeLimitExceeded` —
+    Tempe carries 176 weeks). Also cheaper, since only the selected weeks are
+    fetched in full.
+    """
+    meta = requests.get(
+        SHEETS_API.format(id=sheet_id),
+        params={'fields': 'sheets(properties(title,sheetId,gridProperties),merges)'},
+        headers={'Authorization': f'Bearer {token}'}, timeout=120)
+    if meta.status_code != 200:
+        raise RuntimeError(f'sheets.get failed: HTTP {meta.status_code} '
+                           f'{meta.text[:200]}')
+    sheets_meta = meta.json().get('sheets', [])
+    titles = [s['properties']['title'] for s in sheets_meta]
+
+    # cheap pass: just the top rows of every tab, to date-stamp each week
+    head_ranges = [f'{_quote_tab(t)}!A1:BZ10' for t in titles]
+    heads = _batch_get(sheet_id, head_ranges, token)
+
+    stubs = []
+    for t, rng in zip(titles, head_ranges):
+        grid = [[('' if c is None else str(c)) for c in row]
+                for row in heads.get(rng, [])]
+        dates = _dates_in(grid)
+        stubs.append({'title': t, 'grid': [], 'merges': [], 'dates': dates,
+                      'week_start': min(dates) if dates else None})
+
+    picked = stubs if want_all else select_weeks(stubs, **week_kw)
+    if not picked:
+        return []
+
+    # full pass: only the tabs we are actually going to sync
+    full_ranges = [f'{_quote_tab(t["title"])}!A1:BZ200' for t in picked]
+    full = _batch_get(sheet_id, full_ranges, token)
+
+    by_title = {s['properties']['title']: s for s in sheets_meta}
+    for t, rng in zip(picked, full_ranges):
+        grid = [[('' if c is None else str(c)) for c in row]
+                for row in full.get(rng, [])]
+        while grid and not any(c.strip() for c in grid[-1]):
+            grid.pop()
+        width = max((len(r) for r in grid), default=0)
+        t['grid'] = [r + [''] * (width - len(r)) for r in grid]
+        t['merges'] = [
+            f"{_a1(m.get('startRowIndex', 0), m.get('startColumnIndex', 0))}:"
+            f"{_a1(m.get('endRowIndex', 1) - 1, m.get('endColumnIndex', 1) - 1)}"
+            for m in (by_title.get(t['title'], {}).get('merges') or [])
+        ]
+    return picked
 
 
 def _merges_for(ws):

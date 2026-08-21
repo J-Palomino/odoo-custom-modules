@@ -64,7 +64,10 @@ def main():
     token = None
     if not args.from_xlsx:
         try:
-            token, how = gs.get_token()
+            # probe against every target, so a credential that exists but
+            # cannot see all the sheets is rejected rather than used
+            token, how = gs.get_token(
+                probe_file_ids=[t['sheet_id'] for t in targets])
             print(f'google auth: {how}')
         except gs.AuthError as e:
             raise SystemExit(f'\n{e}\n')
@@ -81,17 +84,31 @@ def main():
     for st in targets:
         name = st['store']
         try:
+            via_api = False
             if args.from_xlsx:
                 path = os.path.join(args.from_xlsx, f'{name}.xlsx')
                 if not os.path.exists(path):
                     raise FileNotFoundError(path)
             else:
                 path = os.path.join(args.cache_dir, f'{name}.xlsx')
-                gs.download_xlsx(st['sheet_id'], path, token=token)
+                try:
+                    gs.download_xlsx(st['sheet_id'], path, token=token)
+                except gs.ExportTooLarge:
+                    # Drive refuses to export workbooks past a size limit
+                    # (Tempe, 176 weeks). Fall back to the Sheets API, which
+                    # fetches only the weeks we want.
+                    via_api = True
 
-            tabs = gs.read_workbook(path)
-            picked = tabs if args.all_weeks else gs.select_weeks(
-                tabs, back_days=args.back_days, forward_days=args.forward_days)
+            if via_api:
+                picked = gs.read_via_api(
+                    st['sheet_id'], token, want_all=args.all_weeks,
+                    back_days=args.back_days, forward_days=args.forward_days)
+                tabs = picked
+            else:
+                tabs = gs.read_workbook(path)
+                picked = tabs if args.all_weeks else gs.select_weeks(
+                    tabs, back_days=args.back_days,
+                    forward_days=args.forward_days)
 
             osheets = [
                 build_sheet(t['title'], t['grid'], merges=t['merges'], index=i)
