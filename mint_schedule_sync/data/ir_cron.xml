@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ir_cron_mint_schedule_sync" model="ir.cron">
+        <field name="name">Mint: Sync store schedules from Google Sheets</field>
+        <field name="model_id" ref="model_mint_schedule_sync"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_sync_schedules()</field>
+        <field name="interval_number">6</field>
+        <field name="interval_type">hours</field>
+        <field name="numbercall">-1</field>
+        <field name="doall" eval="False"/>
+        <!-- Left inactive on install: the Google credentials and the store
+             list have to be configured first, and a cron that runs before
+             then just logs failures every six hours. -->
+        <field name="active" eval="False"/>
+    </record>
+</odoo>
