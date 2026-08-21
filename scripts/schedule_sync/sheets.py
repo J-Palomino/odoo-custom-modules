@@ -250,11 +250,19 @@ def read_via_api(sheet_id, token, want_all=False, **week_kw):
     if not picked:
         return []
 
-    # full pass: only the tabs we are actually going to sync
-    full_ranges = [f'{_quote_tab(t["title"])}!A1:BZ200' for t in picked]
-    full = _batch_get(sheet_id, full_ranges, token)
-
+    # full pass: only the tabs we are actually going to sync.
+    # Range comes from each tab's real gridProperties rather than a fixed
+    # A1:BZ200 — a hardcoded cap silently truncates any larger tab.
     by_title = {s['properties']['title']: s for s in sheets_meta}
+    full_ranges = []
+    for t in picked:
+        gp = (by_title.get(t['title'], {}).get('properties', {})
+              .get('gridProperties', {}))
+        rows = gp.get('rowCount', 500)
+        cols = gp.get('columnCount', 60)
+        end = _a1(max(rows, 1) - 1, max(cols, 1) - 1)
+        full_ranges.append(f'{_quote_tab(t["title"])}!A1:{end}')
+    full = _batch_get(sheet_id, full_ranges, token)
     for t, rng in zip(picked, full_ranges):
         grid = [[('' if c is None else str(c)) for c in row]
                 for row in full.get(rng, [])]

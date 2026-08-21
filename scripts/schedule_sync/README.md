@@ -26,9 +26,24 @@ them in Odoo, and let the roster gap be fixed separately.
 python3 sync.py                    # all stores, week window around today
 python3 sync.py --store Mesa       # one store
 python3 sync.py --dry-run          # parse and report, write nothing
-python3 sync.py --all-weeks        # every tab — large, Tempe has 176
+python3 sync.py --all-weeks        # every tab, into a separate archive record
 python3 sync.py --from-xlsx DIR    # use already-downloaded <store>.xlsx
+python3 audit.py                   # coverage + fidelity vs the source sheets
+python3 roster_report.py           # who is named on the imported schedules
 ```
+
+Two record families, deliberately separate:
+
+| Record | Written by | Contents |
+|---|---|---|
+| `Schedule — <store>` | `sync.py` | rolling window around today |
+| `Schedule — <store> (all weeks)` | `sync.py --all-weeks` | every tab in the workbook |
+
+They must not share a name: the rolling sync upserts by name and holds far
+fewer weeks, so a routine run would otherwise overwrite the archive.
+
+Full history as imported 2026-08-20: **695 tabs, 394,350 cells** across the
+eight stores (Tempe alone is 225 tabs / 194,197 cells).
 
 Requires `google-auth`, `google-api-python-client`, `requests`, `openpyxl`.
 
@@ -105,6 +120,25 @@ and requesting Drive scopes returns `unauthorized_client`.
   the existing GL importer. Writing `spreadsheet_raw` directly is not the
   supported path, though it is readable afterwards.
 - Upsert is **by record name**, so re-runs update in place.
+
+## Verified coverage
+
+Audited 2026-08-20 with `audit.py`, comparing source sheets against what Odoo
+actually stores:
+
+- **Fidelity: exact.** Every non-empty source cell in a synced tab is present
+  in Odoo — zero delta on all eight stores, and the archive records match the
+  importer's counts cell for cell.
+- **Formulas are safe.** 7,822 formula cells sampled across three workbooks;
+  none lacked a cached value, so `data_only=True` loses nothing.
+- **Ranges are exact.** The API path derives each tab's range from its real
+  `gridProperties` rather than a fixed cap, which would silently truncate
+  larger tabs.
+- **Undated tabs are excluded from the rolling window** — they carry no
+  parseable date row so no week can be assigned. Mostly empty `SheetNN`
+  placeholders, but six hold real content (East Mesa `MASTER`, `Lead Base
+  Schedule`, `TEAM Shirt Sizes`; Northern `Time Off Requests`; El Mirage
+  `HEATHERS COPY`). All of them **are** captured by `--all-weeks`.
 
 ## Known limits
 

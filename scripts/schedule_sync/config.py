@@ -48,8 +48,12 @@ STORES = [
 
 # Odoo spreadsheet.spreadsheet record name. One record per store; each synced
 # week becomes a tab inside it. Keep this stable — the sync upserts by name.
-def odoo_name(store):
-    return f'Schedule — {store}'
+#
+# A full-history import goes to a separate record, so the routine rolling-window
+# sync cannot overwrite the archive (upsert is by name, and the window contains
+# far fewer weeks).
+def odoo_name(store, archive=False):
+    return f'Schedule — {store} (all weeks)' if archive else f'Schedule — {store}'
 
 
 ODOO_URL = 'https://letsgomint.us'

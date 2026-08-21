@@ -126,8 +126,8 @@ def main():
 
             doc = build_document(osheets)
             cid = odoo.company_id_by_name(st['company'])
-            rid, created = odoo.upsert_spreadsheet(odoo_name(name), doc,
-                                                   company_id=cid)
+            rid, created = odoo.upsert_spreadsheet(
+                odoo_name(name, archive=args.all_weeks), doc, company_id=cid)
             verb = 'created' if created else 'updated'
             print(f'{name:<12} {len(tabs):>5} {len(picked):>6} {cells:>8}  '
                   f'{verb} id={rid}')
