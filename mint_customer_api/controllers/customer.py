@@ -96,6 +96,43 @@ def _serialize_redemption(rec):
     }
 
 
+def _coupon_reward_label(rec):
+    """Human-readable reward line for a standalone code coupon."""
+    value = rec.discount_value or rec.discount_amount or 0.0
+    amount = ('%.2f' % value).rstrip('0').rstrip('.')
+    if rec.discount_type == 'percent':
+        pct = value * 100 if value <= 1 else value
+        return '%s%% off' % ('%.2f' % pct).rstrip('0').rstrip('.')
+    if rec.discount_type == 'dollar_off_total':
+        return '$%s off your order' % amount
+    if rec.discount_type == 'fixed':
+        return '$%s off' % amount
+    if rec.discount_type == 'price_to_amount':
+        return 'Item price set to $%s' % amount
+    return rec.name or 'Coupon'
+
+
+def _serialize_coupon(rec):
+    """Shape a standalone code coupon (NOT a points redemption) for JSON.
+
+    The code the customer reads is `dutchie_discount_code` -- that is what was
+    actually pushed to the register. `redemption_code` is the loyalty path's
+    field and is empty on these records, so reading it here would render a
+    blank card (the same misread called out in the welcome-coupon notes).
+    """
+    return {
+        'id': rec.id,
+        'code': rec.dutchie_discount_code or rec.code or '',
+        'label': rec.name,
+        'reward': _coupon_reward_label(rec),
+        'discount_type': rec.discount_type,
+        'discount_value': rec.discount_value,
+        'max_uses': rec.maximum_usage_count or 0,
+        'expires_at': rec.valid_until.isoformat() if rec.valid_until else None,
+        'in_store_only': not rec.is_available_online,
+    }
+
+
 class MintCustomerProfile(http.Controller):
     """Customer profile controller."""
 
@@ -766,8 +803,31 @@ class MintCustomerProfile(http.Controller):
             ('expires_at', '>', fields.Datetime.now()),
         ], order='create_date desc')
 
+        # Standalone code coupons (comps / promos) issued straight to this
+        # customer -- e.g. a "$50 off any transaction" register code. These are
+        # NOT points redemptions: no points cost, different lifecycle, and the
+        # order-completion path sweeps pending *redemptions* by oldest-first
+        # (consume_pending_redemption with no order_items). Folding coupons into
+        # `redemptions` would therefore let a completed web order silently burn
+        # one, so they ship under their own key instead.
+        today = fields.Date.context_today(user)
+        coupons = request.env['mint.discount'].sudo().search([
+            ('redemption_partner_id', '=', user.partner_id.id),
+            ('application_method', '=', 'code'),
+            ('discount_type', '!=', 'loyalty_redemption'),
+            # The welcome pre-roll has its own dedicated card on /rewards.
+            ('is_welcome_preroll', '=', False),
+            ('dutchie_discount_code', '!=', False),
+            # Pulled out of Dutchie => the register would refuse it.
+            ('dutchie_is_deleted', '=', False),
+            ('is_published', '=', True),
+            '|', ('valid_from', '=', False), ('valid_from', '<=', today),
+            '|', ('valid_until', '=', False), ('valid_until', '>=', today),
+        ], order='create_date desc')
+
         return json_response({
             'redemptions': [_serialize_redemption(r) for r in redemptions],
+            'coupons': [_serialize_coupon(c) for c in coupons],
         })
 
     @http.route('/api/v1/customer/profile', type='http', auth='none',
