@@ -99,12 +99,28 @@ class ResPartner(models.Model):
     # Strong keys, in the priority order the resolver uses. Identity keys are
     # only auto-merge grade for dl:/mj: prefixes (government ids); nd:/ph:
     # identity keys are weak evidence (shared phones, name+dob collisions).
+    #
+    # x_dutchie_identity_key is OPTIONAL: mint_dutchie_sync only declares it
+    # from 19.0.1.4 onward, so environments running an older build (staging
+    # today) do not have the column. Every use goes through
+    # _merge_strong_fields() / _has_identity_key() so this module loads and
+    # runs with or without it.
     _MERGE_STRONG_FIELDS = (
         'x_dutchie_customer_id',
         'x_dutchie_loyalty_id',
         'x_dutchie_identity_key',
     )
     _IDENTITY_STRONG_PREFIXES = ('dl:', 'mj:')
+
+    @api.model
+    def _has_identity_key(self):
+        """True when mint_dutchie_sync is new enough to declare the field."""
+        return 'x_dutchie_identity_key' in self._fields
+
+    @api.model
+    def _merge_strong_fields(self):
+        """Strong-key field names actually present on this installation."""
+        return tuple(f for f in self._MERGE_STRONG_FIELDS if f in self._fields)
 
     def _is_pos_staff(self):
         """True when the partner is an employee or backs an internal user.
@@ -152,7 +168,7 @@ class ResPartner(models.Model):
                 ('x_dutchie_loyalty_id', '=', self.x_dutchie_loyalty_id),
                 ('id', '!=', self.id),
             ])
-        identity_key = self.x_dutchie_identity_key or ''
+        identity_key = (self.x_dutchie_identity_key or '') if self._has_identity_key() else ''
         if identity_key:
             matches = Partner.search([
                 ('x_dutchie_identity_key', '=', identity_key),
@@ -206,7 +222,8 @@ class ResPartner(models.Model):
         if self._is_pos_staff() or primary._is_pos_staff():
             return ('skipped', 'staff partner')
 
-        for field_name in self._MERGE_STRONG_FIELDS:
+        strong_fields = self._merge_strong_fields()
+        for field_name in strong_fields:
             src_val, dst_val = self[field_name], primary[field_name]
             if src_val and dst_val and src_val != dst_val:
                 (self | primary).write({'x_merge_needs_review': True})
@@ -214,7 +231,7 @@ class ResPartner(models.Model):
 
         union = {
             field_name: primary[field_name] or self[field_name] or False
-            for field_name in self._MERGE_STRONG_FIELDS
+            for field_name in strong_fields
         }
         first_seen = [d for d in (self.x_first_seen_at, primary.x_first_seen_at) if d]
         union['x_first_seen_at'] = min(first_seen) if first_seen else False
@@ -224,13 +241,14 @@ class ResPartner(models.Model):
 
         src_desc = '%s (id=%s, origin=%s, customer_id=%s, identity=%s)' % (
             self.name, self.id, self.x_partner_origin or '-',
-            self.x_dutchie_customer_id or '-', self.x_dutchie_identity_key or '-',
+            self.x_dutchie_customer_id or '-',
+            (self.x_dutchie_identity_key or '-') if self._has_identity_key() else '-',
         )
 
         src_no_track = self.sudo().with_context(tracking_disable=True, mail_notrack=True)
         try:
             with self.env.cr.savepoint():
-                src_no_track.write({f: False for f in self._MERGE_STRONG_FIELDS})
+                src_no_track.write({f: False for f in strong_fields})
                 self.env.flush_all()
                 self.env['base.partner.merge.automatic.wizard'].sudo()._merge(
                     [self.id, primary.id], dst_partner=primary,
@@ -325,7 +343,9 @@ class ResPartner(models.Model):
         # Pass B: flag (never merge) non-stub duplicate clusters on the
         # shareable strong keys. customer_id cannot duplicate (UNIQUE).
         group_cap = 200
-        for field_name in ('x_dutchie_loyalty_id', 'x_dutchie_identity_key'):
+        sweep_fields = [f for f in ('x_dutchie_loyalty_id', 'x_dutchie_identity_key')
+                        if f in self._fields]
+        for field_name in sweep_fields:
             self.env.cr.execute(
                 """SELECT %s FROM res_partner
                     WHERE active AND %s IS NOT NULL

@@ -102,6 +102,10 @@ class TestPartnerMerge(TransactionCase):
         self.assertTrue(stub.x_merge_needs_review)
 
     def test_nd_identity_key_is_weak(self):
+        # x_dutchie_identity_key ships with mint_dutchie_sync >= 19.0.1.4;
+        # older installs (staging) do not have it and skip this tier.
+        if 'x_dutchie_identity_key' not in self.Partner._fields:
+            self.skipTest('mint_dutchie_sync too old: no x_dutchie_identity_key')
         self._full(x_dutchie_identity_key='nd:JANE DOE|01/01/1990')
         stub = self._stub(x_dutchie_identity_key='nd:JANE DOE|01/01/1990')
 
@@ -111,12 +115,22 @@ class TestPartnerMerge(TransactionCase):
         self.assertEqual(len(weak), 1)
 
     def test_dl_identity_key_is_strong(self):
+        if 'x_dutchie_identity_key' not in self.Partner._fields:
+            self.skipTest('mint_dutchie_sync too old: no x_dutchie_identity_key')
         full = self._full(x_dutchie_identity_key='dl:D05227838')
         stub = self._stub(x_dutchie_identity_key='dl:D05227838')
 
         strong, _weak = stub._find_merge_candidates()
 
         self.assertEqual(strong, full)
+
+    def test_merge_works_without_identity_key_field(self):
+        """The module must load and merge on installs whose mint_dutchie_sync
+        predates x_dutchie_identity_key (the staging case that caught this)."""
+        fields_present = self.Partner._merge_strong_fields()
+        self.assertIn('x_dutchie_customer_id', fields_present)
+        for name in fields_present:
+            self.assertIn(name, self.Partner._fields)
 
     def test_staff_partner_never_merged(self):
         staff = self._full(x_dutchie_loyalty_id='L-500', employee=True)
