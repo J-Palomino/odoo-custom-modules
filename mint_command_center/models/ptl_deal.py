@@ -32,7 +32,20 @@ MASTER_CATEGORY_PATTERNS = {
     'Edibles & Tinctures': [
         'Gumm', 'Chocolat', 'Edible', 'Beverage', 'Syrup', 'Tincture',
         'Capsule', 'Drink', 'Cookie', 'Brownie', 'Sucker', 'Chew',
-        'Lozenge', 'Mint', 'Tablet',
+        'Lozenge', 'Tablet',
+        # 'Mint' REMOVED 2026-08-21. It was meant for breath mints, but these
+        # are `ilike` fragments and the company is called Mint, so it captured
+        # five categories holding 2,804 products, not one of them an edible:
+        #   Cannabis / Mint Flower               1,732   house flower
+        #   Cannabis / Mint Pre-Packs            1,030   pre-packs
+        #   Cannabis / Mint Bucks                   41   store credit
+        #   Cannabis / Flower / Mint Flower          1
+        #   Cannabis / Unmedicated / Mint Bucks      0
+        # 95 live "Edibles & Tinctures" deals belong to brands holding stock in
+        # those categories (MC 893 products, MCG 740, MC Distro 167, Common
+        # Citizen 149), so an edible promo could scope over flower and store
+        # credit — a false POSITIVE, worse than a zero-match. Nothing legitimate
+        # is lost: no breath-mint category exists and 'Lozenge' stays below.
         # AZ inventory files these under two names this list did not cover, so
         # edible deals for these brands resolved to ZERO products (observed
         # 2026-08-21: Keef Cola 176 SKUs and Sip 54 under 'Cannabis / Liquids';
@@ -48,6 +61,19 @@ MASTER_CATEGORY_PATTERNS = {
         'Concentrate', 'Rosin', 'Hash', 'CNC-', 'Wax', 'Shatter',
         'Diamond', 'Crumble', 'Topical', 'Salve', 'RSO', 'FSO',
         'Live Sugar', 'Badder', 'Sauce',
+        # 'Cured Resin' added 2026-08-21. AZ files 1,495 concentrate products
+        # under "Cannabis / Cured Resin", which no bucket covered, so 27
+        # concentrate deals (Canamo 435 AZ products, Dr. Greenthumb 137,
+        # The Pharm 84, Diablo, Gelato) resolved to zero.
+        #
+        # KNOWN TRADE-OFF: substring matching also reaches 126 cart SKUs —
+        # "Cartridge: Cured Resin" (116), "Cured Resin Cartridge" (7),
+        # "Cured Resin Disposable" (3). Accepted because it recovers 1,495 and
+        # mirrors the pre-existing 'Rosin' overlap, where Live Rosin and
+        # Cartridge: Rosin already match both Vapes and Concentrates. The clean
+        # fix is exclusion support or exact-name patterns in
+        # _resolve_master_categories; a substring list cannot say "not a cart".
+        'Cured Resin',
     ],
     'Featured Deals': [],  # no category restriction — featured promos are brand-wide
 }
