@@ -1065,3 +1065,112 @@ class MintCustomerProfile(http.Controller):
                 },
             },
         })
+
+    @http.route('/api/v1/customer/spin-claim', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def spin_claim(self, **kw):
+        """Claim the prize a customer won on the spin-to-win wheel.
+
+        Body: {
+          "prize_id":    "off-15",              # authoritative percent is
+                                                # resolved from this, server-side
+          "spin_date":   "2026-08-23",          # Phoenix game date
+          "external_id": "lgm_spin_<date>_<partner>_<nonce>",
+          "store_id":    12                     # optional res.company id
+        }
+
+        The storefront spins anonymously and only sends the browser here once
+        the customer has signed in, so this is the first point at which the
+        prize can be tied to a person. Mints a personal, single-use, expiring
+        percent-off coupon and pushes it to Dutchie.
+
+        Note what is NOT trusted from the body: the partner comes from the JWT,
+        never from `partner_id`, and the discount percentage is looked up from
+        `prize_id` in mint.discount.SPIN_PRIZE_PERCENTS. A client that sends
+        `discount_percent: 90` is ignored.
+
+        409 = this customer already claimed a different spin today.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        prize_id = data.get('prize_id')
+        spin_date = data.get('spin_date')
+        external_id = data.get('external_id')
+        if not prize_id or not spin_date or not external_id:
+            return error_response('prize_id, spin_date and external_id are required')
+
+        partner = user.partner_id.sudo()
+
+        # Bind the external_id to THIS partner. Without this, a caller could
+        # replay someone else's external_id and read back their coupon.
+        expected_prefix = 'lgm_spin_%s_%s_' % (spin_date, partner.id)
+        if not str(external_id).startswith(expected_prefix):
+            return error_response('Malformed external_id for this customer', 400)
+
+        # The storefront identifies a store by its Dutchie UUID
+        # (res.company.dutchie_store_id), while Odoo keys by integer company
+        # id. Accept either — assuming the int form is what made every
+        # authenticated cart call 400 until mint_account grew _resolve_store_id
+        # (see that helper in mint_account/controllers/cart.py). Not imported
+        # from there on purpose: mint_customer_api must not gain a dependency
+        # on mint_account just for ten lines.
+        # Use dutchie_store_id, NOT x_dutchie_store_id — the former is the
+        # superset and the one the API serves.
+        store = None
+        raw_store = data.get('store_id') or data.get('dutchie_store_id')
+        if raw_store is not None:
+            company = request.env['res.company'].sudo()
+            candidate = company
+            try:
+                candidate = company.browse(int(raw_store))
+            except (TypeError, ValueError):
+                candidate = company.search(
+                    [('dutchie_store_id', '=', str(raw_store))], limit=1)
+            if candidate.exists() and candidate.is_dispensary:
+                store = candidate
+        if not store:
+            # Without a store there is no market, so the coupon cannot be
+            # region-locked and cannot be pushed to Dutchie — it would be a
+            # code that fails at the till. Refuse rather than mint a dud.
+            return error_response(
+                'A store is required to issue your code. Pick a store and try again.',
+                400,
+            )
+
+        try:
+            rec = request.env['mint.discount'].sudo().create_spin_redemption(
+                partner=partner,
+                prize_id=prize_id,
+                spin_date=spin_date,
+                external_id=external_id,
+                store=store,
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced as a 400 below
+            _logger.exception('spin-claim failed for partner %s', partner.id)
+            return error_response(str(exc) or 'Could not issue your code', 400)
+
+        # create_spin_redemption is idempotent on external_id and caps the
+        # customer at one claim per spin_date. A record whose external_id is
+        # not the one we asked for means they already claimed a different spin
+        # today; the same external_id is a replay and returns the same code.
+        if rec.external_id != external_id:
+            return error_response('You already claimed a spin today', 409)
+
+        return json_response({
+            'redemption_code': rec.redemption_code,
+            'expires_at': rec.expires_at.isoformat() if rec.expires_at else None,
+            'discount_percent': rec.discount_percent,
+            'status': rec.redemption_status,
+        })

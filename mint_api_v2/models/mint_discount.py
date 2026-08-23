@@ -682,6 +682,152 @@ class MintDiscount(models.Model):
         rec._push_redemption_to_dutchie(store)
         return rec
 
+    # ── Spin-to-win ───────────────────────────────────────────────────────
+    #
+    # Authoritative prize table. The storefront has its own copy for rendering
+    # the wheel (src/lib/spin/prizes.ts), but the percentage MUST be resolved
+    # here from the prize id: the browser supplies the id, and trusting a
+    # client-supplied percent would let anyone claim 90% off. Keep the two in
+    # sync — this side is the one that decides what the customer actually gets.
+    SPIN_PRIZE_PERCENTS = {
+        'off-5': 5, 'off-10': 10, 'off-15': 15,
+        'off-20': 20, 'off-25': 25, 'off-30': 30,
+    }
+
+    @api.model
+    def create_spin_redemption(self, partner, prize_id, spin_date,
+                               external_id, store=None):
+        """Mint a personal single-use percent-off coupon won on the spin wheel.
+
+        Deliberately NOT a `loyalty_redemption`: that type is pushed to Dutchie
+        as 100%-off-one-product, which is the wrong reward shape here. A spin
+        prize is percent-off-the-order, so the record is a plain `percent`
+        discount that happens to carry the redemption_* tracking fields.
+
+        No points are involved — the customer won this, they did not buy it.
+
+        Idempotent on `external_id`, and at most one per partner per spin_date:
+        the storefront's localStorage lock is trivially cleared, so this is the
+        only place the once-a-day rule can actually be enforced. Returns the
+        record; callers distinguish "already claimed" by comparing spin_date.
+        """
+        if not partner:
+            raise UserError(_("Partner is required."))
+        percent = self.SPIN_PRIZE_PERCENTS.get(prize_id)
+        if not percent:
+            raise UserError(_("Unknown spin prize: %s") % prize_id)
+        if not external_id:
+            raise UserError(_("external_id is required for idempotency."))
+
+        # Replay of the exact same claim (double-submit, retried fetch).
+        existing = self.sudo().search([('external_id', '=', external_id)], limit=1)
+        if existing:
+            return existing
+
+        # One claim per customer per spin day, regardless of how many times
+        # they cleared storage and span again.
+        already = self.sudo().search([
+            ('redemption_partner_id', '=', partner.id),
+            ('external_id', '=like', 'lgm_spin_%s_%s_%%' % (spin_date, partner.id)),
+        ], limit=1)
+        if already:
+            return already
+
+        # Same region lock as create_redemption: an unlocked coupon is
+        # redeemable in every market, which breaks per-state separation.
+        state_stores = self.env['res.company'].sudo()
+        if store:
+            region = store.region_id
+            if region:
+                state_stores = state_stores.search(
+                    [('region_id', '=', region.id), ('is_dispensary', '=', True)])
+            state_stores = state_stores or store
+
+        code = self._generate_redemption_code()
+        expires = fields.Datetime.now() + timedelta(days=REDEMPTION_DEFAULT_TTL_DAYS)
+        vals = {
+            # Code first — the Dutchie payload builder truncates name to 120
+            # chars for OnlineName/MenuDisplayName, so the code must survive.
+            'name': _("%s - Spin to Win: %s%% off") % (code, percent),
+            'discount_type': 'percent',
+            'discount_percent': percent,
+            'is_published': True,
+            'monday': True, 'tuesday': True, 'wednesday': True, 'thursday': True,
+            'friday': True, 'saturday': True, 'sunday': True,
+            'is_available_online': False,
+            'valid_from': (fields.Date.context_today(self)
+                           - timedelta(days=REDEMPTION_VALID_FROM_SLACK_DAYS)),
+            'valid_until': expires.date(),
+            # ONE token in both fields — redemption_code is what the customer
+            # reads off the screen, dutchie_discount_code is what the pusher
+            # sends verbatim. Letting them diverge is what made every code fail
+            # at the register before.
+            'redemption_code': code,
+            'dutchie_discount_code': code,
+            'application_method': 'code',
+            'maximum_usage_count': 1,
+            'max_redemptions': 1,
+            'redemption_limit': 1,
+            # Order-level: no product scope, on purpose. See
+            # _push_spin_coupon_to_dutchie for why that is safe here.
+            'product_ids': [(5, 0, 0)],
+            'redemption_partner_id': partner.id,
+            'redemption_points_cost': 0,
+            'redemption_status': 'pending',
+            'expires_at': expires,
+            'external_id': external_id,
+        }
+        if store:
+            vals['store_ids'] = [(6, 0, state_stores.ids or [store.id])]
+        else:
+            _logger.warning(
+                'create_spin_redemption: no store for partner %s — coupon is '
+                'NOT location-locked (redeemable in any market)', partner.id)
+
+        rec = self.sudo().create(vals)
+        rec._push_spin_coupon_to_dutchie(store)
+        return rec
+
+    def _push_spin_coupon_to_dutchie(self, store=None):
+        """Push a spin coupon into Dutchie so the code works at the register.
+
+        Mirrors _push_redemption_to_dutchie, minus its product-scope guard.
+        That guard exists because an unscoped *100%-off* redemption would zero
+        any item on the ticket; a percent-off-order coupon is unscoped by
+        design, and 5-30% off an order is an ordinary promotion. The store /
+        region gate is kept — without a market there is no PTL day to push
+        through, and the code would be rejected at the till.
+
+        Failures are logged, never raised: the customer already won the prize
+        and the record already exists, so aborting here would take the prize
+        away. dutchie_discount_id stays unset for a sweeper to retry.
+        """
+        self.ensure_one()
+        if 'mint.ptl.day' not in self.env:
+            _logger.warning('Spin coupon %s: mint.ptl.day unavailable, not pushed',
+                            self.redemption_code)
+            return False
+        region = store.region_id if store else False
+        if not region:
+            _logger.warning('Spin coupon %s: no store/region supplied, not pushed '
+                            '(code would be rejected at the register)',
+                            self.redemption_code)
+            return False
+        day = self.env['mint.ptl.day'].sudo().search(
+            [('market_id', '=', region.id)], limit=1)
+        if not day:
+            _logger.warning('Spin coupon %s: no mint.ptl.day for market %s, not '
+                            'pushed', self.redemption_code, region.code)
+            return False
+        try:
+            day._push_discounts_to_dutchie(self.ids)
+        except Exception:
+            _logger.exception('Spin coupon %s: Dutchie push failed; the code will '
+                              'not work at the register until re-pushed',
+                              self.redemption_code)
+            return False
+        return True
+
     @api.model
     def grant_personal_reward(self, partner, product, points_cost,
                               store=None, ttl_days=None):
