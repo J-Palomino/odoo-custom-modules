@@ -81,7 +81,10 @@ class MailThread(models.AbstractModel):
                 break
 
         model_label = self.env["ir.model"]._get(self._name).name or self._name
-        context_prefix = f"[Document: {model_label} #{self.id} \"{self.display_name or ''}\""
+        # Name the speaker too — same reasoning as discuss_channel.py.
+        speaker_name = (message.author_id.display_name or "").strip() if message.author_id else ""
+        context_prefix = f"[Speaking with: {speaker_name}]\n" if speaker_name else ""
+        context_prefix += f"[Document: {model_label} #{self.id} \"{self.display_name or ''}\""
         if doc_desc:
             context_prefix += f" | {doc_desc}"
         context_prefix += "]\n\n"

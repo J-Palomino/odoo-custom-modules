@@ -82,8 +82,17 @@ class DiscussChannel(models.Model):
         # Enqueue AI response job (processed by cron worker)
         user_text = html2plaintext(message.body) if message.body else ""
         session_id = self._daisy_session_id_for_message(message)
+        # Tell the agent who it is actually talking to. An agent can be DMed by
+        # several staff, and its principal changes when people move roles, so the
+        # speaker is re-stated on every message instead of being baked into the
+        # agent's prompt.
+        # (Flowise Agentflow V2 doesn't support overrideConfig.startState, so
+        # this rides in on the question text via context_prefix.)
+        speaker_name = (message.author_id.display_name or "").strip() if message.author_id else ""
+        context_prefix = f"[Speaking with: {speaker_name}]\n\n" if speaker_name else ""
         agent._enqueue_response(
             "discuss.channel", self.id, user_text, history, conversation_id,
+            context_prefix=context_prefix,
             session_id=session_id,
         )
 
