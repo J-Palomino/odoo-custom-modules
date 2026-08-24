@@ -614,11 +614,16 @@ def db_params():
     Staging sets HOST but not PASSWORD, so an env-only lookup fails with
     "fe_sendauth: no password supplied" and the drift scan silently no-ops.
     """
+    # NB: bare PORT and USER are NOT database settings on Railway. PORT is the
+    # HTTP listen port (8080) — the header only maps ODOO_DB_PORT onto it when
+    # PORT is unset, which on Railway it never is — and USER is the unix user.
+    # Using them yields "port 8080 ... Connection refused". Prefer the explicit
+    # ODOO_DB_* vars, then odoo.conf, and never fall back to bare PORT.
     p = {
-        "host": _clean(os.environ.get("HOST")),
-        "port": _clean(os.environ.get("PORT")) or "5432",
-        "user": _clean(os.environ.get("USER")),
-        "password": _clean(os.environ.get("PASSWORD")) or _clean(os.environ.get("ODOO_DB_PASSWORD")),
+        "host": _clean(os.environ.get("ODOO_DB_HOST")) or _clean(os.environ.get("HOST")),
+        "port": _clean(os.environ.get("ODOO_DB_PORT")),
+        "user": _clean(os.environ.get("ODOO_DB_USER")),
+        "password": _clean(os.environ.get("ODOO_DB_PASSWORD")) or _clean(os.environ.get("PASSWORD")),
         "dbname": _clean(os.environ.get("ODOO_DB_NAME")),
     }
     cfg = "/var/lib/odoo/odoo.conf"
@@ -636,8 +641,10 @@ def db_params():
         except Exception as exc:
             print("  ! could not read %s (%s)" % (cfg, exc), file=sys.stderr)
     p["host"] = p["host"] or "localhost"
-    p["user"] = p["user"] or "odoo"
+    p["port"] = p["port"] or "5432"
+    p["user"] = p["user"] or _clean(os.environ.get("USER")) or "odoo"
     p["dbname"] = p["dbname"] or "odoo"
+    print("  connecting to %s@%s:%s/%s" % (p["user"], p["host"], p["port"], p["dbname"]), file=sys.stderr)
     return p
 
 
