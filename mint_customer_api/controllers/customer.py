@@ -9,7 +9,10 @@ import hashlib
 import json
 import logging
 
+from psycopg2 import IntegrityError
+
 from odoo import fields, http
+from odoo.exceptions import UserError
 from odoo.http import request, Response
 
 from .auth import (json_response, error_response, unexpected_error_response,
@@ -1069,27 +1072,27 @@ class MintCustomerProfile(http.Controller):
     @http.route('/api/v1/customer/spin-claim', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
     def spin_claim(self, **kw):
-        """Claim the prize a customer won on the spin-to-win wheel.
+        """Draw this customer's spin-to-win prize and issue their coupon.
 
-        Body: {
-          "prize_id":    "off-15",              # authoritative percent is
-                                                # resolved from this, server-side
-          "spin_date":   "2026-08-23",          # Phoenix game date
-          "external_id": "lgm_spin_<date>_<partner>_<nonce>",
-          "store_id":    12                     # optional res.company id
-        }
+        Body: { "claim_date": "2026-08-23", "store_id": 12 }
 
-        The storefront spins anonymously and only sends the browser here once
-        the customer has signed in, so this is the first point at which the
-        prize can be tied to a person. Mints a personal, single-use, expiring
-        percent-off coupon and pushes it to Dutchie.
+        The prize is decided HERE, at claim time, by drawing an available entry
+        from mint.spin.prize — not on the wheel and not in the browser. Nothing
+        about the outcome ever crosses the client, so there is no token to sign
+        and no shared secret to manage; the customer's session is the only
+        thing that ties them to a prize.
 
-        Note what is NOT trusted from the body: the partner comes from the JWT,
-        never from `partner_id`, and the discount percentage is looked up from
-        `prize_id` in mint.discount.SPIN_PRIZE_PERCENTS. A client that sends
-        `discount_percent: 90` is ignored.
+        The pool is also the distribution cap: you cannot award more 30%-off
+        coupons than ops created. Dutchie enforces MaxRedemptions but never
+        populates RedemptionCount, so a cap expressed only there is invisible —
+        here, "how many are left" is a COUNT.
 
-        409 = this customer already claimed a different spin today.
+        Not trusted from the body: the partner (comes from the JWT) and the
+        discount percentage (comes from the drawn pool entry).
+
+        409 = already claimed today; the response still carries that day's
+        coupon so the customer can see the code they already hold.
+        503 = pool exhausted, which is an ops problem, not a customer error.
         """
         if request.httprequest.method == 'OPTIONS':
             return json_response({})
@@ -1105,19 +1108,11 @@ class MintCustomerProfile(http.Controller):
         except (json.JSONDecodeError, TypeError):
             return error_response('Invalid JSON body')
 
-        prize_id = data.get('prize_id')
-        spin_date = data.get('spin_date')
-        external_id = data.get('external_id')
-        if not prize_id or not spin_date or not external_id:
-            return error_response('prize_id, spin_date and external_id are required')
+        claim_date = data.get('claim_date')
+        if not claim_date:
+            return error_response('claim_date is required')
 
         partner = user.partner_id.sudo()
-
-        # Bind the external_id to THIS partner. Without this, a caller could
-        # replay someone else's external_id and read back their coupon.
-        expected_prefix = 'lgm_spin_%s_%s_' % (spin_date, partner.id)
-        if not str(external_id).startswith(expected_prefix):
-            return error_response('Malformed external_id for this customer', 400)
 
         # The storefront identifies a store by its Dutchie UUID
         # (res.company.dutchie_store_id), while Odoo keys by integer company
@@ -1143,34 +1138,38 @@ class MintCustomerProfile(http.Controller):
         if not store:
             # Without a store there is no market, so the coupon cannot be
             # region-locked and cannot be pushed to Dutchie — it would be a
-            # code that fails at the till. Refuse rather than mint a dud.
+            # code that fails at the till. Refuse rather than mint a dud, and
+            # refuse BEFORE drawing so a bad request never burns inventory.
             return error_response(
                 'A store is required to issue your code. Pick a store and try again.',
                 400,
             )
 
         try:
-            rec = request.env['mint.discount'].sudo().create_spin_redemption(
-                partner=partner,
-                prize_id=prize_id,
-                spin_date=spin_date,
-                external_id=external_id,
-                store=store,
+            entry, created = request.env['mint.spin.prize'].sudo().claim_next(
+                partner=partner, claim_date=claim_date, store=store,
             )
+        except IntegrityError:
+            # The (claimed_partner_id, claim_date) unique constraint fired: a
+            # concurrent request claimed for this customer first. Not an error
+            # worth surfacing as a 500 — they have a prize, just not this call's.
+            request.env.cr.rollback()
+            return error_response('You already claimed a spin today', 409)
+        except UserError as exc:
+            # Pool exhausted is the expected UserError here.
+            _logger.warning('spin-claim unavailable for partner %s: %s', partner.id, exc)
+            return error_response(str(exc), 503)
         except Exception as exc:  # noqa: BLE001 - surfaced as a 400 below
             _logger.exception('spin-claim failed for partner %s', partner.id)
             return error_response(str(exc) or 'Could not issue your code', 400)
 
-        # create_spin_redemption is idempotent on external_id and caps the
-        # customer at one claim per spin_date. A record whose external_id is
-        # not the one we asked for means they already claimed a different spin
-        # today; the same external_id is a replay and returns the same code.
-        if rec.external_id != external_id:
-            return error_response('You already claimed a spin today', 409)
-
-        return json_response({
-            'redemption_code': rec.redemption_code,
-            'expires_at': rec.expires_at.isoformat() if rec.expires_at else None,
-            'discount_percent': rec.discount_percent,
-            'status': rec.redemption_status,
-        })
+        discount = entry.discount_id
+        payload = {
+            'percent': entry.percent,
+            'redemption_code': discount.redemption_code if discount else None,
+            'expires_at': (discount.expires_at.isoformat()
+                           if discount and discount.expires_at else None),
+            'status': discount.redemption_status if discount else None,
+            'already_claimed': not created,
+        }
+        return json_response(payload, 200 if created else 409)

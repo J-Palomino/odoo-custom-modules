@@ -683,55 +683,34 @@ class MintDiscount(models.Model):
         return rec
 
     # ── Spin-to-win ───────────────────────────────────────────────────────
-    #
-    # Authoritative prize table. The storefront has its own copy for rendering
-    # the wheel (src/lib/spin/prizes.ts), but the percentage MUST be resolved
-    # here from the prize id: the browser supplies the id, and trusting a
-    # client-supplied percent would let anyone claim 90% off. Keep the two in
-    # sync — this side is the one that decides what the customer actually gets.
-    SPIN_PRIZE_PERCENTS = {
-        'off-5': 5, 'off-10': 10, 'off-15': 15,
-        'off-20': 20, 'off-25': 25, 'off-30': 30,
-    }
 
     @api.model
-    def create_spin_redemption(self, partner, prize_id, spin_date,
-                               external_id, store=None):
-        """Mint a personal single-use percent-off coupon won on the spin wheel.
+    def create_spin_prize_coupon(self, partner, percent, claim_date,
+                                 pool_entry, store=None):
+        """Mint the personal coupon for a drawn mint.spin.prize entry.
+
+        The percentage comes from the pool entry, which was created by ops long
+        before anyone spun — so there is no client-supplied value to validate
+        and no prize table to keep in sync with the storefront.
 
         Deliberately NOT a `loyalty_redemption`: that type is pushed to Dutchie
-        as 100%-off-one-product, which is the wrong reward shape here. A spin
-        prize is percent-off-the-order, so the record is a plain `percent`
-        discount that happens to carry the redemption_* tracking fields.
+        as 100%-off-one-product, which is the wrong reward shape. A spin prize
+        is percent-off-the-order, so the record is a plain `percent` discount
+        that happens to carry the redemption_* tracking fields. No points are
+        involved — the customer won this, they did not buy it.
 
-        No points are involved — the customer won this, they did not buy it.
-
-        Idempotent on `external_id`, and at most one per partner per spin_date:
-        the storefront's localStorage lock is trivially cleared, so this is the
-        only place the once-a-day rule can actually be enforced. Returns the
-        record; callers distinguish "already claimed" by comparing spin_date.
+        Idempotent on external_id, which is derived from the pool entry: the
+        same entry can only ever produce one coupon.
         """
         if not partner:
             raise UserError(_("Partner is required."))
-        percent = self.SPIN_PRIZE_PERCENTS.get(prize_id)
-        if not percent:
-            raise UserError(_("Unknown spin prize: %s") % prize_id)
-        if not external_id:
-            raise UserError(_("external_id is required for idempotency."))
+        if not percent or int(percent) <= 0:
+            raise UserError(_("A prize must award a real discount."))
 
-        # Replay of the exact same claim (double-submit, retried fetch).
+        external_id = 'lgm_spin_%s_%s_%s' % (claim_date, partner.id, pool_entry.id)
         existing = self.sudo().search([('external_id', '=', external_id)], limit=1)
         if existing:
             return existing
-
-        # One claim per customer per spin day, regardless of how many times
-        # they cleared storage and span again.
-        already = self.sudo().search([
-            ('redemption_partner_id', '=', partner.id),
-            ('external_id', '=like', 'lgm_spin_%s_%s_%%' % (spin_date, partner.id)),
-        ], limit=1)
-        if already:
-            return already
 
         # Same region lock as create_redemption: an unlocked coupon is
         # redeemable in every market, which breaks per-state separation.
@@ -781,7 +760,7 @@ class MintDiscount(models.Model):
             vals['store_ids'] = [(6, 0, state_stores.ids or [store.id])]
         else:
             _logger.warning(
-                'create_spin_redemption: no store for partner %s — coupon is '
+                'create_spin_prize_coupon: no store for partner %s — coupon is '
                 'NOT location-locked (redeemable in any market)', partner.id)
 
         rec = self.sudo().create(vals)
