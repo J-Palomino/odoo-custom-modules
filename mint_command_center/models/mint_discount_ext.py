@@ -396,6 +396,156 @@ class MintDiscountPTL(models.Model):
             if seen and total >= int(c.maximum_usage_count or 1):
                 c.write({'redemption_status': 'used', 'redemption_used_at': now})
 
+    # ─── Code-coupon usage sync (Backoffice report 1082) ─────────────────
+
+    redemption_used_count = fields.Integer(
+        string='Times Redeemed', default=0, copy=False, readonly=True,
+        help="Redemptions counted from Dutchie Backoffice report 1082. "
+             "Dutchie's own RedemptionCount is NOT usable: it still read 0 "
+             "after a redemption confirmed at the register, and across 42 "
+             "welcome coupons has never marked a single one used.",
+    )
+
+    # Report 1082's column names are not documented anywhere in this codebase.
+    # They are confirmed on the first live run via the invsvc probe
+    # (GET /api/admin/discount-usage?...&keys=true). Until then, match on a set
+    # of candidates rather than one hardcoded key: an exact-key lookup against
+    # the wrong name fails SILENTLY (0 rows matched reads identically to "not
+    # redeemed"), which is the failure mode that made RedemptionCount look fine
+    # for months. The observed keys are logged once per sweep so this list can
+    # be tightened from real data instead of guessed at again.
+    _USAGE_ID_KEYS = ('discountid', 'discount_id', 'id')
+    _USAGE_ORDER_KEYS = ('orderid', 'order_id', 'ordernumber', 'order_number',
+                         'transactionid', 'transaction_id', 'receiptno',
+                         'receipt_no', 'register_transaction_id')
+
+    @staticmethod
+    def _usage_row_get(row, candidates):
+        """Read a value from a report row by any of `candidates`, ignoring case,
+        spaces and underscores. Dutchie report columns are human-facing labels
+        ("Order Id", "discountId", "Discount ID"), so one exact key is a
+        coin flip."""
+        norm = {}
+        for k, v in (row or {}).items():
+            norm[str(k).lower().replace(' ', '').replace('_', '')] = v
+        for cand in candidates:
+            v = norm.get(cand.replace('_', ''))
+            if v not in (None, ''):
+                return v
+        return None
+
+    @api.model
+    def _cron_sync_code_coupon_usage(self):
+        """Count code-coupon redemptions from Dutchie report 1082.
+
+        Replaces the RedemptionCount path, which does not work (see the field
+        help above). The ingested POS data cannot answer this either: an
+        order-level "$X off total" coupon discounts the ORDER, so it never
+        appears in mint.pos.order.line.dutchie_discounts_json (verified: zero
+        lines reference any of four known order-total coupons), and
+        mint.pos.order stores only a bare `discount_total` amount with no id.
+        Report 1082 is the only source that names WHICH discount a transaction
+        used.
+
+        Counts DISTINCT orders, not rows: an order-total discount can be
+        reported once per affected line, so counting rows would burn a
+        multi-use coupon several times over on a single basket.
+        """
+        coupons = self.sudo().search([
+            ('application_method', '=', 'code'),
+            ('is_welcome_preroll', '=', False),
+            ('redemption_status', 'not in', ['used', 'voided']),
+            ('dutchie_discount_code', '!=', False),
+        ], limit=200)
+        if not coupons:
+            return 0
+
+        push = self.env['mint.ptl.day'].sudo()
+        if push._get_dutchie_push_mode() != 'live':
+            return 0
+        api_key = push._get_dutchie_push_api_key()
+        base = (push._get_dutchie_push_url() or '').rsplit('/api/admin/discounts', 1)[0]
+        if not base or not api_key:
+            _logger.warning('coupon_usage_sync: invsvc url/key unset — skipped')
+            return 0
+
+        Log = self.env['mint.dutchie.discount.push.log'].sudo()
+        today = fields.Date.context_today(self)
+        logged_keys = False
+        updated = 0
+
+        for c in coupons:
+            if c.valid_until and c.valid_until < today:
+                c.write({'redemption_status': 'expired'})
+                continue
+            logs = Log.search([
+                ('discount_id', '=', c.id), ('mode', '=', 'live'),
+                ('success', '=', True), ('dutchie_discount_id', '!=', 0),
+            ])
+            if not logs:
+                continue
+            start = c.valid_from or (c.create_date and c.create_date.date()) or today
+            frm = '%d/%d/%d' % (start.month, start.day, start.year)
+            to = '%d/%d/%d' % (today.month, today.day, today.year)
+
+            wanted_ids = {str(lg.dutchie_discount_id) for lg in logs}
+            code = (c.dutchie_discount_code or '').strip().lower()
+            orders = set()
+            seen_any = False
+            # One call per (loc, lsp) the coupon was actually pushed to.
+            for loc, lsp in {(push._resolve_pos_loc_id(lg.company_id),
+                              push._resolve_lsp_id(lg.company_id)) for lg in logs}:
+                if not loc or not lsp:
+                    continue
+                url = ('%s/api/admin/discount-usage?locId=%s&lspId=%s&from=%s&to=%s'
+                       % (base, loc, lsp, frm, to))
+                try:
+                    req = urllib.request.Request(url, headers={
+                        'X-API-Key': api_key,
+                        'User-Agent': 'mint-odoo-coupon-usage-sync/1.0',
+                    })
+                    with urllib.request.urlopen(req, timeout=120) as resp:
+                        payload = json.loads(resp.read().decode('utf-8', 'replace')) or {}
+                except Exception as e:
+                    _logger.warning('coupon_usage_sync: report read failed '
+                                    'coupon=%s loc=%s: %s', c.id, loc, e)
+                    continue
+                rows = payload.get('rows') or []
+                seen_any = True
+                if rows and not logged_keys:
+                    _logger.info('coupon_usage_sync: report 1082 columns = %s',
+                                 sorted(rows[0].keys()))
+                    logged_keys = True
+                for row in rows:
+                    rid = self._usage_row_get(row, self._USAGE_ID_KEYS)
+                    matched = rid is not None and str(rid) in wanted_ids
+                    if not matched and code:
+                        matched = code in json.dumps(row, default=str).lower()
+                    if not matched:
+                        continue
+                    oid = self._usage_row_get(row, self._USAGE_ORDER_KEYS)
+                    orders.add(str(oid) if oid is not None else 'row:%d' % id(row))
+
+            if not seen_any:
+                continue
+            count = len(orders)
+            vals = {}
+            if count != c.redemption_used_count:
+                vals['redemption_used_count'] = count
+            cap = int(c.maximum_usage_count or 0)
+            if cap and count >= cap:
+                vals.update({
+                    'redemption_status': 'used',
+                    'redemption_used_at': fields.Datetime.now(),
+                    'is_published': False,
+                })
+            if vals:
+                c.write(vals)
+                updated += 1
+                _logger.info('coupon_usage_sync: %s used %s/%s', c.dutchie_discount_code,
+                             count, cap or '-')
+        return updated
+
     def action_publish_to_dutchie(self):
         """Manual 'Publish to Dutchie' button for a standalone (one-off) coupon.
 

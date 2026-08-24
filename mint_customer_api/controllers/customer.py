@@ -128,6 +128,14 @@ def _serialize_coupon(rec):
         'discount_type': rec.discount_type,
         'discount_value': rec.discount_value,
         'max_uses': rec.maximum_usage_count or 0,
+        # Counted from Dutchie report 1082 by the usage-sync cron. getattr
+        # because the field lives on the mint_command_center extension, which
+        # mint_customer_api does not depend on. None (not 0) when the coupon is
+        # uncapped, so the client can tell "unlimited" from "none left".
+        'uses_remaining': (
+            max(0, int(rec.maximum_usage_count) - int(getattr(rec, 'redemption_used_count', 0) or 0))
+            if rec.maximum_usage_count else None
+        ),
         'expires_at': rec.valid_until.isoformat() if rec.valid_until else None,
         'in_store_only': not rec.is_available_online,
     }
