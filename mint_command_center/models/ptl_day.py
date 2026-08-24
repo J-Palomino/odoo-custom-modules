@@ -6,6 +6,11 @@ from datetime import timedelta
 
 from odoo import api, fields, models
 
+from odoo.addons.mint_api_v2.models.discount_canonical import (
+    calc_method_string_for,
+    discount_value_for,
+)
+
 from .deal_mixins import coerce_dutchie_ids
 
 _logger = logging.getLogger(__name__)
@@ -29,19 +34,19 @@ DISCOUNT_TYPE_MAP = {
     'clearance': 'clearance',
 }
 
-CALC_METHOD_MAP = {
-    'percent': 'PERCENT_OFF',
-    'fixed': 'DOLLAR_OFF',
-    'bogo': 'BOGO',
-    'price_to_amount': 'PRICE_TO_AMOUNT_TOTAL',
-    # Structured bundles (#93677): the mirror module normalizes
-    # calculation_method_id=6 rows to discount_type='price_per_unit' —
-    # without this entry the Redis webhook would fall back to PERCENT_OFF
-    # while discount_amount holds the bundle's dollar total.
-    'price_per_unit': 'PRICE_TO_AMOUNT_TOTAL',
-    'points_multiplier': 'POINTS_MULTIPLIER',
-    'clearance': 'CLEARANCE_PERCENT_OFF',
-}
+# CALC_METHOD_MAP removed (Dutchie-parity, 2026-08).
+#
+# It emitted canonical strings Dutchie has no concept of — 'BOGO',
+# 'DOLLAR_OFF', 'POINTS_MULTIPLIER', 'CLEARANCE_PERCENT_OFF' — and defaulted
+# everything else to PERCENT_OFF. Verified against 1,477 Dutchie-sourced
+# discounts: Dutchie exposes exactly six CalculationMethodIds
+# (1 FLAT_AMOUNT_OFF, 2 PERCENT_OFF, 3 PRICE_TO_AMOUNT, 5 DOLLAR_OFF_TOTAL,
+# 6 PRICE_TO_AMOUNT_TOTAL, 15 LOYALTY) and there is no BOGO method — a BOGO is
+# encoded as PRICE_TO_AMOUNT with threshold_min=2 and the "get" item's price
+# (Dutchie uses $0.01 for a free one).
+#
+# discount_canonical is the single source of truth, shared with the Dutchie
+# push and mint_redis_push and drift-guarded against the mintinvsvc copy.
 
 
 class PtlDay(models.Model):
@@ -305,7 +310,29 @@ class PtlDay(models.Model):
             vals['calculation_method_id'] = 0
         if deal.discount_type == 'bogo' and deal.bogo_buy_qty and deal.bogo_get_qty:
             vals['threshold_min'] = deal.bogo_buy_qty + deal.bogo_get_qty
-            vals['discount_amount'] = deal.bogo_get_pct or 1.0
+            # Dutchie has no BOGO calculation method. Verified against its own
+            # data: "BOGO $.01 Wyld - All Products" arrives as
+            # CalculationMethodId 3 (PRICE_TO_AMOUNT), threshold_min 2,
+            # discount_amount 0.01 — i.e. the price the "get" item drops to,
+            # not a percentage. Emitting a fraction here (the previous
+            # behaviour) made the register read "$1.00" or, with the method
+            # unresolved, "percent off 0" = no discount at all.
+            get_price = None
+            if deal.original_price:
+                get_price = round(
+                    deal.original_price * (1.0 - (deal.bogo_get_pct or 1.0)), 2)
+                if get_price <= 0:
+                    # Dutchie's convention for a free "get" item.
+                    get_price = 0.01
+            if has_calc_field and get_price is not None:
+                vals['discount_amount'] = get_price
+                vals['calculation_method_id'] = 3
+            else:
+                # No original_price means the resulting price is unknowable.
+                # Fabricating one would misprice at the register, so keep the
+                # legacy value and leave the method unset for the sentinel to
+                # keep reporting.
+                vals['discount_amount'] = deal.bogo_get_pct or 1.0
         elif deal.discount_type == 'bundle' and deal.bundle_tier_ids:
             # One2many is _order='sequence, id' — first row IS the first tier.
             first = deal.bundle_tier_ids[0]
@@ -422,7 +449,7 @@ class PtlDay(models.Model):
 
     def _discount_to_webhook_payload(self, discount, location_uuid):
         """Convert mint.discount → inventory service webhook payload."""
-        calc_method = CALC_METHOD_MAP.get(discount.discount_type, 'PERCENT_OFF')
+        calc_method = calc_method_string_for(discount)
 
         # Build brand/category/product targeting JSONB.
         # Emit the Dutchie-namespace cross-reference IDs (dutchie_brand_id /
@@ -460,7 +487,11 @@ class PtlDay(models.Model):
             'discount_id': discount.id + 100000,
             'discount_name': discount.name,
             'discount_code': discount.code or None,
-            'discount_amount': discount.discount_amount,
+            # discount_value_for() reads whichever field the calc method
+            # stores the number in — ids 1/5/15 keep it in discount_value and
+            # their discount_amount is 0, so reading discount_amount directly
+            # published those deals as a no-op.
+            'discount_amount': discount_value_for(discount),
             'calculation_method': calc_method,
             # Minimum-item threshold (#93677): N of "N for $X" bundles and
             # buy+get of structured BOGOs. 0 for legacy/non-threshold deals.
