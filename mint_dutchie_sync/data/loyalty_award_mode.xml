@@ -16,15 +16,23 @@
         </record>
         <!--
             Per-region award rates, JSON keyed by mint.region.code, in points
-            per net dollar. Michigan's program is cash-value at the register,
-            accrued at 2.5% of spend (Dutchie LSP 576 AccrualRate=0.025) — the
-            web balance mints at the same rate so the two ledgers track.
-            Existing databases: noupdate means an upgrade does NOT create this
-            row; set it once via Settings > Technical > System Parameters.
+            per net dollar. Seeded EMPTY on purpose: minting in Odoo creates a
+            SECOND ledger that only ever goes up, because register redemptions
+            live in Dutchie and there is no feed back (its loyalty API is
+            read-only, no redemption webhook). Measured on Michigan 2026-08-23:
+            customers spend 99.8% of what they earn, so an accrual-only balance
+            overstates by ~100% of earnings and diverges without bound.
+
+            Michigan is therefore MIRRORED from Dutchie, not minted here.
+
+            Enable a region ONLY where Odoo owns the whole ledger (earn AND
+            spend), by setting this parameter in Settings > Technical > System
+            Parameters, e.g. {"XX": 0.025}. Empty = no region mints, which is
+            also what an unset/malformed value does (the gate fails closed).
         -->
         <record id="param_mint_loyalty_region_award_rates" model="ir.config_parameter">
             <field name="key">mint.loyalty.region_award_rates</field>
-            <field name="value">{"MI": 0.025}</field>
+            <field name="value">{}</field>
         </record>
     </data>
 </odoo>

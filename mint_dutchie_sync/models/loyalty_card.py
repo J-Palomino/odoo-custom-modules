@@ -50,13 +50,19 @@ AWARD_MODE_PARAM = 'mint.loyalty.award_mode'
 
 #: ``ir.config_parameter`` holding per-region award rates as JSON, keyed by
 #: ``mint.region.code`` with values in points per net dollar, e.g.
-#: ``{"MI": 0.025}``. Regions run different loyalty programs: Michigan is
-#: cash-value (a point is a dollar at the register, accrued at 2.5% of spend
-#: — Dutchie LSP 576's own ``AccrualRate``), while Arizona is poster-based
-#: product redemption at 1 pt/$1. A region listed here mints at its rate even
-#: while ``AWARD_MODE_PARAM`` is ``off``; regions not listed stay governed by
-#: the global mode. Unset/malformed reads as "no regional rates" — the gate
-#: fails closed, same as the global one.
+#: ``{"XX": 0.025}``. A region listed here mints at its rate even while
+#: ``AWARD_MODE_PARAM`` is ``off``; regions not listed stay governed by the
+#: global mode. Unset/malformed reads as "no regional rates" — the gate fails
+#: closed, same as the global one.
+#:
+#: 🚨 Only list a region where Odoo owns the WHOLE ledger, earn *and* spend.
+#: Minting here while redemptions happen at the register creates a second
+#: balance that only ever grows: Dutchie's loyalty API is read-only and there
+#: is no redemption webhook, so Odoo never sees a spend. Michigan is the
+#: worked example — customers there redeem 99.8% of what they earn (measured
+#: 2026-08-23), so accrual-only would overstate by ~100% of earnings and
+#: diverge without bound. Michigan is MIRRORED from Dutchie instead, which is
+#: why this parameter ships EMPTY.
 REGION_RATES_PARAM = 'mint.loyalty.region_award_rates'
 
 #: Context key that suppresses audit-row creation for one operation. Used by
