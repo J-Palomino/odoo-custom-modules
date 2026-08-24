@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══ Prize pool ══════════════════════════════════════════════════ -->
+    <record id="view_mint_spin_prize_tree" model="ir.ui.view">
+        <field name="name">mint.spin.prize.list</field>
+        <field name="model">mint.spin.prize</field>
+        <field name="arch" type="xml">
+            <list string="Prize Pool" create="0">
+                <field name="percent"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'available'"
+                       decoration-muted="state == 'claimed'"
+                       decoration-danger="state == 'void'"/>
+                <field name="batch" optional="show"/>
+                <field name="claimed_partner_id" optional="show"/>
+                <field name="claim_date" optional="show"/>
+                <field name="discount_id" optional="hide"/>
+                <field name="ticket_id" optional="hide"/>
+                <field name="claimed_at" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_spin_prize_form" model="ir.ui.view">
+        <field name="name">mint.spin.prize.form</field>
+        <field name="model">mint.spin.prize</field>
+        <field name="arch" type="xml">
+            <form string="Prize Pool Entry" create="0">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="percent"/>
+                            <field name="state"/>
+                            <field name="batch"/>
+                        </group>
+                        <group>
+                            <field name="claimed_partner_id"/>
+                            <field name="claim_date"/>
+                            <field name="claimed_at"/>
+                            <field name="ticket_id"/>
+                            <field name="discount_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_mint_spin_prize_search" model="ir.ui.view">
+        <field name="name">mint.spin.prize.search</field>
+        <field name="model">mint.spin.prize</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="batch"/>
+                <field name="claimed_partner_id"/>
+                <filter name="available" string="Available"
+                        domain="[('state','=','available')]"/>
+                <filter name="claimed" string="Claimed"
+                        domain="[('state','=','claimed')]"/>
+                <separator/>
+                <!-- "What is left, and of what?" is the question ops actually
+                     asks; Dutchie cannot answer it, this can. -->
+                <group expand="1" string="Group By">
+                    <filter name="by_percent" string="Prize" context="{'group_by':'percent'}"/>
+                    <filter name="by_state" string="State" context="{'group_by':'state'}"/>
+                    <filter name="by_batch" string="Batch" context="{'group_by':'batch'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mint_spin_prize" model="ir.actions.act_window">
+        <field name="name">Prize Pool</field>
+        <field name="res_model">mint.spin.prize</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_available': 1, 'search_default_by_percent': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">The prize pool is empty</p>
+            <p>Nothing can be won until you seed it. Use <b>Seed Prize Pool</b>
+               to create a batch — the mix of entries sets both the odds and
+               the maximum number of each prize that can ever be given away.</p>
+        </field>
+    </record>
+
+    <!-- ══ Tickets ═════════════════════════════════════════════════════ -->
+    <record id="view_mint_spin_ticket_tree" model="ir.ui.view">
+        <field name="name">mint.spin.ticket.list</field>
+        <field name="model">mint.spin.ticket</field>
+        <field name="arch" type="xml">
+            <list string="Spin Tickets">
+                <field name="partner_id"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'available'"
+                       decoration-muted="state == 'spent'"
+                       decoration-danger="state in ('void','expired')"/>
+                <field name="source"/>
+                <field name="granted_at" optional="show"/>
+                <field name="expires_at" optional="show"/>
+                <field name="spent_at" optional="hide"/>
+                <field name="prize_id" optional="hide"/>
+                <field name="batch" optional="hide"/>
+                <field name="note" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_spin_ticket_form" model="ir.ui.view">
+        <field name="name">mint.spin.ticket.form</field>
+        <field name="model">mint.spin.ticket</field>
+        <field name="arch" type="xml">
+            <form string="Spin Ticket">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id"/>
+                            <field name="state"/>
+                            <field name="source"/>
+                            <field name="batch"/>
+                        </group>
+                        <group>
+                            <field name="granted_at"/>
+                            <field name="expires_at"/>
+                            <field name="spent_at"/>
+                            <field name="prize_id"/>
+                        </group>
+                    </group>
+                    <field name="note" placeholder="Why this ticket was issued…"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_mint_spin_ticket_search" model="ir.ui.view">
+        <field name="name">mint.spin.ticket.search</field>
+        <field name="model">mint.spin.ticket</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="partner_id"/>
+                <field name="batch"/>
+                <filter name="available" string="Unspent"
+                        domain="[('state','=','available')]"/>
+                <filter name="spent" string="Spent" domain="[('state','=','spent')]"/>
+                <separator/>
+                <!-- Surfaces the legal question: how many tickets are
+                     purchase-sourced? See mint_spin_ticket.py. -->
+                <filter name="purchase_sourced" string="Purchase-sourced"
+                        domain="[('source','=','purchase')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="by_state" string="State" context="{'group_by':'state'}"/>
+                    <filter name="by_source" string="Source" context="{'group_by':'source'}"/>
+                    <filter name="by_partner" string="Customer" context="{'group_by':'partner_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mint_spin_ticket" model="ir.actions.act_window">
+        <field name="name">Spin Tickets</field>
+        <field name="res_model">mint.spin.ticket</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_available': 1}</field>
+    </record>
+
+    <!-- ══ Wizards ═════════════════════════════════════════════════════ -->
+    <record id="view_mint_spin_seed_wizard_form" model="ir.ui.view">
+        <field name="name">mint.spin.seed.wizard.form</field>
+        <field name="model">mint.spin.seed.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Seed Prize Pool">
+                <div class="alert alert-info" role="alert">
+                    The mix of entries sets both the <b>odds</b> and the
+                    <b>maximum</b> number of each prize. Ten 30%-off entries in
+                    a batch of a thousand makes it a 1-in-100 draw and means
+                    exactly ten will ever be awarded.
+                </div>
+                <group>
+                    <field name="batch" placeholder="launch-2026-09"/>
+                </group>
+                <field name="line_ids">
+                    <list editable="bottom">
+                        <field name="percent"/>
+                        <field name="count"/>
+                    </list>
+                </field>
+                <group>
+                    <field name="total_entries" readonly="1"/>
+                    <field name="long_odds" readonly="1"/>
+                </group>
+                <footer>
+                    <button name="action_seed" type="object" string="Seed Pool"
+                            class="btn-primary"/>
+                    <button special="cancel" string="Cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_spin_seed_wizard" model="ir.actions.act_window">
+        <field name="name">Seed Prize Pool</field>
+        <field name="res_model">mint.spin.seed.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="view_mint_spin_grant_wizard_form" model="ir.ui.view">
+        <field name="name">mint.spin.grant.wizard.form</field>
+        <field name="model">mint.spin.grant.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Grant Spin Tickets">
+                <div class="alert alert-warning" role="alert">
+                    <b>Source matters.</b> Granting tickets for a
+                    <b>purchase</b> makes this purchase → chance → prize. Get
+                    sign-off before using that source.
+                </div>
+                <group>
+                    <field name="partner_ids" widget="many2many_tags"/>
+                    <field name="count"/>
+                    <field name="source"/>
+                    <field name="expires_at"/>
+                    <field name="batch"/>
+                    <field name="note"/>
+                </group>
+                <footer>
+                    <button name="action_grant" type="object" string="Grant Tickets"
+                            class="btn-primary"/>
+                    <button special="cancel" string="Cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_mint_spin_grant_wizard" model="ir.actions.act_window">
+        <field name="name">Grant Spin Tickets</field>
+        <field name="res_model">mint.spin.grant.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- ══ Menus ═══════════════════════════════════════════════════════
+         Hung off the same legacy root as the discount menus; mint_command_center
+         reparents that root under its Loyalty section when both are installed. -->
+    <menuitem id="menu_mint_spin_prize" name="Spin Prize Pool"
+              parent="menu_mint_discount_root"
+              action="action_mint_spin_prize" sequence="30"/>
+    <menuitem id="menu_mint_spin_seed" name="Seed Prize Pool"
+              parent="menu_mint_discount_root"
+              action="action_mint_spin_seed_wizard" sequence="31"/>
+    <menuitem id="menu_mint_spin_ticket" name="Spin Tickets"
+              parent="menu_mint_discount_root"
+              action="action_mint_spin_ticket" sequence="32"/>
+    <menuitem id="menu_mint_spin_grant" name="Grant Spin Tickets"
+              parent="menu_mint_discount_root"
+              action="action_mint_spin_grant_wizard" sequence="33"/>
+</odoo>

@@ -1090,8 +1090,8 @@ class MintCustomerProfile(http.Controller):
         Not trusted from the body: the partner (comes from the JWT) and the
         discount percentage (comes from the drawn pool entry).
 
-        409 = already claimed today; the response still carries that day's
-        coupon so the customer can see the code they already hold.
+        403 = the customer has no spin ticket. Tickets are the gate now, so
+        this is the ordinary "you cannot play yet" case, not an error.
         503 = pool exhausted, which is an ops problem, not a customer error.
         """
         if request.httprequest.method == 'OPTIONS':
@@ -1150,15 +1150,19 @@ class MintCustomerProfile(http.Controller):
                 partner=partner, claim_date=claim_date, store=store,
             )
         except IntegrityError:
-            # The (claimed_partner_id, claim_date) unique constraint fired: a
-            # concurrent request claimed for this customer first. Not an error
-            # worth surfacing as a 500 — they have a prize, just not this call's.
+            # UNIQUE(ticket_id) fired: that ticket already bought a prize.
+            # Better a hard failure than a second coupon from one ticket.
             request.env.cr.rollback()
-            return error_response('You already claimed a spin today', 409)
+            return error_response('That ticket has already been redeemed', 409)
         except UserError as exc:
-            # Pool exhausted is the expected UserError here.
-            _logger.warning('spin-claim unavailable for partner %s: %s', partner.id, exc)
-            return error_response(str(exc), 503)
+            # Two very different UserErrors reach here and they are not the
+            # same problem: "no ticket" is the customer's turn to act, "pool
+            # empty" is ops failing to top up. Distinguish them so the
+            # storefront can say something useful.
+            message = str(exc)
+            no_ticket = 'ticket' in message.lower()
+            _logger.warning('spin-claim unavailable for partner %s: %s', partner.id, message)
+            return error_response(message, 403 if no_ticket else 503)
         except Exception as exc:  # noqa: BLE001 - surfaced as a 400 below
             _logger.exception('spin-claim failed for partner %s', partner.id)
             return error_response(str(exc) or 'Could not issue your code', 400)
@@ -1173,3 +1177,54 @@ class MintCustomerProfile(http.Controller):
             'already_claimed': not created,
         }
         return json_response(payload, 200 if created else 409)
+
+    @http.route('/api/v1/spin/wheel', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def spin_wheel(self, **kw):
+        """The wedges the wheel should draw — PUBLIC, no auth.
+
+        Derived from what is actually left in the pool, so the wheel can never
+        show a prize that cannot be won, or omit one that can. Previously the
+        storefront held its own hardcoded list, which was free to drift out of
+        sync with the pool the moment ops seeded a different mix.
+
+        Anonymous on purpose: a visitor has to see the wheel before signing in.
+        Returns percentages only, never remaining counts — those would leak the
+        odds and let someone wait for a thin tier.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        rows = request.env['mint.spin.prize'].sudo().read_group(
+            [('state', '=', 'available')], ['percent'], ['percent'],
+        )
+        percents = sorted({int(r['percent']) for r in rows if r.get('percent')})
+        return json_response({'percents': percents})
+
+    @http.route('/api/v1/customer/spin-status', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def spin_status(self, **kw):
+        """How many spins this customer has, plus the current wedges.
+
+        The storefront calls this to decide whether the SPIN button is live.
+        It is advisory only — the ticket is actually spent, atomically, inside
+        the claim; a stale balance here can never produce a free spin.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+
+        partner = user.partner_id.sudo() if user.partner_id else None
+        tickets = request.env['mint.spin.ticket'].sudo().available_count(partner)
+        rows = request.env['mint.spin.prize'].sudo().read_group(
+            [('state', '=', 'available')], ['percent'], ['percent'],
+        )
+        percents = sorted({int(r['percent']) for r in rows if r.get('percent')})
+        return json_response({
+            'tickets': tickets,
+            'percents': percents,
+            'pool_empty': not percents,
+        })

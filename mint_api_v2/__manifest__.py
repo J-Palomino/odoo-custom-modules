@@ -33,6 +33,7 @@
         'security/product_visibility_rules.xml',
         'views/res_company_views.xml',
         'views/mint_discount_views.xml',
+        'views/mint_spin_views.xml',
         'views/product_template_views.xml',
         'data/ir_cron.xml',
     ],
