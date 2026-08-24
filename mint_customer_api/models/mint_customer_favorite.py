@@ -75,10 +75,18 @@ class MintCustomerFavorite(models.Model):
 
     image_url = fields.Char(string='Image URL')
 
-    _sql_constraints = [
-        (
-            'partner_item_uniq',
-            'unique(partner_id, item_type, item_ref)',
-            'This item is already in the customer\'s favorites.',
-        ),
-    ]
+    # Odoo 19 declares SQL constraints as models.Constraint attributes. The
+    # older `_sql_constraints = [(name, definition, message)]` list form is
+    # accepted without error but SILENTLY NEVER APPLIED on 19 — verified on
+    # staging 2026-08-24, where every models.Constraint declaration in the
+    # addons path had produced a real constraint while every _sql_constraints
+    # one (mint_cart.partner_company_uniq, mint_discount.redemption_code_unique,
+    # and this model's first cut) had produced none.
+    #
+    # This uniqueness is load-bearing: the REST endpoint's idempotency relies
+    # on at most one row per (partner, type, ref), so a silently-absent
+    # constraint would let concurrent double-taps insert duplicates.
+    _partner_item_uniq = models.Constraint(
+        'UNIQUE(partner_id, item_type, item_ref)',
+        "This item is already in the customer's favorites.",
+    )
