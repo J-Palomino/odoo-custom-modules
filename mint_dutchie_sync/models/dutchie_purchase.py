@@ -68,10 +68,10 @@ class DutchiePurchase(models.Model):
         still imported in full; only the point award is suppressed.
 
         A region listed in ``mint.loyalty.region_award_rates`` mints at its
-        own rate even while the global mode is ``off``. Michigan runs a
-        cash-value program (0.025 pt/$ net, matching Dutchie LSP 576's
-        accrual), so its balances track the register instead of the retired
-        1 pt/$1 scheme.
+        own rate even while the global mode is ``off``. That list ships empty
+        and must stay empty for any region whose points are redeemed at the
+        register: Odoo never sees those spends, so minting here would inflate
+        a parallel balance forever (see ``REGION_RATES_PARAM``).
         """
         records = super().create(vals_list)
         LoyaltyCard = self.env['loyalty.card'].sudo()
@@ -80,9 +80,8 @@ class DutchiePurchase(models.Model):
         # Resolve each purchase to the points it should mint. Legacy mode
         # replays the imported 1 pt/$1 figure; otherwise only a region with
         # a configured rate mints, computed from net_total. Regional awards
-        # deliberately do NOT skip internal users: those programs cover
-        # employees too (per Juan, 2026-08-18 — "michigan employees should
-        # be able to accrue and spend points").
+        # deliberately do NOT skip internal users: where a regional
+        # program runs, it covers employees too.
         awards = []
         for rec in records:
             if not rec.partner_id:
