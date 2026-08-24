@@ -576,11 +576,44 @@ except ImportError:
     sys.exit(0)
 
 SERIES = "19.0"
-ADDONS = ("/opt/extra-addons", "/var/lib/odoo/addons/19.0")
+
+# Resolve manifests through Odoo itself. Hand-rolling this is how the
+# 2026-08-24 prod incident happened: the scan globbed /opt/extra-addons first,
+# but Odoo's addons path puts the persistent volume (/var/lib/odoo/addons/19.0)
+# AHEAD of it, and fix-config.sh copies several modules onto that volume. The
+# scan compared the Docker manifest while Odoo loaded the volume copy, so it
+# ordered an upgrade of a stale, view-broken purchase_price_precision and
+# aborted the registry. ir.module.module.installed_version is computed from
+# get_manifest(), so going through the same API cannot disagree with Odoo.
+ODOO_MOD = None
+try:
+    from odoo.tools import config as _odoo_config
+    _odoo_config.parse_config(["-c", "/var/lib/odoo/odoo.conf"])
+    from odoo.modules import module as ODOO_MOD
+    ODOO_MOD.initialize_sys_path()
+    print("  resolving manifests via Odoo get_manifest()", file=sys.stderr)
+except Exception as exc:
+    print("  ! Odoo import failed (%s) — falling back to a path scan" % exc, file=sys.stderr)
+    ODOO_MOD = None
+
+# Fallback only. Mirrors the runtime order Odoo logs:
+# ['<odoo>/addons', '/var/lib/odoo/addons/19.0', '/opt/extra-addons', ...]
+# The volume MUST come before /opt/extra-addons — that is the whole bug.
+ADDONS = (
+    "/usr/lib/python3/dist-packages/odoo/addons",
+    "/var/lib/odoo/addons/19.0",
+    "/opt/extra-addons",
+    "/usr/lib/python3/dist-packages/addons",
+)
 
 
 def normalise(raw):
-    """Mirror Odoo's own manifest-version normalisation."""
+    """Mirror Odoo's own adapt_version()."""
+    if ODOO_MOD is not None and hasattr(ODOO_MOD, "adapt_version"):
+        try:
+            return ODOO_MOD.adapt_version(str(raw or "").strip() or "1.0")
+        except Exception:
+            pass
     v = str(raw or "").strip()
     if not v:
         return ""
@@ -588,6 +621,15 @@ def normalise(raw):
 
 
 def on_disk_version(name):
+    if ODOO_MOD is not None:
+        try:
+            manifest = ODOO_MOD.get_manifest(name)
+        except Exception as exc:
+            print("  ! %s: get_manifest failed (%s)" % (name, exc), file=sys.stderr)
+            return ""
+        if manifest:
+            return normalise(manifest.get("version", ""))
+        return ""
     for base in ADDONS:
         path = os.path.join(base, name, "__manifest__.py")
         if not os.path.isfile(path):
