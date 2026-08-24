@@ -1,6 +1,7 @@
 import json
 import logging
 import secrets
+import urllib.parse
 import urllib.request
 from datetime import timedelta
 
@@ -414,10 +415,19 @@ class MintDiscountPTL(models.Model):
     # redeemed"), which is the failure mode that made RedemptionCount look fine
     # for months. The observed keys are logged once per sweep so this list can
     # be tightened from real data instead of guessed at again.
-    _USAGE_ID_KEYS = ('discountid', 'discount_id', 'id')
-    _USAGE_ORDER_KEYS = ('orderid', 'order_id', 'ordernumber', 'order_number',
-                         'transactionid', 'transaction_id', 'receiptno',
-                         'receipt_no', 'register_transaction_id')
+    # Backoffice report 10875 "Discount Detail Report". Confirmed live
+    # 2026-08-24 — columns: Location Name, Order ID, Order Time, Customer Name,
+    # Product Name, Gross Sales, Discounted Amount, Discount Name, Discount
+    # Description, Discount Code, Budtender Name (+ consumer groups).
+    #
+    # NOT report 1082 (Location/Order/Customer/Product/Gross/Discounted
+    # Amount/Net): it carries a discount AMOUNT and never names the discount,
+    # so it cannot attribute a redemption. NOT report 175 either — that one
+    # names the discount but its QuantityUsed counts discounted LINE ITEMS,
+    # reporting 2 for a single basket, which would burn two uses per visit.
+    USAGE_REPORT_ID = 10875
+    _USAGE_CODE_KEYS = ('discountcode',)
+    _USAGE_ORDER_KEYS = ('orderid',)
 
     @staticmethod
     def _usage_row_get(row, candidates):
@@ -488,7 +498,6 @@ class MintDiscountPTL(models.Model):
             frm = '%d/%d/%d' % (start.month, start.day, start.year)
             to = '%d/%d/%d' % (today.month, today.day, today.year)
 
-            wanted_ids = {str(lg.dutchie_discount_id) for lg in logs}
             code = (c.dutchie_discount_code or '').strip().lower()
             orders = set()
             seen_any = False
@@ -498,7 +507,9 @@ class MintDiscountPTL(models.Model):
                 if not loc or not lsp:
                     continue
                 url = ('%s/api/admin/discount-usage?locId=%s&lspId=%s&from=%s&to=%s'
-                       % (base, loc, lsp, frm, to))
+                       '&reportId=%s&needle=%s'
+                       % (base, loc, lsp, frm, to, self.USAGE_REPORT_ID,
+                          urllib.parse.quote(c.dutchie_discount_code or '')))
                 try:
                     req = urllib.request.Request(url, headers={
                         'X-API-Key': api_key,
@@ -513,18 +524,26 @@ class MintDiscountPTL(models.Model):
                 rows = payload.get('rows') or []
                 seen_any = True
                 if rows and not logged_keys:
-                    _logger.info('coupon_usage_sync: report 1082 columns = %s',
-                                 sorted(rows[0].keys()))
+                    _logger.info('coupon_usage_sync: report %s columns = %s',
+                                 self.USAGE_REPORT_ID, sorted(rows[0].keys()))
                     logged_keys = True
                 for row in rows:
-                    rid = self._usage_row_get(row, self._USAGE_ID_KEYS)
-                    matched = rid is not None and str(rid) in wanted_ids
-                    if not matched and code:
-                        matched = code in json.dumps(row, default=str).lower()
-                    if not matched:
+                    # Exact match on Discount Code — the report carries the
+                    # same code we minted, so no fuzzy matching is needed or
+                    # wanted (an employee discount can zero a basket exactly
+                    # like a comp coupon, so amount-based attribution would
+                    # false-positive).
+                    rcode = self._usage_row_get(row, self._USAGE_CODE_KEYS)
+                    if not rcode or str(rcode).strip().lower() != code:
                         continue
                     oid = self._usage_row_get(row, self._USAGE_ORDER_KEYS)
-                    orders.add(str(oid) if oid is not None else 'row:%d' % id(row))
+                    if oid is None:
+                        continue
+                    # DISTINCT orders. One redemption discounts every eligible
+                    # line in the basket and the report emits a row per line —
+                    # verified live: MINT-GMXT6F produced 2 rows on order
+                    # 178720095 for a single redemption.
+                    orders.add(str(oid))
 
             if not seen_any:
                 continue
