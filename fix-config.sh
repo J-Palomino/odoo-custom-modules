@@ -662,16 +662,43 @@ except Exception as exc:
     sys.stdout.write("__DRIFT_DETECTION_FAILED__")
     sys.exit(0)
 
-drifted = []
+def version_tuple(v):
+    out = []
+    for part in str(v or "").split("."):
+        out.append(int(part) if part.isdigit() else 0)
+    return tuple(out)
+
+
+EXCLUDE = {m.strip() for m in os.environ.get("ODOO_DRIFT_EXCLUDE", "").split(",") if m.strip()}
+
+drifted, behind, skipped = [], [], 0
 for name, recorded in rows:
+    if name in EXCLUDE:
+        skipped += 1
+        continue
     disk = on_disk_version(name)
     if not disk:
-        continue  # not one of ours / no manifest on disk
-    if disk != (recorded or ""):
+        continue  # not one of ours / no manifest on the addons path
+    recorded = recorded or ""
+    if disk == recorded:
+        continue
+    if version_tuple(disk) > version_tuple(recorded):
+        # Genuine pending upgrade: the deployed manifest is ahead of the DB.
         drifted.append(name)
         print("  drift: %s disk=%s db=%s" % (name, disk, recorded), file=sys.stderr)
+    else:
+        # DB ahead of disk. Re-running -u cannot fix this and may downgrade,
+        # so only report it. Seen on the OCA bundle whose manifests read "1.0"
+        # while the DB carries a real version — those modules are unloadable
+        # anyway ("dependencies or manifest may be missing").
+        behind.append(name)
 
-print("  %d installed module(s) scanned, %d drifted" % (len(rows), len(drifted)), file=sys.stderr)
+if behind:
+    print("  NOTE: %d module(s) have a DB version AHEAD of the deployed manifest "
+          "(not upgrading): %s" % (len(behind), ",".join(sorted(behind))), file=sys.stderr)
+if skipped:
+    print("  %d module(s) skipped via ODOO_DRIFT_EXCLUDE" % skipped, file=sys.stderr)
+print("  %d installed module(s) scanned, %d to upgrade" % (len(rows), len(drifted)), file=sys.stderr)
 # stdout is captured by the shell — emit ONLY the comma list
 sys.stdout.write(",".join(sorted(drifted)))
 PYDRIFT
