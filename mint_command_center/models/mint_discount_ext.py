@@ -341,67 +341,29 @@ class MintDiscountPTL(models.Model):
 
     @api.model
     def _cron_sync_welcome_redemptions(self):
-        """Flip welcome coupons to used/expired by reading Dutchie back.
+        """Deprecated — delegates to _cron_sync_code_coupon_usage().
 
-        Expiry is derivable locally (valid_until). Redemption is read from Dutchie
-        via mintinvsvc GET /api/admin/dutchie-discount/<id> (RedemptionCount) per
-        live push-log row — the coupon is LSP-scoped, so we sum across LSPs. Marks
-        redemption_status='used' once the total hits maximum_usage_count.
+        This used to read Dutchie's RedemptionCount per push-log row. That
+        field never increments: it still read 0 after a redemption confirmed at
+        the register, and across 42 welcome coupons in production this cron had
+        never marked a single one used since it shipped in 2026-07. It looked
+        healthy the whole time because "0 redemptions" is indistinguishable
+        from "nothing to do".
+
+        A welcome pre-roll is just a code coupon, so it is now swept by the
+        same report-10875 path as every other one rather than maintaining a
+        second, broken implementation. Kept as a wrapper so the existing
+        ir.cron record keeps working; that record can be disabled, since the
+        code-coupon cron already covers these.
         """
-        coupons = self.sudo().search([
-            ('is_welcome_preroll', '=', True),
-            ('redemption_status', 'not in', ['used', 'voided']),
-        ], limit=500)
-        if not coupons:
-            return
-        push = self.env['mint.ptl.day'].sudo()
-        mode = push._get_dutchie_push_mode()
-        api_key = push._get_dutchie_push_api_key()
-        base = (push._get_dutchie_push_url() or '').rsplit('/api/admin/discounts', 1)[0]
-        Log = self.env['mint.dutchie.discount.push.log'].sudo()
-        # valid_until is a Date — compare date-to-date. Against a Datetime this
-        # raises TypeError and aborts the whole sweep on its first coupon.
-        today = fields.Date.context_today(self)
-        for c in coupons:
-            # Local expiry first — independent of Dutchie.
-            if c.valid_until and c.valid_until < today:
-                c.write({'redemption_status': 'expired'})
-                continue
-            if mode != 'live' or not base:
-                continue  # only real redemptions to sync when we actually pushed live
-            logs = Log.search([
-                ('discount_id', '=', c.id), ('mode', '=', 'live'),
-                ('success', '=', True), ('dutchie_discount_id', '!=', 0),
-            ])
-            total, seen = 0, False
-            for lg in logs:
-                store = lg.company_id
-                loc = push._resolve_pos_loc_id(store)
-                lsp = push._resolve_lsp_id(store)
-                if not loc or not lsp:
-                    continue
-                u = (f'{base}/api/admin/dutchie-discount/{lg.dutchie_discount_id}'
-                     f'?locId={loc}&lspId={lsp}')
-                try:
-                    req = urllib.request.Request(u, headers={
-                        'X-API-Key': api_key,
-                        'User-Agent': 'mint-odoo-welcome-sync/1.0',
-                    })
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        rec = (json.loads(resp.read().decode('utf-8', 'replace')) or {}).get('discount') or {}
-                        total += int(rec.get('RedemptionCount') or 0)
-                        seen = True
-                except Exception as e:
-                    _logger.warning('welcome_sync: read failed coupon %s did %s: %s',
-                                    c.id, lg.dutchie_discount_id, e)
-            if seen and total >= int(c.maximum_usage_count or 1):
-                c.write({'redemption_status': 'used', 'redemption_used_at': now})
+        return self._cron_sync_code_coupon_usage()
 
-    # ─── Code-coupon usage sync (Backoffice report 1082) ─────────────────
+    # ─── Code-coupon usage sync (Backoffice report 10875) ────────────────
 
     redemption_used_count = fields.Integer(
         string='Times Redeemed', default=0, copy=False, readonly=True,
-        help="Redemptions counted from Dutchie Backoffice report 1082. "
+        help="Redemptions counted from Dutchie Backoffice report 10875 "
+             "(Discount Detail), matched on Discount Code. "
              "Dutchie's own RedemptionCount is NOT usable: it still read 0 "
              "after a redemption confirmed at the register, and across 42 "
              "welcome coupons has never marked a single one used.",
@@ -466,7 +428,6 @@ class MintDiscountPTL(models.Model):
         """
         coupons = self.sudo().search([
             ('application_method', '=', 'code'),
-            ('is_welcome_preroll', '=', False),
             ('redemption_status', 'not in', ['used', 'voided']),
             ('dutchie_discount_code', '!=', False),
         ], limit=200)
@@ -557,6 +518,11 @@ class MintDiscountPTL(models.Model):
             if count != c.redemption_used_count:
                 vals['redemption_used_count'] = count
             cap = int(c.maximum_usage_count or 0)
+            # A welcome pre-roll is single-use by construction. Several were
+            # created by a raw RPC path that omitted maximum_usage_count and so
+            # carry 0, which would read as "uncapped" and never flip to used.
+            if not cap and c.is_welcome_preroll:
+                cap = 1
             if cap and count >= cap:
                 vals.update({
                     'redemption_status': 'used',
