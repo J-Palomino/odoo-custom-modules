@@ -360,6 +360,13 @@ class MintDiscountPTL(models.Model):
 
     # ─── Code-coupon usage sync (Backoffice report 10875) ────────────────
 
+    promo_issued_by_id = fields.Many2one(
+        'res.partner', string='Promo Issued By', index=True, copy=False,
+        help="Set when this coupon was minted from the storefront Promos "
+             "screen. Distinguishes an ad-hoc promo from a PTL deal or a "
+             "loyalty redemption, and scopes the issuer's own promo list.",
+    )
+
     redemption_used_count = fields.Integer(
         string='Times Redeemed', default=0, copy=False, readonly=True,
         help="Redemptions counted from Dutchie Backoffice report 10875 "
