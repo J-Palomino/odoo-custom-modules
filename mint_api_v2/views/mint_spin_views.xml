@@ -100,6 +100,7 @@
                 <field name="spent_at" optional="hide"/>
                 <field name="prize_id" optional="hide"/>
                 <field name="batch" optional="hide"/>
+                <field name="source_ref" optional="hide"/>
                 <field name="note" optional="hide"/>
             </list>
         </field>
@@ -123,6 +124,7 @@
                             <field name="expires_at"/>
                             <field name="spent_at"/>
                             <field name="prize_id"/>
+                            <field name="source_ref"/>
                         </group>
                     </group>
                     <field name="note" placeholder="Why this ticket was issued…"/>

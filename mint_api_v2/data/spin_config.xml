@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate: once ops edits this, a module upgrade must not reset it back
+         to disabled (or, worse, back to a wider window than they chose). -->
+    <data noupdate="1">
+        <record id="config_spin_purchase_grant" model="mint.config">
+            <field name="key">spin.purchase_grant</field>
+            <field name="is_active" eval="True"/>
+            <field name="value">{"enabled": false, "tickets": 1, "min_spend": 0, "max_age_days": 3}</field>
+            <field name="description">Spin-to-win: grant tickets for completed purchases.
+
+enabled       turn purchase-sourced grants on. SHIPS OFF. Switching this on is
+              what makes spin-to-win purchase -> chance -> prize; get sign-off
+              and consider a free alternative method of entry first.
+tickets       how many spins one qualifying purchase earns.
+min_spend     net total a purchase must reach to earn anything. 0 means any
+              non-refund sale qualifies.
+max_age_days  ignore purchases older than this. The importer runs in bulk and
+              has been days behind; without this a catch-up run mints a ticket
+              for every backdated receipt at once.</field>
+        </record>
+    </data>
+</odoo>

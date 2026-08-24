@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals REST API v2',
-    'version': '19.0.4.26.0',
+    'version': '19.0.4.27.0',
     'category': 'Website',
     'summary': 'REST API endpoints for MintDeals frontend (native Odoo controllers)',
     'description': """
@@ -34,6 +34,7 @@
         'views/res_company_views.xml',
         'views/mint_discount_views.xml',
         'views/mint_spin_views.xml',
+        'data/spin_config.xml',
         'views/product_template_views.xml',
         'data/ir_cron.xml',
     ],

@@ -20,6 +20,7 @@ window between "check the balance" and "decrement it" for a second request to
 slip through. A read-then-write would have exactly that window, and a customer
 double-clicking Reveal is enough to find it.
 """
+import json
 import logging
 
 from odoo import _, api, fields, models
@@ -64,6 +65,28 @@ class MintSpinTicket(models.Model):
         'mint.spin.prize', string='Prize Won', ondelete='set null',
         help='The pool entry this ticket bought.',
     )
+    source_ref = fields.Char(
+        string='Source Reference', index=True,
+        help='Idempotency key for automatic grants, e.g. '
+             '"purchase:<company_id>:<receipt_no>". Deliberately a string '
+             'rather than a foreign key: the granting module (mint_dutchie_sync) '
+             'does not depend on this one, and a char key works for any future '
+             'source without dragging in a dependency each time.',
+    )
+    source_seq = fields.Integer(
+        string='Source Sequence', default=1,
+        help='Which ticket of N for the same source_ref.',
+    )
+
+    _sql_constraints = [
+        # Idempotency for automatic grants. A re-imported receipt tries the
+        # same (ref, seq) and is rejected, so a catch-up sync cannot pay a
+        # customer twice for one purchase. NULLs are distinct in Postgres, so
+        # manual grants (no ref) are unaffected.
+        ('one_ticket_per_source_seq',
+         'UNIQUE(source_ref, source_seq)',
+         'That ticket has already been granted for this source.'),
+    ]
 
     @api.model
     def grant(self, partner, count=1, source='grant', expires_at=None,
@@ -80,6 +103,63 @@ class MintSpinTicket(models.Model):
             'batch': batch,
             'note': note,
         }] * int(count)
+        return self.sudo().create(vals)
+
+    @api.model
+    def purchase_grant_settings(self):
+        """Read the purchase->ticket rules from mint.config.
+
+        Key: `spin.purchase_grant`, JSON, e.g.
+            {"enabled": true, "tickets": 1, "min_spend": 25, "max_age_days": 3}
+
+        DISABLED by default, on purpose. Two reasons this must be opt-in:
+        granting tickets for a purchase is the change that makes this
+        promotion purchase -> chance -> prize, and the purchase importer runs
+        in bulk — switching it on with a wide `max_age_days` while the sync is
+        behind would mint a backlog of tickets in one go.
+        """
+        defaults = {'enabled': False, 'tickets': 1, 'min_spend': 0.0,
+                    'max_age_days': 3}
+        row = self.env['mint.config'].sudo().search(
+            [('key', '=', 'spin.purchase_grant'), ('is_active', '=', True)], limit=1)
+        if not row or not row.value:
+            return defaults
+        try:
+            settings = json.loads(row.value)
+        except (ValueError, TypeError):
+            _logger.warning('spin.purchase_grant is not valid JSON; grants stay off')
+            return defaults
+        if not isinstance(settings, dict):
+            return defaults
+        merged = dict(defaults)
+        merged.update(settings)
+        return merged
+
+    @api.model
+    def grant_for_ref(self, partner, source_ref, count=1, source='grant', **kw):
+        """Grant tickets idempotently against an external reference.
+
+        Safe to call repeatedly for the same reference: already-granted
+        sequences are skipped, so a re-imported purchase adds nothing. Returns
+        the tickets created by THIS call (empty if it was a replay).
+        """
+        if not partner or not source_ref:
+            raise UserError(_("Partner and source_ref are required."))
+
+        existing = self.sudo().search_count([('source_ref', '=', source_ref)])
+        wanted = int(count) - existing
+        if wanted < 1:
+            return self.sudo().browse()
+
+        vals = [{
+            'partner_id': partner.id,
+            'source': source,
+            'source_ref': source_ref,
+            'source_seq': existing + i + 1,
+            'expires_at': kw.get('expires_at'),
+            'batch': kw.get('batch'),
+            'note': kw.get('note'),
+        } for i in range(wanted)]
         return self.sudo().create(vals)
 
     @api.model
