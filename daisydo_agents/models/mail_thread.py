@@ -81,13 +81,10 @@ class MailThread(models.AbstractModel):
                 break
 
         model_label = self.env["ir.model"]._get(self._name).name or self._name
-        # Name the speaker too — same reasoning as discuss_channel.py.
-        speaker_name = (message.author_id.display_name or "").strip() if message.author_id else ""
-        context_prefix = f"[Speaking with: {speaker_name}]\n" if speaker_name else ""
-        context_prefix += f"[Document: {model_label} #{self.id} \"{self.display_name or ''}\""
+        page = f"[Document: {model_label} #{self.id} \"{self.display_name or ''}\""
         if doc_desc:
-            context_prefix += f" | {doc_desc}"
-        context_prefix += "]\n\n"
+            page += f" | {doc_desc}"
+        page += "]"
 
         # Enqueue AI response job (processed by cron worker)
         user_text = html2plaintext(message.body) if message.body else ""
@@ -96,6 +93,9 @@ class MailThread(models.AbstractModel):
         else:
             # Email-only author with no partner — scope memory to the document thread
             session_id = f"thread-{self._name}-{self.id}"
+        context_prefix = agent._build_context_prefix(
+            message=message, session_id=session_id, page=page,
+        )
         agent._enqueue_response(
             self._name, self.id, user_text, history, conversation_id,
             context_prefix=context_prefix,
