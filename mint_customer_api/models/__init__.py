@@ -3,3 +3,4 @@ from . import res_partner
 from . import res_users
 from . import sale_order
 from . import ir_rule
+from . import mint_customer_favorite

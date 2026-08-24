@@ -93,5 +93,52 @@
             <field name="perm_unlink" eval="True"/>
         </record>
 
+
+        <!--
+            Record rules on mint.customer.favorite.
+
+            A customer's saved products/deals are shopping-interest PII, so
+            they get the SAME default-deny shape as the web-customer partner
+            records above: regular internal users see only favorites belonging
+            to non-web customers (in practice: none), while the Web Customer
+            Access group sees all. Portal users see only their own.
+
+            The REST API reads/writes these through sudo() with an explicit
+            partner filter, so these rules are defense-in-depth for ORM/UI
+            access rather than the primary control.
+        -->
+        <record id="favorite_rule_hide_web_customers" model="ir.rule">
+            <field name="name">Favorite: hide web-customer favorites from regular internal users</field>
+            <field name="model_id" ref="model_mint_customer_favorite"/>
+            <field name="domain_force">[('partner_id.is_web_customer', '=', False)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="favorite_rule_show_all_web_customer_access" model="ir.rule">
+            <field name="name">Favorite: web customer access sees all favorites</field>
+            <field name="model_id" ref="model_mint_customer_favorite"/>
+            <field name="domain_force">[('id', '!=', -1)]</field>
+            <field name="groups" eval="[(4, ref('mint_customer_api.group_web_customer_access'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="favorite_rule_portal_own" model="ir.rule">
+            <field name="name">Favorite: portal users see only their own</field>
+            <field name="model_id" ref="model_mint_customer_favorite"/>
+            <field name="domain_force">[('partner_id', '=', user.partner_id.id)]</field>
+            <field name="groups" eval="[(4, ref('base.group_portal'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
     </data>
 </odoo>
