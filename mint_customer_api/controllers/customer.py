@@ -7,6 +7,8 @@ All endpoints require JWT authentication via Authorization header.
 import base64
 import hashlib
 import json
+import secrets
+from datetime import timedelta
 import logging
 
 from odoo import fields, http
@@ -138,6 +140,77 @@ def _serialize_coupon(rec):
         ),
         'expires_at': rec.valid_until.isoformat() if rec.valid_until else None,
         'in_store_only': not rec.is_available_online,
+    }
+
+
+def _fmt_amount(v):
+    """'50' not '50.0'; '12.50' keeps its cents."""
+    return ('%.2f' % float(v)).rstrip('0').rstrip('.')
+
+
+PROMO_ISSUERS_PARAM = 'mint.promos.issuer_emails'
+PROMO_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'
+# AZ stores the promo is scoped to for web-side display. Publishing targets ONE
+# of them (see _promo_publish_store) — the pusher fans out per store with no LSP
+# dedupe, so a multi-store publish mints N copies of the same code, each
+# separately redeemable. A "single-use" $100 would become $900.
+PROMO_DEFAULT_TTL_DAYS = 30
+
+
+def _promo_issuer_partner():
+    """The authenticated user, if they are allowed to issue promos.
+
+    Gated on an explicit email allowlist in ir.config_parameter, NOT on
+    `user.share`. The storefront login for staff is a PORTAL user
+    (web:someone@example.com, share=True), so the existing internal/staff
+    signal would exclude exactly the people who need this. Matching is on the
+    PARTNER email so the `web:` login prefix is irrelevant.
+
+    Returns (user, None) when allowed, (None, response) when not.
+    """
+    user = _verify_and_get_user()
+    if not user:
+        return None, error_response('Authentication required', 401)
+    if not user.partner_id:
+        return None, error_response('No customer profile linked to this account', 400)
+    raw = (request.env['ir.config_parameter'].sudo()
+           .get_param(PROMO_ISSUERS_PARAM, '') or '')
+    allowed = {e.strip().lower() for e in raw.split(',') if e.strip()}
+    email = (user.partner_id.sudo().email or '').strip().lower()
+    if not allowed or email not in allowed:
+        # Deliberately 404, not 403: an unauthorised caller should not learn
+        # that a promo-issuing endpoint exists at all.
+        return None, error_response('Not found', 404)
+    return user, None
+
+
+def _promo_new_code():
+    """MINT-XXXXXX over an alphabet with no 0/O/1/I/L/U — budtenders key these
+    in by hand off a customer's phone."""
+    Discount = request.env['mint.discount'].sudo()
+    for _ in range(12):
+        code = 'MINT-' + ''.join(secrets.choice(PROMO_CODE_ALPHABET) for _ in range(6))
+        if not Discount.search_count([('dutchie_discount_code', '=', code)]):
+            return code
+    raise UserError(_('Could not allocate an unused promo code.'))
+
+
+def _serialize_promo(rec, base_url=''):
+    used = int(getattr(rec, 'redemption_used_count', 0) or 0)
+    cap = int(rec.maximum_usage_count or 0)
+    code = rec.dutchie_discount_code or ''
+    return {
+        'id': rec.id,
+        'code': code,
+        'amount': rec.discount_value,
+        'label': rec.name,
+        'status': rec.redemption_status,
+        'max_uses': cap,
+        'used': used,
+        'uses_remaining': max(0, cap - used) if cap else None,
+        'expires_at': rec.valid_until.isoformat() if rec.valid_until else None,
+        'created_at': rec.create_date.isoformat() if rec.create_date else None,
+        'gift_url': ('%s/gift/%s' % (base_url.rstrip('/'), code)) if code else '',
     }
 
 
@@ -784,6 +857,141 @@ class MintCustomerProfile(http.Controller):
             'gate will refuse this redemption', partner.id,
         )
         return Company
+
+    @http.route('/api/v1/customer/promos', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def list_promos(self, **kw):
+        """List promos this issuer has created. Allowlisted callers only."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        user, denied = _promo_issuer_partner()
+        if denied:
+            return denied
+        base = (request.env['ir.config_parameter'].sudo()
+                .get_param('mint.storefront_url', 'https://shop.letsgomint.us'))
+        promos = request.env['mint.discount'].sudo().search([
+            ('discount_type', '=', 'dollar_off_total'),
+            ('application_method', '=', 'code'),
+            ('promo_issued_by_id', '=', user.partner_id.id),
+        ], order='create_date desc', limit=200)
+        return json_response({'promos': [_serialize_promo(p, base) for p in promos]})
+
+    @http.route('/api/v1/customer/promos/issue', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def issue_promo(self, **kw):
+        """Mint a $-off-any-transaction coupon and publish it to Dutchie.
+
+        Body: {"amount": 50, "uses": 1, "days": 30, "label": "..."}
+
+        Every value here is load-bearing and was established by debugging a
+        live coupon; none of it is arbitrary:
+          * discount_type dollar_off_total -> CalculationMethodId 5, value in
+            discount_value (discount_amount is 0 for calc 5).
+          * threshold_type order_total with a 0.01 minimum. A "none" threshold
+            makes the invsvc validator reject the push as an unscoped
+            single-item coupon (HTTP 422); 0.01 is effectively no minimum.
+          * maximum_usage_count is floored to 1 — the field has NO model
+            default, and 0 means UNCAPPED to Dutchie, not "zero uses".
+          * is_published plus all seven weekday flags, because is_active is a
+            stored compute over (published AND in-window AND today's weekday).
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        user, denied = _promo_issuer_partner()
+        if denied:
+            return denied
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        try:
+            amount = float(data.get('amount') or 0)
+        except (TypeError, ValueError):
+            amount = 0
+        if amount <= 0 or amount > 500:
+            return error_response('amount must be between 0.01 and 500')
+        uses = max(1, int(data.get('uses') or 1))
+        days = max(1, min(int(data.get('days') or PROMO_DEFAULT_TTL_DAYS), 365))
+        label = (data.get('label') or '').strip()[:80]
+
+        Company = request.env['res.company'].sudo()
+        enabled = Company.search([
+            ('dutchie_discount_push_enabled', '=', True),
+            ('dutchie_pos_location_id', '!=', False),
+            ('dutchie_lsp_id', '!=', False),
+        ])
+        if not enabled:
+            return error_response('No Dutchie-enabled store is configured', 503)
+        # ONE store per LSP. action_publish_to_dutchie loops over store_ids with
+        # no LSP dedupe, so publishing to every store mints N copies of the same
+        # code, each separately redeemable — a "single-use" $100 becomes $900.
+        # The code is LSP-wide at the register regardless of which store pushed.
+        by_lsp = {}
+        for company in enabled:
+            by_lsp.setdefault(company.dutchie_lsp_id, company)
+        publish_stores = list(by_lsp.values())
+        scope = Company.search([('dutchie_lsp_id', 'in', list(by_lsp.keys()))])
+
+        code = _promo_new_code()
+        today = fields.Date.context_today(user)
+        Discount = request.env['mint.discount'].sudo()
+        vals = {
+            'name': label or ('$%s Off Any Transaction' % _fmt_amount(amount)),
+            'description': 'lgm | promo $%s off any transaction (issued by partner %s)'
+                           % (_fmt_amount(amount), user.partner_id.id),
+            'discount_type': 'dollar_off_total',
+            'calculation_method_id': 5,
+            'discount_value': amount,
+            'discount_amount': amount,
+            'threshold_type': 'order_total',
+            'threshold_min': 0.01,
+            'application_method': 'code',
+            'dutchie_discount_code': code,
+            'code': code,
+            'maximum_usage_count': uses,
+            'max_redemptions': uses,
+            'valid_from': today,
+            'valid_until': today + timedelta(days=days),
+            'expires_at': fields.Datetime.now() + timedelta(days=days),
+            'source': 'manual',
+            'is_available_online': True,
+            'first_time_customer_only': False,
+            'is_published': True,
+            'promo_issued_by_id': user.partner_id.id,
+            'store_ids': [(6, 0, [c.id for c in publish_stores])],
+        }
+        for day in ('monday', 'tuesday', 'wednesday', 'thursday',
+                    'friday', 'saturday', 'sunday'):
+            vals[day] = True
+        promo = Discount.create(vals)
+
+        published = False
+        if hasattr(promo, 'action_publish_to_dutchie'):
+            try:
+                promo.action_publish_to_dutchie()
+                published = bool(request.env['mint.dutchie.discount.push.log'].sudo()
+                                 .search_count([('discount_id', '=', promo.id),
+                                                ('success', '=', True),
+                                                ('dutchie_discount_id', '!=', 0)]))
+            except Exception:
+                _logger.exception('promo %s: publish to Dutchie failed', code)
+        if not published:
+            # A code Dutchie has never heard of is refused at the register, so
+            # surface the failure instead of handing over a dead coupon.
+            promo.write({'is_published': False})
+            return error_response(
+                'Could not publish the promo to the register system. '
+                'It has been left inactive — try again.', 502)
+
+        # Widen web-side scope AFTER publishing: store_ids gates online display,
+        # and widening does not re-push (so it cannot duplicate the code).
+        promo.write({'store_ids': [(6, 0, scope.ids)]})
+        base = (request.env['ir.config_parameter'].sudo()
+                .get_param('mint.storefront_url', 'https://shop.letsgomint.us'))
+        _logger.info('promo issued: %s $%s x%s by partner %s',
+                     code, amount, uses, user.partner_id.id)
+        return json_response({'promo': _serialize_promo(promo, base)})
 
     @http.route('/api/v1/customer/loyalty/redemptions', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
