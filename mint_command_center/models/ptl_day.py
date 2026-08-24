@@ -95,10 +95,25 @@ class PtlDay(models.Model):
     )
     notes = fields.Text(string='Notes')
 
-    _sql_constraints = [
-        ('date_market_uniq', 'unique(date, market_id)',
-         'Only one PTL day per date per market is allowed.'),
-    ]
+    # Odoo 19 reads models.Constraint; the legacy `_sql_constraints = [...]`
+    # list is SILENTLY IGNORED. This constraint was declared the old way and so
+    # was never created in the database — verified 2026-08-24: the table carried
+    # only its 5 auto-generated foreign keys, and mint_command_center had 226
+    # constraint records registered, every one a foreign key and not a single
+    # declared unique. (mint_api_v2, which already uses models.Constraint, has
+    # its 3 unique constraints installed — same database, same Odoo.)
+    #
+    # The cost of that silence: schedule_deal does a plain check-then-create and
+    # its own docstring says "the date_market_uniq constraint guarantees at most
+    # one". Nothing guaranteed it, so concurrent calls both inserted — 105
+    # duplicate (date, market) rows accumulated, 104 of them created within the
+    # same minute as their twin. Those were merged on 2026-08-24 (7,105 deal
+    # links preserved into the survivors, 769 -> 664 rows) so this can finally
+    # take effect.
+    _date_market_uniq = models.Constraint(
+        'UNIQUE(date, market_id)',
+        'Only one PTL day per date per market is allowed.',
+    )
 
     @api.model
     def _default_market_id(self):
