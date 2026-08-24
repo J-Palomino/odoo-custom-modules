@@ -993,6 +993,63 @@ class MintCustomerProfile(http.Controller):
                      code, amount, uses, user.partner_id.id)
         return json_response({'promo': _serialize_promo(promo, base)})
 
+    @http.route('/api/v1/customer/promos/claim', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def claim_promo(self, **kw):
+        """Bind a gift promo to the signed-in customer and return its code.
+
+        Sign-in is required to SEE the code, not merely to record who took it:
+        a Dutchie code coupon has no customer binding, so the code itself is a
+        bearer instrument — anyone holding it can redeem at any register in the
+        LSP up to the cap. Gating the reveal is the only control available.
+
+        First signed-in claimer wins. Binding sets redemption_partner_id, which
+        is what makes it appear in that customer's /rewards coupon list.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        code = (data.get('code') or '').strip().upper()
+        if not code:
+            return error_response('code is required')
+
+        promo = request.env['mint.discount'].sudo().search([
+            ('dutchie_discount_code', '=', code),
+            ('application_method', '=', 'code'),
+            ('promo_issued_by_id', '!=', False),
+        ], limit=1)
+        if not promo:
+            return error_response('That gift link is not valid.', 404)
+
+        today = fields.Date.context_today(promo)
+        if promo.valid_until and promo.valid_until < today:
+            return error_response('This gift has expired.', 410)
+        if promo.redemption_status in ('used', 'voided'):
+            return error_response('This gift has already been used.', 410)
+
+        partner = user.partner_id
+        holder = promo.redemption_partner_id
+        if holder and holder.id != partner.id:
+            # Deliberately does NOT reveal the code to a second claimer.
+            return error_response('This gift has already been claimed.', 409)
+        if not holder:
+            promo.write({'redemption_partner_id': partner.id})
+            _logger.info('promo %s claimed by partner %s', code, partner.id)
+
+        base = (request.env['ir.config_parameter'].sudo()
+                .get_param('mint.storefront_url', 'https://shop.letsgomint.us'))
+        out = _serialize_promo(promo, base)
+        out['already_yours'] = bool(holder and holder.id == partner.id)
+        return json_response({'promo': out})
+
     @http.route('/api/v1/customer/loyalty/redemptions', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
     def list_redemptions(self, **kw):
