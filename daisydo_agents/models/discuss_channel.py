@@ -79,11 +79,13 @@ class DiscussChannel(models.Model):
         ], order="date desc", limit=1)
         conversation_id = last_ai_msg.daisy_conversation_id if last_ai_msg else None
 
-        # Enqueue AI response job (processed by cron worker)
+        # Enqueue AI response job (processed by cron worker). Prefix with the
+        # active user's identity so the agent knows who it is assisting.
         user_text = html2plaintext(message.body) if message.body else ""
         session_id = self._daisy_session_id_for_message(message)
         agent._enqueue_response(
             "discuss.channel", self.id, user_text, history, conversation_id,
+            context_prefix=self._daisy_requester_context(message),
             session_id=session_id,
         )
 
