@@ -567,7 +567,7 @@ fi
 DRIFT_MODULES=""
 if [ -n "$HOST" ] && [ "$ODOO_AUTO_UPDATE_DRIFT" != "0" ]; then
     echo "=== Detecting module version drift ===" >&2
-    DRIFT_MODULES=$(python3 << 'PYDRIFT' 2>/dev/null
+    DRIFT_MODULES=$(python3 << 'PYDRIFT'
 import os, sys, ast
 
 try:
@@ -603,21 +603,56 @@ def on_disk_version(name):
     return ""
 
 
+def _clean(v):
+    v = (v or "").strip()
+    return "" if v.lower() in ("", "false", "none") else v
+
+
+def db_params():
+    """Env first, then the odoo.conf the server itself is about to use.
+
+    Staging sets HOST but not PASSWORD, so an env-only lookup fails with
+    "fe_sendauth: no password supplied" and the drift scan silently no-ops.
+    """
+    p = {
+        "host": _clean(os.environ.get("HOST")),
+        "port": _clean(os.environ.get("PORT")) or "5432",
+        "user": _clean(os.environ.get("USER")),
+        "password": _clean(os.environ.get("PASSWORD")) or _clean(os.environ.get("ODOO_DB_PASSWORD")),
+        "dbname": _clean(os.environ.get("ODOO_DB_NAME")),
+    }
+    cfg = "/var/lib/odoo/odoo.conf"
+    if os.path.isfile(cfg):
+        import configparser
+        cp = configparser.ConfigParser()
+        try:
+            cp.read(cfg)
+            sec = "options" if cp.has_section("options") else (cp.sections()[0] if cp.sections() else None)
+            if sec:
+                for key, opt in (("host", "db_host"), ("port", "db_port"), ("user", "db_user"),
+                                 ("password", "db_password"), ("dbname", "db_name")):
+                    if not p[key]:
+                        p[key] = _clean(cp.get(sec, opt, fallback=""))
+        except Exception as exc:
+            print("  ! could not read %s (%s)" % (cfg, exc), file=sys.stderr)
+    p["host"] = p["host"] or "localhost"
+    p["user"] = p["user"] or "odoo"
+    p["dbname"] = p["dbname"] or "odoo"
+    return p
+
+
 try:
-    conn = psycopg2.connect(
-        host=os.environ.get("HOST", "localhost"),
-        port=os.environ.get("PORT", "5432"),
-        user=os.environ.get("USER", "odoo"),
-        password=os.environ.get("PASSWORD", os.environ.get("ODOO_DB_PASSWORD", "")),
-        dbname=os.environ.get("ODOO_DB_NAME", "odoo"),
-    )
+    conn = psycopg2.connect(**db_params())
     cur = conn.cursor()
     cur.execute("SELECT name, latest_version FROM ir_module_module WHERE state = 'installed'")
     rows = cur.fetchall()
     cur.close()
     conn.close()
 except Exception as exc:
-    print("  ! drift detection failed, falling back to ODOO_UPDATE_MODULES: %s" % exc, file=sys.stderr)
+    # Emit a sentinel so the shell can tell "detection broke" apart from
+    # "nothing drifted" — those looked identical and hid a real failure.
+    print("  ! drift detection FAILED: %s" % exc, file=sys.stderr)
+    sys.stdout.write("__DRIFT_DETECTION_FAILED__")
     sys.exit(0)
 
 drifted = []
@@ -634,7 +669,10 @@ print("  %d installed module(s) scanned, %d drifted" % (len(rows), len(drifted))
 sys.stdout.write(",".join(sorted(drifted)))
 PYDRIFT
 )
-    if [ -n "$DRIFT_MODULES" ]; then
+    if [ "$DRIFT_MODULES" = "__DRIFT_DETECTION_FAILED__" ]; then
+        echo "=== WARNING: drift detection FAILED — falling back to ODOO_UPDATE_MODULES only ===" >&2
+        DRIFT_MODULES=""
+    elif [ -n "$DRIFT_MODULES" ]; then
         echo "=== Version drift detected, will upgrade: $DRIFT_MODULES ===" >&2
     else
         echo "=== No version drift detected ===" >&2
