@@ -103,7 +103,7 @@ for mod in daisy_bot mint_theme mint_api_v2 avancir_inventory vault account_fina
     mint_push mint_banner mint_customer_api mint_dutchie_sync mint_mail_whitelist mint_inventory_ops \
     mint_posthog daisy_error_handler \
     daisydo_theme daisydo_livechat daisydo_agents daisydo_multicompany daisydo_webhook \
-    mint_oauth_only mint_redis_session base_accounting_kit base_account_budget sign_oca \
+    mint_oauth_only mint_redis_session base_accounting_kit base_account_budget \
     dms dms_field hr_dms_field \
     fs_storage fs_attachment fs_attachment_s3 server_environment \
     spreadsheet_oca spreadsheet_dashboard_oca \
@@ -132,15 +132,6 @@ done
 echo "=== Wiping .pyc / __pycache__ under /opt/extra-addons ==="
 find /opt/extra-addons -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
 find /opt/extra-addons -name '*.pyc' -delete 2>/dev/null
-
-# Diagnostic: capture the first 30 lines of mgmtsystem_nonconformity's
-# mail_thread.py so we can confirm whether /opt/extra-addons actually
-# contains the hotfix or some stale copy.
-if [ -f /opt/extra-addons/mgmtsystem_nonconformity/models/mail_thread.py ]; then
-    echo "=== DEPLOYED mgmtsystem_nonconformity/models/mail_thread.py (head -35) ==="
-    head -35 /opt/extra-addons/mgmtsystem_nonconformity/models/mail_thread.py
-    echo "=== END diagnostic ==="
-fi
 
 # Remove broken/non-installable modules from ALL addons paths
 # These modules cause registry failures during update (view validation errors,
@@ -438,12 +429,11 @@ fi
 
 # Set admin password via Odoo shell (proper ORM method, handles auth module overrides)
 ADMIN_PW="${ODOO_ADMIN_PASSWORD:-$ADMIN_PASSWORD}"
-echo "=== PW DEBUG: ODOO_ADMIN_PASSWORD=$(test -n \"$ODOO_ADMIN_PASSWORD\" && echo YES || echo NO) ADMIN_PASSWORD=$(test -n \"$ADMIN_PASSWORD\" && echo YES || echo NO) ADMIN_PW=$(test -n \"$ADMIN_PW\" && echo YES || echo NO) ===" >&2
 if [ -n "$ADMIN_PW" ]; then
     export ODOO_ADMIN_PASSWORD="$ADMIN_PW"
     echo "=== Setting admin password via Odoo shell ===" >&2
     timeout 180 python3 << 'PYEOF' 2>&1 || echo "Warning: Odoo shell password set failed" >&2
-import sys, os, inspect
+import sys, os
 sys.path.insert(0, '/usr/lib/python3/dist-packages')
 os.environ.setdefault('ODOO_RC', '/var/lib/odoo/odoo.conf')
 
@@ -463,21 +453,6 @@ registry = Registry(db_name)
 with registry.cursor() as cr:
     from odoo.api import Environment, SUPERUSER_ID
     env = Environment(cr, SUPERUSER_ID, {})
-
-    # Debug: print _check_credentials source and MRO
-    user_model = env['res.users']
-    cls = type(user_model)
-    print(f'User model class: {cls}')
-    print(f'MRO (auth-related):')
-    for c in cls.__mro__:
-        n = c.__name__
-        if any(k in n.lower() for k in ['user', 'passkey', 'totp', 'auth', 'password']):
-            print(f'  {c.__module__}.{n}')
-            if hasattr(c, '_check_credentials') and '_check_credentials' in c.__dict__:
-                src = inspect.getsource(c._check_credentials)
-                print(f'    _check_credentials ({len(src)} chars):')
-                print('    ' + src[:600].replace('\n', '\n    '))
-                print()
 
     # Set password via ORM write (triggers _inverse_password)
     user = env['res.users'].browse(2)
@@ -513,13 +488,8 @@ done
 # Debug: list what's in addons paths
 echo "=== /opt/extra-addons contents ==="
 ls /opt/extra-addons/ 2>/dev/null || echo "EMPTY or MISSING"
-echo "=== CRITICAL: mint_maintenance_form check ==="
-ls -la /opt/extra-addons/mint_maintenance_form/ 2>/dev/null || echo "DIR MISSING: /opt/extra-addons/mint_maintenance_form/"
-test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MANIFEST OK at /opt/extra-addons/mint_maintenance_form/__manifest__.py" || echo "MANIFEST MISSING at /opt/extra-addons/mint_maintenance_form/__manifest__.py"
 echo "=== /var/lib/odoo/addons/19.0 contents ==="
 ls /var/lib/odoo/addons/19.0/ 2>/dev/null || echo "EMPTY or MISSING"
-ls -la /var/lib/odoo/addons/19.0/mint_maintenance_form/ 2>/dev/null || echo "DIR MISSING: /var/lib/odoo/addons/19.0/mint_maintenance_form/"
-test -f /var/lib/odoo/addons/19.0/mint_maintenance_form/__manifest__.py && echo "MANIFEST OK at /var/lib/odoo/addons/19.0/" || echo "MANIFEST MISSING at /var/lib/odoo/addons/19.0/"
 echo "=== Check dependency modules on disk ==="
 ls -d /usr/lib/python3/dist-packages/odoo/addons/maintenance/ 2>/dev/null && echo "MAINTENANCE: OK" || echo "MAINTENANCE: MISSING"
 ls -d /usr/lib/python3/dist-packages/odoo/addons/website/ 2>/dev/null && echo "WEBSITE: OK" || echo "WEBSITE: MISSING"
@@ -582,11 +552,225 @@ if [ -f "$CONFIG_FILE" ]; then
     fi
 fi
 
+# ── Auto-detect module version drift ─────────────────────────────────
+# Previously this script only ran `--update $ODOO_UPDATE_MODULES`, a
+# hand-maintained env var. Any module missing from that list loaded its new
+# Python but SILENTLY skipped its migrations, views and data files, so
+# ir_module_module.latest_version (DB-recorded) fell behind the on-disk
+# manifest version indefinitely and nobody noticed. The list also gets
+# trimmed periodically and has been observed empty, so drift accumulated
+# across many modules at once.
+#
+# Recompute the drift set on every boot instead, so latest_version is true
+# by construction rather than by remembering to edit a variable.
+# Set ODOO_AUTO_UPDATE_DRIFT=0 to disable (falls back to the old behaviour).
+DRIFT_MODULES=""
+if [ -n "$HOST" ] && [ "$ODOO_AUTO_UPDATE_DRIFT" != "0" ]; then
+    echo "=== Detecting module version drift ===" >&2
+    DRIFT_MODULES=$(python3 << 'PYDRIFT'
+import os, sys, ast
+
+try:
+    import psycopg2
+except ImportError:
+    sys.exit(0)
+
+SERIES = "19.0"
+
+# Resolve manifests through Odoo itself. Hand-rolling this is how the
+# 2026-08-24 prod incident happened: the scan globbed /opt/extra-addons first,
+# but Odoo's addons path puts the persistent volume (/var/lib/odoo/addons/19.0)
+# AHEAD of it, and fix-config.sh copies several modules onto that volume. The
+# scan compared the Docker manifest while Odoo loaded the volume copy, so it
+# ordered an upgrade of a stale, view-broken purchase_price_precision and
+# aborted the registry. ir.module.module.installed_version is computed from
+# get_manifest(), so going through the same API cannot disagree with Odoo.
+ODOO_MOD = None
+try:
+    from odoo.tools import config as _odoo_config
+    _odoo_config.parse_config(["-c", "/var/lib/odoo/odoo.conf"])
+    from odoo.modules import module as ODOO_MOD
+    ODOO_MOD.initialize_sys_path()
+    print("  resolving manifests via Odoo get_manifest()", file=sys.stderr)
+except Exception as exc:
+    print("  ! Odoo import failed (%s) — falling back to a path scan" % exc, file=sys.stderr)
+    ODOO_MOD = None
+
+# Fallback only. Mirrors the runtime order Odoo logs:
+# ['<odoo>/addons', '/var/lib/odoo/addons/19.0', '/opt/extra-addons', ...]
+# The volume MUST come before /opt/extra-addons — that is the whole bug.
+ADDONS = (
+    "/usr/lib/python3/dist-packages/odoo/addons",
+    "/var/lib/odoo/addons/19.0",
+    "/opt/extra-addons",
+    "/usr/lib/python3/dist-packages/addons",
+)
+
+
+def normalise(raw):
+    """Mirror Odoo's own adapt_version()."""
+    if ODOO_MOD is not None and hasattr(ODOO_MOD, "adapt_version"):
+        try:
+            return ODOO_MOD.adapt_version(str(raw or "").strip() or "1.0")
+        except Exception:
+            pass
+    v = str(raw or "").strip()
+    if not v:
+        return ""
+    return v if v.startswith(SERIES + ".") else "%s.%s" % (SERIES, v)
+
+
+def on_disk_version(name):
+    if ODOO_MOD is not None:
+        try:
+            manifest = ODOO_MOD.get_manifest(name)
+        except Exception as exc:
+            print("  ! %s: get_manifest failed (%s)" % (name, exc), file=sys.stderr)
+            return ""
+        if manifest:
+            return normalise(manifest.get("version", ""))
+        return ""
+    for base in ADDONS:
+        path = os.path.join(base, name, "__manifest__.py")
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                manifest = ast.literal_eval(fh.read())
+        except Exception as exc:
+            print("  ! %s: unreadable manifest (%s)" % (name, exc), file=sys.stderr)
+            return ""
+        if isinstance(manifest, dict):
+            return normalise(manifest.get("version", ""))
+    return ""
+
+
+def _clean(v):
+    v = (v or "").strip()
+    return "" if v.lower() in ("", "false", "none") else v
+
+
+def db_params():
+    """Env first, then the odoo.conf the server itself is about to use.
+
+    Staging sets HOST but not PASSWORD, so an env-only lookup fails with
+    "fe_sendauth: no password supplied" and the drift scan silently no-ops.
+    """
+    # NB: bare PORT and USER are NOT database settings on Railway. PORT is the
+    # HTTP listen port (8080) — the header only maps ODOO_DB_PORT onto it when
+    # PORT is unset, which on Railway it never is — and USER is the unix user.
+    # Using them yields "port 8080 ... Connection refused". Prefer the explicit
+    # ODOO_DB_* vars, then odoo.conf, and never fall back to bare PORT.
+    p = {
+        "host": _clean(os.environ.get("ODOO_DB_HOST")) or _clean(os.environ.get("HOST")),
+        "port": _clean(os.environ.get("ODOO_DB_PORT")),
+        "user": _clean(os.environ.get("ODOO_DB_USER")),
+        "password": _clean(os.environ.get("ODOO_DB_PASSWORD")) or _clean(os.environ.get("PASSWORD")),
+        "dbname": _clean(os.environ.get("ODOO_DB_NAME")),
+    }
+    cfg = "/var/lib/odoo/odoo.conf"
+    if os.path.isfile(cfg):
+        import configparser
+        cp = configparser.ConfigParser()
+        try:
+            cp.read(cfg)
+            sec = "options" if cp.has_section("options") else (cp.sections()[0] if cp.sections() else None)
+            if sec:
+                for key, opt in (("host", "db_host"), ("port", "db_port"), ("user", "db_user"),
+                                 ("password", "db_password"), ("dbname", "db_name")):
+                    if not p[key]:
+                        p[key] = _clean(cp.get(sec, opt, fallback=""))
+        except Exception as exc:
+            print("  ! could not read %s (%s)" % (cfg, exc), file=sys.stderr)
+    p["host"] = p["host"] or "localhost"
+    p["port"] = p["port"] or "5432"
+    p["user"] = p["user"] or _clean(os.environ.get("USER")) or "odoo"
+    p["dbname"] = p["dbname"] or "odoo"
+    print("  connecting to %s@%s:%s/%s" % (p["user"], p["host"], p["port"], p["dbname"]), file=sys.stderr)
+    return p
+
+
+try:
+    conn = psycopg2.connect(**db_params())
+    cur = conn.cursor()
+    cur.execute("SELECT name, latest_version FROM ir_module_module WHERE state = 'installed'")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+except Exception as exc:
+    # Emit a sentinel so the shell can tell "detection broke" apart from
+    # "nothing drifted" — those looked identical and hid a real failure.
+    print("  ! drift detection FAILED: %s" % exc, file=sys.stderr)
+    sys.stdout.write("__DRIFT_DETECTION_FAILED__")
+    sys.exit(0)
+
+def version_tuple(v):
+    out = []
+    for part in str(v or "").split("."):
+        out.append(int(part) if part.isdigit() else 0)
+    return tuple(out)
+
+
+EXCLUDE = {m.strip() for m in os.environ.get("ODOO_DRIFT_EXCLUDE", "").split(",") if m.strip()}
+
+drifted, behind, skipped = [], [], 0
+for name, recorded in rows:
+    if name in EXCLUDE:
+        skipped += 1
+        continue
+    disk = on_disk_version(name)
+    if not disk:
+        continue  # not one of ours / no manifest on the addons path
+    recorded = recorded or ""
+    if disk == recorded:
+        continue
+    if version_tuple(disk) > version_tuple(recorded):
+        # Genuine pending upgrade: the deployed manifest is ahead of the DB.
+        drifted.append(name)
+        print("  drift: %s disk=%s db=%s" % (name, disk, recorded), file=sys.stderr)
+    else:
+        # DB ahead of disk. Re-running -u cannot fix this and may downgrade,
+        # so only report it. Seen on the OCA bundle whose manifests read "1.0"
+        # while the DB carries a real version — those modules are unloadable
+        # anyway ("dependencies or manifest may be missing").
+        behind.append(name)
+
+if behind:
+    print("  NOTE: %d module(s) have a DB version AHEAD of the deployed manifest "
+          "(not upgrading): %s" % (len(behind), ",".join(sorted(behind))), file=sys.stderr)
+if skipped:
+    print("  %d module(s) skipped via ODOO_DRIFT_EXCLUDE" % skipped, file=sys.stderr)
+print("  %d installed module(s) scanned, %d to upgrade" % (len(rows), len(drifted)), file=sys.stderr)
+# stdout is captured by the shell — emit ONLY the comma list
+sys.stdout.write(",".join(sorted(drifted)))
+PYDRIFT
+)
+    if [ "$DRIFT_MODULES" = "__DRIFT_DETECTION_FAILED__" ]; then
+        echo "=== WARNING: drift detection FAILED — falling back to ODOO_UPDATE_MODULES only ===" >&2
+        DRIFT_MODULES=""
+    elif [ -n "$DRIFT_MODULES" ]; then
+        echo "=== Version drift detected, will upgrade: $DRIFT_MODULES ===" >&2
+    else
+        echo "=== No version drift detected ===" >&2
+    fi
+fi
+
 # Build extra args from environment variables
 EXTRA_ARGS=""
-if [ -n "$ODOO_UPDATE_MODULES" ] && [ "$ODOO_UPDATE_MODULES" != "none" ]; then
-    echo "=== Updating modules: $ODOO_UPDATE_MODULES ==="
-    EXTRA_ARGS="$EXTRA_ARGS --update $ODOO_UPDATE_MODULES"
+UPDATE_LIST="$ODOO_UPDATE_MODULES"
+if [ "$UPDATE_LIST" = "none" ]; then
+    UPDATE_LIST=""
+fi
+if [ -n "$DRIFT_MODULES" ]; then
+    if [ -n "$UPDATE_LIST" ]; then
+        UPDATE_LIST="$UPDATE_LIST,$DRIFT_MODULES"
+    else
+        UPDATE_LIST="$DRIFT_MODULES"
+    fi
+fi
+if [ -n "$UPDATE_LIST" ]; then
+    echo "=== Updating modules: $UPDATE_LIST ==="
+    EXTRA_ARGS="$EXTRA_ARGS --update $UPDATE_LIST"
 fi
 if [ -n "$ODOO_INIT_MODULES" ] && [ "$ODOO_INIT_MODULES" != "none" ]; then
     echo "=== Installing modules: $ODOO_INIT_MODULES ==="

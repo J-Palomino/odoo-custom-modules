@@ -82,8 +82,16 @@ class DiscussChannel(models.Model):
         # Enqueue AI response job (processed by cron worker)
         user_text = html2plaintext(message.body) if message.body else ""
         session_id = self._daisy_session_id_for_message(message)
+        channel_label = (self.display_name or "").strip()
+        page = None
+        if channel_label:
+            page = f'[Channel: {channel_label} ({self.channel_type or "chat"}) #{self.id}]'
+        context_prefix = agent._build_context_prefix(
+            message=message, session_id=session_id, page=page,
+        )
         agent._enqueue_response(
             "discuss.channel", self.id, user_text, history, conversation_id,
+            context_prefix=context_prefix,
             session_id=session_id,
         )
 

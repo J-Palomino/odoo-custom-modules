@@ -1,6 +1,7 @@
 import json
 import logging
 import secrets
+import urllib.parse
 import urllib.request
 from datetime import timedelta
 
@@ -395,6 +396,179 @@ class MintDiscountPTL(models.Model):
                                     c.id, lg.dutchie_discount_id, e)
             if seen and total >= int(c.maximum_usage_count or 1):
                 c.write({'redemption_status': 'used', 'redemption_used_at': now})
+
+    # ─── Code-coupon usage sync (Backoffice report 1082) ─────────────────
+
+    redemption_used_count = fields.Integer(
+        string='Times Redeemed', default=0, copy=False, readonly=True,
+        help="Redemptions counted from Dutchie Backoffice report 1082. "
+             "Dutchie's own RedemptionCount is NOT usable: it still read 0 "
+             "after a redemption confirmed at the register, and across 42 "
+             "welcome coupons has never marked a single one used.",
+    )
+
+    # Report 1082's column names are not documented anywhere in this codebase.
+    # They are confirmed on the first live run via the invsvc probe
+    # (GET /api/admin/discount-usage?...&keys=true). Until then, match on a set
+    # of candidates rather than one hardcoded key: an exact-key lookup against
+    # the wrong name fails SILENTLY (0 rows matched reads identically to "not
+    # redeemed"), which is the failure mode that made RedemptionCount look fine
+    # for months. The observed keys are logged once per sweep so this list can
+    # be tightened from real data instead of guessed at again.
+    # Backoffice report 10875 "Discount Detail Report". Confirmed live
+    # 2026-08-24 — columns: Location Name, Order ID, Order Time, Customer Name,
+    # Product Name, Gross Sales, Discounted Amount, Discount Name, Discount
+    # Description, Discount Code, Budtender Name (+ consumer groups).
+    #
+    # NOT report 1082 (Location/Order/Customer/Product/Gross/Discounted
+    # Amount/Net): it carries a discount AMOUNT and never names the discount,
+    # so it cannot attribute a redemption. NOT report 175 either — that one
+    # names the discount but its QuantityUsed counts discounted LINE ITEMS,
+    # reporting 2 for a single basket, which would burn two uses per visit.
+    USAGE_REPORT_ID = 10875
+    # Server-side row filter. Every code we mint is MINT-XXXXXX, so this
+    # trims an ~8k-row location pull to a handful before it crosses the wire.
+    USAGE_CODE_PREFIX = 'MINT-'
+    _USAGE_CODE_KEYS = ('discountcode',)
+    _USAGE_ORDER_KEYS = ('orderid',)
+
+    @staticmethod
+    def _usage_row_get(row, candidates):
+        """Read a value from a report row by any of `candidates`, ignoring case,
+        spaces and underscores. Dutchie report columns are human-facing labels
+        ("Order Id", "discountId", "Discount ID"), so one exact key is a
+        coin flip."""
+        norm = {}
+        for k, v in (row or {}).items():
+            norm[str(k).lower().replace(' ', '').replace('_', '')] = v
+        for cand in candidates:
+            v = norm.get(cand.replace('_', ''))
+            if v not in (None, ''):
+                return v
+        return None
+
+    @api.model
+    def _cron_sync_code_coupon_usage(self):
+        """Count code-coupon redemptions from Backoffice report 10875.
+
+        Report 10875 ("Discount Detail Report") is the only source that names
+        WHICH discount a transaction used. Checked and rejected:
+          * Dutchie RedemptionCount — never increments (still 0 after a
+            redemption confirmed at the register).
+          * mint.pos.order.line.dutchie_discounts_json — line-level only;
+            order-total coupons never appear.
+          * report 1082 — carries a `Discounted Amount` number, no identity.
+          * report 175 — names the discount but QuantityUsed counts discounted
+            LINE ITEMS (2 for a single basket), so it over-counts uses.
+
+        Recomputed from valid_from each sweep rather than accumulated, so it is
+        idempotent and self-healing: a missed run backfills on the next one.
+        """
+        coupons = self.sudo().search([
+            ('application_method', '=', 'code'),
+            ('is_welcome_preroll', '=', False),
+            ('redemption_status', 'not in', ['used', 'voided']),
+            ('dutchie_discount_code', '!=', False),
+        ], limit=200)
+        if not coupons:
+            return 0
+
+        push = self.env['mint.ptl.day'].sudo()
+        if push._get_dutchie_push_mode() != 'live':
+            return 0
+        api_key = push._get_dutchie_push_api_key()
+        base = (push._get_dutchie_push_url() or '').rsplit('/api/admin/discounts', 1)[0]
+        if not base or not api_key:
+            _logger.warning('coupon_usage_sync: invsvc url/key unset — skipped')
+            return 0
+
+        today = fields.Date.context_today(self)
+        live = coupons.filtered(lambda c: not (c.valid_until and c.valid_until < today))
+        expired = coupons - live
+        if expired:
+            expired.write({'redemption_status': 'expired'})
+        if not live:
+            return len(expired)
+
+        # Every store the coupons are scoped to — NOT just the one they were
+        # pushed to. A code is LSP-wide (redeemable at any store in the LSP)
+        # while report 10875 is LOCATION-scoped. Verified live: MINT-GMXT6F was
+        # pushed to 75th Ave (loc 2679) and redeemed at Tempe (loc 1568);
+        # querying 2679 returns 0 rows. Deriving locations from the push log
+        # would report "never redeemed" forever, silently.
+        targets = set()
+        for c in live:
+            for store in c.store_ids:
+                loc = push._resolve_pos_loc_id(store)
+                lsp = push._resolve_lsp_id(store)
+                if loc and lsp:
+                    targets.add((loc, lsp))
+        if not targets:
+            _logger.warning('coupon_usage_sync: no store scope on %d coupon(s)', len(live))
+            return len(expired)
+
+        starts = [c.valid_from or (c.create_date and c.create_date.date()) or today
+                  for c in live]
+        start = min(starts)
+        frm = '%d/%d/%d' % (start.month, start.day, start.year)
+        to = '%d/%d/%d' % (today.month, today.day, today.year)
+
+        # One report fetch per location, reused across every coupon, rather
+        # than per (coupon, location). `needle` trims the payload server-side —
+        # a 3-day Tempe pull is ~8k rows unfiltered.
+        by_code = {}
+        fetched = 0
+        for loc, lsp in sorted(targets):
+            url = ('%s/api/admin/discount-usage?locId=%s&lspId=%s&from=%s&to=%s'
+                   '&reportId=%s&needle=%s'
+                   % (base, loc, lsp, frm, to, self.USAGE_REPORT_ID,
+                      urllib.parse.quote(self.USAGE_CODE_PREFIX)))
+            try:
+                req = urllib.request.Request(url, headers={
+                    'X-API-Key': api_key,
+                    'User-Agent': 'mint-odoo-coupon-usage-sync/1.0',
+                })
+                with urllib.request.urlopen(req, timeout=240) as resp:
+                    payload = json.loads(resp.read().decode('utf-8', 'replace')) or {}
+            except Exception as e:
+                _logger.warning('coupon_usage_sync: report read failed loc=%s: %s', loc, e)
+                continue
+            fetched += 1
+            for row in payload.get('rows') or []:
+                rcode = self._usage_row_get(row, self._USAGE_CODE_KEYS)
+                oid = self._usage_row_get(row, self._USAGE_ORDER_KEYS)
+                if not rcode or oid is None:
+                    continue
+                # DISTINCT orders: one redemption discounts every eligible line
+                # and the report emits a row per line — MINT-GMXT6F produced 2
+                # rows on order 178720095 for a single redemption.
+                by_code.setdefault(str(rcode).strip().lower(), set()).add(str(oid))
+
+        if not fetched:
+            _logger.warning('coupon_usage_sync: every location fetch failed — '
+                            'leaving counts untouched')
+            return len(expired)
+
+        updated = 0
+        for c in live:
+            code = (c.dutchie_discount_code or '').strip().lower()
+            count = len(by_code.get(code, ()))
+            vals = {}
+            if count != c.redemption_used_count:
+                vals['redemption_used_count'] = count
+            cap = int(c.maximum_usage_count or 0)
+            if cap and count >= cap:
+                vals.update({
+                    'redemption_status': 'used',
+                    'redemption_used_at': fields.Datetime.now(),
+                    'is_published': False,
+                })
+            if vals:
+                c.write(vals)
+                updated += 1
+                _logger.info('coupon_usage_sync: %s used %s/%s',
+                             c.dutchie_discount_code, count, cap or '-')
+        return updated + len(expired)
 
     def action_publish_to_dutchie(self):
         """Manual 'Publish to Dutchie' button for a standalone (one-off) coupon.

@@ -324,6 +324,32 @@ class DaisyAgent(models.Model):
             "context": {"default_agent_id": self.id},
         }
 
+    def _build_context_prefix(self, message=None, session_id=None, page=None):
+        """Bracketed context block prepended to the agent's question.
+
+        Agents are shared across staff and get reassigned when people change
+        roles, so who/where/which-session is restated on every message rather
+        than baked into the agent's prompt. Flowise Agentflow V2 supports
+        neither ``overrideConfig.startState`` nor per-call ``vars``, so the
+        question text is the only channel that reaches the model.
+
+        Lines are omitted individually when unknown, and the whole block is
+        empty when nothing is known — never emit a placeholder, or the agent
+        will address people as "unknown".
+        """
+        lines = []
+        author = message.author_id if message else None
+        if author:
+            who = (author.display_name or "").strip()
+            email = (author.email or "").strip()
+            if who:
+                lines.append(f"[Speaking with: {who} <{email}>]" if email else f"[Speaking with: {who}]")
+        if session_id:
+            lines.append(f"[Session: {session_id}]")
+        if page:
+            lines.append(page)
+        return ("\n".join(lines) + "\n\n") if lines else ""
+
     def action_open_user_settings(self):
         """Open the linked Odoo user form to manage permissions."""
         self.ensure_one()

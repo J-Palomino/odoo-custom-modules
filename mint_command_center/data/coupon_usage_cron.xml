@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Counts code-coupon redemptions from Backoffice report 1082.
+             Dutchie's RedemptionCount is unusable (stays 0 after a confirmed
+             register redemption), and order-level coupons never appear in the
+             per-line POS discount JSON, so this report is the only source. -->
+        <record id="cron_sync_code_coupon_usage" model="ir.cron">
+            <field name="name">Mint: Sync code-coupon redemptions from Dutchie report 1082</field>
+            <field name="model_id" ref="mint_api_v2.model_mint_discount"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_sync_code_coupon_usage()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

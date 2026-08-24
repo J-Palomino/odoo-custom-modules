@@ -146,3 +146,78 @@ class TestStructuredBogoBundle(TransactionCase):
         })
         vals = Day._deal_to_discount_vals(plain)
         self.assertEqual(vals['threshold_min'], 0)
+
+    # ── Dutchie calculation-method parity ────────────────────────────────
+
+    def test_bogo_emits_dutchie_price_to_amount(self):
+        """Dutchie has no BOGO method: a BOGO is PRICE_TO_AMOUNT (id 3) with
+        threshold_min=buy+get and the "get" item's resulting price."""
+        Day = self.env['mint.ptl.day']
+        if 'calculation_method_id' not in self.env['mint.discount']._fields:
+            self.skipTest('canonical registry field not installed')
+
+        half_off = self.Deal.create({
+            'name': 'B1G1 50% Off With Price',
+            'discount_type': 'bogo',
+            'bogo_buy_qty': 1,
+            'bogo_get_qty': 1,
+            'bogo_get_pct': 0.5,
+            'original_price': 20.0,
+        })
+        vals = Day._deal_to_discount_vals(half_off)
+        self.assertEqual(vals['calculation_method_id'], 3)
+        self.assertEqual(vals['threshold_min'], 2)
+        self.assertEqual(vals['discount_amount'], 10.0)
+
+    def test_bogo_free_get_uses_penny_convention(self):
+        """A free "get" item is $0.01 in Dutchie, never $0.00."""
+        Day = self.env['mint.ptl.day']
+        if 'calculation_method_id' not in self.env['mint.discount']._fields:
+            self.skipTest('canonical registry field not installed')
+
+        free = self.Deal.create({
+            'name': 'B1G1 Free With Price',
+            'discount_type': 'bogo',
+            'bogo_buy_qty': 1,
+            'bogo_get_qty': 1,
+            'bogo_get_pct': 1.0,
+            'original_price': 30.0,
+        })
+        vals = Day._deal_to_discount_vals(free)
+        self.assertEqual(vals['calculation_method_id'], 3)
+        self.assertEqual(vals['discount_amount'], 0.01)
+
+    def test_bogo_without_original_price_leaves_method_unset(self):
+        """Without original_price the resulting price is unknowable — the
+        method stays unset rather than publishing a fabricated one."""
+        Day = self.env['mint.ptl.day']
+        unpriced = self.Deal.create({
+            'name': 'B1G1 No Price',
+            'discount_type': 'bogo',
+            'bogo_buy_qty': 1,
+            'bogo_get_qty': 1,
+            'bogo_get_pct': 1.0,
+        })
+        vals = Day._deal_to_discount_vals(unpriced)
+        self.assertEqual(vals['threshold_min'], 2)
+        self.assertEqual(vals.get('calculation_method_id', 0), 0)
+        self.assertEqual(vals['discount_amount'], 1.0)
+
+    def test_webhook_payload_uses_canonical_calc_method(self):
+        """The PTL webhook must emit registry strings, not the retired local
+        map's invented ones ('BOGO', 'DOLLAR_OFF', 'POINTS_MULTIPLIER')."""
+        Day = self.env['mint.ptl.day']
+        Discount = self.env['mint.discount']
+        if 'calculation_method_id' not in Discount._fields:
+            self.skipTest('canonical registry field not installed')
+
+        disc = Discount.create({
+            'name': 'Payload Parity',
+            'discount_type': 'bogo',
+            'discount_amount': 0.01,
+            'calculation_method_id': 3,
+        })
+        payload = Day._discount_to_webhook_payload(disc, 'loc-uuid')
+        self.assertEqual(payload['calculation_method'], 'PRICE_TO_AMOUNT')
+        self.assertNotEqual(payload['calculation_method'], 'BOGO')
+        self.assertEqual(payload['discount_amount'], 0.01)

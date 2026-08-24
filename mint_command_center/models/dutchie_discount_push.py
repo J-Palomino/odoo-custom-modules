@@ -324,6 +324,10 @@ class PtlDayDutchiePush(models.Model):
         # deal — unchanged for existing PTL deals).
         app_method_id = self._resolve_application_method_id(discount)
         discount_code = discount.dutchie_discount_code or ''
+        # A code coupon is typed in AT THE REGISTER. Everything below this point
+        # is shared with automatic/manual PTL deals, which genuinely are online
+        # deals — so the two cases must diverge here rather than in the caller.
+        is_code_coupon = discount.application_method == 'code'
         redemption = self._resolve_redemption_fields(discount)
 
         return {
@@ -353,9 +357,19 @@ class PtlDayDutchiePush(models.Model):
             'RequireManagerApproval': False,
             'RestrictToGroupIds': [],
             'RestrictToSegmentIds': [],
-            # PlatformTypeId 2 = "Online" per the fixture; v1 leaves it as
-            # the only platform restriction so the discount applies online.
-            'PlatformTypeRestrictions': [{'PlatformTypeId': 2, 'IsExclusion': False}],
+            # PlatformTypeId 2 = "Online". Correct for a PTL deal, FATAL for a
+            # code coupon: pinned to Online alone, the register answers "this
+            # coupon is not available on this origin platform" and the code is
+            # redeemable NOWHERE. Hit twice — the welcome pre-roll (fixed in its
+            # own branch, PR #244) and again on the $50/$100 off-total coupons
+            # (2026-08-23), which had to be repaired by hand against Dutchie
+            # because this builder re-applied the restriction on every publish.
+            # Live-verified working order-total coupon `20OFF` (Dutchie 378172)
+            # carries PlatformTypeRestrictions: [].
+            'PlatformTypeRestrictions': (
+                [] if is_code_coupon
+                else [{'PlatformTypeId': 2, 'IsExclusion': False}]
+            ),
             'OrderTypeRestrictions': [],
             'Reward': {
                 'DiscountRewardId': None,
@@ -363,7 +377,11 @@ class PtlDayDutchiePush(models.Model):
                 'ApplyToOnlyOneItem': False,
                 'CalculationMethodId': calc_method_id,
                 'DiscountValue': amount,
-                'IncludeNonCannabis': False,
+                # An order-level code coupon ("$50 off any transaction")
+                # discounts the whole basket, so non-cannabis lines must count;
+                # `20OFF` carries True. PTL deals keep False — flipping those
+                # would change what every existing deal discounts.
+                'IncludeNonCannabis': is_code_coupon,
                 'ItemGroupTypeId': item_group_type_id,
                 'ManualDefaultApplyTo': 1,
                 'Restrictions': reward_restrictions,

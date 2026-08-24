@@ -152,7 +152,7 @@ class TestLoyaltyAudit(TransactionCase):
                       self._history(card).sorted('id')[-1].description,
                       'awarded points carry their receipt in the audit row')
 
-    # -- regional award rates (e.g. Michigan cash-value at 0.025 pt/$) --
+    # -- regional award rates (opt-in only; ships disabled) --
 
     def _region_company(self, code='MI'):
         """A store company in a region with the given code, or skip if the
@@ -169,22 +169,22 @@ class TestLoyaltyAudit(TransactionCase):
     def test_region_rate_mints_from_net_total(self):
         self.env['ir.config_parameter'].sudo().set_param(AWARD_MODE_PARAM, 'off')
         self.env['ir.config_parameter'].sudo().set_param(
-            REGION_RATES_PARAM, '{"MI": 0.025}')
-        company = self._region_company('MI')
+            REGION_RATES_PARAM, '{"ZZ": 0.025}')
+        company = self._region_company('ZZ')
         before = self._balance()
         # loyalty_points carries the retired 1 pt/$1 figure; the regional
         # award must ignore it and mint from net_total instead.
         self._import_purchase(100.0, company=company, net=100.0)
         self.assertEqual(self._balance(), before + 2.5,
-                         'MI mints 0.025 pt per net dollar, not 1 pt/$1')
+                         'a listed region mints at its rate, not 1 pt/$1')
 
     def test_region_rate_does_not_skip_internal_users(self):
         """Employees earn under regional programs — the internal-user skip
         is a legacy-mode rule only."""
         self.env['ir.config_parameter'].sudo().set_param(AWARD_MODE_PARAM, 'off')
         self.env['ir.config_parameter'].sudo().set_param(
-            REGION_RATES_PARAM, '{"MI": 0.025}')
-        company = self._region_company('MI')
+            REGION_RATES_PARAM, '{"ZZ": 0.025}')
+        company = self._region_company('ZZ')
         self.env['res.users'].create({
             'name': 'Internal Employee', 'login': 'audit-internal-emp',
             'partner_id': self.partner.id,
@@ -198,7 +198,7 @@ class TestLoyaltyAudit(TransactionCase):
     def test_region_rate_ignores_unlisted_regions(self):
         self.env['ir.config_parameter'].sudo().set_param(AWARD_MODE_PARAM, 'off')
         self.env['ir.config_parameter'].sudo().set_param(
-            REGION_RATES_PARAM, '{"MI": 0.025}')
+            REGION_RATES_PARAM, '{"ZZ": 0.025}')
         company = self._region_company('AZ')
         before = self._balance()
         self._import_purchase(100.0, company=company, net=100.0)
@@ -209,7 +209,7 @@ class TestLoyaltyAudit(TransactionCase):
         self.env['ir.config_parameter'].sudo().set_param(AWARD_MODE_PARAM, 'off')
         self.env['ir.config_parameter'].sudo().set_param(
             REGION_RATES_PARAM, 'not json {')
-        company = self._region_company('MI')
+        company = self._region_company('ZZ')
         before = self._balance()
         self._import_purchase(100.0, company=company, net=100.0)
         self.assertEqual(self._balance(), before,
@@ -218,9 +218,29 @@ class TestLoyaltyAudit(TransactionCase):
     def test_region_rate_return_deducts(self):
         self.env['ir.config_parameter'].sudo().set_param(AWARD_MODE_PARAM, 'off')
         self.env['ir.config_parameter'].sudo().set_param(
-            REGION_RATES_PARAM, '{"MI": 0.025}')
-        company = self._region_company('MI')
+            REGION_RATES_PARAM, '{"ZZ": 0.025}')
+        company = self._region_company('ZZ')
         self._import_purchase(100.0, company=company, net=100.0)
         self._import_purchase(-40.0, company=company, net=-40.0)
         self.assertEqual(self._balance(), 1.5,
                          'a return deducts at the same rate it accrued')
+
+    def test_shipped_default_enables_no_region(self):
+        """The module must never auto-enable minting on upgrade.
+
+        The parameter lives in a noupdate data file, and a NEW noupdate
+        record IS created when an already-installed module is upgraded. If
+        it shipped with a region in it, that region would silently start
+        minting a parallel ledger on the next -u. It ships empty.
+        """
+        import os, re
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        xml = open(os.path.join(here, 'data', 'loyalty_award_mode.xml')).read()
+        block = xml[xml.index('mint.loyalty.region_award_rates'):]
+        value = re.search(r'<field name="value">(.*?)</field>', block).group(1)
+        self.assertEqual(value.strip(), '{}',
+                         'region_award_rates must ship empty — see REGION_RATES_PARAM')
+        self.assertFalse(
+            self.env['loyalty.card']._mint_region_award_rate(
+                self.env['res.company'].browse(self.env.company.id)),
+            'the shipped default must mint for no region')
