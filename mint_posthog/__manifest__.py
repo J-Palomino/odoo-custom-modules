@@ -21,6 +21,8 @@
     'website': 'https://mintdispensaries.com',
     'license': 'LGPL-3',
     'depends': ['web'],
+    # Attaches the server-side error log handler once per worker process.
+    'post_load': 'post_load',
     'assets': {
         'web.assets_backend': [
             'mint_posthog/static/src/posthog_boot.js',
