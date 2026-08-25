@@ -125,14 +125,22 @@ class PtlDay(models.Model):
 
     # ─── Dynamic Store UUID Map ──────────────────────────────────────────
 
-    def _get_store_uuid_map(self):
-        """Build company_id → Dutchie UUID map from res.company records."""
+    def _get_store_uuid_map(self, market=None):
+        """Build company_id → Dutchie UUID map, optionally narrowed to a market.
+
+        `market` is an explicit argument rather than a read of `self.market_id`
+        because the crons call this through an EMPTY mint.ptl.day recordset,
+        where `self.market_id` is silently falsy — which is how Arizona deals
+        reached every market on 2026-08-25. Callers must now say which market
+        they mean; passing None still means "every dispensary" but has to be
+        chosen rather than fallen into.
+        """
         domain = [
             ('is_dispensary', '=', True),
             ('dutchie_store_id', '!=', False),
         ]
-        if self.market_id:
-            domain.append(('region_id', '=', self.market_id.id))
+        if market:
+            domain.append(('region_id', '=', market.id))
         stores = self.env['res.company'].sudo().search(domain)
         return {s.id: s.dutchie_store_id for s in stores if s.dutchie_store_id}
 
@@ -394,25 +402,66 @@ class PtlDay(models.Model):
             return
 
         discounts = self.env['mint.discount'].sudo().browse(discount_ids)
-        store_uuid_map = self._get_store_uuid_map()
 
-        if not store_uuid_map:
-            _logger.warning('PTL publish: no stores with Dutchie UUIDs found for market %s',
-                            self.market_id.code if self.market_id else '(none)')
+        # Every store, for resolving a discount's own store_ids to UUIDs. The
+        # per-market maps below decide who an UNSCOPED discount reaches.
+        all_store_uuids = self._get_store_uuid_map()
+        if not all_store_uuids:
+            _logger.warning('PTL publish: no stores with Dutchie UUIDs found')
             return
+
+        market_uuid_cache = {}
+
+        def uuids_for_market(market):
+            if market.id not in market_uuid_cache:
+                market_uuid_cache[market.id] = self._get_store_uuid_map(market)
+            return market_uuid_cache[market.id]
 
         # Group discounts by store UUID
         store_payloads = {}  # uuid → [discount_dicts]
+        skipped_no_market = 0
 
         for discount in discounts:
-            store_ids = discount.store_ids.ids if discount.store_ids else list(store_uuid_map.keys())
+            if discount.store_ids:
+                # An explicit store list always wins.
+                store_ids = discount.store_ids.ids
+            else:
+                # 246 of 251 published PTL discounts carry no store_ids. This
+                # used to mean "every store in the map" — and because the crons
+                # call in on an empty recordset the map was every store in
+                # EVERY market, so on 2026-08-25 Arizona deals landed in all 17
+                # Florida stores (a compliance-isolation market), plus MI, IL,
+                # MO and NV. 5,859 stray rows had to be deleted afterwards.
+                #
+                # An unscoped discount now reaches its OWN market, taken from
+                # the PTL deal it came from, falling back to the market of the
+                # day being published. With neither we skip it rather than
+                # broadcast: a deal that reaches nobody is a missing card, a
+                # deal that reaches everybody is the wrong price in five states.
+                market = discount.ptl_deal_id.market_id or self.market_id
+                if not market:
+                    skipped_no_market += 1
+                    _logger.warning(
+                        'PTL publish: discount %s (%s) has no store_ids and no '
+                        'resolvable market — skipping rather than fanning it '
+                        'across every market',
+                        discount.id, (discount.name or '')[:60],
+                    )
+                    continue
+                store_ids = list(uuids_for_market(market).keys())
+
             for store_id in store_ids:
-                uuid = store_uuid_map.get(store_id)
+                uuid = all_store_uuids.get(store_id)
                 if not uuid:
                     continue
                 if uuid not in store_payloads:
                     store_payloads[uuid] = []
                 store_payloads[uuid].append(self._discount_to_webhook_payload(discount, uuid))
+
+        if skipped_no_market:
+            _logger.warning(
+                'PTL publish: skipped %d discount(s) with no store_ids and no market',
+                skipped_no_market)
 
         # Fire webhooks from ONE background thread that walks the stores in
         # sequence — not one thread per store.
