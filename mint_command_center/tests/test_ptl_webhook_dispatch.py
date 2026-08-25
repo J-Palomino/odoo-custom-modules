@@ -26,9 +26,17 @@ class TestPtlWebhookDispatch(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Day = cls.env['mint.ptl.day']
+        cls.market = cls.env['mint.region'].create({'name': 'WEBHOOK Market'})
+        # An unscoped discount is fanned across its own market, so the fixtures
+        # need a market to resolve — see test_market_scoping.py.
+        cls.deal = cls.env['mint.ptl.deal'].create({
+            'name': 'WEBHOOK dispatch deal',
+            'market_id': cls.market.id,
+        })
         cls.discounts = cls.env['mint.discount'].create([
             {'name': 'WEBHOOK dispatch %d' % i, 'source': 'ptl',
-             'discount_type': 'percent', 'discount_amount': 0.1}
+             'discount_type': 'percent', 'discount_amount': 0.1,
+             'ptl_deal_id': cls.deal.id}
             for i in range(2)
         ])
         # Far more stores than the old code could safely thread.
@@ -38,7 +46,8 @@ class TestPtlWebhookDispatch(TransactionCase):
         """Run the push with a stubbed store map and a stand-in Thread class."""
         Day = type(self.Day)
         store_map = self.fake_map
-        with patch.object(Day, '_get_store_uuid_map', lambda _self: store_map), \
+        with patch.object(Day, '_get_store_uuid_map',
+                          lambda _self, market=None: store_map), \
                 patch.object(ptl_day_module.threading, 'Thread', thread_cls):
             self.Day._push_discounts_to_redis(self.discounts.ids)
 
