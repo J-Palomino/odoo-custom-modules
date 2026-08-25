@@ -10,3 +10,4 @@ from . import test_publish_mode
 from . import test_redemption_payload
 from . import test_ptl_deal_tabs
 from . import test_ptl_lifecycle_cron
+from . import test_ptl_webhook_dispatch

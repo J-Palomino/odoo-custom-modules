@@ -414,37 +414,74 @@ class PtlDay(models.Model):
                     store_payloads[uuid] = []
                 store_payloads[uuid].append(self._discount_to_webhook_payload(discount, uuid))
 
-        # Fire webhook per store (async, fire-and-forget)
+        # Fire webhooks from ONE background thread that walks the stores in
+        # sequence — not one thread per store.
+        #
+        # The per-store version died on 2026-08-25 the first time the restored
+        # daily lifecycle cron ran against a two-month backlog: ~600 discounts
+        # fanned out over every store, and `thread.start()` raised
+        # `RuntimeError: can't start new thread`. That exception propagated out
+        # of this method into _cron_ptl_daily_lifecycle, so Odoo rolled the
+        # whole cron transaction back and the 329 expired discounts it had just
+        # unpublished stayed published. OpenSSL was failing in the same breath
+        # ("malloc failure", "ASN1 lib", "internal error") — the same resource
+        # exhaustion surfacing through the TLS handshakes.
+        #
+        # One thread per call is enough: this is a background push with no
+        # caller waiting on it, so the stores may as well be sequential, and a
+        # single thread cannot exhaust the pool no matter how large the
+        # backlog gets.
         get_param = self.env['ir.config_parameter'].sudo().get_param
         webhook_url = get_param(WEBHOOK_URL_PARAM, DEFAULT_WEBHOOK_URL)
         api_key = get_param(API_KEY_PARAM, '')
 
-        for uuid, deals in store_payloads.items():
-            payload = json.dumps({
+        payloads = [
+            (uuid, json.dumps({
                 'location_id': uuid,
                 'source': 'ptl',
                 'discounts': deals,
-            }).encode('utf-8')
+            }).encode('utf-8'))
+            for uuid, deals in store_payloads.items()
+        ]
 
-            def _fire(url, data, key):
-                try:
-                    req = urllib.request.Request(
-                        url, data=data,
-                        headers={
-                            'Content-Type': 'application/json',
-                            'X-API-Key': key,
-                        },
-                    )
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        _logger.info('PTL webhook %s: %s', uuid[:12], resp.status)
-                except Exception as e:
-                    _logger.warning('PTL webhook failed for %s: %s', uuid[:12], e)
+        def _fire(uuid, data):
+            # uuid is a parameter, not a closure over the loop variable — the
+            # old code closed over it, so every thread logged whichever store
+            # happened to be last and the logs were useless for telling which
+            # store actually failed.
+            try:
+                req = urllib.request.Request(
+                    webhook_url, data=data,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-API-Key': api_key,
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    _logger.info('PTL webhook %s: %s', uuid[:12], resp.status)
+            except Exception as e:
+                _logger.warning('PTL webhook failed for %s: %s', uuid[:12], e)
 
-            thread = threading.Thread(target=_fire, args=(webhook_url, payload, api_key))
-            thread.daemon = True
+        def _dispatch():
+            for uuid, data in payloads:
+                _fire(uuid, data)
+
+        # Belt and braces: even a single start() can fail under memory
+        # pressure, and pushing to Redis must never be able to roll back the
+        # caller's writes. Fall back to sending inline rather than losing the
+        # push entirely.
+        try:
+            thread = threading.Thread(target=_dispatch, daemon=True)
             thread.start()
+        except RuntimeError as e:
+            _logger.warning(
+                'PTL publish: could not start webhook thread (%s) — sending inline', e)
+            try:
+                _dispatch()
+            except Exception:
+                _logger.exception('PTL publish: inline webhook dispatch failed')
 
-        _logger.info('PTL publish: fired webhooks for %d stores, %d discounts',
+        _logger.info('PTL publish: queued webhooks for %d stores, %d discounts',
                       len(store_payloads), len(discount_ids))
 
     def _discount_to_webhook_payload(self, discount, location_uuid):
