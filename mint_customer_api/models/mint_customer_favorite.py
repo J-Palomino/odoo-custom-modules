@@ -8,6 +8,13 @@ live inventory-service response 2026-08-24:
 
   product  ->  inventory row `product_id`   e.g. '13815543'   (string)
   deal     ->  discount row  `discount_id`  e.g. 385634       (int)
+  store    ->  res.company id              e.g. 18           (int)
+
+Stores key on the Odoo company id rather than the slug: the id is what an
+order already carries (`company_id`), and slugs are editable in Odoo — a
+rename would silently orphan every saved store. It is deliberately NOT the
+Dutchie location UUID, which belongs to the inventory cache and is absent
+for pre-launch stores that a customer may still want to follow.
 
 Both are stored as Char. `discount_id` is numeric today, but the column is a
 reference key, not an arithmetic one, and keeping a single Char makes the
@@ -47,6 +54,7 @@ class MintCustomerFavorite(models.Model):
         [
             ('product', 'Product'),
             ('deal', 'Deal'),
+            ('store', 'Store'),
         ],
         string='Type',
         required=True,
@@ -57,7 +65,8 @@ class MintCustomerFavorite(models.Model):
         string='Reference',
         required=True,
         index=True,
-        help="Dutchie product_id (products) or discount_id (deals), as text.",
+        help="Dutchie product_id (products), discount_id (deals), or the "
+             "res.company id (stores), as text.",
     )
 
     location_id = fields.Char(

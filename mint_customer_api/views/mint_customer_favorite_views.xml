@@ -53,6 +53,8 @@
                         domain="[('item_type', '=', 'product')]"/>
                 <filter name="type_deal" string="Deals"
                         domain="[('item_type', '=', 'deal')]"/>
+                <filter name="type_store" string="Stores"
+                        domain="[('item_type', '=', 'store')]"/>
                 <separator/>
                 <filter name="group_item" string="Item"
                         context="{'group_by': 'item_ref'}"/>
@@ -88,7 +90,7 @@
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">No favorites saved yet</p>
             <p>
-                Products and deals customers have saved from the storefront.
+                Products, deals and stores customers have saved from the storefront.
                 Rows are created by the website, not here.
             </p>
         </field>
