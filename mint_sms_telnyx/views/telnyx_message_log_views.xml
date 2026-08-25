@@ -88,9 +88,14 @@
         <field name="search_view_id" ref="view_telnyx_message_log_search"/>
     </record>
 
+    <!-- Gated on SMS Log Viewer (Odoo MR-1354). Children inherit a hidden
+         parent, so this one attribute hides the whole Telnyx SMS section.
+         Without it, ~315 internal users keep a visible menu that only
+         raises an AccessError once the ACL is narrowed. -->
     <menuitem id="menu_telnyx_message_log_root"
               name="Telnyx SMS"
               parent="mail.menu_root_discuss"
+              groups="mint_sms_telnyx.group_sms_log_viewer"
               sequence="100"/>
     <menuitem id="menu_telnyx_message_log"
               name="Messages"
