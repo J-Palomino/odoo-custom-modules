@@ -78,15 +78,17 @@ class MintSpinTicket(models.Model):
         help='Which ticket of N for the same source_ref.',
     )
 
-    _sql_constraints = [
-        # Idempotency for automatic grants. A re-imported receipt tries the
-        # same (ref, seq) and is rejected, so a catch-up sync cannot pay a
-        # customer twice for one purchase. NULLs are distinct in Postgres, so
-        # manual grants (no ref) are unaffected.
-        ('one_ticket_per_source_seq',
-         'UNIQUE(source_ref, source_seq)',
-         'That ticket has already been granted for this source.'),
-    ]
+    # Idempotency for automatic grants. A re-imported receipt tries the same
+    # (ref, seq) and is rejected, so a catch-up sync cannot pay a customer
+    # twice for one purchase. NULLs are distinct in Postgres, so manual grants
+    # (no ref) are unaffected.
+    #
+    # models.Constraint, not the legacy _sql_constraints list: Odoo 19 ignores
+    # that list silently and this guard would not exist at all.
+    _one_ticket_per_source_seq = models.Constraint(
+        'UNIQUE(source_ref, source_seq)',
+        'That ticket has already been granted for this source.',
+    )
 
     @api.model
     def grant(self, partner, count=1, source='grant', expires_at=None,

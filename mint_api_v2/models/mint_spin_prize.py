@@ -68,18 +68,23 @@ class MintSpinPrize(models.Model):
         help='The ticket the customer spent to win this. One ticket, one prize.',
     )
 
-    _sql_constraints = [
-        # THE one-prize-per-ticket guard. A DB constraint rather than a check,
-        # so a retry that slips past the application logic still cannot mint a
-        # second prize from a ticket that was already cashed. NULLs are
-        # distinct in Postgres, so unclaimed pool rows coexist freely.
-        ('one_prize_per_ticket',
-         'UNIQUE(ticket_id)',
-         'That ticket has already been redeemed for a prize.'),
-        ('percent_positive',
-         'CHECK(percent > 0)',
-         'A prize must award a real discount — there are no losing entries.'),
-    ]
+    # NOTE: declared with models.Constraint, NOT the legacy _sql_constraints
+    # list. Odoo 19 accepts that list without error and never creates the
+    # constraint — no warning, no index, and every guarantee below silently
+    # becomes a no-op.
+
+    # THE one-prize-per-ticket guard. A real DB constraint rather than a check,
+    # so a retry that slips past the application logic still cannot mint a
+    # second prize from a ticket that was already cashed. NULLs are distinct in
+    # Postgres, so unclaimed pool rows coexist freely.
+    _one_prize_per_ticket = models.Constraint(
+        'UNIQUE(ticket_id)',
+        'That ticket has already been redeemed for a prize.',
+    )
+    _percent_positive = models.Constraint(
+        'CHECK(percent > 0)',
+        'A prize must award a real discount — there are no losing entries.',
+    )
 
     @api.model
     def seed_pool(self, distribution, batch):
