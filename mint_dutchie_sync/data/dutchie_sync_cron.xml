@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!--
+            Chunked, resumable Dutchie customer-roster backfill. Each fire
+            processes ONE page of ONE store via _cron_sync_roster, so the import
+            survives Dutchie's export 502/timeout limits and resumes from the
+            checkpoint. Shipped INACTIVE: enable only after (1) the PII Fernet
+            key is provisioned (DUTCHIE_PII_FERNET_KEY) and (2) the fetch seam
+            (_fetch_roster_page) is wired (step 2b). Calls a model method (not
+            inlined logic) to avoid the ir.cron stale-bytecode trap.
+        -->
+        <record id="ir_cron_dutchie_roster_sync" model="ir.cron">
+            <field name="name">Dutchie: customer roster backfill (chunked)</field>
+            <field name="model_id" ref="model_mint_dutchie_sync_checkpoint"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_sync_roster()</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="False"/>
+        </record>
+    </data>
+</odoo>

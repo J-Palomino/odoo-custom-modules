@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint Dutchie Sync',
-    'version': '19.0.1.3.0',
+    'version': '19.0.1.8.1',
     'application': True,
     'category': 'Sales',
     'summary': 'Dutchie customer sync, home store assignment, and purchase tracking',
@@ -18,9 +18,12 @@
         'security/dutchie_security.xml',
         'data/loyalty_program.xml',
         'data/loyalty_rewards.xml',
+        'data/loyalty_award_mode.xml',
+        'data/dutchie_sync_cron.xml',
         'views/dutchie_purchase_views.xml',
         'views/res_partner_views.xml',
         'views/dutchie_menus.xml',
+        'views/dutchie_checkpoint_views.xml',
     ],
     'installable': True,
     'application': False,
