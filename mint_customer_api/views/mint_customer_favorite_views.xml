@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Back-office surface for mint.customer.favorite.
+
+        The storefront writes these through the REST API under sudo(); this is
+        the read side, so staff can see what customers (in practice: the
+        marketing team, browsing on their own logins) have saved.
+
+        Everything here is gated on mint_customer_api.group_web_customer_access
+        — the same group whose record rule in web_customer_security.xml is the
+        only one that can see WEB customers' favorites. Granting the menu to
+        anyone else would show them an empty list and imply the data was gone,
+        which is worse than not offering the menu at all.
+
+        Deliberately no menu under "Mint Marketing" (mint_command_center):
+        that would make this module depend on mint_command_center, and five
+        other modules depend on THAT — a cross-cutting dependency edge and a
+        module load-order change, to hang one list view. A self-owned root
+        menu costs nothing and is invisible to everyone outside the group.
+    -->
+
+    <record id="view_mint_customer_favorite_list" model="ir.ui.view">
+        <field name="name">mint.customer.favorite.list</field>
+        <field name="model">mint.customer.favorite</field>
+        <field name="arch" type="xml">
+            <!-- `label` first: it is the captured display name and the only
+                 column that reads as the actual item. item_ref is the Dutchie
+                 id you need to go fix the thing, so it stays visible. -->
+            <list string="Customer Favorites" create="false" edit="false">
+                <field name="create_date" string="Saved" widget="date"/>
+                <field name="partner_id"/>
+                <field name="item_type"/>
+                <field name="label"/>
+                <field name="item_ref"/>
+                <field name="location_id" optional="hide"/>
+                <field name="image_url" optional="hide" widget="url"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_customer_favorite_search" model="ir.ui.view">
+        <field name="name">mint.customer.favorite.search</field>
+        <field name="model">mint.customer.favorite</field>
+        <field name="arch" type="xml">
+            <!-- Odoo 19 removed <group> from search views; group-by filters go
+                 straight in the <search> body as <filter context="group_by">. -->
+            <search string="Customer Favorites">
+                <field name="label"/>
+                <field name="item_ref"/>
+                <field name="partner_id"/>
+                <filter name="type_product" string="Products"
+                        domain="[('item_type', '=', 'product')]"/>
+                <filter name="type_deal" string="Deals"
+                        domain="[('item_type', '=', 'deal')]"/>
+                <separator/>
+                <filter name="group_item" string="Item"
+                        context="{'group_by': 'item_ref'}"/>
+                <filter name="group_type" string="Type"
+                        context="{'group_by': 'item_type'}"/>
+                <filter name="group_partner" string="Customer"
+                        context="{'group_by': 'partner_id'}"/>
+                <filter name="group_store" string="Store"
+                        context="{'group_by': 'location_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Answers "what did the team save most?" — group rows by item, and the
+         count column is how many separate accounts saved it. -->
+    <record id="view_mint_customer_favorite_pivot" model="ir.ui.view">
+        <field name="name">mint.customer.favorite.pivot</field>
+        <field name="model">mint.customer.favorite</field>
+        <field name="arch" type="xml">
+            <pivot string="Customer Favorites">
+                <field name="label" type="row"/>
+                <field name="item_type" type="col"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_mint_customer_favorite" model="ir.actions.act_window">
+        <field name="name">Customer Favorites</field>
+        <field name="res_model">mint.customer.favorite</field>
+        <field name="view_mode">list,pivot</field>
+        <field name="search_view_id" ref="view_mint_customer_favorite_search"/>
+        <field name="context">{'search_default_group_item': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No favorites saved yet</p>
+            <p>
+                Products and deals customers have saved from the storefront.
+                Rows are created by the website, not here.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_mint_customer_favorite_root"
+              name="Customer Favorites"
+              groups="mint_customer_api.group_web_customer_access"
+              sequence="95"/>
+
+    <menuitem id="menu_mint_customer_favorite"
+              name="Saved Items"
+              parent="menu_mint_customer_favorite_root"
+              action="action_mint_customer_favorite"
+              groups="mint_customer_api.group_web_customer_access"
+              sequence="10"/>
+</odoo>
