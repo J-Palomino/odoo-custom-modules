@@ -474,6 +474,15 @@ function boot() {
 // the time this runs (we import them), so there is nothing to wait for - and
 // the old two-second delay meant errors thrown during startup, which are the
 // worst ones, were never recorded at all.
-boot();
+//
+// Wrapped because this runs inside the backend asset bundle: if analytics
+// somehow throws here it must degrade to "no telemetry", never to "no web
+// client".
+try {
+    boot();
+} catch (_e) {
+    // eslint-disable-next-line no-console
+    console.warn("[PostHog] Odoo backend tracking failed to start", _e);
+}
 
 export const _test = { allow, isIgnored, identity, odooContext, onRpcResponse };
