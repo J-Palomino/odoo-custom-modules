@@ -156,6 +156,8 @@ def _fmt_amount(v):
     return ('%.2f' % float(v)).rstrip('0').rstrip('.')
 
 
+# Full user LOGINS, comma separated (e.g. 'web:someone@example.com').
+# Named *_emails for backward compatibility with the deployed parameter.
 PROMO_ISSUERS_PARAM = 'mint.promos.issuer_emails'
 PROMO_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'
 # AZ stores the promo is scoped to for web-side display. Publishing targets ONE
@@ -168,11 +170,21 @@ PROMO_DEFAULT_TTL_DAYS = 30
 def _promo_issuer_partner():
     """The authenticated user, if they are allowed to issue promos.
 
-    Gated on an explicit email allowlist in ir.config_parameter, NOT on
-    `user.share`. The storefront login for staff is a PORTAL user
-    (web:someone@example.com, share=True), so the existing internal/staff
-    signal would exclude exactly the people who need this. Matching is on the
-    PARTNER email so the `web:` login prefix is irrelevant.
+    Gated on an explicit allowlist of USER LOGINS in ir.config_parameter, and
+    deliberately not on two alternatives that look simpler:
+
+      * `user.share` — the storefront login for staff is a PORTAL user
+        (web:someone@example.com, share=True), so an internal/staff check
+        excludes exactly the people who need this.
+      * partner EMAIL — an email is not unique across res.partner. Three
+        partner records carry jpalomino@brightroot.com on production, one of
+        them with no user attached, so an email rule grants access to a set
+        that can grow without anyone touching this allowlist. A login is 1:1
+        with an account, which is the grain this decision actually needs for
+        something that mints spendable money-off codes.
+
+    Logins are matched verbatim, so the allowlist holds the full login
+    including the `web:` prefix.
 
     Returns (user, None) when allowed, (None, response) when not.
     """
@@ -184,8 +196,8 @@ def _promo_issuer_partner():
     raw = (request.env['ir.config_parameter'].sudo()
            .get_param(PROMO_ISSUERS_PARAM, '') or '')
     allowed = {e.strip().lower() for e in raw.split(',') if e.strip()}
-    email = (user.partner_id.sudo().email or '').strip().lower()
-    if not allowed or email not in allowed:
+    login = (user.login or '').strip().lower()
+    if not allowed or login not in allowed:
         # Deliberately 404, not 403: an unauthorised caller should not learn
         # that a promo-issuing endpoint exists at all.
         return None, error_response('Not found', 404)
