@@ -8,5 +8,45 @@
             <field name="name">SMS Sender</field>
             <field name="comment">Can create/send outbound texts via the gated iMessage transport.</field>
         </record>
+
+        <!-- Who may READ the outbound text log (Odoo MR-1354).
+
+             mint.sms.message rows carry the recipient's phone number and the
+             full message body, so read is a customer-PII grant. It used to be
+             held by base.group_user, i.e. every internal user. This group is
+             the explicit replacement: add support staff here individually
+             rather than widening the ACL again.
+
+             res.groups.category_id does NOT exist in Odoo 19 — setting it
+             crashes any -u. See mint_customer_api/security/web_customer_security.xml.
+
+             Lives in the noupdate="1" block so manual membership survives
+             every subsequent module upgrade. -->
+        <record id="group_sms_log_viewer" model="res.groups">
+            <field name="name">SMS Log Viewer</field>
+            <field name="comment">Read-only access to outbound text logs (recipient numbers + message bodies). Grant only to staff who need customer PII.</field>
+        </record>
+    </data>
+
+    <!--
+        Implications live in a noupdate="0" block ON PURPOSE.
+
+        Records in the noupdate="1" block above are written once at install and
+        never reconciled again, so an implied_ids edit placed there would never
+        reach an instance that already has the module. Keeping the implications
+        here means they re-apply on every -u.
+
+        Both implications are load-bearing for the menu, not just the ACL: the
+        Telnyx SMS menu is gated on group_sms_log_viewer, so without these an
+        admin or a send account would lose the menu entirely.
+    -->
+    <data noupdate="0">
+        <record id="group_sms_sender" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('mint_sms_telnyx.group_sms_log_viewer'))]"/>
+        </record>
+
+        <record id="base.group_system" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('mint_sms_telnyx.group_sms_log_viewer'))]"/>
+        </record>
     </data>
 </odoo>
