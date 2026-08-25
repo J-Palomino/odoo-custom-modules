@@ -11,5 +11,16 @@
             <field name="interval_type">hours</field>
             <field name="active" eval="True"/>
         </record>
+
+        <record id="cron_sync_mintle_schedule" model="ir.cron">
+            <field name="name">Mint: Sync MINTLE schedule from spreadsheet</field>
+            <field name="model_id" ref="model_mint_config"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_sync_mintle_schedule()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">15</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
     </data>
 </odoo>
