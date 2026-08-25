@@ -48,6 +48,16 @@ WELCOME_CODE_MAX_TRIES = 12
 # covers every US market (worst case UTC-10).
 WELCOME_VALID_FROM_SLACK_DAYS = 1
 
+# How many PTL discounts _cron_ptl_daily_lifecycle may change state for in one
+# run. The push it triggers costs one webhook payload per (discount × store),
+# so an unbounded run against a backlog is quadratic in practice: 329 expired
+# records across ~40 stores took prod Odoo down on 2026-08-25 by holding
+# WorkerCron past limit_time_real (300s) until it was killed and retried.
+# 100 keeps a run at roughly 4,000 payload builds — comfortably inside the
+# limit — and a backlog simply drains across consecutive runs.
+PTL_LIFECYCLE_BATCH_PARAM = 'mint_cc.ptl_lifecycle_batch'
+PTL_LIFECYCLE_DEFAULT_BATCH = 100
+
 
 class MintDiscountPTL(models.Model):
     """Extend mint.discount with PTL-specific fields and lifecycle cron.
@@ -632,49 +642,101 @@ class MintDiscountPTL(models.Model):
 
     # ── Daily lifecycle cron (was: flip is_active, now: flip is_published) ──
     @api.model
-    def _cron_ptl_daily_lifecycle(self):
-        """Daily lifecycle for PTL discounts: publish on valid_from, unpublish past valid_until."""
+    def _cron_ptl_daily_lifecycle(self, batch=None):
+        """Daily lifecycle for PTL discounts: publish on valid_from, unpublish past valid_until.
+
+        Bounded on purpose. When this cron was restored on 2026-08-25 after
+        being switched off since June, its first unbounded run tried to clear a
+        329-record backlog in one transaction and took prod down with it: the
+        push builds one webhook payload per (discount × store), so ~600
+        discounts across ~40 stores meant ~24,000 payload builds. WorkerCron
+        blew through limit_time_real (300s), got killed, retried, and the HTTP
+        workers starved alongside it — 61 `timeout after 300s` kills where the
+        preceding hour had none.
+
+        Two bounds keep that from recurring:
+
+        1. `batch` caps how many records change state per run (default 100,
+           overridable via the `mint_cc.ptl_lifecycle_batch` config parameter).
+           A backlog drains over consecutive runs instead of one huge one.
+        2. Only records that ACTUALLY changed are pushed. The old code pushed
+           `to_publish | to_unpublish | active_ptl` — the entire published set,
+           every single day, whether or not anything about it had moved. That
+           made even a quiet day cost ~7,000 payload builds. Day-of-week
+           booleans are still recomputed for the whole active set (cheap,
+           in-memory), but only the ones whose flags moved get pushed.
+        """
         today = fields.Date.today()
+        Param = self.env['ir.config_parameter'].sudo()
+        if batch is None:
+            batch = int(Param.get_param(
+                PTL_LIFECYCLE_BATCH_PARAM, PTL_LIFECYCLE_DEFAULT_BATCH))
+        batch = max(1, batch)
 
         # Publish PTL deals where valid_from <= today
-        to_publish = self.search([
+        publish_domain = [
             ('source', '=', 'ptl'),
             ('is_published', '=', False),
             ('valid_from', '<=', today),
             '|', ('valid_until', '=', False), ('valid_until', '>=', today),
-        ])
+        ]
+        to_publish = self.search(publish_domain, order='id', limit=batch)
         if to_publish:
             to_publish.write({'is_published': True})
             _logger.info('PTL lifecycle: published %d discounts', len(to_publish))
 
-        # Unpublish PTL deals where valid_until < today
-        to_unpublish = self.search([
+        # Unpublish PTL deals where valid_until < today. Share the budget with
+        # the publish pass so one run can never exceed `batch` state changes.
+        unpublish_domain = [
             ('source', '=', 'ptl'),
             ('is_published', '=', True),
             ('valid_until', '!=', False),
             ('valid_until', '<', today),
-        ])
-        if to_unpublish:
-            to_unpublish.write({'is_published': False})
-            _logger.info('PTL lifecycle: unpublished %d expired discounts', len(to_unpublish))
+        ]
+        remaining_budget = batch - len(to_publish)
+        to_unpublish = self.browse()
+        if remaining_budget > 0:
+            to_unpublish = self.search(
+                unpublish_domain, order='id', limit=remaining_budget)
+            if to_unpublish:
+                to_unpublish.write({'is_published': False})
+                _logger.info(
+                    'PTL lifecycle: unpublished %d expired discounts', len(to_unpublish))
 
-        # Recompute day-of-week booleans for active PTL discounts
+        # Recompute day-of-week booleans for active PTL discounts, tracking
+        # which ones actually moved so the push stays proportional to real
+        # change rather than to the size of the catalogue.
         active_ptl = self.search([
             ('source', '=', 'ptl'),
             ('is_published', '=', True),
             ('ptl_deal_id', '!=', False),
         ])
+        dow_changed = self.browse()
         for discount in active_ptl:
+            before = tuple(discount[d] for d in self.DAY_NAME_MAP.values())
             self._recompute_day_booleans(discount)
+            if tuple(discount[d] for d in self.DAY_NAME_MAP.values()) != before:
+                dow_changed |= discount
 
-        # Push all changes to inventory service
-        changed = to_publish | to_unpublish | active_ptl
+        # Push only what changed to the inventory service
+        changed = to_publish | to_unpublish | dow_changed
         if changed:
             self.env['mint.ptl.day']._push_discounts_to_redis(changed.ids)
 
+        # Say plainly whether the backlog is drained. A run that hits its cap
+        # leaves work behind, and the next scheduled run picks it up.
+        outstanding = (self.search_count(publish_domain)
+                       + self.search_count(unpublish_domain))
+        if outstanding:
+            _logger.warning(
+                'PTL lifecycle: %d records still outstanding after this batch '
+                '(batch=%d) — will continue on the next run', outstanding, batch)
+
         _logger.info(
-            'PTL lifecycle cron: %d published, %d unpublished, %d dow-recomputed',
-            len(to_publish), len(to_unpublish), len(active_ptl),
+            'PTL lifecycle cron: %d published, %d unpublished, %d dow-changed '
+            '(of %d active), %d pushed, %d outstanding',
+            len(to_publish), len(to_unpublish), len(dow_changed),
+            len(active_ptl), len(changed), outstanding,
         )
 
     # ── Hourly cron: push only edges (is_active flips) to Redis ──────────

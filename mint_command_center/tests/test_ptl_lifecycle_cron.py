@@ -47,15 +47,22 @@ class TestPtlLifecycleCron(TransactionCase):
             'friday': True, 'saturday': True, 'sunday': True,
         })
 
-    def _run_cron(self):
+    def _run_cron(self, batch=None):
         """Run the lifecycle, stubbing the outbound webhook.
 
         _push_discounts_to_redis fires urllib requests at the inventory
-        service; a test must never do that.
+        service; a test must never do that. Returns the ids it was asked to
+        push so callers can assert on the push volume.
         """
+        pushed = []
         Day = type(self.env['mint.ptl.day'])
-        with patch.object(Day, '_push_discounts_to_redis', lambda self, ids: None):
-            self.env['mint.discount']._cron_ptl_daily_lifecycle()
+
+        def _capture(_self, ids):
+            pushed.extend(ids)
+
+        with patch.object(Day, '_push_discounts_to_redis', _capture):
+            self.env['mint.discount']._cron_ptl_daily_lifecycle(batch=batch)
+        return pushed
 
     # ── behaviour ────────────────────────────────────────────────────────
 
@@ -117,6 +124,100 @@ class TestPtlLifecycleCron(TransactionCase):
         self._run_cron()
         self.assertTrue(
             d.is_published, 'valid_until=False means no end date, not expired')
+
+    # ── batching (the 2026-08-25 prod incident) ──────────────────────────
+
+    def test_batch_caps_state_changes_per_run(self):
+        """Unbounded, a 329-record backlog held WorkerCron past
+        limit_time_real and took prod down. A run must change at most `batch`."""
+        expired = self.Discount.browse()
+        for i in range(5):
+            expired |= self._discount(
+                'LIFECYCLE batch %d' % i,
+                self.today - timedelta(days=60),
+                self.today - timedelta(days=30),
+            )
+
+        self._run_cron(batch=2)
+        self.assertEqual(
+            len(expired.filtered(lambda d: not d.is_published)), 2,
+            'exactly `batch` records should have been unpublished')
+        self.assertEqual(
+            len(expired.filtered('is_published')), 3,
+            'the rest must be left for the next run')
+
+    def test_backlog_drains_over_consecutive_runs(self):
+        expired = self.Discount.browse()
+        for i in range(5):
+            expired |= self._discount(
+                'LIFECYCLE drain %d' % i,
+                self.today - timedelta(days=60),
+                self.today - timedelta(days=30),
+            )
+
+        for _ in range(3):
+            self._run_cron(batch=2)
+
+        self.assertFalse(
+            expired.filtered('is_published'),
+            'three runs of 2 must clear a backlog of 5')
+
+    def test_push_is_limited_to_records_that_changed(self):
+        """The old code pushed `to_publish | to_unpublish | active_ptl` — the
+        entire published set, every day, so a quiet day still cost ~7,000
+        payload builds.
+
+        `settled` carries a ptl_deal_id so it genuinely lands in `active_ptl`;
+        without that the old and new behaviour would look identical here.
+        """
+        brand = self.env['mint.brand'].create({'name': 'LIFECYCLE push brand'})
+        deal = self.env['mint.ptl.deal'].create({
+            'name': 'LIFECYCLE push deal',
+            'brand_id': brand.id,
+            'product_category': 'Flower',
+            'discount_type': 'percent',
+            'discount_value': 10,
+        })
+        settled = self._discount(
+            'LIFECYCLE settled',
+            self.today - timedelta(days=10),
+            self.today + timedelta(days=10),
+        )
+        settled.ptl_deal_id = deal.id
+        self.assertTrue(settled.is_published)
+
+        # First run settles its weekday booleans against the (dayless) deal,
+        # so the second run is a genuinely quiet one for this record.
+        self._run_cron(batch=100)
+
+        expired = self._discount(
+            'LIFECYCLE changing',
+            self.today - timedelta(days=60),
+            self.today - timedelta(days=30),
+        )
+
+        pushed = self._run_cron(batch=100)
+        self.assertIn(expired.id, pushed, 'the record that changed must be pushed')
+        self.assertNotIn(
+            settled.id, pushed,
+            'an unchanged discount in active_ptl must not be re-pushed — the '
+            'old code pushed the whole active set every run')
+
+    def test_batch_size_reads_from_config_parameter(self):
+        self.env['ir.config_parameter'].sudo().set_param(
+            'mint_cc.ptl_lifecycle_batch', '1')
+        expired = self.Discount.browse()
+        for i in range(3):
+            expired |= self._discount(
+                'LIFECYCLE param %d' % i,
+                self.today - timedelta(days=60),
+                self.today - timedelta(days=30),
+            )
+
+        self._run_cron()  # no explicit batch — must honour the parameter
+        self.assertEqual(
+            len(expired.filtered(lambda d: not d.is_published)), 1,
+            'the config parameter must bound the run')
 
     # ── wiring ───────────────────────────────────────────────────────────
 
