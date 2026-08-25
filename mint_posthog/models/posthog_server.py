@@ -48,6 +48,10 @@ MAX_TRACEBACK_CHARS = 8000
 # Identical (logger, location) failures inside this window collapse into one.
 DEDUPE_WINDOW = 30.0
 
+# Set on an exception object once ir.http._handle_error has reported it, so the
+# log handler does not report the same failure a second time with less context.
+REPORTED_FLAG = "_mint_posthog_reported"
+
 # Loggers that would either recurse through this handler or add nothing.
 MUTED_LOGGERS = (
     "mint_posthog",
@@ -95,32 +99,53 @@ class PostHogLogHandler(logging.Handler):
             payload = self._build(record)
             if payload is None:
                 return
-            try:
-                self._queue.put_nowait(payload)
-            except queue.Full:
-                with self._dropped_lock:
-                    self._dropped += 1
+            self.enqueue(payload)
         except Exception:
             # A logging handler must never raise into application code.
             pass
         finally:
             _state.busy = False
 
+    def enqueue(self, payload):
+        """Hand a built event to the sender thread. Never blocks, never raises."""
+        try:
+            self._queue.put_nowait(payload)
+        except queue.Full:
+            self.note_dropped()
+
+    def note_dropped(self):
+        with self._dropped_lock:
+            self._dropped += 1
+
+    def seen_recently(self, key):
+        """True if `key` was already reported inside the dedupe window."""
+        now = time.time()
+        last = self._last_seen.get(key)
+        if last is not None and now - last < DEDUPE_WINDOW:
+            self.note_dropped()
+            return True
+        if len(self._last_seen) > 500:
+            self._last_seen.clear()
+        self._last_seen[key] = now
+        return False
+
     def _build(self, record):
         name = record.name or ""
         if name.startswith(MUTED_LOGGERS):
             return None
 
-        key = "%s:%s:%s" % (name, record.pathname, record.lineno)
-        now = time.time()
-        last = self._last_seen.get(key)
-        if last is not None and now - last < DEDUPE_WINDOW:
-            with self._dropped_lock:
-                self._dropped += 1
+        # Request-scoped failures are reported by ir.http._handle_error, which
+        # has far better context (path, method, user, company). It marks the
+        # exception object so the same failure is not counted twice here.
+        if record.exc_info and len(record.exc_info) > 1:
+            try:
+                if getattr(record.exc_info[1], REPORTED_FLAG, False):
+                    return None
+            except Exception:
+                pass
+
+        if self.seen_recently("%s:%s:%s" % (name, record.pathname, record.lineno)):
             return None
-        if len(self._last_seen) > 500:
-            self._last_seen.clear()
-        self._last_seen[key] = now
 
         try:
             message = record.getMessage()
@@ -240,3 +265,52 @@ def install():
     except Exception:
         _logger.exception("mint_posthog: could not install server error capture")
         _handler = None
+
+
+def is_active():
+    """True when server-side capture is installed and running."""
+    return _handler is not None
+
+
+def report(event, properties, distinct_id=None, dedupe_key=None):
+    """Queue an arbitrary server-side event.
+
+    This is the seam `ir.http` uses to report request errors. It is a no-op
+    unless capture is enabled, and it never raises - callers are already on an
+    error path and must not be given a second failure to handle.
+    """
+    handler = _handler
+    if handler is None:
+        return
+    try:
+        if dedupe_key and handler.seen_recently(dedupe_key):
+            return
+        properties.setdefault("app", "odoo-server")
+        properties.setdefault("dyno", os.environ.get("RAILWAY_SERVICE_NAME", ""))
+        properties.setdefault(
+            "deployment", os.environ.get("RAILWAY_DEPLOYMENT_ID", "")
+        )
+        handler.enqueue(
+            {
+                "event": event,
+                # Matches the id the web client uses ("odoo-" + uid), so a
+                # user's server errors land on the same PostHog person as
+                # their browser errors.
+                "distinct_id": distinct_id
+                or ("odoo-server-%s" % (properties.get("dyno") or "unknown")),
+                "properties": properties,
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + "Z",
+            }
+        )
+    except Exception:
+        pass
+
+
+def mark_reported(exception):
+    """Flag an exception so the log handler will not report it again."""
+    try:
+        setattr(exception, REPORTED_FLAG, True)
+    except Exception:
+        # Some exception types use __slots__ and reject attributes. Failing
+        # here only risks a duplicate event, which is the safe direction.
+        pass
