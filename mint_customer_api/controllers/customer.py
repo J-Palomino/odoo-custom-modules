@@ -114,7 +114,7 @@ def _coupon_reward_label(rec):
     return rec.name or 'Coupon'
 
 
-def _serialize_coupon(rec):
+def _serialize_coupon(rec, base_url=''):
     """Shape a standalone code coupon (NOT a points redemption) for JSON.
 
     The code the customer reads is `dutchie_discount_code` -- that is what was
@@ -140,6 +140,14 @@ def _serialize_coupon(rec):
         ),
         'expires_at': rec.valid_until.isoformat() if rec.valid_until else None,
         'in_store_only': not rec.is_available_online,
+        # Only a promo can be given away. A loyalty redemption was bought with
+        # the customer's own points and is tied to a specific product, so
+        # transferring it would be handing over something they paid for
+        # through a mechanism that cannot refund them.
+        'giftable': bool(getattr(rec, 'promo_issued_by_id', False)
+                         and rec.redemption_status == 'pending'),
+        'gift_url': ('%s/gift/%s' % (base_url.rstrip('/'), rec.dutchie_discount_code))
+                    if (base_url and rec.dutchie_discount_code) else '',
     }
 
 
@@ -182,6 +190,11 @@ def _promo_issuer_partner():
         # that a promo-issuing endpoint exists at all.
         return None, error_response('Not found', 404)
     return user, None
+
+
+def _storefront_base():
+    return (request.env['ir.config_parameter'].sudo()
+            .get_param('mint.storefront_url', 'https://shop.letsgomint.us'))
 
 
 def _promo_new_code():
@@ -993,6 +1006,58 @@ class MintCustomerProfile(http.Controller):
                      code, amount, uses, user.partner_id.id)
         return json_response({'promo': _serialize_promo(promo, base)})
 
+    @http.route('/api/v1/customer/promos/gift', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def gift_promo(self, **kw):
+        """Give one of your own promo coupons away.
+
+        "Sharing" a coupon you hold is really a TRANSFER: the code is a bearer
+        instrument, and while it stays bound to you the claim endpoint refuses
+        everyone else with 409. So this unbinds it, which is what makes the
+        gift link claimable by the first person who signs in.
+
+        Deliberately promo-only. A loyalty redemption was bought with the
+        customer's own points and is tied to a specific product; handing it to
+        someone else through a path that cannot refund the points would be a
+        way to lose them.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        code = (data.get('code') or '').strip().upper()
+        if not code:
+            return error_response('code is required')
+
+        promo = request.env['mint.discount'].sudo().search([
+            ('dutchie_discount_code', '=', code),
+            ('application_method', '=', 'code'),
+            ('promo_issued_by_id', '!=', False),
+        ], limit=1)
+        if not promo:
+            return error_response('That coupon cannot be gifted.', 404)
+        if promo.redemption_partner_id.id != user.partner_id.id:
+            # Same reasoning as claim: never confirm a coupon you don't hold.
+            return error_response('That coupon cannot be gifted.', 404)
+        today = fields.Date.context_today(promo)
+        if promo.valid_until and promo.valid_until < today:
+            return error_response('This coupon has expired.', 410)
+        if promo.redemption_status in ('used', 'voided'):
+            return error_response('This coupon has already been used.', 410)
+
+        promo.write({'redemption_partner_id': False})
+        _logger.info('promo %s released for gifting by partner %s',
+                     code, user.partner_id.id)
+        out = _serialize_promo(promo, _storefront_base())
+        return json_response({'promo': out})
+
     @http.route('/api/v1/customer/promos/claim', type='http', auth='none',
                 methods=['POST', 'OPTIONS'], csrf=False, cors='*')
     def claim_promo(self, **kw):
@@ -1100,7 +1165,7 @@ class MintCustomerProfile(http.Controller):
 
         return json_response({
             'redemptions': [_serialize_redemption(r) for r in redemptions],
-            'coupons': [_serialize_coupon(c) for c in coupons],
+            'coupons': [_serialize_coupon(c, _storefront_base()) for c in coupons],
         })
 
     @http.route('/api/v1/customer/profile', type='http', auth='none',
