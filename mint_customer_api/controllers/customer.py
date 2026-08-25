@@ -239,6 +239,19 @@ def _serialize_promo(rec, base_url=''):
     }
 
 
+def _serialize_favorite(rec):
+    """Shape a mint.customer.favorite row for JSON output."""
+    return {
+        'id': rec.id,
+        'item_type': rec.item_type,
+        'item_ref': rec.item_ref,
+        'label': rec.label or None,
+        'location_id': rec.location_id or None,
+        'image_url': rec.image_url or None,
+        'created_at': rec.create_date.isoformat() if rec.create_date else None,
+    }
+
+
 class MintCustomerProfile(http.Controller):
     """Customer profile controller."""
 
@@ -1414,4 +1427,120 @@ class MintCustomerProfile(http.Controller):
                     'opted_out': bool(partner.sms_opt_out),
                 },
             },
+        })
+
+    # ------------------------------------------------------------------
+    # Favorites — saved products and deals
+    # ------------------------------------------------------------------
+
+    @http.route('/api/v1/customer/favorites', type='http', auth='none',
+                methods=['GET', 'POST', 'DELETE', 'OPTIONS'], csrf=False, cors='*')
+    def customer_favorites(self, **kw):
+        """Read/add/remove the customer's favorite products and deals.
+
+        GET    -> { "favorites": [ {...}, ... ], "count": n }
+
+        POST   { "item_type": "product"|"deal", "item_ref": "13815543",
+                 "label": "...", "location_id": "...", "image_url": "..." }
+               Idempotent: favoriting something already saved refreshes its
+               context (label/location/image) and returns the existing row
+               rather than erroring, so a double-tapped heart is not a 4xx.
+
+        DELETE { "item_type": "...", "item_ref": "..." }
+               Also idempotent — removing something not saved returns
+               removed:false with a 200, not a 404. The client only cares
+               about the resulting state.
+
+        `item_ref` is the Dutchie product_id / discount_id the storefront
+        already carries. It is coerced to text here because the inventory
+        cache serves product_id as a string and discount_id as an int, and a
+        favorite must not depend on which one the caller happened to send.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        partner = user.partner_id.sudo()
+        Favorite = request.env['mint.customer.favorite'].sudo()
+        method = request.httprequest.method
+
+        if method in ('POST', 'DELETE'):
+            try:
+                data = json.loads(request.httprequest.data)
+            except (json.JSONDecodeError, TypeError):
+                return error_response('Invalid JSON body')
+            if not isinstance(data, dict):
+                return error_response('Body must be a JSON object')
+
+            item_type = data.get('item_type')
+            if item_type not in ('product', 'deal'):
+                return error_response('"item_type" must be "product" or "deal"')
+
+            # Accept int or str; reject bool explicitly (bool is an int
+            # subclass in Python, so `True` would otherwise become "True").
+            raw_ref = data.get('item_ref')
+            if isinstance(raw_ref, bool) or raw_ref is None:
+                return error_response('"item_ref" is required')
+            item_ref = str(raw_ref).strip()
+            if not item_ref:
+                return error_response('"item_ref" is required')
+            if len(item_ref) > 64:
+                return error_response('"item_ref" is too long')
+
+            existing = Favorite.search([
+                ('partner_id', '=', partner.id),
+                ('item_type', '=', item_type),
+                ('item_ref', '=', item_ref),
+            ], limit=1)
+
+            if method == 'DELETE':
+                removed = bool(existing)
+                if existing:
+                    existing.unlink()
+                return json_response({
+                    'removed': removed,
+                    'item_type': item_type,
+                    'item_ref': item_ref,
+                    'count': Favorite.search_count([('partner_id', '=', partner.id)]),
+                })
+
+            vals = {}
+            for key, limit in (('label', 256), ('location_id', 64), ('image_url', 512)):
+                value = data.get(key)
+                if value is None:
+                    continue
+                if not isinstance(value, str):
+                    return error_response('"%s" must be a string' % key)
+                vals[key] = value.strip()[:limit]
+
+            if existing:
+                # Refresh captured context, but never blank it out with an
+                # omitted key — a client that sends only the ids keeps the
+                # label it saved the first time.
+                if vals:
+                    existing.write(vals)
+                record = existing
+            else:
+                record = Favorite.create(dict(
+                    vals,
+                    partner_id=partner.id,
+                    item_type=item_type,
+                    item_ref=item_ref,
+                ))
+
+            return json_response({
+                'favorite': _serialize_favorite(record),
+                'created': not existing,
+                'count': Favorite.search_count([('partner_id', '=', partner.id)]),
+            })
+
+        favorites = Favorite.search([('partner_id', '=', partner.id)])
+        return json_response({
+            'favorites': [_serialize_favorite(f) for f in favorites],
+            'count': len(favorites),
         })
