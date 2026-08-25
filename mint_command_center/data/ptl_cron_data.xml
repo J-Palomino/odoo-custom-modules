@@ -41,4 +41,40 @@
             <field name="active" eval="True"/>
         </record>
     </data>
+
+    <!-- Discount-level daily lifecycle (#93723 follow-up, 2026-08-25).
+         Publishes PTL discounts on valid_from and — the part that matters —
+         unpublishes them once valid_until has passed.
+
+         This cron used to be created ONLY by hooks.py post_init_hook. That is
+         install-only: post_init_hook does not run on -u, and its guard matches
+         by name regardless of `active`, so once someone switched the cron off
+         nothing could ever switch it back on. It was disabled on prod on
+         2026-06-18 and stayed off; by 2026-08-25 that had left 329 PTL
+         discounts published past their valid_until, 96 of them still computing
+         is_active=True and inflating every deal count.
+
+         Defining it here as a data record is what makes it survive upgrades —
+         the same reasoning as ir_cron_expire_past_deals above. noupdate="1" so
+         a later upgrade never resets its schedule or nextcall. The
+         19.0.6.71.0 pre-migration adopts the pre-existing programmatically
+         created cron into this external id, so upgrading does not leave a
+         duplicate behind.
+
+         Note this cron only writes is_published and pushes to the inventory
+         service — deal-level state and the Dutchie deactivation live on
+         cron_expire_past_deals, so restoring this does not touch the POS. -->
+    <data noupdate="1">
+        <record id="ir_cron_ptl_daily_lifecycle" model="ir.cron">
+            <field name="name">PTL: Daily Deal Lifecycle</field>
+            <field name="model_id" ref="model_mint_ptl_day"/>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_daily_lifecycle()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="priority">50</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

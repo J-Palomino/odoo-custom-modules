@@ -14,21 +14,15 @@ def post_init_hook(env):
         _logger.warning('mint.ptl.day model not found — skipping cron creation')
         return
 
-    # Daily lifecycle cron
-    if not Cron.search([('name', '=', 'PTL: Daily Deal Lifecycle')], limit=1):
-        Cron.create({
-            'name': 'PTL: Daily Deal Lifecycle',
-            'model_id': day_model.id,
-            'state': 'code',
-            'code': 'model._cron_daily_lifecycle()',
-            'interval_number': 1,
-            'interval_type': 'days',
-            'active': True,
-            'priority': 50,
-        })
-        _logger.info('PTL daily lifecycle cron created')
-    else:
-        _logger.info('PTL daily lifecycle cron already exists')
+    # NOTE: "PTL: Daily Deal Lifecycle" is deliberately NOT created here any
+    # more. It lives in data/ptl_cron_data.xml as of 19.0.6.71.0.
+    #
+    # Creating a recurring cron from post_init_hook is a trap: the hook runs on
+    # install only, never on -u, and its name-based guard matched an existing
+    # cron regardless of `active`. So when it was switched off on prod (2026-06-18)
+    # nothing could ever switch it back on, and expired PTL discounts stopped
+    # being unpublished for two months. A data record with noupdate="1" is
+    # restorable by an upgrade; a hook-created record is not.
 
     # Hourly is_active recompute cron
     if discount_model and not Cron.search(
