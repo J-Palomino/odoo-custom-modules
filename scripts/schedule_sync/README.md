@@ -121,6 +121,45 @@ and requesting Drive scopes returns `unauthorized_client`.
   supported path, though it is readable afterwards.
 - Upsert is **by record name**, so re-runs update in place.
 
+## Rendering shifts into the Odoo calendar
+
+`shifts.py` parses shifts out of the spreadsheets **already in Odoo** (no Google
+access needed), and `render_calendar.py` writes them to `calendar.event`.
+
+```bash
+python3 render_calendar.py                 # dry run, all stores
+python3 render_calendar.py --store Mesa    # one store
+python3 render_calendar.py --apply         # write
+```
+
+Parsing is layout-agnostic: the day columns come from the date row, and within
+one day's span the cells that parse as clock times are taken in order — first
+start, second end. Nothing is read at a fixed offset, because the four layouts
+use strides of 2, ~3 and 6, and merged cells make the date row irregular.
+
+Correctness is checked against the sheets' own hours columns: 98–100% agreement
+where a hours column exists. Note the sheets state **paid** hours (an unpaid
+break deducted) while the calendar stores **clock time**, so a shift reading
+7.5h here can be 6.75h there — that gap is expected, not a parse error.
+
+Facts worth keeping:
+
+- **Invitations are suppressed** and this was verified, not assumed: creating an
+  event queued zero `mail.mail` rows. Odoo emails attendees by default, and 618
+  events would otherwise have spammed staff. See `CTX` in `render_calendar.py`.
+- **Times are America/Phoenix**, which has no DST, so UTC is always local + 7h.
+- **Idempotent** via deterministic external ids in `ir.model.data` under module
+  `mint_schedule_cal` (e.g. `shift_mesa_198_20260819_1400`), so re-runs update
+  in place. Re-running Mesa gave 71 updated, 0 duplicated.
+- **Writes are batched.** One `create` per record earns a `429 Too Many
+  Requests` from prod at this volume; `create()` takes a list.
+- Events are tagged **Store Schedule**, `show_as: free`, no alarms — so they
+  neither block availability nor fire reminders, and stay separable from the
+  5,000+ real meetings.
+- Coverage is capped by the roster gap: only ~34% of parsed shifts belong to
+  someone with an `hr.employee` record. The rest are counted and reported, not
+  silently dropped.
+
 ## Scheduling
 
 **Nothing runs this automatically.** There is no `ir.cron`, no crontab entry
