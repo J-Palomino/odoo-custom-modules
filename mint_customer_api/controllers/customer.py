@@ -11,7 +11,7 @@ import logging
 
 from psycopg2 import IntegrityError
 
-from odoo import fields, http
+from odoo import _, fields, http
 from odoo.exceptions import UserError
 from odoo.http import request, Response
 
@@ -1226,13 +1226,33 @@ class MintCustomerProfile(http.Controller):
             return error_response('Authentication required', 401)
 
         partner = user.partner_id.sudo() if user.partner_id else None
-        tickets = request.env['mint.spin.ticket'].sudo().available_count(partner)
+        Ticket = request.env['mint.spin.ticket'].sudo()
+        tickets = Ticket.available_count(partner)
         rows = request.env['mint.spin.prize'].sudo().read_group(
             [('state', '=', 'available')], ['percent'], ['percent'],
         )
         percents = sorted({int(r['percent']) for r in rows if r.get('percent')})
+
+        # How a customer earns a ticket depends on configuration, so the copy
+        # is derived here rather than hardcoded in the storefront. Telling
+        # someone "shop to earn a spin" while purchase grants are switched off
+        # is a promise the system will not keep.
+        settings = Ticket.purchase_grant_settings()
+        grants_enabled = bool(settings.get('enabled'))
+        if grants_enabled:
+            min_spend = float(settings.get('min_spend') or 0)
+            per = int(settings.get('tickets') or 1)
+            spins = _('%s spins') % per if per > 1 else _('a spin')
+            earn_hint = (_('Earn %s on orders over $%d.') % (spins, min_spend)
+                         if min_spend > 0
+                         else _('Earn %s with every purchase.') % spins)
+        else:
+            earn_hint = _('Spin tickets are handed out during promotions.')
+
         return json_response({
             'tickets': tickets,
             'percents': percents,
             'pool_empty': not percents,
+            'grants_enabled': grants_enabled,
+            'earn_hint': earn_hint,
         })
