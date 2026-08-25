@@ -23,6 +23,9 @@ Two constraints shape this file:
 """
 
 import logging
+import os
+import threading
+import time
 import traceback
 
 from werkzeug.exceptions import HTTPException
@@ -36,6 +39,17 @@ _logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_CHARS = 2000
 MAX_TRACEBACK_CHARS = 8000
+
+# Request start times, kept per thread rather than on the request object so
+# nothing is attached to core objects that might be pooled or reused.
+_timing = threading.local()
+
+
+def _slow_request_after_ms():
+    try:
+        return float(os.environ.get("MINT_POSTHOG_SLOW_REQUEST_MS", "5000"))
+    except (TypeError, ValueError):
+        return 5000.0
 
 SESSION_EXPIRED = "odoo.http.SessionExpiredException"
 
@@ -81,6 +95,63 @@ class IrHttp(models.AbstractModel):
             # Telemetry must never change how an error is served.
             pass
         return super()._handle_error(exception)
+
+    # -- slow requests ------------------------------------------------------
+    #
+    # A request that takes twelve seconds raises nothing, logs nothing, and is
+    # invisible to every error hook - but it is the most common form of "Odoo
+    # is broken for me". Both overrides use *args passthrough so an upstream
+    # signature change cannot break dispatch.
+
+    @classmethod
+    def _pre_dispatch(cls, *args, **kwargs):
+        try:
+            _timing.started = time.monotonic()
+        except Exception:
+            pass
+        return super()._pre_dispatch(*args, **kwargs)
+
+    @classmethod
+    def _post_dispatch(cls, *args, **kwargs):
+        try:
+            cls._mint_posthog_report_slow()
+        except Exception:
+            pass
+        return super()._post_dispatch(*args, **kwargs)
+
+    @classmethod
+    def _mint_posthog_report_slow(cls):
+        started = getattr(_timing, "started", None)
+        _timing.started = None
+        if started is None or not posthog_server.is_active():
+            return
+
+        duration_ms = (time.monotonic() - started) * 1000.0
+        if duration_ms < _slow_request_after_ms():
+            return
+
+        path = ""
+        method = ""
+        uid = None
+        try:
+            path = request.httprequest.path or ""
+            method = request.httprequest.method or ""
+            uid = request.session.uid
+        except Exception:
+            pass
+
+        posthog_server.report(
+            "odoo_request_slow",
+            {
+                "source": "request",
+                "http_path": path,
+                "http_method": method,
+                "duration_ms": int(duration_ms),
+                "odoo_uid": uid,
+            },
+            distinct_id="odoo-%s" % uid if uid else None,
+            dedupe_key="slow:%s" % path,
+        )
 
     @classmethod
     def _mint_posthog_report(cls, exception):

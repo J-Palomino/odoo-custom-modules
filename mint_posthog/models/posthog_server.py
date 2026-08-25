@@ -57,9 +57,23 @@ MUTED_LOGGERS = (
     "mint_posthog",
     "urllib3",
     "requests",
+    # Every HTTP request is logged here at INFO. Muting it keeps the
+    # below-ERROR path cheap, and real request failures arrive through
+    # ir.http._handle_error with far better context anyway.
     "werkzeug",
-    "odoo.sql_db",  # already re-raised and logged by the caller with context
+    # Logs the failing SQL verbatim, which can carry customer data. The
+    # exception itself still reaches us through the ORM caller.
+    "odoo.sql_db",
 )
+
+# Some failures Odoo considers routine are exactly the ones users complain
+# about, and they are logged below ERROR so a plain ERROR handler never sees
+# them. Failed logins are logged at INFO by res_users:
+#     _logger.info("Login failed for login:%s from %s", login, ip)
+# Capturing that logger is what makes "I can't log in" visible, and it needs
+# no override of the authentication path itself.
+# Format: "logger.name:LEVEL,other.logger:LEVEL". Set to "" to disable.
+DEFAULT_EXTRA_LOGGERS = "odoo.addons.base.models.res_users:INFO"
 
 _state = threading.local()
 
@@ -73,11 +87,29 @@ def _enabled():
     )
 
 
+def _extra_loggers():
+    """Parse the below-ERROR allowlist into {logger_name: min_levelno}."""
+    raw = os.environ.get("MINT_POSTHOG_EXTRA_LOGGERS", DEFAULT_EXTRA_LOGGERS)
+    out = {}
+    for chunk in (raw or "").split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        name, _sep, level = chunk.partition(":")
+        levelno = logging.getLevelName((level or "INFO").strip().upper())
+        if isinstance(levelno, int) and name.strip():
+            out[name.strip()] = levelno
+    return out
+
+
 class PostHogLogHandler(logging.Handler):
     """Ship ERROR+ log records to PostHog off the request thread."""
 
-    def __init__(self, api_key, host):
-        super().__init__(level=logging.ERROR)
+    def __init__(self, api_key, host, extra_loggers=None):
+        self._extra = extra_loggers if extra_loggers is not None else _extra_loggers()
+        # Only drop the handler threshold as far as the allowlist requires, so
+        # with no allowlist the below-ERROR path costs nothing at all.
+        super().__init__(level=min([logging.ERROR] + list(self._extra.values())))
         self._api_key = api_key
         self._endpoint = host.rstrip("/") + "/batch/"
         self._queue = queue.Queue(maxsize=MAX_QUEUE)
@@ -117,11 +149,11 @@ class PostHogLogHandler(logging.Handler):
         with self._dropped_lock:
             self._dropped += 1
 
-    def seen_recently(self, key):
-        """True if `key` was already reported inside the dedupe window."""
+    def seen_recently(self, key, window=DEDUPE_WINDOW):
+        """True if `key` was already reported inside `window` seconds."""
         now = time.time()
         last = self._last_seen.get(key)
-        if last is not None and now - last < DEDUPE_WINDOW:
+        if last is not None and now - last < window:
             self.note_dropped()
             return True
         if len(self._last_seen) > 500:
@@ -133,6 +165,12 @@ class PostHogLogHandler(logging.Handler):
         name = record.name or ""
         if name.startswith(MUTED_LOGGERS):
             return None
+
+        # Below ERROR, only explicitly allowlisted loggers get through.
+        if record.levelno < logging.ERROR:
+            wanted = self._extra.get(name)
+            if wanted is None or record.levelno < wanted:
+                return None
 
         # Request-scoped failures are reported by ir.http._handle_error, which
         # has far better context (path, method, user, company). It marks the
@@ -186,9 +224,24 @@ class PostHogLogHandler(logging.Handler):
             if value not in (None, ""):
                 properties[prop] = value
 
+        # Allowlisted below-ERROR records are notable events, not faults -
+        # keep them out of the error metrics so those stay meaningful.
+        event = (
+            "odoo_server_error" if record.levelno >= logging.ERROR else "odoo_server_log"
+        )
+
+        # Tie the event to the acting user when the record carries a uid, so
+        # it lands on the same PostHog person as their browser events.
+        uid = properties.get("odoo_uid")
+        distinct_id = (
+            "odoo-%s" % uid
+            if uid
+            else "odoo-server-%s" % (properties.get("dyno") or "unknown")
+        )
+
         return {
-            "event": "odoo_server_error",
-            "distinct_id": "odoo-server-%s" % (properties.get("dyno") or "unknown"),
+            "event": event,
+            "distinct_id": distinct_id,
             "properties": properties,
             "timestamp": time.strftime(
                 "%Y-%m-%dT%H:%M:%S", time.gmtime(record.created)
@@ -272,7 +325,9 @@ def is_active():
     return _handler is not None
 
 
-def report(event, properties, distinct_id=None, dedupe_key=None):
+def report(
+    event, properties, distinct_id=None, dedupe_key=None, dedupe_window=DEDUPE_WINDOW
+):
     """Queue an arbitrary server-side event.
 
     This is the seam `ir.http` uses to report request errors. It is a no-op
@@ -283,7 +338,7 @@ def report(event, properties, distinct_id=None, dedupe_key=None):
     if handler is None:
         return
     try:
-        if dedupe_key and handler.seen_recently(dedupe_key):
+        if dedupe_key and handler.seen_recently(dedupe_key, dedupe_window):
             return
         properties.setdefault("app", "odoo-server")
         properties.setdefault("dyno", os.environ.get("RAILWAY_SERVICE_NAME", ""))
