@@ -10,8 +10,22 @@ from .deal_mixins import DISCOUNT_TYPE_SELECTION
 # Two-pass: prefer mass units (mg/g/oz) over count units (pk/ct) so titles like
 # "Shorties Prerolls 10pk - (5.0g)" return 5.0g (the gram weight), not 10ct.
 # `mg` is listed before `g` so "100mg" parses as mg, not g. `pk` → `ct`.
-_WEIGHT_RE_MASS = re.compile(r'\b(\d*\.?\d+)\s*(mg|g|oz)\b', re.IGNORECASE)
-_WEIGHT_RE_COUNT = re.compile(r'\b(\d*\.?\d+)\s*(pk|ct)\b', re.IGNORECASE)
+#
+# The leading guard is `(?<![\d.])`, NOT `\b`. With `\b`, a bare-decimal weight
+# like ".5g" put the word boundary BETWEEN the dot and the 5, so the match
+# started at "5" and the leading dot was dropped — ".5g" parsed as 5g, a 10x
+# error. Measured on production 2026-08-24: 124 deals carried a leading-dot
+# weight in their name and ALL 124 stored the wrong value (113 live, 11
+# approved; AZ 73, IL 32, NV 11, MO 8), e.g. "WTF - Cartridge Live Resin .5g"
+# stored as 5g. That value is what _resolve_weight_restriction converts to
+# grams and publishes to Dutchie, so those deals were restricted to 5-gram
+# products instead of half-gram ones.
+#
+# The lookbehind refuses to start mid-number, so ".5g" matches from the dot
+# and "3.5g" still matches from the 3 (a start at the "5" is rejected because
+# the preceding char is ".").
+_WEIGHT_RE_MASS = re.compile(r'(?<![\d.])(\d*\.?\d+)\s*(mg|g|oz)\b', re.IGNORECASE)
+_WEIGHT_RE_COUNT = re.compile(r'(?<![\d.])(\d*\.?\d+)\s*(pk|ct)\b', re.IGNORECASE)
 
 
 # Normalize a brand name for case/punctuation/whitespace-insensitive lookup.
