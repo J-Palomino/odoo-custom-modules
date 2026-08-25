@@ -200,6 +200,9 @@ COPY --chown=odoo:odoo web_calendar_slot_duration /opt/extra-addons/web_calendar
 COPY --chown=odoo:odoo resource_booking /opt/extra-addons/resource_booking
 COPY --chown=odoo:odoo mint_coa_admin /opt/extra-addons/mint_coa_admin
 
+# ── Store schedule sync (Google Sheets -> spreadsheet.spreadsheet) ───
+COPY --chown=odoo:odoo mint_schedule_sync /opt/extra-addons/mint_schedule_sync
+
 # ── Verify critical modules ─────────────────────────────────────────
 RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
@@ -210,6 +213,7 @@ RUN grep "version" /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUS
 RUN grep "version" /opt/extra-addons/mint_command_center/__manifest__.py && echo "MINT_COMMAND_CENTER MODULE VERIFIED" || (echo "MINT_COMMAND_CENTER MODULE MISSING" && exit 1)
 RUN grep "push_subscription_views" /opt/extra-addons/mint_push/__manifest__.py | head -1 && echo "LOAD ORDER CHECK OK"
 RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_schedule_sync/__manifest__.py && echo "MINT_SCHEDULE_SYNC MODULE VERIFIED" || (echo "MINT_SCHEDULE_SYNC MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_decision_board/__manifest__.py && echo "MINT_DECISION_BOARD VERIFIED" || (echo "MINT_DECISION_BOARD MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_visual_cms/__manifest__.py && echo "MINT_VISUAL_CMS MODULE VERIFIED" || (echo "MINT_VISUAL_CMS MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
