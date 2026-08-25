@@ -1,18 +1,21 @@
 {
     'name': 'Mint PostHog Analytics',
-    'version': '19.0.1.1.0',
+    'version': '19.0.2.0.0',
     'category': 'Tools',
     'summary': 'PostHog error tracking and session recording for Odoo backend',
     'description': """
         Injects PostHog into the Odoo backend (web client) to capture:
+          - Server RPC errors, with the Python traceback, model and method
+          - Session expiry (tracked separately - it is not a crash)
+          - Slow RPC calls (> 10s)
           - JavaScript errors and unhandled promise rejections
-          - RPC/API errors (failed JSON-RPC calls)
           - Session recordings for debugging
-          - Page navigation and user identification
+          - Page navigation, per Odoo action / model / record
 
         Sends data to the dedicated "LetsGoMint" PostHog project,
-        separate from the MintDeals storefront project.
-        Admins are identified by their Odoo login for easy filtering.
+        separate from the MintDeals storefront project. Users are identified
+        by Odoo login, uid and active company, so an error can be traced to a
+        specific person and store.
     """,
     'author': 'Mint Dispensaries',
     'website': 'https://mintdispensaries.com',
