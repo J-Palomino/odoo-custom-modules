@@ -116,6 +116,7 @@ class PostHogLogHandler(logging.Handler):
         self._dropped = 0
         self._dropped_lock = threading.Lock()
         self._last_seen = {}
+        self._owner_pid = os.getpid()
         self._worker = threading.Thread(
             target=self._run, name="mint_posthog.sender", daemon=True
         )
@@ -141,9 +142,35 @@ class PostHogLogHandler(logging.Handler):
     def enqueue(self, payload):
         """Hand a built event to the sender thread. Never blocks, never raises."""
         try:
+            self._ensure_worker()
             self._queue.put_nowait(payload)
         except queue.Full:
             self.note_dropped()
+
+    def _ensure_worker(self):
+        """Restart the sender thread if we are in a forked child.
+
+        Odoo runs prefork HTTP/cron workers. **Threads do not survive fork()** -
+        a child inherits the handler object and its queue but not the thread
+        draining it, so without this every worker would fill its queue once and
+        then silently drop everything for the life of the process. Only the
+        master, which still has its thread, would ever ship anything.
+
+        This is not hypothetical: `mint_loki_logger` has exactly this bug, and
+        it is why Loki only ever held master-process loggers (odoo.registry,
+        odoo.service.server, odoo.sql_db) and never a single werkzeug or
+        odoo.addons line despite Odoo emitting hundreds a minute.
+        """
+        if self._owner_pid == os.getpid() and self._worker.is_alive():
+            return
+        # Forked (or the thread died). The inherited queue belongs to the
+        # parent's unfinished work - start clean rather than re-send it.
+        self._owner_pid = os.getpid()
+        self._queue = queue.Queue(maxsize=MAX_QUEUE)
+        self._worker = threading.Thread(
+            target=self._run, name="mint_posthog.sender", daemon=True
+        )
+        self._worker.start()
 
     def note_dropped(self):
         with self._dropped_lock:

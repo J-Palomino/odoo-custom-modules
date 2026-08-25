@@ -274,6 +274,18 @@ def main():
     ps.report("x", {"bad": object()}, dedupe_key="junk")
     check("report() never raises on unserializable input")
 
+    # Odoo prefork: threads do not survive fork(). A child inherits the handler
+    # and its queue but not the thread draining it. mint_loki_logger has this
+    # bug and it silently cost every worker's logs, so it is worth a check.
+    drain()
+    old_thread = handler._worker
+    handler._owner_pid = -1  # pretend we just came out of a fork
+    handler.enqueue({"event": "post_fork", "properties": {}, "distinct_id": "x"})
+    assert handler._worker is not old_thread, "sender thread was not restarted after fork"
+    assert handler._worker.is_alive(), "restarted sender thread is not alive"
+    assert len(drain()) == 1, "event lost across the fork restart"
+    check("sender thread restarts in a forked worker (queue keeps draining)")
+
     print("\n%d checks passed" % len(PASSED))
 
 
