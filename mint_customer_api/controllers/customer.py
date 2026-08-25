@@ -141,6 +141,12 @@ def _serialize_coupon(rec):
     }
 
 
+# Favorite item types the API accepts. Kept beside the serializer so the
+# controller and mint.customer.favorite.item_type cannot drift apart
+# silently — a type the model rejects would surface as a 500, not a 400.
+ITEM_TYPES = ('product', 'deal', 'store')
+
+
 def _serialize_favorite(rec):
     """Shape a mint.customer.favorite row for JSON output."""
     return {
@@ -1089,17 +1095,17 @@ class MintCustomerProfile(http.Controller):
         })
 
     # ------------------------------------------------------------------
-    # Favorites — saved products and deals
+    # Favorites — saved products, deals and stores
     # ------------------------------------------------------------------
 
     @http.route('/api/v1/customer/favorites', type='http', auth='none',
                 methods=['GET', 'POST', 'DELETE', 'OPTIONS'], csrf=False, cors='*')
     def customer_favorites(self, **kw):
-        """Read/add/remove the customer's favorite products and deals.
+        """Read/add/remove the customer's favorite products, deals and stores.
 
         GET    -> { "favorites": [ {...}, ... ], "count": n }
 
-        POST   { "item_type": "product"|"deal", "item_ref": "13815543",
+        POST   { "item_type": "product"|"deal"|"store", "item_ref": "13815543",
                  "label": "...", "location_id": "...", "image_url": "..." }
                Idempotent: favoriting something already saved refreshes its
                context (label/location/image) and returns the existing row
@@ -1111,7 +1117,7 @@ class MintCustomerProfile(http.Controller):
                about the resulting state.
 
         `item_ref` is the Dutchie product_id / discount_id the storefront
-        already carries. It is coerced to text here because the inventory
+        already carries, or the res.company id for a store. It is coerced to text here because the inventory
         cache serves product_id as a string and discount_id as an int, and a
         favorite must not depend on which one the caller happened to send.
         """
@@ -1137,8 +1143,10 @@ class MintCustomerProfile(http.Controller):
                 return error_response('Body must be a JSON object')
 
             item_type = data.get('item_type')
-            if item_type not in ('product', 'deal'):
-                return error_response('"item_type" must be "product" or "deal"')
+            if item_type not in ITEM_TYPES:
+                return error_response(
+                    '"item_type" must be one of: %s' % ', '.join(sorted(ITEM_TYPES))
+                )
 
             # Accept int or str; reject bool explicitly (bool is an int
             # subclass in Python, so `True` would otherwise become "True").

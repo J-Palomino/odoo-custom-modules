@@ -58,6 +58,25 @@ class TestCustomerFavorites(TransactionCase):
             with self.cr.savepoint():
                 self._fav(location_id='a4d8b494-b542-4f69-acb8-cf67d6a6c3aa')
 
+    def test_a_store_can_be_favorited_alongside_a_product(self):
+        """Stores key on the res.company id, not a Dutchie SKU."""
+        self._fav()
+        store = self._fav(item_type='store', item_ref='18', label='AZ - Mesa')
+        self.assertTrue(store.id)
+        self.assertEqual(
+            self.Favorite.search_count([
+                ('partner_id', '=', self.partner.id),
+                ('item_type', '=', 'store'),
+            ]),
+            1,
+        )
+
+    def test_the_same_store_cannot_be_favorited_twice(self):
+        self._fav(item_type='store', item_ref='18')
+        with self.assertRaises(IntegrityError), mute_logger('odoo.sql_db'):
+            with self.cr.savepoint():
+                self._fav(item_type='store', item_ref='18')
+
     def test_favorites_follow_the_partner_on_delete(self):
         fav = self._fav()
         self.partner.unlink()
