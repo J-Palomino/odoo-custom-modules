@@ -589,11 +589,18 @@ class MintDiscountPTL(models.Model):
                 "'Push Discounts to Dutchie' on a store that has a POS LocId + LSP."))
         # A Dutchie discount is owned by the LSP, not the location, so one write
         # per LSP covers every store under it and repeated writes duplicate it.
-        # NOTE: this also means store_ids CANNOT narrow a deal to a subset of
-        # stores inside one LSP — the payload's LocationRestrictions is still
-        # hardcoded [] everywhere, so a deal targeted at one AZ store goes live
-        # at all of them. Wiring LocationRestrictions from store_ids is the
-        # separate fix; collapsing here at least stops the duplicate records.
+        #
+        # REGION-level targeting is therefore already correct: region <-> LSP is
+        # 1:1 in production (AZ=575, MI=576, MO=723, IL=805, NV=820, FL=821 —
+        # every region holds exactly one LSP and no LSP spans two regions), so
+        # an LSP-scoped discount IS a region-scoped discount. Marketing's
+        # region-specific deals need nothing further.
+        #
+        # What store_ids CANNOT do is narrow a deal to a subset of stores INSIDE
+        # one region: the payload hardcodes LocationRestrictions=[], so a deal
+        # targeted at one AZ store still goes live at all nine. If per-store
+        # targeting is ever needed, populate LocationRestrictions from store_ids
+        # — until then store_ids only selects which LSPs get written.
         stores = push._collapse_stores_by_lsp(stores)
         ok = 0
         for store in stores:
