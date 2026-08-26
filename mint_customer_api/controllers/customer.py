@@ -967,13 +967,22 @@ class MintCustomerProfile(http.Controller):
         ])
         if not enabled:
             return error_response('No Dutchie-enabled store is configured', 503)
-        # ONE store per LSP. action_publish_to_dutchie loops over store_ids with
-        # no LSP dedupe, so publishing to every store mints N copies of the same
-        # code, each separately redeemable — a "single-use" $100 becomes $900.
-        # The code is LSP-wide at the register regardless of which store pushed.
+        # ONE store per LSP. Publishing to every store mints N copies of the
+        # same code, each separately redeemable — a "single-use" $100 becomes
+        # $900. The code is LSP-wide at the register regardless of which store
+        # pushed it.
+        #
+        # The shared push path now collapses by LSP itself
+        # (mint.ptl.day._collapse_stores_by_lsp), so this is belt-and-braces
+        # rather than the only guard it used to be. Kept because this endpoint
+        # also derives `scope` from the LSP set below. Ordered by id so the
+        # representative store is stable between calls.
         by_lsp = {}
-        for company in enabled:
-            by_lsp.setdefault(company.dutchie_lsp_id, company)
+        for company in enabled.sorted('id'):
+            by_lsp.setdefault(company._dutchie_lsp(), company)
+        by_lsp.pop(0, None)          # unresolvable LSP: cannot push, don't try
+        if not by_lsp:
+            return error_response('No Dutchie-enabled store resolves to an LSP', 503)
         publish_stores = list(by_lsp.values())
         scope = Company.search([('dutchie_lsp_id', 'in', list(by_lsp.keys()))])
 

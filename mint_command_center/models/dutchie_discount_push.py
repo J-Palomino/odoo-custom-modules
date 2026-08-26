@@ -911,9 +911,16 @@ class PtlDayDutchiePush(models.Model):
         return int(legacy) if str(legacy).isdigit() else 0
 
     def _resolve_lsp_id(self, store):
-        """Integer LSP id for this store. v1 reads the per-store override;
-        v2 may infer from market_id when the override is unset."""
-        return int(getattr(store, 'dutchie_lsp_id', 0) or 0)
+        """Integer LSP id for this store.
+
+        Thin delegate to the single resolver, res.company._dutchie_lsp()
+        (mint_api_v2). Kept as a method because it is called from several
+        places here and reads better in context; do NOT reintroduce a local
+        rule — the whole point of the resolver is that there is one.
+        """
+        if not store:
+            return 0
+        return store._dutchie_lsp()
 
     def _collapse_stores_by_lsp(self, stores):
         """One representative store per distinct LSP, lowest id wins.
