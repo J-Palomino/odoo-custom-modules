@@ -86,9 +86,10 @@ class ResCompanyDutchiePush(models.Model):
     dutchie_lsp_id = fields.Integer(
         string='Dutchie LspId',
         help='Integer LSP (Licensed Service Provider) id Dutchie uses to scope '
-             'discount/inventory writes. AZ = 575, IL = 805, FL = 821, MI = 822 '
-             '(values from packages/inventory-service/db/migrations). Required '
-             'for the Dutchie discount push.',
+             'discount/inventory writes. AZ = 575, MI = 576, MO = 723, '
+             'IL = 805, NV = 820, FL = 821 — one LSP per region, verified '
+             'against live res.company data. Required for the Dutchie '
+             'discount push.',
     )
 
 
