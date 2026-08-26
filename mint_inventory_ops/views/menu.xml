@@ -10,4 +10,10 @@
               parent="menu_mint_inventory_root"
               action="action_adjustment"
               sequence="10"/>
+
+    <menuitem id="menu_dutchie_receive"
+              name="Receive Inventory"
+              parent="menu_mint_inventory_root"
+              action="action_dutchie_receive"
+              sequence="5"/>
 </odoo>

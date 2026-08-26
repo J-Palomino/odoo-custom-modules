@@ -3,3 +3,7 @@ access_adjustment_user,mint.inventory.adjustment.user,model_mint_inventory_adjus
 access_adjustment_manager,mint.inventory.adjustment.manager,model_mint_inventory_adjustment,group_inventory_manager,1,1,1,1
 access_adjustment_line_user,mint.inventory.adjustment.line.user,model_mint_inventory_adjustment_line,group_inventory_user,1,1,1,0
 access_adjustment_line_manager,mint.inventory.adjustment.line.manager,model_mint_inventory_adjustment_line,group_inventory_manager,1,1,1,1
+access_dutchie_receive_user,mint.dutchie.receive.user,model_mint_dutchie_receive,group_inventory_user,1,1,1,0
+access_dutchie_receive_manager,mint.dutchie.receive.manager,model_mint_dutchie_receive,group_inventory_manager,1,1,1,1
+access_dutchie_receive_line_user,mint.dutchie.receive.line.user,model_mint_dutchie_receive_line,group_inventory_user,1,1,1,0
+access_dutchie_receive_line_manager,mint.dutchie.receive.line.manager,model_mint_dutchie_receive_line,group_inventory_manager,1,1,1,1
