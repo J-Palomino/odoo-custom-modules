@@ -84,8 +84,12 @@ class DutchieReceive(models.Model):
     company_id = fields.Many2one(
         'res.company', string='Store', required=True,
         default=lambda self: self.env.company, tracking=True,
-        domain="[('is_dispensary', '=', True)]",
-        help='Destination store. Its Dutchie POS LocId is what the receive targets.',
+        # The requirement is "has a Dutchie POS location", not "is a storefront".
+        # Filtering on is_dispensary would exclude the Dutchie sandboxes, which
+        # are not Mint storefronts and are exactly where this gets tested.
+        domain="[('dutchie_pos_location_id', '!=', 0)]",
+        help='Destination store. Its Dutchie POS LocId is what the receive '
+             'targets, so only companies that have one can be selected.',
     )
     pos_location_id = fields.Integer(
         string='Dutchie LocId', related='company_id.dutchie_pos_location_id',
