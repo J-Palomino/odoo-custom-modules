@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Form View -->
+    <record id="view_dutchie_receive_form" model="ir.ui.view">
+        <field name="name">mint.dutchie.receive.form</field>
+        <field name="model">mint.dutchie.receive</field>
+        <field name="arch" type="xml">
+            <form string="Dutchie Inventory Receive">
+                <header>
+                    <button name="action_validate" string="Validate with Dutchie"
+                            type="object" class="btn-primary"
+                            invisible="state not in ('draft', 'validated', 'rejected')"
+                            help="Hosts the delivery as a manifest at a short-lived URL and has Dutchie parse it. Resolves each SKU to a Dutchie product. Nothing is written to Dutchie by this step."/>
+                    <button name="action_approve" string="Approve"
+                            type="object" class="btn-primary"
+                            invisible="state != 'validated'"
+                            groups="mint_inventory_ops.group_inventory_manager"/>
+                    <button name="action_push" string="Push to Dutchie"
+                            type="object" class="btn-success"
+                            invisible="state != 'approved'"
+                            groups="mint_inventory_ops.group_inventory_manager"
+                            confirm="This writes the packages into Dutchie POS and cannot be undone from Odoo. Continue?"/>
+                    <button name="action_reject" string="Reject"
+                            type="object" class="btn-danger"
+                            invisible="state not in ('validated', 'approved')"
+                            groups="mint_inventory_ops.group_inventory_manager"/>
+                    <button name="action_reset_draft" string="Reset to Draft"
+                            type="object"
+                            invisible="state not in ('validated', 'rejected')"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,validated,approved,pushed"/>
+                </header>
+                <sheet>
+                    <widget name="web_ribbon" title="In Dutchie" bg_color="text-bg-success"
+                            invisible="state != 'pushed'"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+
+                    <div class="alert alert-warning" role="alert"
+                         invisible="unresolved_count == 0">
+                        <field name="unresolved_count" readonly="1" nolabel="1" class="oe_inline"/>
+                        line(s) did not match a Dutchie SKU. They would be silently
+                        dropped on push — fix the SKU or remove the line, then validate again.
+                    </div>
+
+                    <group>
+                        <group string="Destination">
+                            <field name="company_id" readonly="state != 'draft'"/>
+                            <field name="pos_location_id"/>
+                            <field name="lsp_id"/>
+                        </group>
+                        <group string="Delivery">
+                            <field name="receive_type" readonly="state not in ('draft', 'validated')"/>
+                            <field name="partner_id" readonly="state not in ('draft', 'validated')"/>
+                            <field name="invoice_number" readonly="state not in ('draft', 'validated')"/>
+                            <field name="delivered_on" readonly="state not in ('draft', 'validated')"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Dutchie Targets">
+                            <field name="dutchie_vendor_id" readonly="state == 'pushed'"/>
+                            <field name="dutchie_vendor_name" readonly="state == 'pushed'"/>
+                            <field name="dutchie_room_id" readonly="state == 'pushed'"/>
+                            <field name="dutchie_room_name" readonly="state == 'pushed'"/>
+                            <field name="vendor_license" readonly="state == 'pushed'"/>
+                        </group>
+                        <group string="Totals">
+                            <field name="line_count"/>
+                            <field name="resolved_count"/>
+                            <field name="total_quantity"/>
+                            <field name="total_cost"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Lines" name="lines">
+                            <field name="line_ids" readonly="state not in ('draft', 'validated')">
+                                <list editable="bottom" default_order="sequence, id">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="product_id" optional="hide"/>
+                                    <field name="sku"/>
+                                    <field name="product_name"/>
+                                    <field name="quantity"/>
+                                    <field name="unit_cost"/>
+                                    <field name="batch_number" optional="show"/>
+                                    <field name="package_id" optional="hide"/>
+                                    <field name="category" optional="hide"/>
+                                    <field name="strain" optional="hide"/>
+                                    <field name="thc" optional="hide"/>
+                                    <field name="cbd" optional="hide"/>
+                                    <field name="net_weight" optional="hide"/>
+                                    <field name="uom" optional="hide"/>
+                                    <field name="lab_result_link" optional="hide"/>
+                                    <field name="room_id_override" optional="hide"/>
+                                    <field name="unit_id" optional="hide" readonly="1"/>
+                                    <field name="dutchie_product_id" readonly="1" optional="show"/>
+                                    <field name="resolve_note" readonly="1" optional="show"/>
+                                    <field name="resolved" widget="boolean_toggle" readonly="1"
+                                           optional="show"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Validation" name="validation"
+                              invisible="state == 'draft'">
+                            <group>
+                                <group>
+                                    <field name="validated_at"/>
+                                    <field name="manifest_id"/>
+                                    <field name="manifest_expires_at"/>
+                                </group>
+                                <group>
+                                    <field name="manifest_url" widget="url"/>
+                                </group>
+                            </group>
+                            <separator string="Dutchie preview response"/>
+                            <field name="preview_response" nolabel="1" readonly="1"
+                                   widget="text"/>
+                        </page>
+
+                        <page string="Push" name="push"
+                              invisible="state not in ('approved', 'pushed')">
+                            <group>
+                                <group>
+                                    <field name="dutchie_receive_id"/>
+                                    <field name="pushed_by"/>
+                                    <field name="pushed_at"/>
+                                </group>
+                                <group>
+                                    <field name="received_by"/>
+                                    <field name="delivered_by"/>
+                                </group>
+                            </group>
+                            <separator string="Note"/>
+                            <field name="note" nolabel="1"
+                                   readonly="state == 'pushed'"/>
+                        </page>
+
+                        <page string="Approval" name="approval"
+                              invisible="state == 'draft'">
+                            <group>
+                                <group>
+                                    <field name="approved_by"/>
+                                    <field name="approved_at"/>
+                                </group>
+                                <group invisible="state != 'rejected'">
+                                    <field name="rejected_by"/>
+                                    <field name="rejected_reason"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Last Error" name="error"
+                              invisible="not error_message">
+                            <field name="error_message" nolabel="1" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="view_dutchie_receive_list" model="ir.ui.view">
+        <field name="name">mint.dutchie.receive.list</field>
+        <field name="model">mint.dutchie.receive</field>
+        <field name="arch" type="xml">
+            <list string="Dutchie Receives" default_order="create_date desc">
+                <field name="name"/>
+                <field name="company_id"/>
+                <field name="pos_location_id" optional="show"/>
+                <field name="receive_type" optional="hide"/>
+                <field name="partner_id" optional="show"/>
+                <field name="invoice_number" optional="show"/>
+                <field name="line_count"/>
+                <field name="unresolved_count"
+                       decoration-danger="unresolved_count > 0"/>
+                <field name="total_quantity"/>
+                <field name="total_cost" optional="hide"/>
+                <field name="dutchie_receive_id" optional="show"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state == 'validated'"
+                       decoration-success="state in ('approved', 'pushed')"
+                       decoration-danger="state == 'rejected'"/>
+                <field name="create_date" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Kanban View -->
+    <record id="view_dutchie_receive_kanban" model="ir.ui.view">
+        <field name="name">mint.dutchie.receive.kanban</field>
+        <field name="model">mint.dutchie.receive</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state">
+                <field name="name"/>
+                <field name="state"/>
+                <field name="company_id"/>
+                <field name="line_count"/>
+                <field name="unresolved_count"/>
+                <templates>
+                    <t t-name="card">
+                        <strong><field name="name"/></strong>
+                        <div><field name="company_id"/></div>
+                        <div>
+                            <field name="partner_id"/>
+                            <span class="float-end"><field name="line_count"/> lines</span>
+                        </div>
+                        <div class="text-danger" t-if="record.unresolved_count.raw_value > 0">
+                            <field name="unresolved_count"/> unmatched
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_dutchie_receive_search" model="ir.ui.view">
+        <field name="name">mint.dutchie.receive.search</field>
+        <field name="model">mint.dutchie.receive</field>
+        <field name="arch" type="xml">
+            <search string="Dutchie Receives">
+                <field name="name"/>
+                <field name="company_id"/>
+                <field name="partner_id"/>
+                <field name="invoice_number"/>
+                <field name="dutchie_receive_id"/>
+                <filter name="draft" string="Draft" domain="[('state', '=', 'draft')]"/>
+                <filter name="validated" string="Pending Approval" domain="[('state', '=', 'validated')]"/>
+                <filter name="approved" string="Ready to Push" domain="[('state', '=', 'approved')]"/>
+                <filter name="pushed" string="In Dutchie" domain="[('state', '=', 'pushed')]"/>
+                <separator/>
+                <filter name="unmatched" string="Has Unmatched SKUs"
+                        domain="[('unresolved_count', '&gt;', 0)]"/>
+                <separator/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_company" string="Store" context="{'group_by': 'company_id'}"/>
+                <filter name="group_partner" string="Vendor" context="{'group_by': 'partner_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_dutchie_receive" model="ir.actions.act_window">
+        <field name="name">Receive Inventory</field>
+        <field name="res_model">mint.dutchie.receive</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="search_view_id" ref="view_dutchie_receive_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Take a delivery in and push it to Dutchie
+            </p>
+            <p>
+                Enter the delivery lines, hit <b>Validate with Dutchie</b> to match
+                each SKU against the store's Dutchie catalogue, then approve and push.
+                Validation writes nothing to Dutchie — only <b>Push to Dutchie</b> does.
+            </p>
+        </field>
+    </record>
+
+</odoo>
