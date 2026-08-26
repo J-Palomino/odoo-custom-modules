@@ -1,5 +1,8 @@
 from odoo import api, fields, models
-from odoo.addons.mint_api_v2.models.discount_canonical import odoo_type_for_id
+from odoo.addons.mint_api_v2.models.discount_canonical import (
+    odoo_type_for_id,
+    resolve_calc_method_id,
+)
 
 
 class MintDiscountDutchie(models.Model):
@@ -132,15 +135,52 @@ class MintDiscountDutchie(models.Model):
         if odoo_type:
             vals['discount_type'] = odoo_type
 
+    # ---- Stage 1: the authoritative field must actually be populated ----
+    # calculation_method_id is documented above as AUTHORITATIVE, but 458 of the
+    # published rows carried no value, so every consumer fell back to deriving a
+    # method from discount_type — and that fallback cannot express the Odoo-only
+    # types, so it silently defaulted them to PERCENT_OFF. Resolving once, here,
+    # means the row itself carries the answer and no consumer has to guess.
+    #
+    # This deliberately does NOT re-derive discount_type from the id it just
+    # resolved: the label stays exactly as authored, so this change stores
+    # knowledge without altering what anything downstream reads today.
+
+    RESOLUTION_TRIGGERS = (
+        'discount_type', 'calculation_method_id',
+        'discount_amount', 'threshold_min',
+    )
+
+    def _fill_calculation_method_id(self):
+        """Store the resolved Dutchie calc id on rows that lack one."""
+        for record in self:
+            if record.calculation_method_id:
+                continue
+            cmid = resolve_calc_method_id(record)
+            if not cmid:
+                # Genuinely ambiguous (a true BOGO with no get-item price).
+                # Left unset on purpose so the Deal-Parity Sentinel keeps
+                # reporting it rather than it being papered over.
+                continue
+            # super() to skip this class's write: storing the id must not
+            # trigger the discount_type normalization above.
+            super(MintDiscountDutchie, record).write(
+                {'calculation_method_id': cmid})
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
             self._normalize_discount_type_vals(vals)
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        records._fill_calculation_method_id()
+        return records
 
     def write(self, vals):
         # Only re-derive when the calc id is part of this write, so a deliberate
         # manual discount_type edit that doesn't touch the calc id is preserved.
         if 'calculation_method_id' in vals:
             self._normalize_discount_type_vals(vals)
-        return super().write(vals)
+        res = super().write(vals)
+        if any(key in vals for key in self.RESOLUTION_TRIGGERS):
+            self._fill_calculation_method_id()
+        return res
