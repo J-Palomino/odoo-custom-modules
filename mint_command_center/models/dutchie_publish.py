@@ -41,10 +41,10 @@ from .deal_mixins import (format_bundle_tiers_text, build_dutchie_restrictions,
 _logger = logging.getLogger(__name__)
 
 # NOTE: the region -> LSP map that lived here was a second source of truth,
-# matched against the region's DISPLAY NAME. It now lives as a code-keyed seed
-# fallback in mint_api_v2.models.res_company.LSP_SEED_BY_REGION_CODE, behind
-# the single resolver mint.region._dutchie_lsp(), which derives the LSP from
-# the region's own stores. BrandIds/ProductIds remain LSP-scoped.
+# matched against the region's DISPLAY NAME. It is gone entirely — not moved.
+# mint.region._dutchie_lsp() derives the LSP from the region's own stores, with
+# res.company.dutchie_lsp_id as the sole source of truth, and returns 0 rather
+# than guessing when it cannot. BrandIds/ProductIds remain LSP-scoped.
 
 # submission discount_type -> Dutchie CalculationMethodId (canonical registry)
 CALC_BY_TYPE = {

@@ -10,28 +10,19 @@ from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
 
-# Seed fallback: mint.region CODE -> Dutchie LSP (tenant).
+# NOTE: there is deliberately NO hardcoded region -> LSP map here.
 #
-# res.company.dutchie_lsp_id is the SOURCE OF TRUTH — this map is consulted
-# only when no store in a region carries one (a fresh database, or a region
-# whose stores have not been backfilled yet). It is keyed on the region CODE,
-# never the display name: the previous copy of this map lived in
-# mint_command_center.dutchie_publish.LSP_BY_REGION and was matched with
-# `if key in region.name.lower()`, so renaming a region in the UI would have
-# silently resolved to None and stopped that region publishing.
+# Two used to exist (mint_command_center.dutchie_publish.LSP_BY_REGION, matched
+# against the region's display name, and a code-keyed seed that briefly replaced
+# it). Both are gone. res.company.dutchie_lsp_id is the sole source of truth and
+# mint.region._dutchie_lsp() derives from it.
 #
-# Verified against production res.company on 2026-08-25: region <-> LSP is 1:1
-# in both directions — every region holds exactly one LSP, and no LSP spans two
-# regions. _dutchie_lsp() fails closed (0) rather than guessing if that ever
-# stops being true.
-LSP_SEED_BY_REGION_CODE = {
-    'AZ': 575,
-    'MI': 576,
-    'MO': 723,
-    'IL': 805,
-    'NV': 820,
-    'FL': 821,
-}
+# A seed map is not merely redundant, it is harmful: every region in production
+# resolves from its own stores, so the map is dead code — but if those stores
+# ever lost their dutchie_lsp_id, the map would silently answer with a
+# hardcoded guess instead of failing loudly and prompting a backfill. Resolving
+# to 0 and skipping the push is the correct outcome there; publishing a deal
+# into a guessed Dutchie tenant is not.
 
 
 class ResCompany(models.Model):
@@ -334,15 +325,17 @@ class MintRegion(models.Model):
     def _dutchie_lsp(self):
         """The Dutchie LSP (tenant) this region publishes into.
 
-        Derived from the region's own stores — res.company.dutchie_lsp_id is
-        the source of truth — so the mapping cannot drift from the data the
-        push actually uses. LSP_SEED_BY_REGION_CODE is consulted only when no
-        store in the region carries one yet.
+        Derived entirely from the region's own stores — res.company.
+        dutchie_lsp_id is the source of truth — so the mapping cannot drift
+        from the data the push actually uses. There is no hardcoded fallback
+        by design; see the note at the top of this module.
 
-        Region <-> LSP is 1:1 in production. If a region ever resolves to more
-        than one LSP that assumption has broken, and silently picking one would
-        publish deals into the wrong tenant — so this warns and returns 0,
-        which makes callers skip with the existing "missing lsp" backfill log.
+        Region <-> LSP is 1:1 in production. Two ways that can fail, both of
+        which return 0 so callers skip with the existing "missing lsp" backfill
+        log rather than publishing into a guessed tenant:
+
+          * more than one LSP among the stores — the 1:1 assumption has broken;
+          * no store carries an LSP at all — the region is not set up yet.
         """
         self.ensure_one()
         lsps = {
@@ -359,13 +352,11 @@ class MintRegion(models.Model):
                 'on its stores.',
                 self.display_name, self.code or '?', len(lsps), sorted(lsps))
             return 0
-        seeded = LSP_SEED_BY_REGION_CODE.get((self.code or '').strip().upper(), 0)
-        if seeded:
-            _logger.info(
-                'mint.region %s: no store carries dutchie_lsp_id, falling back '
-                'to seed LSP %s for code %s — backfill the stores.',
-                self.display_name, seeded, self.code)
-        return seeded
+        _logger.info(
+            'mint.region %s (%s): no store carries dutchie_lsp_id — cannot '
+            'resolve an LSP. Backfill res.company.dutchie_lsp_id on its stores.',
+            self.display_name, self.code or '?')
+        return 0
 
     def write(self, vals):
         res = super().write(vals)

@@ -12,8 +12,6 @@ the wrong Dutchie tenant.
 """
 from odoo.tests import TransactionCase, tagged
 
-from odoo.addons.mint_api_v2.models.res_company import LSP_SEED_BY_REGION_CODE
-
 
 @tagged('post_install', '-at_install')
 class TestLspResolver(TransactionCase):
@@ -75,26 +73,26 @@ class TestLspResolver(TransactionCase):
                              'dutchie_lsp_id': 95553})
         self.assertEqual(r._dutchie_lsp(), 0)
 
-    def test_region_falls_back_to_seed_by_code_not_name(self):
-        # Name deliberately unlike the region — the old map matched on name.
-        r = self.Region.create({'name': 'Totally Renamed Region', 'code': 'AZ'})
-        self.assertEqual(r._dutchie_lsp(), LSP_SEED_BY_REGION_CODE['AZ'])
+    def test_region_with_no_stores_is_zero_not_guessed(self):
+        """No hardcoded seed: a real region code must NOT conjure an LSP.
 
-    def test_seed_lookup_is_case_and_space_insensitive(self):
-        r = self.Region.create({'name': 'LSP-R Case', 'code': '  az  '})
-        self.assertEqual(r._dutchie_lsp(), LSP_SEED_BY_REGION_CODE['AZ'])
+        A seed map would answer 575 here. That is precisely the behaviour we
+        do not want — it would mask a backfill gap and let a deal publish into
+        a guessed tenant instead of failing closed.
+        """
+        r = self.Region.create({'name': 'Arizona', 'code': 'AZ'})
+        self.assertEqual(r._dutchie_lsp(), 0)
+
+    def test_region_lsp_is_never_derived_from_the_name(self):
+        r = self.Region.create({'name': 'Arizona', 'code': 'ZU'})
+        self.Company.create({'name': 'LSP-R named store', 'region_id': r.id,
+                             'dutchie_lsp_id': 91111})
+        self.assertEqual(r._dutchie_lsp(), 91111,
+                         'the stores decide, never the display name')
 
     def test_unknown_region_code_is_zero(self):
         r = self.Region.create({'name': 'LSP-R Unknown', 'code': 'QQ'})
         self.assertEqual(r._dutchie_lsp(), 0)
-
-    def test_stores_beat_the_seed_map(self):
-        """Data wins over the hardcoded fallback, always."""
-        r = self.Region.create({'name': 'LSP-R Override', 'code': 'AZ'})
-        self.Company.create({'name': 'LSP-R override store', 'region_id': r.id,
-                             'dutchie_lsp_id': 99999})
-        self.assertEqual(r._dutchie_lsp(), 99999)
-        self.assertNotEqual(r._dutchie_lsp(), LSP_SEED_BY_REGION_CODE['AZ'])
 
     # ── the push helper delegates rather than reimplementing ──────────────
     def test_push_helper_delegates_to_the_resolver(self):
@@ -105,3 +103,18 @@ class TestLspResolver(TransactionCase):
     def test_push_helper_handles_empty_store(self):
         empty = self.env['res.company'].browse()
         self.assertEqual(self.env['mint.ptl.day'].sudo()._resolve_lsp_id(empty), 0)
+
+    # ── the POS config mirrors the store instead of storing a copy ────────
+    def test_web_order_config_mirrors_the_store_lsp(self):
+        Config = self.env.get('mint.web.order.config')
+        if Config is None:
+            self.skipTest('mint_pos_bridge not installed')
+        s = self.Company.create({'name': 'LSP-R pos store', 'dutchie_lsp_id': 93210})
+        cfg = Config.sudo().create({'company_id': s.id, 'dutchie_loc_id': 1})
+        self.assertEqual(cfg.dutchie_lsp_id, 93210)
+
+        # Changing the store must move the config with it — the whole point of
+        # dropping the second stored copy.
+        s.dutchie_lsp_id = 93211
+        cfg.invalidate_recordset(['dutchie_lsp_id'])
+        self.assertEqual(cfg.dutchie_lsp_id, 93211)
