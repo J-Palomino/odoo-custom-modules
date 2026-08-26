@@ -16,11 +16,16 @@
                             type="object" class="btn-primary"
                             invisible="state != 'validated'"
                             groups="mint_inventory_ops.group_inventory_manager"/>
-                    <button name="action_push" string="Push to Dutchie"
+                    <button name="action_push" string="Create Draft in Dutchie"
                             type="object" class="btn-success"
-                            invisible="state != 'approved'"
+                            invisible="state != 'approved' or commit_mode != 'saved'"
                             groups="mint_inventory_ops.group_inventory_manager"
-                            confirm="This writes the packages into Dutchie POS and cannot be undone from Odoo. Continue?"/>
+                            confirm="Creates a DRAFT receive in Dutchie's saved orders. No packages are created and no stock moves — someone completes it in Backoffice against the physical delivery. Continue?"/>
+                    <button name="action_push" string="Complete Receive (moves stock)"
+                            type="object" class="btn-danger"
+                            invisible="state != 'approved' or commit_mode != 'complete'"
+                            groups="mint_inventory_ops.group_inventory_manager"
+                            confirm="This creates packages in Dutchie POS and MOVES REAL STOCK immediately. It cannot be undone from Odoo — it has to be reversed in Dutchie. Continue?"/>
                     <button name="action_reject" string="Reject"
                             type="object" class="btn-danger"
                             invisible="state not in ('validated', 'approved')"
@@ -54,6 +59,7 @@
                         </group>
                         <group string="Delivery">
                             <field name="receive_type" readonly="state not in ('draft', 'validated')"/>
+                            <field name="commit_mode" readonly="state == 'pushed'"/>
                             <field name="partner_id" readonly="state not in ('draft', 'validated')"/>
                             <field name="invoice_number" readonly="state not in ('draft', 'validated')"/>
                             <field name="delivered_on" readonly="state not in ('draft', 'validated')"/>
@@ -117,8 +123,17 @@
                                     <field name="manifest_url" widget="url"/>
                                 </group>
                             </group>
+                            <div class="alert alert-warning" role="alert"
+                                 invisible="commit_mode != 'saved' or preview_items_json not in (False, '', '[]')">
+                                The manifest link returned nothing to reshape, so a draft
+                                push has nothing to send. Re-validate, or switch Push As
+                                to a completed receive.
+                            </div>
                             <separator string="Dutchie preview response"/>
                             <field name="preview_response" nolabel="1" readonly="1"
+                                   widget="text"/>
+                            <separator string="Raw preview items (sent verbatim on a draft push)"/>
+                            <field name="preview_items_json" nolabel="1" readonly="1"
                                    widget="text"/>
                         </page>
 
@@ -182,6 +197,7 @@
                        decoration-danger="unresolved_count > 0"/>
                 <field name="total_quantity"/>
                 <field name="total_cost" optional="hide"/>
+                <field name="commit_mode" optional="show"/>
                 <field name="dutchie_receive_id" optional="show"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"

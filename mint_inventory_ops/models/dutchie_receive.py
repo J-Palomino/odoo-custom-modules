@@ -140,6 +140,24 @@ class DutchieReceive(models.Model):
         'mint.dutchie.receive.line', 'receive_id', string='Lines', copy=True,
     )
 
+    commit_mode = fields.Selection(
+        [('saved', 'Draft in Dutchie (no stock movement)'),
+         ('complete', 'Complete receive (moves stock)')],
+        string='Push As', default='saved', required=True, tracking=True,
+        help="Draft calls v2/inventory/save-receive — the same endpoint Dutchie's "
+             "own import wizard uses. It lands in the location's saved orders "
+             "with no packages and no stock movement, for someone to complete "
+             "in Backoffice against the physical delivery. Complete calls "
+             "v2/inventory/receive, which creates packages and moves stock now.",
+    )
+    preview_items_json = fields.Text(
+        string='Preview Items (raw)', readonly=True, copy=False,
+        help='Dutchie preview response, verbatim. A draft push reshapes THIS '
+             'rather than rebuilding from the lines — the preview already '
+             'resolved SKU to ProductId and matched the vendor, and rebuilding '
+             'would discard the lab data, item totals and transaction id.',
+    )
+
     # ------------------------------------------------------------------
     # Validation artifacts
     # ------------------------------------------------------------------
@@ -362,6 +380,7 @@ class DutchieReceive(models.Model):
             'manifest_id': result.get('manifestId') or 0,
             'validated_at': fields.Datetime.now(),
             'preview_response': json.dumps(result.get('preview') or {}, indent=2)[:16000],
+            'preview_items_json': json.dumps(result.get('previewItems') or []),
             'error_message': False,
         }
         expires = result.get('expiresAt')
@@ -435,21 +454,27 @@ class DutchieReceive(models.Model):
                 "the system parameter '%(param)s' to 'live' to commit receives."
             ) % {'mode': mode, 'param': MODE_PARAM})
 
+        if not self.lsp_id:
+            raise UserError(_("LspId is unknown — re-validate to resolve it."))
+        if not self.dutchie_room_id:
+            raise UserError(_(
+                "A destination RoomId is required. The manifest carries no room "
+                "concept, so Dutchie's preview returns RoomId null — without one "
+                "here a completed receive orphans with no PackageInventory rows."
+            ))
+
+        if self.commit_mode == 'saved':
+            return self._push_draft()
+
         if not self.dutchie_vendor_id:
             raise UserError(_(
                 "A Dutchie VendorId is required — v2/inventory/receive rejects the "
                 "call without one. Re-validate to get a suggestion, or set it by hand."
             ))
-        if not self.dutchie_room_id:
-            raise UserError(_(
-                "A destination RoomId is required. Without it the receive orphans "
-                "in Dutchie with no PackageInventory rows."
-            ))
-        if not self.lsp_id:
-            raise UserError(_("LspId is unknown — re-validate to resolve it."))
 
         products = [line._to_receive_product() for line in self.line_ids]
         payload = {
+            'commitMode': 'complete',
             'locId': self.pos_location_id,
             'lspId': self.lsp_id,
             'vendorId': self.dutchie_vendor_id,
@@ -474,6 +499,46 @@ class DutchieReceive(models.Model):
                 "Dutchie did not confirm the receive:\n\n%s"
             ) % (result.get('error') or json.dumps(result)[:1500]))
 
+        return self._land_push(receive_id, len(products), moved_stock=True)
+
+    def _push_draft(self):
+        """Create a DRAFT receive in Dutchie's saved orders. Moves no stock.
+
+        Sends the preview response back verbatim: save-receive reshapes it
+        rather than rebuilding, so the lab data, item totals and transaction id
+        Dutchie resolved during validation survive into the draft.
+        """
+        self.ensure_one()
+        try:
+            items = json.loads(self.preview_items_json or '[]')
+        except (ValueError, TypeError):
+            items = []
+        if not items:
+            raise UserError(_(
+                "No stored Dutchie preview to push. A draft is built from the "
+                "preview response, not from these lines — re-validate first. "
+                "(If validation fell back to a direct SKU lookup, the manifest "
+                "link did not answer and there is no preview to send.)"
+            ))
+
+        result = self._invsvc('receive/commit', {
+            'commitMode': 'saved',
+            'locId': self.pos_location_id,
+            'lspId': self.lsp_id,
+            'defaultRoomId': self.dutchie_room_id,
+            'orderTitle': f"{self.name} — {self.dutchie_vendor_name or ''}".strip(' \u2014'),
+            'previewItems': items,
+        })
+        receive_id = result.get('dutchieReceiveId')
+        if not result.get('ok') or not receive_id:
+            self.write({'error_message': json.dumps(result, indent=2)[:8000]})
+            raise UserError(_(
+                "Dutchie did not confirm the draft:\n\n%s"
+            ) % (result.get('error') or json.dumps(result)[:1500]))
+        return self._land_push(receive_id, len(items), moved_stock=False)
+
+    def _land_push(self, receive_id, count, moved_stock):
+        self.ensure_one()
         self.write({
             'state': 'pushed',
             'dutchie_receive_id': str(receive_id),
@@ -481,14 +546,21 @@ class DutchieReceive(models.Model):
             'pushed_at': fields.Datetime.now(),
             'error_message': False,
         })
-        body = _(
-            "Pushed to Dutchie — receive #%(rid)s, %(n)s product(s) into room "
-            "%(room)s at LocId %(loc)s."
-        ) % {
-            'rid': receive_id, 'n': len(products),
-            'room': self.dutchie_room_name or self.dutchie_room_id,
-            'loc': self.pos_location_id,
-        }
+        if moved_stock:
+            body = _(
+                "Completed in Dutchie — receive #%(rid)s, %(n)s product(s) into "
+                "room %(room)s at LocId %(loc)s. Stock has moved."
+            ) % {
+                'rid': receive_id, 'n': count,
+                'room': self.dutchie_room_name or self.dutchie_room_id,
+                'loc': self.pos_location_id,
+            }
+        else:
+            body = _(
+                "Draft created in Dutchie — receive #%(rid)s, %(n)s item(s) at "
+                "LocId %(loc)s. No packages were created and no stock moved: "
+                "complete it in Backoffice against the physical delivery."
+            ) % {'rid': receive_id, 'n': count, 'loc': self.pos_location_id}
         self.message_post(body=body)
         _logger.info("%s: %s", self.name, body)
         return True
