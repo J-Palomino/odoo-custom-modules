@@ -1388,6 +1388,205 @@ class MintCustomerAuth(http.Controller):
         request.env['res.users'].sudo().invalidate_model()
         return request.env['res.users'].sudo().browse(user_id)
 
+    # ------------------------------------------------------------------
+    # Claiming history AFTER the account exists
+    # ------------------------------------------------------------------
+    # register() can bind the DL link at signup, but two routes reach an
+    # account that has no history and no way to ever get one:
+    #
+    #   * Sign-in with Google. /api/v1/auth/google is handed only
+    #     {email, name, google_sub} — the link_token lives in a JS variable
+    #     that the full-page redirect to accounts.google.com destroys, and
+    #     _create_web_user is called with no phone, which makes the
+    #     email+phone adoption below it unreachable by construction
+    #     (_find_linkable_dutchie_partner returns on len(digits) < 10).
+    #     So EVERY OAuth signup lands orphaned.
+    #   * A no-scan signup whose roster record carries a different address.
+    #     Private-relay emails are common, and the strict email AND phone
+    #     rule refuses on the email side — correctly, but permanently.
+    #
+    # Either way a real customer sees 0 visits and 0 points while their
+    # purchases sit on an unclaimed roster partner. This is the way back.
+    # ------------------------------------------------------------------
+
+    # Rows that move with the customer across a repoint. All per-customer
+    # state with no financial meaning — dropping them would be a silent
+    # regression for someone who just proved who they are. Orders are
+    # deliberately NOT here; see _orphan_order_count.
+    _CLAIM_MOVABLE = (
+        ('mint.cart', 'partner_id'),
+        ('mint.customer.favorite', 'partner_id'),
+        ('mint.push.subscription', 'partner_id'),
+    )
+
+    @staticmethod
+    def _orphan_order_count(partner):
+        """Count order rows that a repoint would strand under `partner`.
+
+        Orders are financial records: deciding which partner an order
+        belongs to is an accounting call, not something a signup-adjacent
+        endpoint may make on its own. A claimant whose orphan carries
+        orders is refused here and handed to staff instead.
+
+        Each model is probed before use — this module does not depend on
+        the ones that declare them, and an absent model must read as
+        "nothing to strand", not raise.
+        """
+        total = 0
+        for model in ('mint.pos.order', 'sale.order'):
+            if model not in request.env:
+                continue
+            try:
+                total += request.env[model].sudo().search_count(
+                    [('partner_id', '=', partner.id)])
+            except Exception as e:  # noqa: BLE001 - a probe must not 500
+                _logger.warning('claim-history: could not count %s: %s', model, e)
+        return total
+
+    def _move_customer_rows(self, from_id, to_id):
+        """Carry _CLAIM_MOVABLE rows from the orphan onto the roster partner.
+
+        Best-effort per model, and addressed by id rather than through a
+        recordset: the ORM cache is stale the moment the login is repointed
+        by raw SQL, so nothing here may re-read partner.<one2many>.
+        """
+        moved = {}
+        for model, field in self._CLAIM_MOVABLE:
+            if model not in request.env:
+                continue
+            try:
+                rows = request.env[model].sudo().search([(field, '=', from_id)])
+                if rows:
+                    rows.with_context(
+                        tracking_disable=True, mail_notrack=True,
+                    ).write({field: to_id})
+                    moved[model] = len(rows)
+            except Exception as e:  # noqa: BLE001 - a claim must not fail here
+                _logger.warning('claim-history: could not move %s rows '
+                                'from partner %s: %s', model, from_id, e)
+        return moved
+
+    @http.route('/api/v1/auth/claim-history', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def claim_history(self, **kw):
+        """Repoint a signed-in account onto the POS record it just scanned.
+
+        Same posture as register()'s bind, and for the same reason: the
+        TOKEN authorises this, never the DL in the body. _verify_link_token
+        proves the server itself matched an unclaimed record for this exact
+        licence minutes ago, and _bind_link_partner re-asserts every safety
+        property under this transaction rather than trusting the token's age.
+        A bare POSTed licence number still claims nobody.
+
+        Refusals are NOT uniform here, unlike dutchie_lookup: the caller is
+        authenticated and acting on their own account, so "already linked"
+        and "expired token" disclose nothing about anyone else, and saying
+        which it was is what lets them fix it. The enumeration surface stays
+        in the lookup, which is still the only way to mint a token.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        gate = self._require_fe_key()
+        if gate:
+            return gate
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Not authenticated', 401)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        identity_key = self._dutchie_identity_key(data, None, None)
+        raw_link_token = _clean_token(data.get('link_token'))
+        # 'dl:' only: the token is minted by dutchie_lookup, which refuses
+        # anything that is not a licence, so an 'nd:' key could never verify.
+        if not identity_key or not identity_key.startswith('dl:') or not raw_link_token:
+            return error_response('A scanned licence and link token are required')
+
+        partner_id = self._verify_link_token(raw_link_token, identity_key)
+        if not partner_id:
+            # Forged, expired (15 min), or minted for a different licence.
+            _logger.warning('claim-history: rejected link_token for user %s', user.id)
+            return error_response('That link has expired — please scan again', 400)
+
+        # Read everything off the orphan BEFORE the raw SQL below invalidates
+        # the ORM cache.
+        current = user.partner_id
+        current_id = current.id
+        current_email = current.email or ''
+        current_name = current.name or ''
+        current_phone = current.phone or ''
+        current_dob = current.web_date_of_birth
+
+        if current_id == partner_id:
+            # Already there: a double-submit, or a retry after a slow reply.
+            return json_response({'ok': True, 'user': _user_json(user)})
+
+        # Nothing to claim — and moving the login off a partner that already
+        # carries roster history would lose the history it came for.
+        if current.x_dutchie_customer_id:
+            return error_response(
+                'This account is already linked to your Mint history', 409)
+
+        stranded = self._orphan_order_count(current)
+        if stranded:
+            # Flag it so staff have something to act on, then refuse.
+            try:
+                if 'x_merge_needs_review' in current._fields:
+                    current.with_context(
+                        tracking_disable=True, mail_notrack=True,
+                    ).write({'x_merge_needs_review': True})
+            except Exception as e:  # noqa: BLE001
+                _logger.warning('claim-history: review flag failed for %s: %s',
+                                current_id, e)
+            _logger.warning('claim-history: user %s has %s order(s) on orphan '
+                            '%s — refusing automatic repoint', user.id,
+                            stranded, current_id)
+            return error_response(
+                'You have orders on this account, so a team member needs to '
+                'merge it for you. Ask any budtender and we will sort it out.',
+                409)
+
+        # Re-checks unclaimed + identity-key-unchanged in-transaction, fills
+        # only genuine gaps on the roster record, and stamps
+        # x_merge_needs_review so staff confirm the licence at the register.
+        linked = self._bind_link_partner(
+            partner_id, identity_key,
+            current_email, current_name, current_phone,
+            current_dob, 'self_attested', 'web_claim',
+        )
+        if not linked:
+            # Claimed or re-keyed since the lookup minted the token.
+            return error_response(
+                'That record is no longer available to link', 409)
+
+        # Repoint the login. Raw SQL for the reason _attach_login gives:
+        # res.users.write() fires signup/mail hooks that fight this
+        # transaction. Never unlink the orphan — mail and activity rows
+        # reference it — archive it so it stops counting as a customer.
+        request.env.cr.execute(
+            "UPDATE res_users SET partner_id = %s, write_date = now() "
+            "WHERE id = %s", (linked.id, user.id))
+        moved = self._move_customer_rows(current_id, linked.id)
+        request.env.cr.execute(
+            "UPDATE res_partner SET active = false, write_date = now() "
+            "WHERE id = %s", (current_id,))
+        request.env['res.users'].sudo().invalidate_model()
+        request.env['res.partner'].sudo().invalidate_model()
+
+        _logger.info('claim-history: user %s repointed partner %s -> %s (%s); '
+                     'moved %s; orphan archived',
+                     user.id, current_id, linked.id, identity_key, moved or {})
+
+        return json_response({
+            'ok': True,
+            'user': _user_json(request.env['res.users'].sudo().browse(user.id)),
+        })
+
     @http.route('/api/v1/auth/verify', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
     def verify(self, **kw):
