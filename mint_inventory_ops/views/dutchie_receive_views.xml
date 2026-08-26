@@ -87,6 +87,7 @@
                                     <field name="unit_cost"/>
                                     <field name="batch_number" optional="show"/>
                                     <field name="package_id" optional="hide"/>
+                                    <field name="master_category" optional="hide"/>
                                     <field name="category" optional="hide"/>
                                     <field name="strain" optional="hide"/>
                                     <field name="thc" optional="hide"/>

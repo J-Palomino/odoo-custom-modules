@@ -312,9 +312,19 @@ class DutchieReceive(models.Model):
 
         self._apply_validation(result)
 
+        via = result.get('resolvedVia') or 'preview-url'
         summary = _(
-            "Validated against Dutchie. %(resolved)s of %(total)s SKUs matched."
-        ) % {'resolved': self.resolved_count, 'total': self.line_count}
+            "Validated against Dutchie. %(resolved)s of %(total)s SKUs matched "
+            "(via %(via)s)."
+        ) % {'resolved': self.resolved_count, 'total': self.line_count, 'via': via}
+        if via != 'preview-url':
+            # The manifest link is the mechanism under test; when it does not
+            # answer, say so rather than letting a silent fallback read as a
+            # healthy round-trip.
+            summary += _(
+                "\nThe manifest link did not answer, so SKUs were matched by "
+                "direct lookup instead. Reason: %s"
+            ) % (result.get('previewError') or _('no lines returned'))
         self.message_post(body=summary)
         _logger.info("%s: %s (locId=%s lspId=%s)",
                      self.name, summary, self.pos_location_id, self.lsp_id)
@@ -365,6 +375,11 @@ class DutchieReceive(models.Model):
         if not self.dutchie_vendor_id and result.get('suggestedVendorId'):
             vals['dutchie_vendor_id'] = result['suggestedVendorId']
             vals['dutchie_vendor_name'] = result.get('suggestedVendorName') or ''
+        # Dutchie's own VendorCode is what belongs on the licence field — it is
+        # what from_license_number carries. Never type a guessed state licence
+        # here: receiving against an unknown code creates a junk vendor record.
+        if not self.vendor_license and result.get('suggestedVendorLicense'):
+            vals['vendor_license'] = result['suggestedVendorLicense']
         self.write(vals)
 
     def action_approve(self):

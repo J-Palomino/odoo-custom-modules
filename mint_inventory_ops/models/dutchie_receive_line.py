@@ -50,6 +50,12 @@ class DutchieReceiveLine(models.Model):
         help='Vendor/Metrc package identifier for this line.',
     )
     strain = fields.Char(string='Strain')
+    master_category = fields.Char(
+        string='Master Category',
+        help="Top level of Dutchie's taxonomy (e.g. Flower). Distinct from "
+             "Category (e.g. Prepack Flower) — the manifest carries both, and "
+             "collapsing them loses the top level.",
+    )
     category = fields.Char(string='Category')
     thc = fields.Char(string='THC')
     cbd = fields.Char(string='CBD')
@@ -135,6 +141,7 @@ class DutchieReceiveLine(models.Model):
             'batch_number': self.batch_number or '',
             'package_id': self.package_id or '',
             'strain': self.strain or '',
+            'master_category': self.master_category or '',
             'category': self.category or '',
             'thc': self.thc or '',
             'cbd': self.cbd or '',
