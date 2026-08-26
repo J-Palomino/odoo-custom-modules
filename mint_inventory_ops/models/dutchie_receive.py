@@ -201,11 +201,16 @@ class DutchieReceive(models.Model):
     # ------------------------------------------------------------------
     # Computed
     # ------------------------------------------------------------------
-    line_count = fields.Integer(compute='_compute_totals')
-    resolved_count = fields.Integer(compute='_compute_totals')
-    unresolved_count = fields.Integer(compute='_compute_totals')
-    total_quantity = fields.Float(compute='_compute_totals')
-    total_cost = fields.Float(compute='_compute_totals')
+    # store=True is required, not an optimisation: Odoo 19 refuses a non-stored
+    # computed field in a search-view domain ("Unsearchable field ... in domain
+    # of <filter>"), and the Unmatched-SKUs filter needs unresolved_count. A
+    # ParseError on that filter aborts the whole module upgrade, so this is
+    # load-bearing — see the Has Unmatched SKUs filter in the search view.
+    line_count = fields.Integer(compute='_compute_totals', store=True)
+    resolved_count = fields.Integer(compute='_compute_totals', store=True)
+    unresolved_count = fields.Integer(compute='_compute_totals', store=True)
+    total_quantity = fields.Float(compute='_compute_totals', store=True)
+    total_cost = fields.Float(compute='_compute_totals', store=True)
 
     @api.depends('line_ids', 'line_ids.quantity', 'line_ids.unit_cost',
                  'line_ids.dutchie_product_id')
