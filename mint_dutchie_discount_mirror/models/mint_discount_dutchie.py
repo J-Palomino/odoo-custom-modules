@@ -151,8 +151,17 @@ class MintDiscountDutchie(models.Model):
         'discount_amount', 'threshold_min',
     )
 
+    # Re-entry guard. A plain self.write() would recurse; super(cls, rec).write()
+    # would instead skip every override AFTER this class in the MRO — including
+    # mint_redis_push's, which enqueues the Redis push. Going through the normal
+    # write with a context flag keeps the full chain intact and still terminates.
+    SKIP_CTX = 'skip_calc_method_resolution'
+
     def _fill_calculation_method_id(self):
         """Store the resolved Dutchie calc id on rows that lack one."""
+        if self.env.context.get(self.SKIP_CTX):
+            return
+        by_method = {}
         for record in self:
             if record.calculation_method_id:
                 continue
@@ -162,9 +171,11 @@ class MintDiscountDutchie(models.Model):
                 # Left unset on purpose so the Deal-Parity Sentinel keeps
                 # reporting it rather than it being papered over.
                 continue
-            # super() to skip this class's write: storing the id must not
-            # trigger the discount_type normalization above.
-            super(MintDiscountDutchie, record).write(
+            by_method.setdefault(cmid, []).append(record.id)
+        # Batched: at most one write per distinct method, not one per record,
+        # so a bulk Dutchie sync doesn't turn into N extra writes.
+        for cmid, ids in by_method.items():
+            self.browse(ids).with_context(**{self.SKIP_CTX: True}).write(
                 {'calculation_method_id': cmid})
 
     @api.model_create_multi
@@ -178,7 +189,12 @@ class MintDiscountDutchie(models.Model):
     def write(self, vals):
         # Only re-derive when the calc id is part of this write, so a deliberate
         # manual discount_type edit that doesn't touch the calc id is preserved.
-        if 'calculation_method_id' in vals:
+        # Skipped for our own resolution write: Stage 1 records the method that
+        # was ALREADY being derived at read time, so the authored label must
+        # survive untouched. Re-deriving here would silently relabel a 'bogo'
+        # row as 'price_per_unit' — a downstream contract change, and a later
+        # stage's job.
+        if 'calculation_method_id' in vals and not self.env.context.get(self.SKIP_CTX):
             self._normalize_discount_type_vals(vals)
         res = super().write(vals)
         if any(key in vals for key in self.RESOLUTION_TRIGGERS):
