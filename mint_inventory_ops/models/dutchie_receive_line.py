@@ -38,6 +38,106 @@ UOM_UNITS = [
     ('ml', 'millilitres'),
 ]
 
+# --- Dutchie taxonomy -> master_category -------------------------------------
+#
+# Master Category is filled from Dutchie, preferring its ECOMMERCE taxonomy and
+# falling back to its POS one.
+#
+# EcomCategory first because it is near-1:1 with the list above and is stable
+# across markets. MasterCategory (the POS taxonomy) is ~100% populated but
+# encodes the MARKET as much as the product — MI files pre-rolls under a
+# dedicated `Prerolls` master and infused flower under `Inhalable Compound
+# Concentrate`, while AZ and FL put both under `Flower`. Mapping from it alone
+# would make the same product land in different categories per state.
+#
+# Coverage measured across all six LSPs: EcomCategory 83.1%, POS fallback the
+# remaining 16.9%; together they cover every consumer-facing product. What is
+# left unmapped is samples, bulk and packaging, which should not carry a
+# consumer category at all.
+#
+# Vocabulary verified live 2026-08-27 against LSP 575, not taken from docs.
+ECOM_CATEGORY_TO_MASTER = {
+    'flower': 'flower',
+    'vaporizers': 'vaporizers',
+    'concentrate': 'concentrates',
+    'edible': 'edibles',
+    'tincture': 'tinctures',
+    'topicals': 'topicals',
+    'accessories': 'accessories',
+    'apparel': 'accessories',
+    'pre-rolls': 'prerolls',
+}
+
+# 🚨 NOT categories — Dutchie's menu-visibility flags, which appear in the same
+# field. Seen live: 223 'Hide' and 85 'N/A' in AZ alone, and SKU 30958096 (OOZE
+# Hot Knife) comes back 'Hide'. Treated as "no answer" so the POS fallback runs.
+ECOM_CONTROL_FLAGS = {'hide', 'n/a', 'na'}
+
+# Odoo has `beverages`; Dutchie has no EcomCategory for it. Drinks live one
+# level down, as an EcomSubcategory under Edible (76 products in AZ).
+ECOM_SUBCATEGORY_TO_MASTER = {
+    ('edible', 'drinks'): 'beverages',
+}
+
+# POS MasterCategory -> master_category. Only the unambiguous ones.
+# Deliberately absent: Unmedicated, Medicated, Non Medicated, Infused
+# Non-Edible and PROMO. Those are merchandising flags with no honest equivalent
+# in a consumer taxonomy — guessing one would file swag or promos as product.
+POS_MASTER_CATEGORY_TO_MASTER = {
+    'flower': 'flower',
+    'vape': 'vaporizers',
+    'concentrate': 'concentrates',
+    'inhalable compound concentrate': 'concentrates',
+    'edible': 'edibles',
+    'infused edible': 'edibles',
+    'prerolls': 'prerolls',
+    'pre-rolls': 'prerolls',
+    'accessories': 'accessories',
+    'tincture': 'tinctures',
+    'topicals': 'topicals',
+}
+
+
+def master_category_from_dutchie(ecom_category, ecom_subcategory,
+                                 pos_master_category, pos_category=None):
+    """Resolve Dutchie's categories to an Odoo master_category key.
+
+    Three tiers, most trustworthy first:
+
+      1. EcomCategory — stable across markets, near-1:1 with our list
+      2. POS MasterCategory — ~100% populated but market-flavoured
+      3. POS Category (the fine-grained one), EXACT matches only
+
+    Tier 3 exists because tiers 1 and 2 both miss a real case: SKU 30958096
+    (OOZE Hot Knife) comes back EcomCategory 'Hide' — a visibility flag — and
+    MasterCategory 'Unmedicated', a merchandising flag with no product meaning,
+    while its actual Category is the unambiguous 'Accessories'. Exact-match
+    only: Dutchie's fine-grained vocabulary is things like 'Cured Resin' and
+    'Cartridge: Distillate', which correctly match nothing here.
+
+    An unmappable value yields False so the field stays EMPTY rather than
+    wrong. A plausible-but-guessed category is worse than none — someone has to
+    notice it is wrong before they can correct it.
+    """
+    ecom = (ecom_category or '').strip().lower()
+    sub = (ecom_subcategory or '').strip().lower()
+
+    if ecom and ecom not in ECOM_CONTROL_FLAGS:
+        special = ECOM_SUBCATEGORY_TO_MASTER.get((ecom, sub))
+        if special:
+            return special
+        mapped = ECOM_CATEGORY_TO_MASTER.get(ecom)
+        if mapped:
+            return mapped
+
+    pos = (pos_master_category or '').strip().lower()
+    mapped = POS_MASTER_CATEGORY_TO_MASTER.get(pos)
+    if mapped:
+        return mapped
+
+    fine = (pos_category or '').strip().lower()
+    return POS_MASTER_CATEGORY_TO_MASTER.get(fine, False)
+
 
 class DutchieReceiveLine(models.Model):
     _name = 'mint.dutchie.receive.line'
@@ -166,8 +266,13 @@ class DutchieReceiveLine(models.Model):
                 line.product_name = product.name or ''
             if not line.unit_cost:
                 line.unit_cost = product.standard_price or 0.0
-            if not line.master_category:
-                line.master_category = product.master_category or False
+            # master_category is deliberately NOT filled from the Odoo product.
+            # It now comes from Dutchie on Validate (EcomCategory, falling back
+            # to the POS master category) — see master_category_from_dutchie.
+            # Dutchie is the system this receive is being written into, so its
+            # answer is the one that should decide, and seeding a guess here
+            # would only get overwritten or, worse, silently kept when Dutchie
+            # had no answer.
             if not line.category:
                 line.category = product.x_category or ''
             if not line.strain:

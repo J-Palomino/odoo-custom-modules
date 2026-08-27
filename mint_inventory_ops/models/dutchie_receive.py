@@ -40,6 +40,9 @@ import urllib.request
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
+# Safe at import time: dutchie_receive_line imports nothing from this module.
+from .dutchie_receive_line import master_category_from_dutchie
+
 _logger = logging.getLogger(__name__)
 
 # System-parameter knobs, mirroring mint.dutchie_discount_push.*
@@ -415,13 +418,29 @@ class DutchieReceive(models.Model):
                     'resolve_note': _('Not returned by Dutchie'),
                 })
                 continue
-            line.write({
+            line_vals = {
                 'dutchie_product_id': entry.get('dutchieProductId') or 0,
                 'dutchie_product_name': entry.get('productName') or '',
                 'unit_id': entry.get('unitId') or line.unit_id or 1,
                 'resolve_note': '' if entry.get('dutchieProductId')
                                 else (entry.get('reason') or _('SKU not found in Dutchie')),
-            })
+            }
+            # Master Category comes from Dutchie: its ecommerce taxonomy first,
+            # its POS one as fallback. Only filled when empty — a category
+            # someone chose by hand outranks a mapped one.
+            if not line.master_category:
+                mapped = master_category_from_dutchie(
+                    entry.get('ecomCategory'),
+                    entry.get('ecomSubcategory'),
+                    entry.get('masterCategory'),
+                    entry.get('category'),
+                )
+                if mapped:
+                    line_vals['master_category'] = mapped
+            # Dutchie's finer-grained category, when it sent one.
+            if not line.category and entry.get('category'):
+                line_vals['category'] = entry['category']
+            line.write(line_vals)
 
         vals = {
             'state': 'validated',

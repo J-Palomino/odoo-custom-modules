@@ -1,6 +1,6 @@
 {
     'name': 'Mint Inventory Operations',
-    'version': '19.0.4.0.0',
+    'version': '19.0.5.0.0',
     'category': 'Inventory',
     'summary': 'Cannabis inventory adjustments, transfers, batch ops, and compliance tracking',
     'description': """Mint Inventory Operations
