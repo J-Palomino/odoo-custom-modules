@@ -339,6 +339,13 @@ class MintDealsAPI(http.Controller):
             'weight': product.weight,
             'weight_unit': getattr(product, 'weight_unit', 'g'),
             'brand': getattr(product, 'brand', None),
+            # `strain` is emitted because the inventory service asks for it by
+            # name — cacheSync.js does pickOdooFirst(odoo, dutchie, 'strain').
+            # It was absent from this payload, so Odoo's strain always lost to
+            # Dutchie's raw value. Prefer the curated master when one is
+            # linked, else the legacy free text.
+            'strain': (product.strain_id.name if product.strain_id else None)
+                      or getattr(product, 'strain', None),
             'strain_type': getattr(product, 'strain_type', None),
             'thc_percentage': getattr(product, 'thc_percentage', None),
             'cbd_percentage': getattr(product, 'cbd_percentage', None),
