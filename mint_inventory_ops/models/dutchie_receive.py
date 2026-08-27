@@ -248,11 +248,29 @@ class DutchieReceive(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        # Resolve the sequence by explicit search + next_by_id() rather than
+        # next_by_code(). next_by_code filters on
+        # ('company_id','in',[env.company.id, False]), so a sequence that ends
+        # up scoped to one company returns nothing for every OTHER store and
+        # the old `or 'New'` fallback silently shipped a receive with no
+        # reference at all. Observed live: a receive created under company 86
+        # was named "New". data/sequence.xml now pins company_id=False, and
+        # this makes the code survive it being re-scoped by hand later.
+        seq = self.env['ir.sequence'].sudo().search(
+            [('code', '=', 'mint.dutchie.receive')], limit=1)
         for vals in vals_list:
             if vals.get('name', 'New') == 'New':
-                vals['name'] = self.env['ir.sequence'].next_by_code(
-                    'mint.dutchie.receive'
-                ) or 'New'
+                number = seq.next_by_id() if seq else False
+                if not number:
+                    # Loud, because an unnamed receive is an audit hole and the
+                    # silent version of this went unnoticed until someone spotted
+                    # a record literally called "New".
+                    _logger.error(
+                        "mint.dutchie.receive: no sequence for code "
+                        "'mint.dutchie.receive' (company=%s) — record will have "
+                        "no reference.", self.env.company.display_name,
+                    )
+                vals['name'] = number or 'New'
         return super().create(vals_list)
 
     # ------------------------------------------------------------------
