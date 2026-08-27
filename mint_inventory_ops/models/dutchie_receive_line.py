@@ -9,6 +9,35 @@ product at all.
 """
 from odoo import _, api, fields, models
 
+# Mirrors product.template.master_category EXACTLY — same keys, same labels.
+# Kept as a literal rather than read off the other field so a receive line and
+# a product agree even if one module is upgraded before the other; if that
+# field gains a value, add it here too.
+MASTER_CATEGORIES = [
+    ('flower', 'Flower'),
+    ('vaporizers', 'Vaporizers'),
+    ('concentrates', 'Concentrates'),
+    ('edibles', 'Edibles'),
+    ('tinctures', 'Tinctures'),
+    ('topicals', 'Topicals'),
+    ('accessories', 'Accessories'),
+    ('prerolls', 'Pre-Rolls'),
+    ('beverages', 'Beverages'),
+]
+
+# Units for the WCIA manifest's `uom` field. These are MANIFEST-side and are
+# NOT Dutchie's UnitId enum — Dutchie resolves the real unit from the matched
+# product and returns it as UnitId on the preview. No canonical UnitId list is
+# published, so this list deliberately does not pretend to be one.
+UOM_UNITS = [
+    ('ea', 'each'),
+    ('g', 'grams'),
+    ('mg', 'milligrams'),
+    ('oz', 'ounces'),
+    ('lb', 'pounds'),
+    ('ml', 'millilitres'),
+]
+
 
 class DutchieReceiveLine(models.Model):
     _name = 'mint.dutchie.receive.line'
@@ -36,12 +65,20 @@ class DutchieReceiveLine(models.Model):
     quantity = fields.Float(string='Quantity', default=1.0, required=True)
     unit_cost = fields.Float(string='Unit Cost', digits='Product Price')
     unit_id = fields.Integer(
-        string='Dutchie UnitId', default=1,
-        help='Dutchie unit-of-measure id. 1 = each, which is right for almost '
-             'everything; resolved from Dutchie on Validate.',
+        string='Dutchie UnitId', default=1, readonly=True,
+        help='Dutchie unit-of-measure id, resolved from the matched product '
+             'during Validate — Dutchie owns this, which is why it is not '
+             'editable. 1 = each, correct for almost everything.',
     )
-    uom = fields.Char(string='UoM', default='ea')
-    net_weight = fields.Float(string='Net Weight')
+    uom = fields.Selection(
+        UOM_UNITS, string='UoM', default='ea',
+        help='Unit written into the WCIA manifest. Not the same thing as '
+             'Dutchie UnitId, which Dutchie fills in from the product it '
+             'matched.',
+    )
+    net_weight = fields.Float(
+        string='Net Weight', help='Autofilled from the Odoo product.',
+    )
 
     # Cannabis / compliance detail carried into the WCIA manifest
     batch_number = fields.Char(string='Batch / Lot')
@@ -49,24 +86,39 @@ class DutchieReceiveLine(models.Model):
         string='Package ID',
         help='Vendor/Metrc package identifier for this line.',
     )
-    strain = fields.Char(string='Strain')
-    master_category = fields.Char(
-        string='Master Category',
-        help="Top level of Dutchie's taxonomy (e.g. Flower). Distinct from "
-             "Category (e.g. Prepack Flower) — the manifest carries both, and "
+    strain = fields.Char(
+        string='Strain',
+        help='Autofilled from the Odoo product. Left free-text because a vendor '
+             'can deliver a strain the catalogue has not seen yet.',
+    )
+    master_category = fields.Selection(
+        MASTER_CATEGORIES, string='Master Category',
+        help="Top level of Dutchie's taxonomy. Distinct from Category (e.g. "
+             "Flower vs Prepack Flower) — the manifest carries both, and "
              "collapsing them loses the top level.",
     )
-    category = fields.Char(string='Category')
-    thc = fields.Char(string='THC')
-    cbd = fields.Char(string='CBD')
+    category = fields.Char(
+        string='Category',
+        help='Finer-grained category. Autofilled from the Odoo product rather '
+             'than picked from a list: the catalogue holds 500+ free-text '
+             'variants ("Accessories"/"ACCESSORIES", "Concentrate"/'
+             '"Concentrates"), so a dropdown over them would offer the mess '
+             'rather than fix it. Clean that up on the product, not here.',
+    )
+    thc = fields.Char(string='THC', help='Autofilled from the Odoo product.')
+    cbd = fields.Char(string='CBD', help='Autofilled from the Odoo product.')
     lab_result_link = fields.Char(
         string='COA Link',
         help='Certificate of analysis URL. Carried into the manifest lab result '
              'block, which Dutchie requires to be present on every line.',
     )
-    room_id_override = fields.Integer(
-        string='RoomId Override',
-        help='Leave 0 to use the receive-level destination room.',
+    room_ref_id = fields.Many2one(
+        'mint.dutchie.room', string='Room Override', ondelete='restrict',
+        domain="[('loc_id', '=', parent.pos_location_id)]",
+        help="Only for a line that lands somewhere other than the receive's "
+             'destination room. Leave empty for the normal case. The list is '
+             "the store's real Dutchie rooms — load them with Load Rooms & "
+             'Vendors on the receive.',
     )
 
     # Filled by Validate
@@ -93,16 +145,41 @@ class DutchieReceiveLine(models.Model):
 
     @api.onchange('product_id')
     def _onchange_product_id(self):
-        """Autofill from the Odoo catalogue without clobbering typed-in values."""
+        """Hard-match the descriptive fields to the Odoo product.
+
+        This is what keeps Category / Strain / THC / CBD / Net Weight from
+        being retyped (and mistyped) on every delivery — they are catalogue
+        facts about the product, not facts about this shipment. Only the
+        genuinely per-delivery fields (SKU is per-product, but Batch, Package
+        ID, Quantity and Cost change every time) are left to the user.
+
+        Existing values are never clobbered: a line already carrying a vendor's
+        own figure keeps it. Clear the field to re-pull from the product.
+        """
         for line in self:
-            if not line.product_id:
+            product = line.product_id
+            if not product:
                 continue
             if not line.sku:
-                line.sku = line.product_id.default_code or ''
+                line.sku = product.default_code or ''
             if not line.product_name:
-                line.product_name = line.product_id.name or ''
+                line.product_name = product.name or ''
             if not line.unit_cost:
-                line.unit_cost = line.product_id.standard_price or 0.0
+                line.unit_cost = product.standard_price or 0.0
+            if not line.master_category:
+                line.master_category = product.master_category or False
+            if not line.category:
+                line.category = product.x_category or ''
+            if not line.strain:
+                line.strain = product.strain or product.x_strain or ''
+            if not line.thc:
+                line.thc = product.thc or product.x_thc or ''
+            if not line.cbd:
+                line.cbd = product.cbd or product.x_cbd or ''
+            if not line.net_weight:
+                # weight is the Odoo-native field; x_weight_grams is the
+                # Dutchie-synced one and is the better answer when both exist.
+                line.net_weight = product.x_weight_grams or product.weight or 0.0
 
     @api.onchange('sku', 'quantity', 'unit_cost')
     def _onchange_invalidate_match(self):
@@ -121,6 +198,13 @@ class DutchieReceiveLine(models.Model):
     # ------------------------------------------------------------------
     # Serialization
     # ------------------------------------------------------------------
+
+    def _master_category_label(self):
+        """Selection key -> the label Dutchie's taxonomy uses ('flower' -> 'Flower')."""
+        self.ensure_one()
+        if not self.master_category:
+            return ''
+        return dict(MASTER_CATEGORIES).get(self.master_category, '')
 
     def _to_manifest_dict(self):
         """Shape consumed by the WCIA manifest builder in mintinvsvc.
@@ -141,7 +225,9 @@ class DutchieReceiveLine(models.Model):
             'batch_number': self.batch_number or '',
             'package_id': self.package_id or '',
             'strain': self.strain or '',
-            'master_category': self.master_category or '',
+            # The manifest carries the human label ("Flower"), not the Odoo
+            # selection key ("flower") — Dutchie matches on the display form.
+            'master_category': self._master_category_label(),
             'category': self.category or '',
             'thc': self.thc or '',
             'cbd': self.cbd or '',
@@ -165,6 +251,6 @@ class DutchieReceiveLine(models.Model):
             'Category': self.category or '',
             'NetWeight': self.net_weight or 0.0,
         }
-        if self.room_id_override:
-            product['RoomId'] = self.room_id_override
+        if self.room_ref_id:
+            product['RoomId'] = self.room_ref_id.dutchie_room_id
         return product
