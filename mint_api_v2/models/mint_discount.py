@@ -964,7 +964,7 @@ class MintDiscount(models.Model):
             return False
         store = row.company_id
         loc_id = getattr(store, 'dutchie_pos_location_id', 0)
-        lsp_id = getattr(store, 'dutchie_lsp_id', 0)
+        lsp_id = store._dutchie_lsp()
         if not (loc_id and lsp_id):
             _logger.error('Redemption %s: store %s missing loc/lsp id, cannot verify',
                           self.redemption_code, store.display_name)

@@ -274,10 +274,15 @@ class MintDiscountPTL(models.Model):
         Log = self.env['mint.dutchie.discount.push.log'].sudo()
         Company = self.env['res.company'].sudo()
         for lsp in cfg['enabled_lsps']:
+            # order='id' is load-bearing: an unordered limit=1 let the chosen
+            # store drift between runs, and because the push-log id lookup was
+            # keyed on the store, a drifted pick CREATED a second LSP-wide
+            # Dutchie record instead of updating the first (coupon 3046 ->
+            # 385159 @ 75th Ave, then 385236 @ Tempe, same code MINT-58N83Z).
             store = Company.search([
                 ('dutchie_lsp_id', '=', lsp),
                 ('dutchie_pos_location_id', '!=', False),
-            ], limit=1)
+            ], order='id', limit=1)
             if not store:
                 _logger.warning('welcome_preroll: no store with a POS LocId for LSP %s', lsp)
                 continue
@@ -577,11 +582,26 @@ class MintDiscountPTL(models.Model):
             ('dutchie_pos_location_id', '!=', False),
             ('dutchie_lsp_id', '!=', False),
             ('dutchie_discount_push_enabled', '=', True),
-        ])
+        ], order='id')
         if not stores:
             raise UserError(_(
                 "No target stores. Pick stores under Targeting, or enable "
                 "'Push Discounts to Dutchie' on a store that has a POS LocId + LSP."))
+        # A Dutchie discount is owned by the LSP, not the location, so one write
+        # per LSP covers every store under it and repeated writes duplicate it.
+        #
+        # REGION-level targeting is therefore already correct: region <-> LSP is
+        # 1:1 in production (AZ=575, MI=576, MO=723, IL=805, NV=820, FL=821 —
+        # every region holds exactly one LSP and no LSP spans two regions), so
+        # an LSP-scoped discount IS a region-scoped discount. Marketing's
+        # region-specific deals need nothing further.
+        #
+        # What store_ids CANNOT do is narrow a deal to a subset of stores INSIDE
+        # one region: the payload hardcodes LocationRestrictions=[], so a deal
+        # targeted at one AZ store still goes live at all nine. If per-store
+        # targeting is ever needed, populate LocationRestrictions from store_ids
+        # — until then store_ids only selects which LSPs get written.
+        stores = push._collapse_stores_by_lsp(stores)
         ok = 0
         for store in stores:
             try:

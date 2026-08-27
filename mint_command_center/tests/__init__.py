@@ -13,3 +13,5 @@ from . import test_ptl_lifecycle_cron
 from . import test_ptl_webhook_dispatch
 from . import test_weight_parse
 from . import test_ptl_market_scoping
+from . import test_dutchie_lsp_scope
+from . import test_lsp_resolver

@@ -40,15 +40,11 @@ from .deal_mixins import (format_bundle_tiers_text, build_dutchie_restrictions,
 
 _logger = logging.getLogger(__name__)
 
-# mint.region name -> Dutchie LSP (tenant). BrandIds/ProductIds are LSP-scoped.
-LSP_BY_REGION = {
-    'arizona': 575,
-    'michigan': 576,
-    'missouri': 723,
-    'illinois': 805,
-    'nevada': 820,
-    'florida': 821,
-}
+# NOTE: the region -> LSP map that lived here was a second source of truth,
+# matched against the region's DISPLAY NAME. It is gone entirely — not moved.
+# mint.region._dutchie_lsp() derives the LSP from the region's own stores, with
+# res.company.dutchie_lsp_id as the sole source of truth, and returns 0 rather
+# than guessing when it cannot. BrandIds/ProductIds remain LSP-scoped.
 
 # submission discount_type -> Dutchie CalculationMethodId (canonical registry)
 CALC_BY_TYPE = {
@@ -334,12 +330,21 @@ class DealSubmissionDutchiePublish(models.Model):
     # ------------------------------------------------------------------
 
     def _dutchie_lsp(self):
+        """LSP this deal publishes into — delegates to the single resolver.
+
+        Previously matched a hardcoded map against the region's DISPLAY NAME
+        (`if 'arizona' in market_id.name.lower()`), a second source of truth
+        that would have silently returned None the moment someone renamed a
+        region in the UI. mint.region._dutchie_lsp() derives it from the
+        region's own stores instead, so it cannot drift from what the push
+        actually addresses.
+
+        Returns None (not 0) when unresolvable — callers here test `is None`.
+        """
         self.ensure_one()
-        name = (self.market_id.name or '').strip().lower() if self.market_id else ''
-        for key, lsp in LSP_BY_REGION.items():
-            if key in name:
-                return lsp
-        return None
+        if not self.market_id:
+            return None
+        return self.market_id._dutchie_lsp() or None
 
     def _dutchie_brands(self):
         """Brand records this deal targets: brand_id, else alias resolution
