@@ -1,22 +1,27 @@
 """
-Post-migration for 19.0.4.28.0 — seed mint.strain and link products to it.
+Post-migration for 19.0.4.28.0 — strain master schema only. Does NOT seed.
 
-Runs after the registry is loaded, so it can use the ORM. Seeds the strain
-master from the 4,800 distinct raw values already in
-`product.template.strain`, folding spelling variants ("BLUE DREAM",
-"Blue Dream (S)") onto one record as aliases, then back-fills
-`product.template.strain_id` in bulk SQL.
+The seed (`env['mint.strain'].seed_from_products()`) creates ~4,172 records
+and rewrites `strain_id` on ~41,338 product templates. That is a data
+migration, and this environment has no usable rehearsal: the `staging` branch
+is an abandoned line, 317 commits behind main, so an upgrade there proves
+nothing about what the seed does to prod.
 
-Idempotent — re-running folds new spellings into existing masters instead of
-creating duplicates, so it is safe if the upgrade is retried.
+So the two are deliberately split. This upgrade ships the model, the column
+and the UI — after which the Strain dropdown exists and is empty — and the
+seed is run by hand against a live database whose before/after counts can be
+read back and checked. Re-running the seed later is safe either way; it is
+idempotent and folds new spellings into existing masters.
 
-Note: this runs on EVERY environment the module upgrades into, including
-staging, and derives entirely from that database's own data. There is no
-hardcoded strain list to drift.
+To seed, once this version is live:
+
+    env['mint.strain'].seed_from_products()      # -> summary dict
+
+It logs and returns
+{raw_values, buckets, created, aliases_added, skipped_thin,
+ placeholder_rows_skipped, products_linked}.
 """
 import logging
-
-from odoo import SUPERUSER_ID, api
 
 _logger = logging.getLogger(__name__)
 
@@ -25,18 +30,17 @@ def migrate(cr, version):
     if not version:
         return
 
-    env = api.Environment(cr, SUPERUSER_ID, {})
+    cr.execute("SELECT COUNT(*) FROM product_template WHERE strain IS NOT NULL AND strain <> ''")
+    populated = cr.fetchone()[0]
+    cr.execute("""
+        SELECT COUNT(DISTINCT strain) FROM product_template
+         WHERE strain IS NOT NULL AND strain <> ''
+    """)
+    distinct = cr.fetchone()[0]
 
-    if 'mint.strain' not in env:
-        _logger.error("mint_api_v2 19.0.4.28.0 post-migrate: mint.strain missing from registry; skipping seed")
-        return
-
-    summary = env['mint.strain'].seed_from_products()
-    _logger.info(
-        "mint_api_v2 19.0.4.28.0 post-migrate: seeded strain master — "
-        "%(raw_values)s raw values -> %(buckets)s strains "
-        "(%(created)s created, %(aliases_added)s aliases added, "
-        "%(placeholder_rows_skipped)s placeholder rows skipped, "
-        "%(products_linked)s products linked)",
-        summary,
+    _logger.warning(
+        "mint_api_v2 19.0.4.28.0: strain master schema installed but NOT seeded. "
+        "%s templates carry strain text across %s distinct raw values. "
+        "Run env['mint.strain'].seed_from_products() to build the master and link them.",
+        populated, distinct,
     )
