@@ -8,6 +8,10 @@
         <field name="arch" type="xml">
             <form string="Dutchie Inventory Receive">
                 <header>
+                    <button name="action_load_refs" string="Load Rooms &amp; Vendors"
+                            type="object"
+                            invisible="state == 'pushed' or not pos_location_id"
+                            help="Fetch this store's real Dutchie rooms and vendors so the dropdowns below have something to offer. Validate does this too; this is for filling them in before you have lines."/>
                     <button name="action_validate" string="Validate with Dutchie"
                             type="object" class="btn-primary"
                             invisible="state not in ('draft', 'validated', 'rejected')"
@@ -67,11 +71,15 @@
                     </group>
                     <group>
                         <group string="Dutchie Targets">
-                            <field name="dutchie_vendor_id" readonly="state == 'pushed'"/>
-                            <field name="dutchie_vendor_name" readonly="state == 'pushed'"/>
-                            <field name="dutchie_room_id" readonly="state == 'pushed'"/>
-                            <field name="dutchie_room_name" readonly="state == 'pushed'"/>
+                            <field name="vendor_ref_id" readonly="state == 'pushed'"
+                                   options="{'no_create': True, 'no_open': True}"
+                                   placeholder="Load Rooms &amp; Vendors first"/>
+                            <field name="room_ref_id" readonly="state == 'pushed'"
+                                   options="{'no_create': True, 'no_open': True}"
+                                   placeholder="Load Rooms &amp; Vendors first"/>
                             <field name="vendor_license" readonly="state == 'pushed'"/>
+                            <field name="dutchie_vendor_id" readonly="1"/>
+                            <field name="dutchie_room_id" readonly="1"/>
                         </group>
                         <group string="Totals">
                             <field name="line_count"/>
@@ -100,8 +108,9 @@
                                     <field name="cbd" optional="hide"/>
                                     <field name="net_weight" optional="hide"/>
                                     <field name="uom" optional="hide"/>
-                                    <field name="lab_result_link" optional="hide"/>
-                                    <field name="room_id_override" optional="hide"/>
+                                    <field name="lab_result_link" optional="hide" widget="url"/>
+                                    <field name="room_ref_id" optional="hide"
+                                           options="{'no_create': True, 'no_open': True}"/>
                                     <field name="unit_id" optional="hide" readonly="1"/>
                                     <field name="dutchie_product_id" readonly="1" optional="show"/>
                                     <field name="resolve_note" readonly="1" optional="show"/>

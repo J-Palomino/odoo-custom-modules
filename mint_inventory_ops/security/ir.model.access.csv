@@ -7,3 +7,7 @@ access_dutchie_receive_user,mint.dutchie.receive.user,model_mint_dutchie_receive
 access_dutchie_receive_manager,mint.dutchie.receive.manager,model_mint_dutchie_receive,group_inventory_manager,1,1,1,1
 access_dutchie_receive_line_user,mint.dutchie.receive.line.user,model_mint_dutchie_receive_line,group_inventory_user,1,1,1,0
 access_dutchie_receive_line_manager,mint.dutchie.receive.line.manager,model_mint_dutchie_receive_line,group_inventory_manager,1,1,1,1
+access_dutchie_room_user,mint.dutchie.room.user,model_mint_dutchie_room,group_inventory_user,1,0,0,0
+access_dutchie_room_manager,mint.dutchie.room.manager,model_mint_dutchie_room,group_inventory_manager,1,1,1,1
+access_dutchie_vendor_user,mint.dutchie.vendor.user,model_mint_dutchie_vendor,group_inventory_user,1,0,0,0
+access_dutchie_vendor_manager,mint.dutchie.vendor.manager,model_mint_dutchie_vendor,group_inventory_manager,1,1,1,1

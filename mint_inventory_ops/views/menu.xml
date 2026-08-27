@@ -16,4 +16,24 @@
               parent="menu_mint_inventory_root"
               action="action_dutchie_receive"
               sequence="5"/>
+
+    <!-- Mirrored Dutchie reference data. Managers only: it is a cache that a
+         sync overwrites, not something to curate by hand. -->
+    <menuitem id="menu_dutchie_refs"
+              name="Dutchie Reference"
+              parent="menu_mint_inventory_root"
+              sequence="90"
+              groups="mint_inventory_ops.group_inventory_manager"/>
+
+    <menuitem id="menu_dutchie_rooms"
+              name="Rooms"
+              parent="menu_dutchie_refs"
+              action="action_dutchie_room"
+              sequence="10"/>
+
+    <menuitem id="menu_dutchie_vendors"
+              name="Vendors"
+              parent="menu_dutchie_refs"
+              action="action_dutchie_vendor"
+              sequence="20"/>
 </odoo>

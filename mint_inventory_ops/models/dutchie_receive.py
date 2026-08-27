@@ -115,14 +115,29 @@ class DutchieReceive(models.Model):
         domain="[('supplier_rank', '>', 0)]",
         help='Odoo-side vendor. Used to suggest the Dutchie vendor by name.',
     )
-    dutchie_vendor_id = fields.Integer(
-        string='Dutchie VendorId', tracking=True, copy=False,
-        help='Required by v2/inventory/receive. Auto-suggested on Validate by '
-             'name-matching against the vendors Dutchie has for this location; '
-             'override here if the match is wrong.',
+    vendor_ref_id = fields.Many2one(
+        'mint.dutchie.vendor', string='Dutchie Vendor', tracking=True,
+        ondelete='restrict', domain="[('loc_id', '=', pos_location_id)]",
+        help="The store's real Dutchie vendors. Auto-suggested on Validate by "
+             'name-matching the Odoo vendor; override if the match is wrong. '
+             'Duplicates in this list are real — AZ carries two KANNABOOST rows '
+             'under different ids and codes — so check the code before picking.',
     )
-    dutchie_vendor_name = fields.Char(string='Dutchie Vendor', copy=False)
-    vendor_license = fields.Char(string='Vendor License')
+    dutchie_vendor_id = fields.Integer(
+        string='Dutchie VendorId', related='vendor_ref_id.dutchie_vendor_id',
+        store=True, readonly=True,
+        help='Required by v2/inventory/receive. Comes from the vendor picked above.',
+    )
+    dutchie_vendor_name = fields.Char(
+        string='Vendor Name', related='vendor_ref_id.name',
+        store=True, readonly=True,
+    )
+    vendor_license = fields.Char(
+        string='Vendor License',
+        help="Dutchie's VendorCode for the vendor above — what the manifest "
+             'carries as from_license_number. Filled in automatically; a '
+             'guessed state licence here creates a junk vendor on receive.',
+    )
     invoice_number = fields.Char(
         string='Invoice / PO Number',
         help='Free-text reference shown on the Dutchie receipt.',
@@ -132,13 +147,21 @@ class DutchieReceive(models.Model):
     received_by = fields.Char(string='Received By')
     note = fields.Text(string='Note')
 
-    dutchie_room_id = fields.Integer(
-        string='Destination RoomId', tracking=True, copy=False,
-        help='Dutchie room the packages land in. A receive with no room orphans '
-             'in Dutchie. Auto-suggested on Validate (prefers a room with '
-             'InventoryRoom = yes).',
+    room_ref_id = fields.Many2one(
+        'mint.dutchie.room', string='Destination Room', tracking=True,
+        ondelete='restrict', domain="[('loc_id', '=', pos_location_id)]",
+        help='Where the packages land. A receive with no room orphans in '
+             'Dutchie with no PackageInventory rows, which is why this is '
+             'required to push. Auto-suggested on Validate, preferring a room '
+             'flagged InventoryRoom.',
     )
-    dutchie_room_name = fields.Char(string='Destination Room', copy=False)
+    dutchie_room_id = fields.Integer(
+        string='Destination RoomId', related='room_ref_id.dutchie_room_id',
+        store=True, readonly=True,
+    )
+    dutchie_room_name = fields.Char(
+        string='Room Name', related='room_ref_id.name', store=True, readonly=True,
+    )
 
     line_ids = fields.One2many(
         'mint.dutchie.receive.line', 'receive_id', string='Lines', copy=True,
@@ -225,11 +248,29 @@ class DutchieReceive(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        # Resolve the sequence by explicit search + next_by_id() rather than
+        # next_by_code(). next_by_code filters on
+        # ('company_id','in',[env.company.id, False]), so a sequence that ends
+        # up scoped to one company returns nothing for every OTHER store and
+        # the old `or 'New'` fallback silently shipped a receive with no
+        # reference at all. Observed live: a receive created under company 86
+        # was named "New". data/sequence.xml now pins company_id=False, and
+        # this makes the code survive it being re-scoped by hand later.
+        seq = self.env['ir.sequence'].sudo().search(
+            [('code', '=', 'mint.dutchie.receive')], limit=1)
         for vals in vals_list:
             if vals.get('name', 'New') == 'New':
-                vals['name'] = self.env['ir.sequence'].next_by_code(
-                    'mint.dutchie.receive'
-                ) or 'New'
+                number = seq.next_by_id() if seq else False
+                if not number:
+                    # Loud, because an unnamed receive is an audit hole and the
+                    # silent version of this went unnoticed until someone spotted
+                    # a record literally called "New".
+                    _logger.error(
+                        "mint.dutchie.receive: no sequence for code "
+                        "'mint.dutchie.receive' (company=%s) — record will have "
+                        "no reference.", self.env.company.display_name,
+                    )
+                vals['name'] = number or 'New'
         return super().create(vals_list)
 
     # ------------------------------------------------------------------
@@ -396,19 +437,105 @@ class DutchieReceive(models.Model):
         if expires:
             # Dutchie/invsvc hand back ISO 8601 with a Z; Odoo wants naive UTC.
             vals['manifest_expires_at'] = expires.replace('T', ' ').replace('Z', '')[:19]
+        # Mirror the room/vendor lists Dutchie returned so the dropdowns on this
+        # form offer the real options rather than asking anyone to type an id.
+        rooms, vendors = self._sync_refs(result.get('rooms'), result.get('vendors'))
+
         # Only fill suggestions the user has not already overridden.
-        if not self.dutchie_room_id and result.get('suggestedRoomId'):
-            vals['dutchie_room_id'] = result['suggestedRoomId']
-            vals['dutchie_room_name'] = result.get('suggestedRoomName') or ''
-        if not self.dutchie_vendor_id and result.get('suggestedVendorId'):
-            vals['dutchie_vendor_id'] = result['suggestedVendorId']
-            vals['dutchie_vendor_name'] = result.get('suggestedVendorName') or ''
+        if not self.room_ref_id and result.get('suggestedRoomId'):
+            match = rooms.filtered(
+                lambda r: r.dutchie_room_id == result['suggestedRoomId'])
+            if match:
+                vals['room_ref_id'] = match[0].id
+        if not self.vendor_ref_id and result.get('suggestedVendorId'):
+            match = vendors.filtered(
+                lambda v: v.dutchie_vendor_id == result['suggestedVendorId'])
+            if match:
+                vals['vendor_ref_id'] = match[0].id
         # Dutchie's own VendorCode is what belongs on the licence field — it is
         # what from_license_number carries. Never type a guessed state licence
         # here: receiving against an unknown code creates a junk vendor record.
         if not self.vendor_license and result.get('suggestedVendorLicense'):
             vals['vendor_license'] = result['suggestedVendorLicense']
         self.write(vals)
+
+    def _sync_refs(self, rooms, vendors):
+        """Mirror Dutchie's room/vendor lists for this location into Odoo.
+
+        sudo() because the reference tables are shared cache data that any
+        receiving user must be able to refresh, while only managers should be
+        able to edit them by hand.
+        """
+        self.ensure_one()
+        room_model = self.env['mint.dutchie.room'].sudo()
+        vendor_model = self.env['mint.dutchie.vendor'].sudo()
+        synced_rooms = room_model._sync_from_payload(self.pos_location_id, rooms or [])
+        synced_vendors = vendor_model._sync_from_payload(self.pos_location_id, vendors or [])
+        return synced_rooms, synced_vendors
+
+    def action_load_refs(self):
+        """Populate the room and vendor dropdowns without validating.
+
+        Validate also refreshes these, but it needs lines and a reachable
+        manifest — this lets someone open a blank receive, pick the store, and
+        immediately choose a real room and vendor.
+        """
+        self.ensure_one()
+        if not self.pos_location_id:
+            raise UserError(_(
+                "%s has no Dutchie POS LocId, so there are no rooms or vendors "
+                "to load."
+            ) % self.company_id.name)
+        if self._mode() == 'off':
+            raise UserError(_(
+                "Dutchie receive is switched off. Set the system parameter "
+                "'%s' to 'dry-run' or 'live' to enable it."
+            ) % MODE_PARAM)
+
+        result = self._invsvc('receive/refs', {'locId': self.pos_location_id})
+        if not result.get('ok'):
+            raise UserError(_(
+                "Could not load rooms and vendors:\n\n%s"
+            ) % (result.get('error') or json.dumps(result)[:1000]))
+
+        rooms, vendors = self._sync_refs(result.get('rooms'), result.get('vendors'))
+        vals = {}
+        if result.get('lspId'):
+            vals['lsp_id'] = result['lspId']
+        if not self.room_ref_id:
+            # Same heuristic the push uses: a real inventory room, else nothing.
+            # Guessing a non-inventory room would orphan the receive silently.
+            inventory = rooms.filtered('is_inventory_room')
+            if inventory:
+                vals['room_ref_id'] = inventory[0].id
+        if vals:
+            self.write(vals)
+        self.message_post(body=_(
+            "Loaded %(r)s room(s) and %(v)s vendor(s) from Dutchie for LocId %(loc)s."
+        ) % {'r': len(rooms), 'v': len(vendors), 'loc': self.pos_location_id})
+        return True
+
+    @api.onchange('vendor_ref_id')
+    def _onchange_vendor_ref_id(self):
+        """Carry the vendor's Dutchie code onto the licence field."""
+        for rec in self:
+            if rec.vendor_ref_id and rec.vendor_ref_id.vendor_code:
+                rec.vendor_license = rec.vendor_ref_id.vendor_code
+
+    @api.onchange('company_id')
+    def _onchange_company_clears_refs(self):
+        """A different store means different rooms and vendors entirely.
+
+        Dutchie ids are per-location, so keeping the previous store's selections
+        would point the receive at a room and vendor that do not exist at the
+        new one — and the domains would hide the mistake by simply showing
+        nothing.
+        """
+        for rec in self:
+            rec.room_ref_id = False
+            rec.vendor_ref_id = False
+            rec.vendor_license = False
+            rec.lsp_id = 0
 
     def action_approve(self):
         self.ensure_one()
