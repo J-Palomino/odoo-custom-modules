@@ -27,22 +27,7 @@ class ProductTemplate(models.Model):
 
     # Cannabis-specific fields
     is_cannabis = fields.Boolean(string="Is Cannabis Product", default=False)
-
-    # `strain` is the legacy free-text column and is NOT deprecated: the
-    # inventory service merges it into the Redis payload (cacheSync.js) and the
-    # storefront types it (redis-api.ts), so it stays as the denormalized
-    # mirror. `strain_id` is the authoring field — picking a master keeps the
-    # text in sync automatically (see _sync_strain_vals).
     strain = fields.Char(string="Strain Name")
-    strain_id = fields.Many2one(
-        'mint.strain',
-        string="Strain",
-        index=True,
-        ondelete='set null',
-        help="Curated strain from the strain master. Setting this rewrites the "
-             "free-text Strain Name to match; leaving it empty keeps whatever "
-             "text the importer wrote.",
-    )
     strain_type = fields.Selection([
         ('sativa', 'Sativa'),
         ('indica', 'Indica'),
@@ -81,78 +66,24 @@ class ProductTemplate(models.Model):
     # Brand
     brand_id = fields.Many2one('mint.brand', string="Brand")
 
-    def _sync_strain_vals(self, vals):
-        """Keep `strain` (text) and `strain_id` (master) consistent on write.
-
-        Two directions, because both are written by real callers:
-          - a human picks `strain_id` on the form  -> rewrite `strain` from it,
-            so the Redis/storefront payload matches what the admin sees;
-          - the Dutchie importer writes `strain` text -> resolve it to a master
-            and set `strain_id`, so imported rows join the curated list without
-            anyone re-keying them.
-
-        An explicit value always wins: if the caller passes both, neither is
-        overwritten. Mutates and returns `vals`.
-        """
-        Strain = self.env['mint.strain'].sudo()
-
-        if vals.get('strain_id') and 'strain' not in vals:
-            master = Strain.browse(vals['strain_id'])
-            if master.exists():
-                vals['strain'] = master.name
-                if master.strain_type and 'strain_type' not in vals:
-                    vals['strain_type'] = master.strain_type
-
-        elif 'strain' in vals and 'strain_id' not in vals:
-            # Resolve text -> master. Unresolvable text (a new strain, or a
-            # placeholder like "No Strain") clears the link rather than leaving
-            # a stale one pointing at the previous strain.
-            vals['strain_id'] = Strain.resolve_name(vals['strain']).id or False
-
-        return vals
-
     def write(self, vals):
-        vals = self._sync_strain_vals(dict(vals))
-
         old_brands = self.env['mint.brand']
-        old_strains = self.env['mint.strain']
         if 'brand_id' in vals or 'x_is_cannabis' in vals:
             old_brands = self.mapped('brand_id')
-        if 'strain_id' in vals:
-            old_strains = self.mapped('strain_id')
-
         res = super().write(vals)
-
         if 'brand_id' in vals or 'x_is_cannabis' in vals:
             affected = (old_brands | self.mapped('brand_id'))
-            if affected:
-                affected._compute_product_count()
-        if 'strain_id' in vals:
-            affected = (old_strains | self.mapped('strain_id'))
             if affected:
                 affected._compute_product_count()
         return res
 
     @api.model_create_multi
     def create(self, vals_list):
-        vals_list = [self._sync_strain_vals(dict(v)) for v in vals_list]
         records = super().create(vals_list)
         affected = records.mapped('brand_id')
         if affected:
             affected._compute_product_count()
-        affected_strains = records.mapped('strain_id')
-        if affected_strains:
-            affected_strains._compute_product_count()
         return records
-
-    @api.onchange('strain_id')
-    def _onchange_strain_id(self):
-        """Mirror the picked master into the text + type fields in the form."""
-        for record in self:
-            if record.strain_id:
-                record.strain = record.strain_id.name
-                if record.strain_id.strain_type:
-                    record.strain_type = record.strain_id.strain_type
 
     # Dutchie integration
     dutchie_product_id = fields.Char(string="Dutchie Product ID")

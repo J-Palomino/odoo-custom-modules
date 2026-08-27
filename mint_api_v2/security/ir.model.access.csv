@@ -7,8 +7,6 @@ access_mint_service_all,mint.service.all,model_mint_service,,1,0,0,0
 access_mint_service_user,mint.service.user,model_mint_service,base.group_user,1,1,1,1
 access_mint_brand_all,mint.brand.all,model_mint_brand,,1,0,0,0
 access_mint_brand_user,mint.brand.user,model_mint_brand,base.group_user,1,1,1,1
-access_mint_strain_all,mint.strain.all,model_mint_strain,,1,0,0,0
-access_mint_strain_user,mint.strain.user,model_mint_strain,base.group_user,1,1,1,1
 access_mint_discount_all,mint.discount.all,model_mint_discount,,1,0,0,0
 access_mint_discount_user,mint.discount.user,model_mint_discount,base.group_user,1,1,1,1
 access_mint_discount_weight_all,mint.discount.weight.all,model_mint_discount_weight,,1,0,0,0
