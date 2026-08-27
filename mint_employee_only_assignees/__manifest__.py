@@ -59,6 +59,11 @@ selectable; the flag recomputes automatically on employee create/write/unlink.
         'hr',
         'project',
         'maintenance',
+        # Not used for code, but required for LOAD ORDER: mint_maintenance_form
+        # also redefines maintenance.request.user_id (narrowing it to internal
+        # users). Whichever module loads last wins the domain, so we must load
+        # after it or our employees-only rule is silently overwritten.
+        'mint_maintenance_form',
     ],
     'data': [],
     'post_init_hook': 'post_init_hook',
