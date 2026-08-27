@@ -370,6 +370,15 @@ class MintDiscountPTL(models.Model):
 
     # ─── Code-coupon usage sync (Backoffice report 10875) ────────────────
 
+    promo_gift_token = fields.Char(
+        string='Promo Gift Token', index=True, copy=False,
+        help="Opaque, unguessable handle used in the /gift/<token> URL. The "
+             "redeemable code must NEVER appear in a shareable link: a scanned "
+             "QR puts the URL in the address bar, so a code-in-URL link is "
+             "readable by anyone who sees the code — which defeats the "
+             "sign-in gate entirely. This token is worthless at a register.",
+    )
+
     promo_issued_by_id = fields.Many2one(
         'res.partner', string='Promo Issued By', index=True, copy=False,
         help="Set when this coupon was minted from the storefront Promos "
