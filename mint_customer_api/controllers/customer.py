@@ -11,7 +11,10 @@ import secrets
 from datetime import timedelta
 import logging
 
-from odoo import fields, http
+from psycopg2 import IntegrityError
+
+from odoo import _, fields, http
+from odoo.exceptions import UserError
 from odoo.http import request, Response
 
 from .auth import (json_response, error_response, unexpected_error_response,
@@ -1618,4 +1621,259 @@ class MintCustomerProfile(http.Controller):
         return json_response({
             'favorites': [_serialize_favorite(f) for f in favorites],
             'count': len(favorites),
+        })
+
+    @http.route('/api/v1/customer/spin-claim', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def spin_claim(self, **kw):
+        """Draw this customer's spin-to-win prize and issue their coupon.
+
+        Body: { "claim_date": "2026-08-23", "store_id": 12 }
+
+        The prize is decided HERE, at claim time, by drawing an available entry
+        from mint.spin.prize — not on the wheel and not in the browser. Nothing
+        about the outcome ever crosses the client, so there is no token to sign
+        and no shared secret to manage; the customer's session is the only
+        thing that ties them to a prize.
+
+        The pool is also the distribution cap: you cannot award more 30%-off
+        coupons than ops created. Dutchie enforces MaxRedemptions but never
+        populates RedemptionCount, so a cap expressed only there is invisible —
+        here, "how many are left" is a COUNT.
+
+        Not trusted from the body: the partner (comes from the JWT) and the
+        discount percentage (comes from the drawn pool entry).
+
+        403 = the customer has no spin ticket. Tickets are the gate now, so
+        this is the ordinary "you cannot play yet" case, not an error.
+        503 = pool exhausted, which is an ops problem, not a customer error.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        claim_date = data.get('claim_date')
+        if not claim_date:
+            return error_response('claim_date is required')
+
+        partner = user.partner_id.sudo()
+
+        # The storefront identifies a store by its Dutchie UUID
+        # (res.company.dutchie_store_id), while Odoo keys by integer company
+        # id. Accept either — assuming the int form is what made every
+        # authenticated cart call 400 until mint_account grew _resolve_store_id
+        # (see that helper in mint_account/controllers/cart.py). Not imported
+        # from there on purpose: mint_customer_api must not gain a dependency
+        # on mint_account just for ten lines.
+        # Use dutchie_store_id, NOT x_dutchie_store_id — the former is the
+        # superset and the one the API serves.
+        store = None
+        raw_store = data.get('store_id') or data.get('dutchie_store_id')
+        if raw_store is not None:
+            company = request.env['res.company'].sudo()
+            candidate = company
+            try:
+                candidate = company.browse(int(raw_store))
+            except (TypeError, ValueError):
+                candidate = company.search(
+                    [('dutchie_store_id', '=', str(raw_store))], limit=1)
+            if candidate.exists() and candidate.is_dispensary:
+                store = candidate
+        if not store:
+            # Without a store there is no market, so the coupon cannot be
+            # region-locked and cannot be pushed to Dutchie — it would be a
+            # code that fails at the till. Refuse rather than mint a dud, and
+            # refuse BEFORE drawing so a bad request never burns inventory.
+            return error_response(
+                'A store is required to issue your code. Pick a store and try again.',
+                400,
+            )
+
+        try:
+            entry, created = request.env['mint.spin.prize'].sudo().claim_next(
+                partner=partner, claim_date=claim_date, store=store,
+            )
+        except IntegrityError:
+            # UNIQUE(ticket_id) fired: that ticket already bought a prize.
+            # Better a hard failure than a second coupon from one ticket.
+            request.env.cr.rollback()
+            return error_response('That ticket has already been redeemed', 409)
+        except UserError as exc:
+            # Two very different UserErrors reach here and they are not the
+            # same problem: "no ticket" is the customer's turn to act, "pool
+            # empty" is ops failing to top up. Distinguish them so the
+            # storefront can say something useful.
+            message = str(exc)
+            no_ticket = 'ticket' in message.lower()
+            _logger.warning('spin-claim unavailable for partner %s: %s', partner.id, message)
+            return error_response(message, 403 if no_ticket else 503)
+        except Exception as exc:  # noqa: BLE001 - surfaced as a 400 below
+            _logger.exception('spin-claim failed for partner %s', partner.id)
+            return error_response(str(exc) or 'Could not issue your code', 400)
+
+        discount = entry.discount_id
+        payload = {
+            'percent': entry.percent,
+            'redemption_code': discount.redemption_code if discount else None,
+            'expires_at': (discount.expires_at.isoformat()
+                           if discount and discount.expires_at else None),
+            'status': discount.redemption_status if discount else None,
+            'already_claimed': not created,
+        }
+        return json_response(payload, 200 if created else 409)
+
+    @http.route('/api/v1/spin/wheel', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def spin_wheel(self, **kw):
+        """The wedges the wheel should draw — PUBLIC, no auth.
+
+        Derived from what is actually left in the pool, so the wheel can never
+        show a prize that cannot be won, or omit one that can. Previously the
+        storefront held its own hardcoded list, which was free to drift out of
+        sync with the pool the moment ops seeded a different mix.
+
+        Anonymous on purpose: a visitor has to see the wheel before signing in.
+        Returns percentages only, never remaining counts — those would leak the
+        odds and let someone wait for a thin tier.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        rows = request.env['mint.spin.prize'].sudo().read_group(
+            [('state', '=', 'available')], ['percent'], ['percent'],
+        )
+        percents = sorted({int(r['percent']) for r in rows if r.get('percent')})
+        return json_response({'percents': percents})
+
+    @http.route('/api/v1/customer/spin-status', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def spin_status(self, **kw):
+        """How many spins this customer has, plus the current wedges.
+
+        The storefront calls this to decide whether the SPIN button is live.
+        It is advisory only — the ticket is actually spent, atomically, inside
+        the claim; a stale balance here can never produce a free spin.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+
+        partner = user.partner_id.sudo() if user.partner_id else None
+        Ticket = request.env['mint.spin.ticket'].sudo()
+        tickets = Ticket.available_count(partner)
+        rows = request.env['mint.spin.prize'].sudo().read_group(
+            [('state', '=', 'available')], ['percent'], ['percent'],
+        )
+        percents = sorted({int(r['percent']) for r in rows if r.get('percent')})
+
+        # How a customer earns a ticket depends on configuration, so the copy
+        # is derived here rather than hardcoded in the storefront. Telling
+        # someone "shop to earn a spin" while purchase grants are switched off
+        # is a promise the system will not keep.
+        settings = Ticket.purchase_grant_settings()
+        grants_enabled = bool(settings.get('enabled'))
+        if grants_enabled:
+            min_spend = float(settings.get('min_spend') or 0)
+            per = int(settings.get('tickets') or 1)
+            spins = _('%s spins') % per if per > 1 else _('a spin')
+            earn_hint = (_('Earn %s on orders over $%d.') % (spins, min_spend)
+                         if min_spend > 0
+                         else _('Earn %s with every purchase.') % spins)
+        else:
+            earn_hint = _('Spin tickets are handed out during promotions.')
+
+        return json_response({
+            'tickets': tickets,
+            'percents': percents,
+            'pool_empty': not percents,
+            'grants_enabled': grants_enabled,
+            'earn_hint': earn_hint,
+        })
+
+    @http.route('/api/v1/customer/highman-reward', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def highman_reward(self, **kw):
+        """Award the spin ticket for winning today's High-man.
+
+        Body: { "puzzle_date": "2026-08-27" }
+
+        ── Why a ticket and not points ────────────────────────────────────
+        Dutchie's loyalty API is read-only, so an Odoo-side point grant is
+        invisible at the register — and `mint.loyalty.award_mode` is
+        deliberately `off` in production precisely because awarding
+        "fabricates balances the register will not honour". A spin ticket
+        lives entirely in systems we control, so the reward the customer sees
+        is the reward they actually have.
+
+        ── The once-a-day cap is a constraint, not a check ─────────────────
+        Grants against source_ref `highman:<date>:<partner>`, which collides
+        on UNIQUE(source_ref, source_seq). Two wins submitted at once cannot
+        both be paid, and a replayed request is a no-op rather than a second
+        ticket.
+
+        The date is trusted only as a label: it keys the daily cap, and a
+        caller who sends an old one simply cannot claim twice for it. The
+        storefront computes it server-side anyway.
+
+        200 = granted. 409 = already collected today (carries the balance so
+        the page can say so). 403 = rewards switched off.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        puzzle_date = data.get('puzzle_date')
+        if not puzzle_date:
+            return error_response('puzzle_date is required')
+
+        partner = user.partner_id.sudo()
+        Ticket = request.env['mint.spin.ticket'].sudo()
+
+        if not Ticket.highman_reward_settings().get('enabled'):
+            return error_response('Game rewards are not available right now', 403)
+
+        try:
+            granted = Ticket.grant_highman_win(partner, puzzle_date)
+        except IntegrityError:
+            # A concurrent request won the race for the same day. They have
+            # their ticket; this call simply is not the one that made it.
+            request.env.cr.rollback()
+            return json_response(
+                {'granted': 0, 'already_claimed': True,
+                 'tickets': Ticket.available_count(partner)}, 409)
+        except UserError as exc:
+            return error_response(str(exc), 400)
+
+        if not granted:
+            return json_response(
+                {'granted': 0, 'already_claimed': True,
+                 'tickets': Ticket.available_count(partner)}, 409)
+
+        return json_response({
+            'granted': len(granted),
+            'already_claimed': False,
+            'tickets': Ticket.available_count(partner),
         })

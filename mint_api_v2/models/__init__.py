@@ -9,3 +9,5 @@ from . import mint_blog
 from . import mint_event
 from . import mint_config
 from . import mintle_schedule  # extends mint.config with the MINTLE spreadsheet sync
+from . import mint_spin_prize
+from . import mint_spin_ticket
