@@ -308,14 +308,23 @@ class MintStrain(models.Model):
                 strain.strain_type = inferred
 
             # Record every raw spelling that differs from the master name, so
-            # resolve_name() folds future importer writes onto it.
-            have = {self._norm_strain_name(l) for l in (strain.aliases or '').splitlines()}
-            have.add(self._norm_strain_name(strain.name))
+            # the exact-text matching in refresh_product_counts (and phase 2's
+            # back-link) can claim those products.
+            #
+            # Dedupe on the RAW string, not the normalized one. Every variant
+            # in a bucket normalizes to the bucket key by construction, which
+            # is also the normalized name — so a normalized check rejects all
+            # of them and no alias is ever recorded. That bug shipped: it left
+            # "Blue Dream" claiming 87 templates instead of ~607, because
+            # "BLUE DREAM" and "Blue Dream (S)" were never written down.
+            have = {l.strip() for l in (strain.aliases or '').splitlines() if l.strip()}
+            have.add(strain.name)
             new_lines = []
             for raw, _n in variants:
-                if raw.strip() and raw.strip() != strain.name and self._norm_strain_name(raw) not in have:
-                    new_lines.append(raw.strip())
-                    have.add(self._norm_strain_name(raw))
+                r = raw.strip()
+                if r and r not in have:
+                    new_lines.append(r)
+                    have.add(r)
             if new_lines:
                 strain.aliases = '\n'.join(
                     [l for l in (strain.aliases or '').splitlines() if l.strip()] + new_lines
