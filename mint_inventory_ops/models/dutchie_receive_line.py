@@ -87,6 +87,11 @@ POS_MASTER_CATEGORY_TO_MASTER = {
     'flower': 'flower',
     'vape': 'vaporizers',
     'concentrate': 'concentrates',
+    # FL, IL and NV emit the PLURAL. Without these, rows as unambiguous as
+    # "Concentrates / CNC-Distillate Syringe" and "Edibles / Beverages" fell
+    # through to False — measured 2026-08-28 against 6,618 live rows.
+    'concentrates': 'concentrates',
+    'edibles': 'edibles',
     'inhalable compound concentrate': 'concentrates',
     'edible': 'edibles',
     'infused edible': 'edibles',
@@ -95,6 +100,14 @@ POS_MASTER_CATEGORY_TO_MASTER = {
     'accessories': 'accessories',
     'tincture': 'tinctures',
     'topicals': 'topicals',
+    # Tier-3 in practice: these never appear as a POS MasterCategory, but they
+    # are common fine-grained Categories sitting under the merchandising
+    # masters we refuse to map. 40 live rows of "Unmedicated / Clothing" and 18
+    # of "Non Medicated / CBD" resolved to nothing. Both are already
+    # Accessories in the storefront's categoryMapping, so this agrees with it
+    # rather than inventing a new opinion.
+    'clothing': 'accessories',
+    'cbd': 'accessories',
 }
 
 

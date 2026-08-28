@@ -117,7 +117,12 @@ class ProductTemplate(models.Model):
     )
     sub_category = fields.Char(
         string="Dutchie Sub-Category",
-        help="Dutchie sub-category, mirrored verbatim.",
+        help="Dutchie's POS Category field, mirrored verbatim — this is the vocabulary "
+             "the state Dutchie Reference sheets call 'Sub-Category' (Prepack Flower, "
+             "Cartridge: Live Resin, Infused Prerolls). Verified against 6,618 live rows "
+             "2026-08-28: 116 distinct values carrying 32 of the 56 governance "
+             "sub-categories. NOT Dutchie's `sub_category`, which is its ecom "
+             "subcategory and duplicates ecom_subcategory exactly.",
     )
     ecom_category = fields.Char(
         string="Dutchie Ecom Category",
