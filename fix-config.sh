@@ -920,6 +920,57 @@ except Exception as e:
     print(f"=== WARNING: strain_id pre-create failed: {e} ===")
 PYSTRAIN
 
+# ── catalog taxonomy: pre-create the product_template category mirrors ───────
+# Same shape and the same reason as the strain_id block above: these are stored
+# fields on product.template, and the ORM prefetches EVERY stored field of a
+# model. If the mint_api_v2 upgrade rolls back (one bad view anywhere in the
+# module is enough, behind a green deploy) the fields stay in the registry with
+# no column, and every write touching categ_id fails — the Dutchie sync
+# included. A migrations/ pre-migrate cannot protect against that: it runs in
+# the same transaction the ParseError rolls back. This runs on its own
+# autocommit connection before Odoo starts.
+#
+# All five are plain VARCHAR: four verbatim Dutchie mirrors plus the
+# operational Selection (Odoo stores Selection as varchar). Field DEFINITIONS
+# live in mint_api_v2/models/product_template.py.
+echo "=== catalog taxonomy: pre-creating product_template category columns ==="
+python3 << 'PYTAXO' 2>&1
+import os, sys
+try:
+    import psycopg2
+except ImportError:
+    print("psycopg2 not available, skipping taxonomy pre-create"); sys.exit(0)
+host = os.environ.get("ODOO_DB_HOST") or os.environ.get("HOST", "localhost")
+port = os.environ.get("ODOO_DB_PORT") or "5432"
+user = os.environ.get("ODOO_DB_USER") or os.environ.get("USER", "odoo")
+password = os.environ.get("ODOO_DB_PASSWORD") or os.environ.get("PASSWORD", "")
+dbname = os.environ.get("ODOO_DB_NAME", "odoo")
+COLUMNS = [
+    "pos_master_category",
+    "sub_category",
+    "ecom_category",
+    "ecom_subcategory",
+    "mint_ops_category",
+]
+try:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+    conn.autocommit = True
+    cur = conn.cursor()
+    for col in COLUMNS:
+        cur.execute("SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name='product_template' AND column_name=%s", (col,))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE product_template ADD COLUMN {col} VARCHAR")
+            print(f"=== Pre-created column product_template.{col} ===")
+        else:
+            print(f"=== product_template.{col} already exists ===")
+    cur.close()
+    conn.close()
+    print("=== catalog taxonomy pre-create OK ===")
+except Exception as e:
+    print(f"=== WARNING: catalog taxonomy pre-create failed: {e} ===")
+PYTAXO
+
 # --- post-upgrade verification -------------------------------------------
 #
 # The upgrade runs inside the server process (--update is appended to
