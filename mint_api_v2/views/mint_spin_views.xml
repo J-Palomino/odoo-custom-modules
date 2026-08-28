@@ -60,12 +60,14 @@
                         domain="[('state','=','claimed')]"/>
                 <separator/>
                 <!-- "What is left, and of what?" is the question ops actually
-                     asks; Dutchie cannot answer it, this can. -->
-                <group expand="1" string="Group By">
-                    <filter name="by_percent" string="Prize" context="{'group_by':'percent'}"/>
-                    <filter name="by_state" string="State" context="{'group_by':'state'}"/>
-                    <filter name="by_batch" string="Batch" context="{'group_by':'batch'}"/>
-                </group>
+                     asks; Dutchie cannot answer it, this can.
+                     Odoo 19 dropped <group> inside <search> — group-by filters
+                     go directly in the search element. See the same note in
+                     mint_strain_views.xml; wrapping these was what invalidated
+                     the view and rolled back the whole mint_api_v2 upgrade. -->
+                <filter name="by_percent" string="Prize" context="{'group_by':'percent'}"/>
+                <filter name="by_state" string="State" context="{'group_by':'state'}"/>
+                <filter name="by_batch" string="Batch" context="{'group_by':'batch'}"/>
             </search>
         </field>
     </record>
@@ -148,11 +150,10 @@
                      purchase-sourced? See mint_spin_ticket.py. -->
                 <filter name="purchase_sourced" string="Purchase-sourced"
                         domain="[('source','=','purchase')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="by_state" string="State" context="{'group_by':'state'}"/>
-                    <filter name="by_source" string="Source" context="{'group_by':'source'}"/>
-                    <filter name="by_partner" string="Customer" context="{'group_by':'partner_id'}"/>
-                </group>
+                <separator/>
+                <filter name="by_state" string="State" context="{'group_by':'state'}"/>
+                <filter name="by_source" string="Source" context="{'group_by':'source'}"/>
+                <filter name="by_partner" string="Customer" context="{'group_by':'partner_id'}"/>
             </search>
         </field>
     </record>
