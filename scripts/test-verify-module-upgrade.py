@@ -80,7 +80,8 @@ check('drift + warn -> does NOT name the healthy module as stale',
 # 3. drift, strict
 c, o = run([('mint_inventory_ops','19.0.5.0.0')], env={'ODOO_VERIFY_UPGRADE':'strict'}, disk=DISK)
 check('drift + strict -> exit 1 (fails the deploy)', c == 1)
-check('drift + strict -> explains previous deploy keeps serving', 'previous deployment keeps serving' in o)
+check('drift + strict -> is honest that the boot watcher ignores the code',
+      'boot watcher ignores it' in o)
 
 # 4. excluded module is ignored
 c, o = run([('mint_inventory_ops','19.0.5.0.0')],
