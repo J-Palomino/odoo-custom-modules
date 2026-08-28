@@ -280,6 +280,12 @@ COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY fix-config.sh /fix-config.sh
 RUN chmod +x /fix-config.sh
 
+# Post-upgrade verification, invoked by entrypoint.sh after `odoo -u`.
+# Answers the one question a green deploy cannot: did the modules we tried to
+# update actually reach their manifest version?
+COPY scripts/verify-module-upgrade.py /verify-module-upgrade.py
+RUN chmod +x /verify-module-upgrade.py
+
 # ── Cloudflare Tunnel config ──────────────────────────────────────────
 COPY cloudflared-config.yml /etc/cloudflared/config.yml
 COPY start-tunnel.sh /start-tunnel.sh
