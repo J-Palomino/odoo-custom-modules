@@ -33,5 +33,26 @@ if [ -n "$ODOO_UPDATE_MODULES" ]; then
     }
 fi
 
+# Did the upgrade actually take?
+#
+# The `|| continue` above is deliberate — a failed upgrade must not take the
+# site down — but it makes a rolled-back upgrade indistinguishable from a good
+# one: Railway reports SUCCESS, Odoo serves 200s on the OLD code, and columns
+# for new fields exist anyway because the registry creates them without -u.
+# On 2026-08-28 one bad view left FOUR modules un-upgraded behind a green
+# deploy and nothing surfaced it.
+#
+# Runs as odoo (it reads odoo.conf and imports odoo to resolve manifests the
+# same way the server does). Non-fatal unless ODOO_VERIFY_UPGRADE=strict.
+if [ -f /verify-module-upgrade.py ]; then
+    gosu odoo python3 /verify-module-upgrade.py || {
+        echo "Upgrade verification reported STALE MODULES — see the banner above." >&2
+        if [ "${ODOO_VERIFY_UPGRADE:-warn}" = "strict" ]; then
+            echo "ODOO_VERIFY_UPGRADE=strict — refusing to start; previous deploy keeps serving." >&2
+            exit 1
+        fi
+    }
+fi
+
 # Execute the original entrypoint or command as odoo user
 exec gosu odoo "$@"
