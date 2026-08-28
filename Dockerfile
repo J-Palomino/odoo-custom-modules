@@ -280,7 +280,10 @@ COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY fix-config.sh /fix-config.sh
 RUN chmod +x /fix-config.sh
 
-# Post-upgrade verification, invoked by entrypoint.sh after `odoo -u`.
+# Post-upgrade verification, started by fix-config.sh as a background watcher.
+# NB: the repo's entrypoint.sh is NOT copied into this image — /entrypoint.sh is
+# the base Odoo image's own. Anything that must run at boot belongs in
+# fix-config.sh, which is the real ENTRYPOINT.
 # Answers the one question a green deploy cannot: did the modules we tried to
 # update actually reach their manifest version?
 COPY scripts/verify-module-upgrade.py /verify-module-upgrade.py

@@ -25,23 +25,36 @@ This closes that gap: after the upgrade runs, compare every installed module's
 recorded version against the manifest actually on the addons path, and say so
 loudly when they disagree.
 
+## How it is invoked
+
+From `fix-config.sh`, as a BACKGROUND WATCHER started just before it execs the
+server. That is the only place it can live: the upgrade runs inside the server
+process (`--update` is appended to EXTRA_ARGS), so no point in the boot script
+is "after" it — exec never returns. The watcher waits for Odoo's port to answer,
+which is the signal that the `--update` pass finished, then runs.
+
+⚠️ Consequence: from the watcher, THE EXIT CODE IS NOT ACTED ON. The container
+is already up and serving by then, and killing a serving Odoo to protest a
+stale module would be a worse outcome than the stale module. The banner in the
+log is the real product — alert on the token.
+
+The exit code matters when the script is run by something that checks it:
+
+    python3 /verify-module-upgrade.py    # in-container, by hand
+    # or as a post-deploy CI job gating a release
+
 ## Modes — ODOO_VERIFY_UPGRADE
 
-  warn   (default) log a loud banner, exit 0. Safe to ship anywhere.
-  strict log the banner and exit 1, which fails the container start. Railway
-         keeps the PREVIOUS deployment serving, so this marks the deploy failed
-         without taking production down — the correct outcome for a deploy that
-         did not apply. Turn this on once the estate is known clean.
+  warn   (default) log a loud banner, exit 0.
+  strict log the banner and exit 1, so a CALLER THAT CHECKS THE EXIT CODE can
+         gate on it. Has no effect on the boot watcher, which ignores it.
   off    skip entirely.
 
-A failure of the CHECK ITSELF never blocks a deploy — it warns and exits 0 even
-in strict mode. A monitoring bug must not become an outage.
+A failure of the CHECK ITSELF never signals drift — it warns and exits 0 even in
+strict mode. A monitoring bug must not fail a release.
 
 Honours ODOO_DRIFT_EXCLUDE, the same list the pre-upgrade drift scan uses, so a
 module that is deliberately pinned behind its manifest does not trip this.
-
-Runnable by hand inside the container, and from a post-deploy job:
-    python3 /verify-module-upgrade.py
 """
 import ast
 import os
@@ -220,8 +233,10 @@ def main():
     print(bar, file=sys.stderr)
 
     if mode == "strict":
-        print("!!! ODOO_VERIFY_UPGRADE=strict — failing the container start so this", file=sys.stderr)
-        print("!!! deploy is marked FAILED. The previous deployment keeps serving.", file=sys.stderr)
+        print("!!! ODOO_VERIFY_UPGRADE=strict — exiting 1 for any caller that checks", file=sys.stderr)
+        print("!!! the exit code. The boot watcher ignores it: Odoo is already up and", file=sys.stderr)
+        print("!!! serving by the time this runs, and killing a live server over a", file=sys.stderr)
+        print("!!! stale module would be worse than the stale module.", file=sys.stderr)
         return 1
     return 0
 

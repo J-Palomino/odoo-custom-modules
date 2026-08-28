@@ -920,5 +920,47 @@ except Exception as e:
     print(f"=== WARNING: strain_id pre-create failed: {e} ===")
 PYSTRAIN
 
+# --- post-upgrade verification -------------------------------------------
+#
+# The upgrade runs inside the server process (--update is appended to
+# EXTRA_ARGS below), so there is no point in THIS script that is "after" it —
+# exec never returns. A background watcher is therefore the only place the
+# check can live: it waits for Odoo to answer, which is the signal that the
+# --update pass finished, then compares every installed module's recorded
+# version against the manifest on the addons path.
+#
+# Why this is needed at all: a failed upgrade is invisible from outside.
+# Railway reports SUCCESS because the container started, Odoo serves 200s on
+# the OLD code, and columns for new fields exist anyway because the registry
+# creates them without -u. On 2026-08-28 one bad view left FOUR modules
+# un-upgraded behind a green deploy and nothing surfaced it.
+#
+# The watcher survives the exec below (separate PID) and its output goes to
+# the container log, so Loki can alert on ODOO_UPGRADE_VERIFICATION_FAILED.
+if [ -f /verify-module-upgrade.py ] && [ "${ODOO_VERIFY_UPGRADE:-warn}" != "off" ]; then
+    (
+        port="${ODOO_HTTP_PORT:-8069}"
+        # Up to ~10 min: a cold upgrade of several modules is not quick.
+        for _ in $(seq 1 120); do
+            sleep 5
+            python3 - "$port" <<'PYWAIT' && break
+import socket, sys
+s = socket.socket()
+s.settimeout(2)
+try:
+    s.connect(("127.0.0.1", int(sys.argv[1])))
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+finally:
+    s.close()
+PYWAIT
+        done
+        # Give the registry a moment to settle after the port opens.
+        sleep 10
+        python3 /verify-module-upgrade.py
+    ) &
+fi
+
 # Execute the original entrypoint
 exec /entrypoint.sh "$@" $EXTRA_ARGS
