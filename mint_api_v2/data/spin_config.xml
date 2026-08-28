@@ -19,5 +19,19 @@ max_age_days  ignore purchases older than this. The importer runs in bulk and
               has been days behind; without this a catch-up run mints a ticket
               for every backdated receipt at once.</field>
         </record>
+        <record id="config_spin_highman_reward" model="mint.config">
+            <field name="key">spin.highman_reward</field>
+            <field name="is_active" eval="True"/>
+            <field name="value">{"enabled": true, "tickets": 1}</field>
+            <field name="description">High-man: tickets granted for winning the daily strain game.
+
+enabled   turn the reward on. SHIPS ON, unlike spin.purchase_grant — winning a
+          word game costs nothing and buys nothing, so the ticket is sourced
+          `promo` and carries none of the purchase -> chance -> prize weight
+          that makes purchase grants a legal question.
+tickets   how many spins one win earns. The once-a-day cap is enforced by a
+          UNIQUE constraint on highman:&lt;date&gt;:&lt;partner&gt;, not by this
+          number — raising it grants more per win, not more wins.</field>
+        </record>
     </data>
 </odoo>

@@ -1802,3 +1802,78 @@ class MintCustomerProfile(http.Controller):
             'grants_enabled': grants_enabled,
             'earn_hint': earn_hint,
         })
+
+    @http.route('/api/v1/customer/highman-reward', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def highman_reward(self, **kw):
+        """Award the spin ticket for winning today's High-man.
+
+        Body: { "puzzle_date": "2026-08-27" }
+
+        ── Why a ticket and not points ────────────────────────────────────
+        Dutchie's loyalty API is read-only, so an Odoo-side point grant is
+        invisible at the register — and `mint.loyalty.award_mode` is
+        deliberately `off` in production precisely because awarding
+        "fabricates balances the register will not honour". A spin ticket
+        lives entirely in systems we control, so the reward the customer sees
+        is the reward they actually have.
+
+        ── The once-a-day cap is a constraint, not a check ─────────────────
+        Grants against source_ref `highman:<date>:<partner>`, which collides
+        on UNIQUE(source_ref, source_seq). Two wins submitted at once cannot
+        both be paid, and a replayed request is a no-op rather than a second
+        ticket.
+
+        The date is trusted only as a label: it keys the daily cap, and a
+        caller who sends an old one simply cannot claim twice for it. The
+        storefront computes it server-side anyway.
+
+        200 = granted. 409 = already collected today (carries the balance so
+        the page can say so). 403 = rewards switched off.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        try:
+            data = json.loads(request.httprequest.data)
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        puzzle_date = data.get('puzzle_date')
+        if not puzzle_date:
+            return error_response('puzzle_date is required')
+
+        partner = user.partner_id.sudo()
+        Ticket = request.env['mint.spin.ticket'].sudo()
+
+        if not Ticket.highman_reward_settings().get('enabled'):
+            return error_response('Game rewards are not available right now', 403)
+
+        try:
+            granted = Ticket.grant_highman_win(partner, puzzle_date)
+        except IntegrityError:
+            # A concurrent request won the race for the same day. They have
+            # their ticket; this call simply is not the one that made it.
+            request.env.cr.rollback()
+            return json_response(
+                {'granted': 0, 'already_claimed': True,
+                 'tickets': Ticket.available_count(partner)}, 409)
+        except UserError as exc:
+            return error_response(str(exc), 400)
+
+        if not granted:
+            return json_response(
+                {'granted': 0, 'already_claimed': True,
+                 'tickets': Ticket.available_count(partner)}, 409)
+
+        return json_response({
+            'granted': len(granted),
+            'already_claimed': False,
+            'tickets': Ticket.available_count(partner),
+        })

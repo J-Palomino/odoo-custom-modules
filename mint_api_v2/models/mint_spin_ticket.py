@@ -138,6 +138,63 @@ class MintSpinTicket(models.Model):
         return merged
 
     @api.model
+    def highman_reward_settings(self):
+        """Rules for the ticket a High-man win earns.
+
+        Key: `spin.highman_reward`, JSON, e.g. {"enabled": true, "tickets": 1}
+
+        Unlike `spin.purchase_grant` this ships ENABLED. The two are gated
+        differently on purpose: a purchase-sourced ticket makes the wheel
+        purchase -> chance -> prize and needs sign-off, whereas winning a word
+        game costs nothing and buys nothing, so the ticket is `promo` and
+        carries none of that weight.
+        """
+        defaults = {'enabled': True, 'tickets': 1}
+        row = self.env['mint.config'].sudo().search(
+            [('key', '=', 'spin.highman_reward'), ('is_active', '=', True)], limit=1)
+        if not row or not row.value:
+            return defaults
+        try:
+            settings = json.loads(row.value)
+        except (ValueError, TypeError):
+            _logger.warning('spin.highman_reward is not valid JSON; using defaults')
+            return defaults
+        if not isinstance(settings, dict):
+            return defaults
+        merged = dict(defaults)
+        merged.update(settings)
+        return merged
+
+    @api.model
+    def grant_highman_win(self, partner, puzzle_date):
+        """Award the ticket for winning High-man on `puzzle_date`.
+
+        Returns the tickets created by THIS call — empty when the customer
+        already collected that day, which the controller reports as a 409 with
+        their current balance rather than an error.
+
+        The once-a-day cap is the UNIQUE(source_ref, source_seq) constraint on
+        `highman:<date>:<partner>`, not a check: two wins submitted at once
+        cannot both be paid.
+        """
+        if not partner:
+            raise UserError(_("Partner is required."))
+        if not puzzle_date:
+            raise UserError(_("A puzzle date is required."))
+
+        settings = self.highman_reward_settings()
+        if not settings.get('enabled'):
+            return self.sudo().browse()
+
+        return self.grant_for_ref(
+            partner=partner,
+            source_ref='highman:%s:%s' % (puzzle_date, partner.id),
+            count=int(settings.get('tickets') or 1),
+            source='promo',
+            note=_('High-man win %s') % puzzle_date,
+        )
+
+    @api.model
     def grant_for_ref(self, partner, source_ref, count=1, source='grant', **kw):
         """Grant tickets idempotently against an external reference.
 
