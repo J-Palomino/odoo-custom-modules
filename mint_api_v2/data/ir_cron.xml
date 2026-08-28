@@ -12,6 +12,37 @@
             <field name="active" eval="True"/>
         </record>
 
+        <!--
+            Keeps the strain master current. product.template writes resolve
+            incoming text against EXISTING masters and never auto-create, so a
+            genuinely new strain from the Dutchie feed stays unlinked until the
+            seed runs again. Without this, link coverage is a point-in-time
+            snapshot that decays as the catalog turns over — measured
+            2026-08-28: 5 products on 2 real strains (Josh D OG, Ultraviolet)
+            went unlinked within hours of the initial seed.
+
+            seed_from_products() is idempotent: a re-run creates no duplicates,
+            folds new spellings into existing masters as aliases, back-links
+            product.template.strain_id and refreshes product_count. Verified on
+            prod — the second run created 0 and only backfilled.
+
+            ⚠ At the default min_count=1 every non-placeholder value earns a
+            master, so an importer typo becomes a permanent strain record.
+            Passing min_count=2 would gate that behind a second sighting; left
+            at the default by request. Work the "Needs Review" filter
+            (verified = False) and archive what isn't a strain.
+        -->
+        <record id="cron_seed_strain_master" model="ir.cron">
+            <field name="name">Mint: Seed strain master from product catalog</field>
+            <field name="model_id" ref="model_mint_strain"/>
+            <field name="state">code</field>
+            <field name="code">model.seed_from_products()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+
         <record id="cron_sync_mintle_schedule" model="ir.cron">
             <field name="name">Mint: Sync MINTLE schedule from spreadsheet</field>
             <field name="model_id" ref="model_mint_config"/>
