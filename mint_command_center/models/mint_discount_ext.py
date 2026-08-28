@@ -48,6 +48,16 @@ WELCOME_CODE_MAX_TRIES = 12
 # covers every US market (worst case UTC-10).
 WELCOME_VALID_FROM_SLACK_DAYS = 1
 
+# How many PTL discounts _cron_ptl_daily_lifecycle may change state for in one
+# run. The push it triggers costs one webhook payload per (discount × store),
+# so an unbounded run against a backlog is quadratic in practice: 329 expired
+# records across ~40 stores took prod Odoo down on 2026-08-25 by holding
+# WorkerCron past limit_time_real (300s) until it was killed and retried.
+# 100 keeps a run at roughly 4,000 payload builds — comfortably inside the
+# limit — and a backlog simply drains across consecutive runs.
+PTL_LIFECYCLE_BATCH_PARAM = 'mint_cc.ptl_lifecycle_batch'
+PTL_LIFECYCLE_DEFAULT_BATCH = 100
+
 
 class MintDiscountPTL(models.Model):
     """Extend mint.discount with PTL-specific fields and lifecycle cron.
@@ -264,10 +274,15 @@ class MintDiscountPTL(models.Model):
         Log = self.env['mint.dutchie.discount.push.log'].sudo()
         Company = self.env['res.company'].sudo()
         for lsp in cfg['enabled_lsps']:
+            # order='id' is load-bearing: an unordered limit=1 let the chosen
+            # store drift between runs, and because the push-log id lookup was
+            # keyed on the store, a drifted pick CREATED a second LSP-wide
+            # Dutchie record instead of updating the first (coupon 3046 ->
+            # 385159 @ 75th Ave, then 385236 @ Tempe, same code MINT-58N83Z).
             store = Company.search([
                 ('dutchie_lsp_id', '=', lsp),
                 ('dutchie_pos_location_id', '!=', False),
-            ], limit=1)
+            ], order='id', limit=1)
             if not store:
                 _logger.warning('welcome_preroll: no store with a POS LocId for LSP %s', lsp)
                 continue
@@ -341,67 +356,45 @@ class MintDiscountPTL(models.Model):
 
     @api.model
     def _cron_sync_welcome_redemptions(self):
-        """Flip welcome coupons to used/expired by reading Dutchie back.
+        """Deprecated — delegates to _cron_sync_code_coupon_usage().
 
-        Expiry is derivable locally (valid_until). Redemption is read from Dutchie
-        via mintinvsvc GET /api/admin/dutchie-discount/<id> (RedemptionCount) per
-        live push-log row — the coupon is LSP-scoped, so we sum across LSPs. Marks
-        redemption_status='used' once the total hits maximum_usage_count.
+        This used to read Dutchie's RedemptionCount per push-log row. That
+        field never increments: it still read 0 after a redemption confirmed at
+        the register, and across 42 welcome coupons in production this cron had
+        never marked a single one used since it shipped in 2026-07. It looked
+        healthy the whole time because "0 redemptions" is indistinguishable
+        from "nothing to do".
+
+        A welcome pre-roll is just a code coupon, so it is now swept by the
+        same report-10875 path as every other one rather than maintaining a
+        second, broken implementation. Kept as a wrapper so the existing
+        ir.cron record keeps working; that record can be disabled, since the
+        code-coupon cron already covers these.
         """
-        coupons = self.sudo().search([
-            ('is_welcome_preroll', '=', True),
-            ('redemption_status', 'not in', ['used', 'voided']),
-        ], limit=500)
-        if not coupons:
-            return
-        push = self.env['mint.ptl.day'].sudo()
-        mode = push._get_dutchie_push_mode()
-        api_key = push._get_dutchie_push_api_key()
-        base = (push._get_dutchie_push_url() or '').rsplit('/api/admin/discounts', 1)[0]
-        Log = self.env['mint.dutchie.discount.push.log'].sudo()
-        # valid_until is a Date — compare date-to-date. Against a Datetime this
-        # raises TypeError and aborts the whole sweep on its first coupon.
-        today = fields.Date.context_today(self)
-        for c in coupons:
-            # Local expiry first — independent of Dutchie.
-            if c.valid_until and c.valid_until < today:
-                c.write({'redemption_status': 'expired'})
-                continue
-            if mode != 'live' or not base:
-                continue  # only real redemptions to sync when we actually pushed live
-            logs = Log.search([
-                ('discount_id', '=', c.id), ('mode', '=', 'live'),
-                ('success', '=', True), ('dutchie_discount_id', '!=', 0),
-            ])
-            total, seen = 0, False
-            for lg in logs:
-                store = lg.company_id
-                loc = push._resolve_pos_loc_id(store)
-                lsp = push._resolve_lsp_id(store)
-                if not loc or not lsp:
-                    continue
-                u = (f'{base}/api/admin/dutchie-discount/{lg.dutchie_discount_id}'
-                     f'?locId={loc}&lspId={lsp}')
-                try:
-                    req = urllib.request.Request(u, headers={
-                        'X-API-Key': api_key,
-                        'User-Agent': 'mint-odoo-welcome-sync/1.0',
-                    })
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        rec = (json.loads(resp.read().decode('utf-8', 'replace')) or {}).get('discount') or {}
-                        total += int(rec.get('RedemptionCount') or 0)
-                        seen = True
-                except Exception as e:
-                    _logger.warning('welcome_sync: read failed coupon %s did %s: %s',
-                                    c.id, lg.dutchie_discount_id, e)
-            if seen and total >= int(c.maximum_usage_count or 1):
-                c.write({'redemption_status': 'used', 'redemption_used_at': now})
+        return self._cron_sync_code_coupon_usage()
 
-    # ─── Code-coupon usage sync (Backoffice report 1082) ─────────────────
+    # ─── Code-coupon usage sync (Backoffice report 10875) ────────────────
+
+    promo_gift_token = fields.Char(
+        string='Promo Gift Token', index=True, copy=False,
+        help="Opaque, unguessable handle used in the /gift/<token> URL. The "
+             "redeemable code must NEVER appear in a shareable link: a scanned "
+             "QR puts the URL in the address bar, so a code-in-URL link is "
+             "readable by anyone who sees the code — which defeats the "
+             "sign-in gate entirely. This token is worthless at a register.",
+    )
+
+    promo_issued_by_id = fields.Many2one(
+        'res.partner', string='Promo Issued By', index=True, copy=False,
+        help="Set when this coupon was minted from the storefront Promos "
+             "screen. Distinguishes an ad-hoc promo from a PTL deal or a "
+             "loyalty redemption, and scopes the issuer's own promo list.",
+    )
 
     redemption_used_count = fields.Integer(
         string='Times Redeemed', default=0, copy=False, readonly=True,
-        help="Redemptions counted from Dutchie Backoffice report 1082. "
+        help="Redemptions counted from Dutchie Backoffice report 10875 "
+             "(Discount Detail), matched on Discount Code. "
              "Dutchie's own RedemptionCount is NOT usable: it still read 0 "
              "after a redemption confirmed at the register, and across 42 "
              "welcome coupons has never marked a single one used.",
@@ -466,7 +459,6 @@ class MintDiscountPTL(models.Model):
         """
         coupons = self.sudo().search([
             ('application_method', '=', 'code'),
-            ('is_welcome_preroll', '=', False),
             ('redemption_status', 'not in', ['used', 'voided']),
             ('dutchie_discount_code', '!=', False),
         ], limit=200)
@@ -557,6 +549,11 @@ class MintDiscountPTL(models.Model):
             if count != c.redemption_used_count:
                 vals['redemption_used_count'] = count
             cap = int(c.maximum_usage_count or 0)
+            # A welcome pre-roll is single-use by construction. Several were
+            # created by a raw RPC path that omitted maximum_usage_count and so
+            # carry 0, which would read as "uncapped" and never flip to used.
+            if not cap and c.is_welcome_preroll:
+                cap = 1
             if cap and count >= cap:
                 vals.update({
                     'redemption_status': 'used',
@@ -594,11 +591,26 @@ class MintDiscountPTL(models.Model):
             ('dutchie_pos_location_id', '!=', False),
             ('dutchie_lsp_id', '!=', False),
             ('dutchie_discount_push_enabled', '=', True),
-        ])
+        ], order='id')
         if not stores:
             raise UserError(_(
                 "No target stores. Pick stores under Targeting, or enable "
                 "'Push Discounts to Dutchie' on a store that has a POS LocId + LSP."))
+        # A Dutchie discount is owned by the LSP, not the location, so one write
+        # per LSP covers every store under it and repeated writes duplicate it.
+        #
+        # REGION-level targeting is therefore already correct: region <-> LSP is
+        # 1:1 in production (AZ=575, MI=576, MO=723, IL=805, NV=820, FL=821 —
+        # every region holds exactly one LSP and no LSP spans two regions), so
+        # an LSP-scoped discount IS a region-scoped discount. Marketing's
+        # region-specific deals need nothing further.
+        #
+        # What store_ids CANNOT do is narrow a deal to a subset of stores INSIDE
+        # one region: the payload hardcodes LocationRestrictions=[], so a deal
+        # targeted at one AZ store still goes live at all nine. If per-store
+        # targeting is ever needed, populate LocationRestrictions from store_ids
+        # — until then store_ids only selects which LSPs get written.
+        stores = push._collapse_stores_by_lsp(stores)
         ok = 0
         for store in stores:
             try:
@@ -659,49 +671,101 @@ class MintDiscountPTL(models.Model):
 
     # ── Daily lifecycle cron (was: flip is_active, now: flip is_published) ──
     @api.model
-    def _cron_ptl_daily_lifecycle(self):
-        """Daily lifecycle for PTL discounts: publish on valid_from, unpublish past valid_until."""
+    def _cron_ptl_daily_lifecycle(self, batch=None):
+        """Daily lifecycle for PTL discounts: publish on valid_from, unpublish past valid_until.
+
+        Bounded on purpose. When this cron was restored on 2026-08-25 after
+        being switched off since June, its first unbounded run tried to clear a
+        329-record backlog in one transaction and took prod down with it: the
+        push builds one webhook payload per (discount × store), so ~600
+        discounts across ~40 stores meant ~24,000 payload builds. WorkerCron
+        blew through limit_time_real (300s), got killed, retried, and the HTTP
+        workers starved alongside it — 61 `timeout after 300s` kills where the
+        preceding hour had none.
+
+        Two bounds keep that from recurring:
+
+        1. `batch` caps how many records change state per run (default 100,
+           overridable via the `mint_cc.ptl_lifecycle_batch` config parameter).
+           A backlog drains over consecutive runs instead of one huge one.
+        2. Only records that ACTUALLY changed are pushed. The old code pushed
+           `to_publish | to_unpublish | active_ptl` — the entire published set,
+           every single day, whether or not anything about it had moved. That
+           made even a quiet day cost ~7,000 payload builds. Day-of-week
+           booleans are still recomputed for the whole active set (cheap,
+           in-memory), but only the ones whose flags moved get pushed.
+        """
         today = fields.Date.today()
+        Param = self.env['ir.config_parameter'].sudo()
+        if batch is None:
+            batch = int(Param.get_param(
+                PTL_LIFECYCLE_BATCH_PARAM, PTL_LIFECYCLE_DEFAULT_BATCH))
+        batch = max(1, batch)
 
         # Publish PTL deals where valid_from <= today
-        to_publish = self.search([
+        publish_domain = [
             ('source', '=', 'ptl'),
             ('is_published', '=', False),
             ('valid_from', '<=', today),
             '|', ('valid_until', '=', False), ('valid_until', '>=', today),
-        ])
+        ]
+        to_publish = self.search(publish_domain, order='id', limit=batch)
         if to_publish:
             to_publish.write({'is_published': True})
             _logger.info('PTL lifecycle: published %d discounts', len(to_publish))
 
-        # Unpublish PTL deals where valid_until < today
-        to_unpublish = self.search([
+        # Unpublish PTL deals where valid_until < today. Share the budget with
+        # the publish pass so one run can never exceed `batch` state changes.
+        unpublish_domain = [
             ('source', '=', 'ptl'),
             ('is_published', '=', True),
             ('valid_until', '!=', False),
             ('valid_until', '<', today),
-        ])
-        if to_unpublish:
-            to_unpublish.write({'is_published': False})
-            _logger.info('PTL lifecycle: unpublished %d expired discounts', len(to_unpublish))
+        ]
+        remaining_budget = batch - len(to_publish)
+        to_unpublish = self.browse()
+        if remaining_budget > 0:
+            to_unpublish = self.search(
+                unpublish_domain, order='id', limit=remaining_budget)
+            if to_unpublish:
+                to_unpublish.write({'is_published': False})
+                _logger.info(
+                    'PTL lifecycle: unpublished %d expired discounts', len(to_unpublish))
 
-        # Recompute day-of-week booleans for active PTL discounts
+        # Recompute day-of-week booleans for active PTL discounts, tracking
+        # which ones actually moved so the push stays proportional to real
+        # change rather than to the size of the catalogue.
         active_ptl = self.search([
             ('source', '=', 'ptl'),
             ('is_published', '=', True),
             ('ptl_deal_id', '!=', False),
         ])
+        dow_changed = self.browse()
         for discount in active_ptl:
+            before = tuple(discount[d] for d in self.DAY_NAME_MAP.values())
             self._recompute_day_booleans(discount)
+            if tuple(discount[d] for d in self.DAY_NAME_MAP.values()) != before:
+                dow_changed |= discount
 
-        # Push all changes to inventory service
-        changed = to_publish | to_unpublish | active_ptl
+        # Push only what changed to the inventory service
+        changed = to_publish | to_unpublish | dow_changed
         if changed:
             self.env['mint.ptl.day']._push_discounts_to_redis(changed.ids)
 
+        # Say plainly whether the backlog is drained. A run that hits its cap
+        # leaves work behind, and the next scheduled run picks it up.
+        outstanding = (self.search_count(publish_domain)
+                       + self.search_count(unpublish_domain))
+        if outstanding:
+            _logger.warning(
+                'PTL lifecycle: %d records still outstanding after this batch '
+                '(batch=%d) — will continue on the next run', outstanding, batch)
+
         _logger.info(
-            'PTL lifecycle cron: %d published, %d unpublished, %d dow-recomputed',
-            len(to_publish), len(to_unpublish), len(active_ptl),
+            'PTL lifecycle cron: %d published, %d unpublished, %d dow-changed '
+            '(of %d active), %d pushed, %d outstanding',
+            len(to_publish), len(to_unpublish), len(dow_changed),
+            len(active_ptl), len(changed), outstanding,
         )
 
     # ── Hourly cron: push only edges (is_active flips) to Redis ──────────

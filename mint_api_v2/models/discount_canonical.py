@@ -92,11 +92,55 @@ def calc_method_id_for(discount):
     sync). Fall back to the odoo discount_type only when the integer is unset
     (e.g. hand-authored PTL deals). Returns None when neither resolves so the
     caller can warn rather than mislabel."""
+    return resolve_calc_method_id(discount)
+
+
+# ── Odoo-only discount types ────────────────────────────────────────────────
+# mint.discount.discount_type carries values Dutchie has no CalculationMethod
+# for. They are marketing shapes, not calculation methods, so each maps onto the
+# Dutchie encoding it actually represents. Verified against live data — never
+# invent an id here; Dutchie exposes exactly the six in the registry.
+PRICE_TO_AMOUNT_TOTAL_ID = 6  # "N for $X": the total for N items
+
+ODOO_ONLY_TYPE_TO_ID = {
+    # A redemption is "100% off this item": 8 live records already carry
+    # CalculationMethodId 2 with discount_amount 1.0. It is NOT id 15 — that is
+    # the loyalty *multiplier* ("4.2X Loyalty", value in discount_value).
+    'loyalty_redemption': 2,
+}
+
+
+def resolve_calc_method_id(discount):
+    """Best available Dutchie CalculationMethodId for a record, or None.
+
+    Layered, most authoritative first:
+      1. the stored integer (set by the Dutchie read sync — always wins)
+      2. a discount_type that IS a Dutchie odooType
+      3. an Odoo-only type with a verified Dutchie encoding
+      4. 'bogo', which is ambiguous: it covers both "2 for $80" (id 6, the total
+         for N items) and "buy one get one" (id 3, the price the get item drops
+         to). Only the N-for-$X shape is inferable, and only when the record
+         carries a threshold and a value; a true BOGO needs the get-item price,
+         which no amount of guessing recovers.
+
+    Returns None when nothing resolves, so callers can surface the gap instead
+    of silently pricing it as PERCENT_OFF.
+    """
     cmid = getattr(discount, 'calculation_method_id', 0) or 0
     if cmid and cmid in CALC_METHOD_BY_ID:
         return int(cmid)
     dt = getattr(discount, 'discount_type', None)
-    return ODOO_TYPE_TO_ID.get(dt)
+    if dt in ODOO_TYPE_TO_ID:
+        return ODOO_TYPE_TO_ID[dt]
+    if dt in ODOO_ONLY_TYPE_TO_ID:
+        return ODOO_ONLY_TYPE_TO_ID[dt]
+    if dt == 'bogo':
+        threshold = getattr(discount, 'threshold_min', 0) or 0
+        value = getattr(discount, 'discount_amount', 0) or 0
+        if threshold >= 2 and value > 0:
+            return PRICE_TO_AMOUNT_TOTAL_ID
+        return None
+    return None
 
 
 def value_field_for_id(cmid):

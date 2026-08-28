@@ -1,6 +1,6 @@
 {
     'name': 'Mint Inventory Operations',
-    'version': '19.0.1.0.0',
+    'version': '19.0.5.0.0',
     'category': 'Inventory',
     'summary': 'Cannabis inventory adjustments, transfers, batch ops, and compliance tracking',
     'description': """Mint Inventory Operations
@@ -11,13 +11,15 @@
     'author': 'Mint Dispensaries',
     'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
-    'depends': ['stock', 'product', 'mail'],
+    'depends': ['stock', 'product', 'mail', 'mint_api_v2'],
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
         'security/record_rules.xml',
         'data/sequence.xml',
         'views/adjustment_views.xml',
+        'views/dutchie_refs_views.xml',
+        'views/dutchie_receive_views.xml',
         'views/menu.xml',
     ],
     'installable': True,

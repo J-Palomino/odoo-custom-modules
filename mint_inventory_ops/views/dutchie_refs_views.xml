@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Rooms -->
+    <record id="view_dutchie_room_list" model="ir.ui.view">
+        <field name="name">mint.dutchie.room.list</field>
+        <field name="model">mint.dutchie.room</field>
+        <field name="arch" type="xml">
+            <list string="Dutchie Rooms" default_order="loc_id, name" create="0">
+                <field name="loc_id"/>
+                <field name="name"/>
+                <field name="dutchie_room_id"/>
+                <field name="is_inventory_room" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_dutchie_room_search" model="ir.ui.view">
+        <field name="name">mint.dutchie.room.search</field>
+        <field name="model">mint.dutchie.room</field>
+        <field name="arch" type="xml">
+            <search string="Dutchie Rooms">
+                <field name="name"/>
+                <field name="loc_id"/>
+                <field name="dutchie_room_id"/>
+                <filter name="inventory" string="Inventory Rooms"
+                        domain="[('is_inventory_room', '=', True)]"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+                <separator/>
+                <filter name="group_loc" string="Location" context="{'group_by': 'loc_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_dutchie_room" model="ir.actions.act_window">
+        <field name="name">Dutchie Rooms</field>
+        <field name="res_model">mint.dutchie.room</field>
+        <field name="view_mode">list</field>
+        <field name="search_view_id" ref="view_dutchie_room_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No rooms mirrored yet</p>
+            <p>
+                These are a cache of Dutchie's own rooms, per store. Populate them
+                from a receive with <b>Load Rooms &amp; Vendors</b> — they are not
+                created by hand, and a re-sync overwrites them.
+            </p>
+        </field>
+    </record>
+
+    <!-- Vendors -->
+    <record id="view_dutchie_vendor_list" model="ir.ui.view">
+        <field name="name">mint.dutchie.vendor.list</field>
+        <field name="model">mint.dutchie.vendor</field>
+        <field name="arch" type="xml">
+            <list string="Dutchie Vendors" default_order="loc_id, name" create="0">
+                <field name="loc_id"/>
+                <field name="name"/>
+                <field name="dutchie_vendor_id"/>
+                <field name="vendor_code"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_dutchie_vendor_search" model="ir.ui.view">
+        <field name="name">mint.dutchie.vendor.search</field>
+        <field name="model">mint.dutchie.vendor</field>
+        <field name="arch" type="xml">
+            <search string="Dutchie Vendors">
+                <field name="name"/>
+                <field name="loc_id"/>
+                <field name="dutchie_vendor_id"/>
+                <field name="vendor_code"/>
+                <filter name="no_code" string="Missing Vendor Code"
+                        domain="[('vendor_code', 'in', [False, ''])]"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+                <separator/>
+                <filter name="group_loc" string="Location" context="{'group_by': 'loc_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_dutchie_vendor" model="ir.actions.act_window">
+        <field name="name">Dutchie Vendors</field>
+        <field name="res_model">mint.dutchie.vendor</field>
+        <field name="view_mode">list</field>
+        <field name="search_view_id" ref="view_dutchie_vendor_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No vendors mirrored yet</p>
+            <p>
+                A cache of Dutchie's vendors, per store. <b>Vendor Code</b> is the
+                licence the manifest carries — duplicates under different ids are
+                real, so check the code before picking one on a receive.
+            </p>
+        </field>
+    </record>
+
+</odoo>

@@ -7,6 +7,8 @@ All endpoints require JWT authentication via Authorization header.
 import base64
 import hashlib
 import json
+import secrets
+from datetime import timedelta
 import logging
 
 from psycopg2 import IntegrityError
@@ -115,7 +117,7 @@ def _coupon_reward_label(rec):
     return rec.name or 'Coupon'
 
 
-def _serialize_coupon(rec):
+def _serialize_coupon(rec, base_url=''):
     """Shape a standalone code coupon (NOT a points redemption) for JSON.
 
     The code the customer reads is `dutchie_discount_code` -- that is what was
@@ -141,6 +143,146 @@ def _serialize_coupon(rec):
         ),
         'expires_at': rec.valid_until.isoformat() if rec.valid_until else None,
         'in_store_only': not rec.is_available_online,
+        # Only a promo can be given away. A loyalty redemption was bought with
+        # the customer's own points and is tied to a specific product, so
+        # transferring it would be handing over something they paid for
+        # through a mechanism that cannot refund them.
+        'giftable': bool(getattr(rec, 'promo_issued_by_id', False)
+                         and rec.redemption_status == 'pending'),
+        # TOKEN, never the code — same reason as the promo serializer: a
+        # /gift/<CODE> link puts the redeemable code in the address bar of
+        # whoever scans the QR, which defeats the sign-in gate entirely.
+        'gift_url': ('%s/gift/%s' % (base_url.rstrip('/'),
+                                     getattr(rec, 'promo_gift_token', '') or ''))
+                    if (base_url and getattr(rec, 'promo_gift_token', '')) else '',
+    }
+
+
+def _fmt_amount(v):
+    """'50' not '50.0'; '12.50' keeps its cents."""
+    return ('%.2f' % float(v)).rstrip('0').rstrip('.')
+
+
+# Full user LOGINS, comma separated (e.g. 'web:someone@example.com').
+# Named *_emails for backward compatibility with the deployed parameter.
+PROMO_ISSUERS_PARAM = 'mint.promos.issuer_emails'
+PROMO_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'
+# AZ stores the promo is scoped to for web-side display. Publishing targets ONE
+# of them (see _promo_publish_store) — the pusher fans out per store with no LSP
+# dedupe, so a multi-store publish mints N copies of the same code, each
+# separately redeemable. A "single-use" $100 would become $900.
+PROMO_DEFAULT_TTL_DAYS = 30
+
+
+def _promo_issuer_partner():
+    """The authenticated user, if they are allowed to issue promos.
+
+    Gated on an explicit allowlist of USER LOGINS in ir.config_parameter, and
+    deliberately not on two alternatives that look simpler:
+
+      * `user.share` — the storefront login for staff is a PORTAL user
+        (web:someone@example.com, share=True), so an internal/staff check
+        excludes exactly the people who need this.
+      * partner EMAIL — an email is not unique across res.partner. Three
+        partner records carry jpalomino@brightroot.com on production, one of
+        them with no user attached, so an email rule grants access to a set
+        that can grow without anyone touching this allowlist. A login is 1:1
+        with an account, which is the grain this decision actually needs for
+        something that mints spendable money-off codes.
+
+    Logins are matched verbatim, so the allowlist holds the full login
+    including the `web:` prefix.
+
+    Returns (user, None) when allowed, (None, response) when not.
+    """
+    user = _verify_and_get_user()
+    if not user:
+        return None, error_response('Authentication required', 401)
+    if not user.partner_id:
+        return None, error_response('No customer profile linked to this account', 400)
+    raw = (request.env['ir.config_parameter'].sudo()
+           .get_param(PROMO_ISSUERS_PARAM, '') or '')
+    allowed = {e.strip().lower() for e in raw.split(',') if e.strip()}
+    login = (user.login or '').strip().lower()
+    if not allowed or login not in allowed:
+        # Deliberately 404, not 403: an unauthorised caller should not learn
+        # that a promo-issuing endpoint exists at all.
+        return None, error_response('Not found', 404)
+    return user, None
+
+
+def _storefront_base():
+    return (request.env['ir.config_parameter'].sudo()
+            .get_param('mint.storefront_url', 'https://shop.letsgomint.us'))
+
+
+def _promo_new_token():
+    """Opaque handle for a gift URL. Never the redeemable code.
+
+    Scanning a QR puts the URL in the address bar, so a /gift/<CODE> link
+    hands the code to anyone who can see the screen — the sign-in gate then
+    guards only the page body, which is theatre. This token buys nothing at a
+    register, so leaking it costs nothing until someone signs in and claims.
+    """
+    Discount = request.env['mint.discount'].sudo()
+    for _ in range(12):
+        tok = secrets.token_urlsafe(18)
+        if not Discount.search_count([('promo_gift_token', '=', tok)]):
+            return tok
+    raise UserError(_('Could not allocate an unused gift token.'))
+
+
+def _promo_new_code():
+    """MINT-XXXXXX over an alphabet with no 0/O/1/I/L/U — budtenders key these
+    in by hand off a customer's phone."""
+    Discount = request.env['mint.discount'].sudo()
+    for _ in range(12):
+        code = 'MINT-' + ''.join(secrets.choice(PROMO_CODE_ALPHABET) for _ in range(6))
+        if not Discount.search_count([('dutchie_discount_code', '=', code)]):
+            return code
+    raise UserError(_('Could not allocate an unused promo code.'))
+
+
+def _serialize_promo(rec, base_url=''):
+    used = int(getattr(rec, 'redemption_used_count', 0) or 0)
+    cap = int(rec.maximum_usage_count or 0)
+    code = rec.dutchie_discount_code or ''
+    return {
+        'id': rec.id,
+        'code': code,
+        'amount': rec.discount_value,
+        'label': rec.name,
+        'status': rec.redemption_status,
+        'max_uses': cap,
+        'used': used,
+        'uses_remaining': max(0, cap - used) if cap else None,
+        'expires_at': rec.valid_until.isoformat() if rec.valid_until else None,
+        'created_at': rec.create_date.isoformat() if rec.create_date else None,
+        # Link carries the TOKEN, never the code.
+        'gift_url': ('%s/gift/%s' % (base_url.rstrip('/'), rec.promo_gift_token))
+                    if (base_url and rec.promo_gift_token) else '',
+        'claimed': bool(rec.redemption_partner_id),
+        'claimed_by': rec.redemption_partner_id.name if rec.redemption_partner_id else None,
+        'claimed_at': rec.write_date.isoformat() if rec.redemption_partner_id and rec.write_date else None,
+    }
+
+
+# Favorite item types the API accepts. Kept beside the serializer so the
+# controller and mint.customer.favorite.item_type cannot drift apart
+# silently — a type the model rejects would surface as a 500, not a 400.
+ITEM_TYPES = ('product', 'deal', 'store')
+
+
+def _serialize_favorite(rec):
+    """Shape a mint.customer.favorite row for JSON output."""
+    return {
+        'id': rec.id,
+        'item_type': rec.item_type,
+        'item_ref': rec.item_ref,
+        'label': rec.label or None,
+        'location_id': rec.location_id or None,
+        'image_url': rec.image_url or None,
+        'created_at': rec.create_date.isoformat() if rec.create_date else None,
     }
 
 
@@ -788,6 +930,292 @@ class MintCustomerProfile(http.Controller):
         )
         return Company
 
+    @http.route('/api/v1/customer/promos', type='http', auth='none',
+                methods=['GET', 'OPTIONS'], csrf=False, cors='*')
+    def list_promos(self, **kw):
+        """List promos this issuer has created. Allowlisted callers only."""
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        user, denied = _promo_issuer_partner()
+        if denied:
+            return denied
+        base = (request.env['ir.config_parameter'].sudo()
+                .get_param('mint.storefront_url', 'https://shop.letsgomint.us'))
+        promos = request.env['mint.discount'].sudo().search([
+            ('discount_type', '=', 'dollar_off_total'),
+            ('application_method', '=', 'code'),
+            ('promo_issued_by_id', '=', user.partner_id.id),
+        ], order='create_date desc', limit=200)
+        return json_response({'promos': [_serialize_promo(p, base) for p in promos]})
+
+    @http.route('/api/v1/customer/promos/issue', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def issue_promo(self, **kw):
+        """Mint a $-off-any-transaction coupon and publish it to Dutchie.
+
+        Body: {"amount": 50, "uses": 1, "days": 30, "label": "..."}
+
+        Every value here is load-bearing and was established by debugging a
+        live coupon; none of it is arbitrary:
+          * discount_type dollar_off_total -> CalculationMethodId 5, value in
+            discount_value (discount_amount is 0 for calc 5).
+          * threshold_type order_total with a 0.01 minimum. A "none" threshold
+            makes the invsvc validator reject the push as an unscoped
+            single-item coupon (HTTP 422); 0.01 is effectively no minimum.
+          * maximum_usage_count is floored to 1 — the field has NO model
+            default, and 0 means UNCAPPED to Dutchie, not "zero uses".
+          * is_published plus all seven weekday flags, because is_active is a
+            stored compute over (published AND in-window AND today's weekday).
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        user, denied = _promo_issuer_partner()
+        if denied:
+            return denied
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+
+        try:
+            amount = float(data.get('amount') or 0)
+        except (TypeError, ValueError):
+            amount = 0
+        if amount <= 0 or amount > 500:
+            return error_response('amount must be between 0.01 and 500')
+        # Each use is now a separate coupon and therefore a separate Dutchie
+        # push, so this is bounded — 25 sequential pushes would stall the
+        # request long enough to look hung.
+        uses = max(1, min(int(data.get('uses') or 1), 10))
+        days = max(1, min(int(data.get('days') or PROMO_DEFAULT_TTL_DAYS), 365))
+        label = (data.get('label') or '').strip()[:80]
+
+        Company = request.env['res.company'].sudo()
+        enabled = Company.search([
+            ('dutchie_discount_push_enabled', '=', True),
+            ('dutchie_pos_location_id', '!=', False),
+            ('dutchie_lsp_id', '!=', False),
+        ])
+        if not enabled:
+            return error_response('No Dutchie-enabled store is configured', 503)
+        # ONE store per LSP. Publishing to every store mints N copies of the
+        # same code, each separately redeemable — a "single-use" $100 becomes
+        # $900. The code is LSP-wide at the register regardless of which store
+        # pushed it.
+        #
+        # The shared push path now collapses by LSP itself
+        # (mint.ptl.day._collapse_stores_by_lsp), so this is belt-and-braces
+        # rather than the only guard it used to be. Kept because this endpoint
+        # also derives `scope` from the LSP set below. Ordered by id so the
+        # representative store is stable between calls.
+        by_lsp = {}
+        for company in enabled.sorted('id'):
+            by_lsp.setdefault(company._dutchie_lsp(), company)
+        by_lsp.pop(0, None)          # unresolvable LSP: cannot push, don't try
+        if not by_lsp:
+            return error_response('No Dutchie-enabled store resolves to an LSP', 503)
+        publish_stores = list(by_lsp.values())
+        scope = Company.search([('dutchie_lsp_id', 'in', list(by_lsp.keys()))])
+
+        # ONE SINGLE-USE COUPON PER USE, each with its own code and token.
+        #
+        # A single N-use coupon is wrong in two ways that showed up in
+        # production: every recipient shares one code, so one leak drains all N
+        # and nothing records who spent which; and redemption_partner_id is
+        # single-valued, so the second person to open the link is refused with
+        # 409 while the code still redeems N times at the register. Claimable
+        # once, spendable N times — incoherent.
+        today = fields.Date.context_today(user)
+        Discount = request.env['mint.discount'].sudo()
+        minted = []
+        for _i in range(uses):
+            code = _promo_new_code()
+            vals = {
+                'name': label or ('$%s Off Any Transaction' % _fmt_amount(amount)),
+                'description': 'lgm | promo $%s off any transaction (issued by partner %s)'
+                               % (_fmt_amount(amount), user.partner_id.id),
+                'discount_type': 'dollar_off_total',
+                'calculation_method_id': 5,
+                'discount_value': amount,
+                'discount_amount': amount,
+                'threshold_type': 'order_total',
+                'threshold_min': 0.01,
+                'application_method': 'code',
+                'dutchie_discount_code': code,
+                'code': code,
+                # Always 1: uniqueness is what makes a gift traceable, and a
+                # single-use code limits the blast radius of a leaked one.
+                'maximum_usage_count': 1,
+                'max_redemptions': 1,
+                'valid_from': today,
+                'valid_until': today + timedelta(days=days),
+                'expires_at': fields.Datetime.now() + timedelta(days=days),
+                'source': 'manual',
+                'is_available_online': True,
+                'first_time_customer_only': False,
+                'is_published': True,
+                'promo_issued_by_id': user.partner_id.id,
+                'promo_gift_token': _promo_new_token(),
+                'store_ids': [(6, 0, [c.id for c in publish_stores])],
+            }
+            for day in ('monday', 'tuesday', 'wednesday', 'thursday',
+                        'friday', 'saturday', 'sunday'):
+                vals[day] = True
+            promo = Discount.create(vals)
+
+            published = False
+            if hasattr(promo, 'action_publish_to_dutchie'):
+                try:
+                    promo.action_publish_to_dutchie()
+                    published = bool(
+                        request.env['mint.dutchie.discount.push.log'].sudo()
+                        .search_count([('discount_id', '=', promo.id),
+                                       ('success', '=', True),
+                                       ('dutchie_discount_id', '!=', 0)]))
+                except Exception:
+                    _logger.exception('promo %s: publish to Dutchie failed', code)
+            if not published:
+                # A code Dutchie has never heard of is refused at the register.
+                # Leave it inactive rather than hand over a dead coupon.
+                promo.write({'is_published': False})
+                if minted:
+                    break   # keep the ones that did publish
+                return error_response(
+                    'Could not publish the promo to the register system. '
+                    'It has been left inactive — try again.', 502)
+
+            # Widen web-side scope AFTER publishing; widening does not re-push,
+            # so it cannot duplicate the code.
+            promo.write({'store_ids': [(6, 0, scope.ids)]})
+            minted.append(promo)
+
+        base = _storefront_base()
+        _logger.info('promo issued: %d x $%s by partner %s',
+                     len(minted), amount, user.partner_id.id)
+        return json_response({
+            'promos': [_serialize_promo(p, base) for p in minted],
+            'requested': uses,
+            'minted': len(minted),
+        })
+
+    @http.route('/api/v1/customer/promos/gift', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def gift_promo(self, **kw):
+        """Give one of your own promo coupons away.
+
+        "Sharing" a coupon you hold is really a TRANSFER: the code is a bearer
+        instrument, and while it stays bound to you the claim endpoint refuses
+        everyone else with 409. So this unbinds it, which is what makes the
+        gift link claimable by the first person who signs in.
+
+        Deliberately promo-only. A loyalty redemption was bought with the
+        customer's own points and is tied to a specific product; handing it to
+        someone else through a path that cannot refund the points would be a
+        way to lose them.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        code = (data.get('code') or '').strip().upper()
+        if not code:
+            return error_response('code is required')
+
+        promo = request.env['mint.discount'].sudo().search([
+            ('dutchie_discount_code', '=', code),
+            ('application_method', '=', 'code'),
+            ('promo_issued_by_id', '!=', False),
+        ], limit=1)
+        if not promo:
+            return error_response('That coupon cannot be gifted.', 404)
+        if promo.redemption_partner_id.id != user.partner_id.id:
+            # Same reasoning as claim: never confirm a coupon you don't hold.
+            return error_response('That coupon cannot be gifted.', 404)
+        today = fields.Date.context_today(promo)
+        if promo.valid_until and promo.valid_until < today:
+            return error_response('This coupon has expired.', 410)
+        if promo.redemption_status in ('used', 'voided'):
+            return error_response('This coupon has already been used.', 410)
+
+        # Unbind, and make sure a shareable handle exists. A promo minted
+        # before tokens existed has none, and without one the gift link would
+        # render empty — or, worse, fall back to the code.
+        vals = {'redemption_partner_id': False}
+        if not promo.promo_gift_token:
+            vals['promo_gift_token'] = _promo_new_token()
+        promo.write(vals)
+        _logger.info('promo %s released for gifting by partner %s',
+                     code, user.partner_id.id)
+        out = _serialize_promo(promo, _storefront_base())
+        return json_response({'promo': out})
+
+    @http.route('/api/v1/customer/promos/claim', type='http', auth='none',
+                methods=['POST', 'OPTIONS'], csrf=False, cors='*')
+    def claim_promo(self, **kw):
+        """Bind a gift promo to the signed-in customer and return its code.
+
+        Sign-in is required to SEE the code, not merely to record who took it:
+        a Dutchie code coupon has no customer binding, so the code itself is a
+        bearer instrument — anyone holding it can redeem at any register in the
+        LSP up to the cap. Gating the reveal is the only control available.
+
+        First signed-in claimer wins. Binding sets redemption_partner_id, which
+        is what makes it appear in that customer's /rewards coupon list.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return error_response('Invalid JSON body')
+        # Looked up by TOKEN. The code never travels in a URL — a scanned QR
+        # puts the URL on screen, so a code-bearing link is self-defeating.
+        token = (data.get('token') or '').strip()
+        if not token:
+            return error_response('token is required')
+
+        promo = request.env['mint.discount'].sudo().search([
+            ('promo_gift_token', '=', token),
+            ('application_method', '=', 'code'),
+            ('promo_issued_by_id', '!=', False),
+        ], limit=1)
+        if not promo:
+            return error_response('That gift link is not valid.', 404)
+
+        today = fields.Date.context_today(promo)
+        if promo.valid_until and promo.valid_until < today:
+            return error_response('This gift has expired.', 410)
+        if promo.redemption_status in ('used', 'voided'):
+            return error_response('This gift has already been used.', 410)
+
+        partner = user.partner_id
+        holder = promo.redemption_partner_id
+        if holder and holder.id != partner.id:
+            # Deliberately does NOT reveal the code to a second claimer.
+            return error_response('This gift has already been claimed.', 409)
+        if not holder:
+            promo.write({'redemption_partner_id': partner.id})
+            _logger.info('promo %s claimed by partner %s',
+                         promo.dutchie_discount_code, partner.id)
+
+        base = (request.env['ir.config_parameter'].sudo()
+                .get_param('mint.storefront_url', 'https://shop.letsgomint.us'))
+        out = _serialize_promo(promo, base)
+        out['already_yours'] = bool(holder and holder.id == partner.id)
+        return json_response({'promo': out})
+
     @http.route('/api/v1/customer/loyalty/redemptions', type='http', auth='none',
                 methods=['GET', 'OPTIONS'], csrf=False, cors='*')
     def list_redemptions(self, **kw):
@@ -838,7 +1266,7 @@ class MintCustomerProfile(http.Controller):
 
         return json_response({
             'redemptions': [_serialize_redemption(r) for r in redemptions],
-            'coupons': [_serialize_coupon(c) for c in coupons],
+            'coupons': [_serialize_coupon(c, _storefront_base()) for c in coupons],
         })
 
     @http.route('/api/v1/customer/profile', type='http', auth='none',
@@ -1075,6 +1503,124 @@ class MintCustomerProfile(http.Controller):
                     'opted_out': bool(partner.sms_opt_out),
                 },
             },
+        })
+
+    # ------------------------------------------------------------------
+    # Favorites — saved products, deals and stores
+    # ------------------------------------------------------------------
+
+    @http.route('/api/v1/customer/favorites', type='http', auth='none',
+                methods=['GET', 'POST', 'DELETE', 'OPTIONS'], csrf=False, cors='*')
+    def customer_favorites(self, **kw):
+        """Read/add/remove the customer's favorite products, deals and stores.
+
+        GET    -> { "favorites": [ {...}, ... ], "count": n }
+
+        POST   { "item_type": "product"|"deal"|"store", "item_ref": "13815543",
+                 "label": "...", "location_id": "...", "image_url": "..." }
+               Idempotent: favoriting something already saved refreshes its
+               context (label/location/image) and returns the existing row
+               rather than erroring, so a double-tapped heart is not a 4xx.
+
+        DELETE { "item_type": "...", "item_ref": "..." }
+               Also idempotent — removing something not saved returns
+               removed:false with a 200, not a 404. The client only cares
+               about the resulting state.
+
+        `item_ref` is the Dutchie product_id / discount_id the storefront
+        already carries, or the res.company id for a store. It is coerced to text here because the inventory
+        cache serves product_id as a string and discount_id as an int, and a
+        favorite must not depend on which one the caller happened to send.
+        """
+        if request.httprequest.method == 'OPTIONS':
+            return json_response({})
+
+        user = _verify_and_get_user()
+        if not user:
+            return error_response('Authentication required', 401)
+        if not user.partner_id:
+            return error_response('No customer profile linked to this account', 400)
+
+        partner = user.partner_id.sudo()
+        Favorite = request.env['mint.customer.favorite'].sudo()
+        method = request.httprequest.method
+
+        if method in ('POST', 'DELETE'):
+            try:
+                data = json.loads(request.httprequest.data)
+            except (json.JSONDecodeError, TypeError):
+                return error_response('Invalid JSON body')
+            if not isinstance(data, dict):
+                return error_response('Body must be a JSON object')
+
+            item_type = data.get('item_type')
+            if item_type not in ITEM_TYPES:
+                return error_response(
+                    '"item_type" must be one of: %s' % ', '.join(sorted(ITEM_TYPES))
+                )
+
+            # Accept int or str; reject bool explicitly (bool is an int
+            # subclass in Python, so `True` would otherwise become "True").
+            raw_ref = data.get('item_ref')
+            if isinstance(raw_ref, bool) or raw_ref is None:
+                return error_response('"item_ref" is required')
+            item_ref = str(raw_ref).strip()
+            if not item_ref:
+                return error_response('"item_ref" is required')
+            if len(item_ref) > 64:
+                return error_response('"item_ref" is too long')
+
+            existing = Favorite.search([
+                ('partner_id', '=', partner.id),
+                ('item_type', '=', item_type),
+                ('item_ref', '=', item_ref),
+            ], limit=1)
+
+            if method == 'DELETE':
+                removed = bool(existing)
+                if existing:
+                    existing.unlink()
+                return json_response({
+                    'removed': removed,
+                    'item_type': item_type,
+                    'item_ref': item_ref,
+                    'count': Favorite.search_count([('partner_id', '=', partner.id)]),
+                })
+
+            vals = {}
+            for key, limit in (('label', 256), ('location_id', 64), ('image_url', 512)):
+                value = data.get(key)
+                if value is None:
+                    continue
+                if not isinstance(value, str):
+                    return error_response('"%s" must be a string' % key)
+                vals[key] = value.strip()[:limit]
+
+            if existing:
+                # Refresh captured context, but never blank it out with an
+                # omitted key — a client that sends only the ids keeps the
+                # label it saved the first time.
+                if vals:
+                    existing.write(vals)
+                record = existing
+            else:
+                record = Favorite.create(dict(
+                    vals,
+                    partner_id=partner.id,
+                    item_type=item_type,
+                    item_ref=item_ref,
+                ))
+
+            return json_response({
+                'favorite': _serialize_favorite(record),
+                'created': not existing,
+                'count': Favorite.search_count([('partner_id', '=', partner.id)]),
+            })
+
+        favorites = Favorite.search([('partner_id', '=', partner.id)])
+        return json_response({
+            'favorites': [_serialize_favorite(f) for f in favorites],
+            'count': len(favorites),
         })
 
     @http.route('/api/v1/customer/spin-claim', type='http', auth='none',

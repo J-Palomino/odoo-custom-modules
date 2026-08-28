@@ -125,14 +125,22 @@ class PtlDay(models.Model):
 
     # ─── Dynamic Store UUID Map ──────────────────────────────────────────
 
-    def _get_store_uuid_map(self):
-        """Build company_id → Dutchie UUID map from res.company records."""
+    def _get_store_uuid_map(self, market=None):
+        """Build company_id → Dutchie UUID map, optionally narrowed to a market.
+
+        `market` is an explicit argument rather than a read of `self.market_id`
+        because the crons call this through an EMPTY mint.ptl.day recordset,
+        where `self.market_id` is silently falsy — which is how Arizona deals
+        reached every market on 2026-08-25. Callers must now say which market
+        they mean; passing None still means "every dispensary" but has to be
+        chosen rather than fallen into.
+        """
         domain = [
             ('is_dispensary', '=', True),
             ('dutchie_store_id', '!=', False),
         ]
-        if self.market_id:
-            domain.append(('region_id', '=', self.market_id.id))
+        if market:
+            domain.append(('region_id', '=', market.id))
         stores = self.env['res.company'].sudo().search(domain)
         return {s.id: s.dutchie_store_id for s in stores if s.dutchie_store_id}
 
@@ -394,57 +402,135 @@ class PtlDay(models.Model):
             return
 
         discounts = self.env['mint.discount'].sudo().browse(discount_ids)
-        store_uuid_map = self._get_store_uuid_map()
 
-        if not store_uuid_map:
-            _logger.warning('PTL publish: no stores with Dutchie UUIDs found for market %s',
-                            self.market_id.code if self.market_id else '(none)')
+        # Every store, for resolving a discount's own store_ids to UUIDs. The
+        # per-market maps below decide who an UNSCOPED discount reaches.
+        all_store_uuids = self._get_store_uuid_map()
+        if not all_store_uuids:
+            _logger.warning('PTL publish: no stores with Dutchie UUIDs found')
             return
+
+        market_uuid_cache = {}
+
+        def uuids_for_market(market):
+            if market.id not in market_uuid_cache:
+                market_uuid_cache[market.id] = self._get_store_uuid_map(market)
+            return market_uuid_cache[market.id]
 
         # Group discounts by store UUID
         store_payloads = {}  # uuid → [discount_dicts]
+        skipped_no_market = 0
 
         for discount in discounts:
-            store_ids = discount.store_ids.ids if discount.store_ids else list(store_uuid_map.keys())
+            if discount.store_ids:
+                # An explicit store list always wins.
+                store_ids = discount.store_ids.ids
+            else:
+                # 246 of 251 published PTL discounts carry no store_ids. This
+                # used to mean "every store in the map" — and because the crons
+                # call in on an empty recordset the map was every store in
+                # EVERY market, so on 2026-08-25 Arizona deals landed in all 17
+                # Florida stores (a compliance-isolation market), plus MI, IL,
+                # MO and NV. 5,859 stray rows had to be deleted afterwards.
+                #
+                # An unscoped discount now reaches its OWN market, taken from
+                # the PTL deal it came from, falling back to the market of the
+                # day being published. With neither we skip it rather than
+                # broadcast: a deal that reaches nobody is a missing card, a
+                # deal that reaches everybody is the wrong price in five states.
+                market = discount.ptl_deal_id.market_id or self.market_id
+                if not market:
+                    skipped_no_market += 1
+                    _logger.warning(
+                        'PTL publish: discount %s (%s) has no store_ids and no '
+                        'resolvable market — skipping rather than fanning it '
+                        'across every market',
+                        discount.id, (discount.name or '')[:60],
+                    )
+                    continue
+                store_ids = list(uuids_for_market(market).keys())
+
             for store_id in store_ids:
-                uuid = store_uuid_map.get(store_id)
+                uuid = all_store_uuids.get(store_id)
                 if not uuid:
                     continue
                 if uuid not in store_payloads:
                     store_payloads[uuid] = []
                 store_payloads[uuid].append(self._discount_to_webhook_payload(discount, uuid))
 
-        # Fire webhook per store (async, fire-and-forget)
+        if skipped_no_market:
+            _logger.warning(
+                'PTL publish: skipped %d discount(s) with no store_ids and no market',
+                skipped_no_market)
+
+        # Fire webhooks from ONE background thread that walks the stores in
+        # sequence — not one thread per store.
+        #
+        # The per-store version died on 2026-08-25 the first time the restored
+        # daily lifecycle cron ran against a two-month backlog: ~600 discounts
+        # fanned out over every store, and `thread.start()` raised
+        # `RuntimeError: can't start new thread`. That exception propagated out
+        # of this method into _cron_ptl_daily_lifecycle, so Odoo rolled the
+        # whole cron transaction back and the 329 expired discounts it had just
+        # unpublished stayed published. OpenSSL was failing in the same breath
+        # ("malloc failure", "ASN1 lib", "internal error") — the same resource
+        # exhaustion surfacing through the TLS handshakes.
+        #
+        # One thread per call is enough: this is a background push with no
+        # caller waiting on it, so the stores may as well be sequential, and a
+        # single thread cannot exhaust the pool no matter how large the
+        # backlog gets.
         get_param = self.env['ir.config_parameter'].sudo().get_param
         webhook_url = get_param(WEBHOOK_URL_PARAM, DEFAULT_WEBHOOK_URL)
         api_key = get_param(API_KEY_PARAM, '')
 
-        for uuid, deals in store_payloads.items():
-            payload = json.dumps({
+        payloads = [
+            (uuid, json.dumps({
                 'location_id': uuid,
                 'source': 'ptl',
                 'discounts': deals,
-            }).encode('utf-8')
+            }).encode('utf-8'))
+            for uuid, deals in store_payloads.items()
+        ]
 
-            def _fire(url, data, key):
-                try:
-                    req = urllib.request.Request(
-                        url, data=data,
-                        headers={
-                            'Content-Type': 'application/json',
-                            'X-API-Key': key,
-                        },
-                    )
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        _logger.info('PTL webhook %s: %s', uuid[:12], resp.status)
-                except Exception as e:
-                    _logger.warning('PTL webhook failed for %s: %s', uuid[:12], e)
+        def _fire(uuid, data):
+            # uuid is a parameter, not a closure over the loop variable — the
+            # old code closed over it, so every thread logged whichever store
+            # happened to be last and the logs were useless for telling which
+            # store actually failed.
+            try:
+                req = urllib.request.Request(
+                    webhook_url, data=data,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-API-Key': api_key,
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    _logger.info('PTL webhook %s: %s', uuid[:12], resp.status)
+            except Exception as e:
+                _logger.warning('PTL webhook failed for %s: %s', uuid[:12], e)
 
-            thread = threading.Thread(target=_fire, args=(webhook_url, payload, api_key))
-            thread.daemon = True
+        def _dispatch():
+            for uuid, data in payloads:
+                _fire(uuid, data)
+
+        # Belt and braces: even a single start() can fail under memory
+        # pressure, and pushing to Redis must never be able to roll back the
+        # caller's writes. Fall back to sending inline rather than losing the
+        # push entirely.
+        try:
+            thread = threading.Thread(target=_dispatch, daemon=True)
             thread.start()
+        except RuntimeError as e:
+            _logger.warning(
+                'PTL publish: could not start webhook thread (%s) — sending inline', e)
+            try:
+                _dispatch()
+            except Exception:
+                _logger.exception('PTL publish: inline webhook dispatch failed')
 
-        _logger.info('PTL publish: fired webhooks for %d stores, %d discounts',
+        _logger.info('PTL publish: queued webhooks for %d stores, %d discounts',
                       len(store_payloads), len(discount_ids))
 
     def _discount_to_webhook_payload(self, discount, location_uuid):

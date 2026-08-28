@@ -148,7 +148,12 @@ CATEGORY_MAP = {
 }
 
 VALID_WEIGHT_UNITS = {'g', 'mg', 'oz', 'ct'}
-WEIGHT_RE = re.compile(r'(\d+(?:\.\d+)?)\s*(g|mg|oz|ct)\b', re.I)
+# `(\d+...)` could not match a bare-decimal weight like ".5g" at all: \d+ needs
+# a leading digit, so the match began at the 5 and ".5g" became 5g — the same
+# 10x error the Odoo-side parser had (see _WEIGHT_RE_MASS in brand_calendar.py).
+# `\d*\.?\d+` accepts the leading dot and the `(?<![\d.])` lookbehind stops the
+# pattern starting mid-number, so "3.5g" still parses from the 3.
+WEIGHT_RE = re.compile(r'(?<![\d.])(\d*\.?\d+)\s*(g|mg|oz|ct)\b', re.I)
 MONTHS = ('january february march april may june july august september '
           'october november december').split()
 DATE_RE = re.compile(r'(' + '|'.join(MONTHS) + r')\s+(\d{1,2}),?\s+(\d{4})', re.I)

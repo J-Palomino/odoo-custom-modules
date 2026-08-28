@@ -13,4 +13,19 @@
         <field name="model_id" ref="model_mint_inventory_adjustment_line"/>
         <field name="domain_force">['|', ('adjustment_id.company_id', '=', False), ('adjustment_id.company_id', 'in', company_ids)]</field>
     </record>
+
+    <!-- Multi-company isolation for Dutchie receives. A receive writes into a
+         specific store's Dutchie location, so cross-company visibility here
+         would be a route to receiving stock into the wrong dispensary. -->
+    <record id="rule_dutchie_receive_company" model="ir.rule">
+        <field name="name">Dutchie Receive: multi-company</field>
+        <field name="model_id" ref="model_mint_dutchie_receive"/>
+        <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="rule_dutchie_receive_line_company" model="ir.rule">
+        <field name="name">Dutchie Receive Line: multi-company</field>
+        <field name="model_id" ref="model_mint_dutchie_receive_line"/>
+        <field name="domain_force">['|', ('receive_id.company_id', '=', False), ('receive_id.company_id', 'in', company_ids)]</field>
+    </record>
 </odoo>

@@ -71,3 +71,57 @@ class TestDiscountCanonical(TransactionCase):
         self.assertEqual(dc.discount_value_for(_Rec(2, 0.35, 0.0)), 0.35)
         # id 15 loyalty multiplier: value in discount_value
         self.assertEqual(dc.discount_value_for(_Rec(15, 0.0, 4.2)), 4.2)
+
+    # ── Stage 1: calculation_method_id resolution ────────────────────────
+
+    class _Row:
+        """Stand-in for a mint.discount record (the resolver is duck-typed)."""
+        def __init__(self, **kw):
+            self.id = kw.get('id', 1)
+            self.calculation_method_id = kw.get('cm', 0)
+            self.discount_type = kw.get('dt')
+            self.discount_amount = kw.get('amt', 0.0)
+            self.discount_value = kw.get('val', 0.0)
+            self.threshold_min = kw.get('thr', 0)
+
+    def test_resolve_prefers_the_stored_id(self):
+        """The Dutchie read sync is authoritative — never second-guess it."""
+        row = self._Row(cm=3, dt='percent')
+        self.assertEqual(dc.resolve_calc_method_id(row), 3)
+
+    def test_resolve_falls_back_to_registry_odoo_type(self):
+        self.assertEqual(dc.resolve_calc_method_id(self._Row(dt='percent')), 2)
+        self.assertEqual(dc.resolve_calc_method_id(self._Row(dt='price_to_amount')), 3)
+
+    def test_loyalty_redemption_is_percent_off_not_the_multiplier(self):
+        """A redemption is '100% off this item' (id 2). Id 15 is the loyalty
+        MULTIPLIER ('4.2X Loyalty'), a different thing entirely."""
+        self.assertEqual(dc.resolve_calc_method_id(self._Row(dt='loyalty_redemption')), 2)
+        self.assertNotEqual(dc.resolve_calc_method_id(self._Row(dt='loyalty_redemption')), 15)
+
+    def test_bogo_n_for_x_infers_the_total_method(self):
+        """'2 for $80' is Dutchie's PRICE_TO_AMOUNT_TOTAL: threshold + total."""
+        row = self._Row(dt='bogo', thr=2, amt=80.0)
+        self.assertEqual(dc.resolve_calc_method_id(row), 6)
+
+    def test_true_bogo_stays_unresolved(self):
+        """Without a threshold AND a value there is no honest answer — the
+        get-item price is not recoverable, so return None rather than guess."""
+        self.assertIsNone(dc.resolve_calc_method_id(self._Row(dt='bogo', amt=50.0)))
+        self.assertIsNone(dc.resolve_calc_method_id(self._Row(dt='bogo', thr=2)))
+
+    def test_unknown_type_resolves_to_nothing(self):
+        self.assertIsNone(dc.resolve_calc_method_id(self._Row(dt='clearance')))
+        self.assertIsNone(dc.resolve_calc_method_id(self._Row(dt=None)))
+
+    def test_odoo_only_map_invents_no_dutchie_ids(self):
+        """Every alias must point at a method Dutchie actually exposes."""
+        for odoo_type, cmid in dc.ODOO_ONLY_TYPE_TO_ID.items():
+            self.assertIn(cmid, dc.CALC_METHOD_BY_ID,
+                          "%s maps to %s, which is not a Dutchie method" % (odoo_type, cmid))
+
+    def test_ambiguous_bogo_still_safe_defaults_when_stringified(self):
+        """Stage 1 stores knowledge; it must not change what is emitted today."""
+        row = self._Row(dt='bogo', amt=0.0)
+        self.assertEqual(dc.calc_method_string_for(row, warn=False), 'PERCENT_OFF')
+

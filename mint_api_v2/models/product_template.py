@@ -13,6 +13,14 @@ import re
 
 from odoo import api, fields, models
 
+# The tenant the LEGACY single-value `dutchie_brand_id` column was populated
+# from, back when only AZ existed. Deliberately a literal and NOT resolved via
+# res.company._dutchie_lsp(): this is a statement about where historical data
+# came from, not a configurable mapping. If AZ were ever re-tenanted, the old
+# column would still hold 575-era ids, so resolving it dynamically would be
+# wrong. Per-tenant ids belong in `dutchie_brand_ids` ('lsp:id' lines).
+LEGACY_BRAND_ID_SOURCE_LSP = 575
+
 
 class ProductTemplate(models.Model):
     _inherit = "product.template"
@@ -257,9 +265,9 @@ class MintBrand(models.Model):
         """Return this brand's Dutchie BrandId for the given LSP, or False.
 
         Reads the 'lsp:id' lines in dutchie_brand_ids; falls back to the legacy
-        dutchie_brand_id only for AZ (LSP 575, which is what it was populated
-        from). Use this when building a Dutchie discount payload so the
-        Brand restriction carries the id for the discount's target tenant.
+        single-value dutchie_brand_id only when the target is the tenant that
+        column was populated from. Use this when building a Dutchie discount
+        payload so the Brand restriction carries the id for the target tenant.
         """
         self.ensure_one()
         target = str(lsp_id).strip()
@@ -270,7 +278,7 @@ class MintBrand(models.Model):
             lsp, _, bid = line.partition(':')
             if lsp.strip() == target and bid.strip():
                 return bid.strip()
-        if target == '575' and self.dutchie_brand_id:
+        if target == str(LEGACY_BRAND_ID_SOURCE_LSP) and self.dutchie_brand_id:
             return str(self.dutchie_brand_id).strip()
         return False
 

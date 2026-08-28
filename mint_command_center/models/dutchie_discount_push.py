@@ -86,9 +86,10 @@ class ResCompanyDutchiePush(models.Model):
     dutchie_lsp_id = fields.Integer(
         string='Dutchie LspId',
         help='Integer LSP (Licensed Service Provider) id Dutchie uses to scope '
-             'discount/inventory writes. AZ = 575, IL = 805, FL = 821, MI = 822 '
-             '(values from packages/inventory-service/db/migrations). Required '
-             'for the Dutchie discount push.',
+             'discount/inventory writes. AZ = 575, MI = 576, MO = 723, '
+             'IL = 805, NV = 820, FL = 821 — one LSP per region, verified '
+             'against live res.company data. Required for the Dutchie '
+             'discount push.',
     )
 
 
@@ -222,15 +223,37 @@ class PtlDayDutchiePush(models.Model):
         treats the discount as active every day.
         """
         # Dutchie's update-discount-item needs an integer Id (0 = create new,
-        # a real id = update THAT record). Each store gets its OWN Dutchie
-        # discount (distinct id per loc), so the id must be resolved PER
-        # (discount, store) — reusing a single id across stores would make
-        # store N update store 1's discount. Look it up from the most recent
-        # successful live push log for this exact (discount, store); absent →
-        # 0 (create) and the live response records the new id on its own log.
+        # a real id = update THAT record).
+        #
+        # Discounts are LSP-SCOPED, not per-location. Verified read-only against
+        # Dutchie via mintinvsvc GET /api/admin/discounts/<id>:
+        #   * 385159 (created addressing loc 2679 / 75th Ave) resolves
+        #     identically when fetched with loc 1568 (Tempe) under the same
+        #     lsp 575 — same record, not a 404;
+        #   * the same id under a different lsp (820) returns HTTP 401
+        #     "User is not permitted to perform this action";
+        #   * a genuinely absent id returns {"reason": "not_found_in_dutchie"}.
+        # So the LSP owns the record and the locId is only the addressing handle
+        # the API requires.
+        #
+        # This previously read ('company_id', '=', store.id) on the belief that
+        # "each store gets its OWN Dutchie discount (distinct id per loc)". That
+        # belief was wrong: pushing one discount via a second store in the SAME
+        # LSP missed the lookup, resolved Id=0, and CREATED a duplicate
+        # LSP-wide discount carrying the same DiscountCode and its own
+        # MaxRedemptions counter. Five such pairs were created in lsp 575
+        # (e.g. 385159 + 385236, both code MINT-58N83Z).
+        #
+        # Keyed on the LSP, any sibling store's prior live push resolves the
+        # same id, so a re-push UPDATEs the existing record. Absent → 0 (create)
+        # and the live response records the new id on its own log.
+        lsp_id = self._resolve_lsp_id(store)
+        sibling_ids = self.env['res.company'].sudo().search([
+            ('dutchie_lsp_id', '=', lsp_id),
+        ]).ids if lsp_id else [store.id]
         prior = self.env['mint.dutchie.discount.push.log'].sudo().search([
             ('discount_id', '=', discount.id),
-            ('company_id', '=', store.id),
+            ('company_id', 'in', sibling_ids or [store.id]),
             ('mode', '=', 'live'),
             ('success', '=', True),
             ('dutchie_discount_id', '!=', 0),
@@ -623,10 +646,16 @@ class PtlDayDutchiePush(models.Model):
             ('region_id', '=', self.market_id.id),
             ('dutchie_discount_push_enabled', '=', True),
         ]
-        enabled_stores = self.env['res.company'].sudo().search(store_domain)
+        enabled_stores = self.env['res.company'].sudo().search(store_domain, order='id')
         if not enabled_stores:
             _logger.info('Dutchie push: no enabled stores in market %s', self.market_id.code)
             return
+        # Discounts are LSP-scoped (see _deal_to_dutchie_payload), so one write
+        # per LSP covers every store under it. Fanning out per store issued N
+        # identical writes; before the id lookup was keyed on the LSP that also
+        # CREATED N duplicate Dutchie records. Collapse to one representative
+        # store per LSP — the remaining N-1 calls were pure waste.
+        enabled_stores = self._collapse_stores_by_lsp(enabled_stores)
 
         for discount in discounts:
             # Cross-path mutex (#2 stopgap): if this deal's live discount is
@@ -882,9 +911,53 @@ class PtlDayDutchiePush(models.Model):
         return int(legacy) if str(legacy).isdigit() else 0
 
     def _resolve_lsp_id(self, store):
-        """Integer LSP id for this store. v1 reads the per-store override;
-        v2 may infer from market_id when the override is unset."""
-        return int(getattr(store, 'dutchie_lsp_id', 0) or 0)
+        """Integer LSP id for this store.
+
+        Thin delegate to the single resolver, res.company._dutchie_lsp()
+        (mint_api_v2). Kept as a method because it is called from several
+        places here and reads better in context; do NOT reintroduce a local
+        rule — the whole point of the resolver is that there is one.
+        """
+        if not store:
+            return 0
+        return store._dutchie_lsp()
+
+    def _collapse_stores_by_lsp(self, stores):
+        """One representative store per distinct LSP, lowest id wins.
+
+        A Dutchie discount belongs to the LSP, not the location (see
+        _deal_to_dutchie_payload for the read-only verification), so pushing
+        the same discount once per store under a shared LSP is redundant.
+
+        The representative MUST be deterministic. The welcome-preroll issuer
+        picked its store with a bare search(..., limit=1) and no order; when
+        that pick drifted between runs the push addressed a different sibling
+        store, missed the then-store-keyed id lookup, and created a second
+        Dutchie record (coupon 3046 went to 75th Ave on 2026-07-16 and Tempe
+        on 2026-07-22, yielding 385159 + 385236 for one coupon). Ordering by
+        id makes the choice stable for the life of the store record.
+
+        Stores with no LSP (0/unset) can't be collapsed safely — they are all
+        kept so the existing per-store "needs backfill" logging still fires.
+        """
+        by_lsp = {}
+        loners = self.env['res.company'].browse()
+        for store in stores.sorted('id'):
+            lsp = self._resolve_lsp_id(store)
+            if not lsp:
+                loners |= store
+            elif lsp not in by_lsp:
+                by_lsp[lsp] = store
+        chosen = self.env['res.company'].browse()
+        for store in by_lsp.values():
+            chosen |= store
+        dropped = len(stores) - len(chosen) - len(loners)
+        if dropped > 0:
+            _logger.info(
+                'Dutchie push: collapsed %d store(s) to %d LSP(s) — discounts '
+                'are LSP-scoped, so the other %d write(s) would duplicate',
+                len(stores), len(by_lsp), dropped)
+        return chosen | loners
 
     def _push_one_discount(self, discount, store, mode, url, api_key, Log, is_delete=False):
         """Build payload, log, and (in 'live' mode only) POST to mintinvsvc.

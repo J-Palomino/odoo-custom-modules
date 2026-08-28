@@ -2,8 +2,16 @@
 """
 Inventory quantity sync API.
 
-Receives bulk quantity updates from the inventory service and adjusts
-Odoo stock quants to match Dutchie's live inventory.
+Receives bulk quantity updates from the inventory service (mintinvsvc
+invQtySync job, every 5 minutes) and adjusts Odoo stock quants to match
+Dutchie's live inventory.
+
+Lives in mint_customer_api (installed everywhere the storefront API is)
+rather than mint_pos_dutchie: that module was never installed on the
+consolidated production instance, so this route 404'd for every store on
+every sync cycle. This module also owns the checkout_api_key parameter
+the route authenticates against. Do not re-add a duplicate route to
+mint_pos_dutchie.
 """
 import json
 import logging
@@ -71,17 +79,19 @@ class InventorySyncController(http.Controller):
         company_id = body.get('company_id')
         if not updates:
             return _json({'error': 'No updates provided'}, 400)
+        if not company_id:
+            # Never fall back to "any warehouse" - in a 30+ company database
+            # that would write another store's stock.
+            return _json({'error': 'company_id is required'}, 400)
 
         Product = request.env['product.product'].sudo()
         StockQuant = request.env['stock.quant'].sudo()
 
-        # Get default stock location for the company
         warehouse = request.env['stock.warehouse'].sudo().search(
-            [('company_id', '=', company_id)] if company_id else [],
-            limit=1,
+            [('company_id', '=', company_id)], limit=1,
         )
         if not warehouse:
-            return _json({'error': 'No warehouse found'}, 400)
+            return _json({'error': 'No warehouse found for company %s' % company_id}, 400)
         stock_location = warehouse.lot_stock_id
 
         updated = 0
@@ -96,7 +106,6 @@ class InventorySyncController(http.Controller):
                 continue
 
             try:
-                # Find product by dutchie_product_id on the template
                 product = Product.search([
                     ('product_tmpl_id.dutchie_product_id', '=', str(dutchie_id)),
                 ], limit=1)
@@ -104,7 +113,6 @@ class InventorySyncController(http.Controller):
                     skipped += 1
                     continue
 
-                # Update quantity via stock quant
                 quant = StockQuant.search([
                     ('product_id', '=', product.id),
                     ('location_id', '=', stock_location.id),

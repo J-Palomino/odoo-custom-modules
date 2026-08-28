@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        PHASE 1: strain master UI only.
+
+        Deliberately NO inherit of product.product_template_form_view or
+        product_template_search_view. Those add product.template.strain_id,
+        which does not exist yet — see the header of models/mint_strain.py for
+        why the link field is held back to phase 2.
+    -->
+
+    <record id="view_mint_strain_list" model="ir.ui.view">
+        <field name="name">mint.strain.list</field>
+        <field name="model">mint.strain</field>
+        <field name="arch" type="xml">
+            <list string="Strains">
+                <field name="name"/>
+                <field name="strain_type"/>
+                <field name="lineage" optional="hide"/>
+                <field name="product_count" string="# Products"/>
+                <field name="verified" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_strain_form" model="ir.ui.view">
+        <field name="name">mint.strain.form</field>
+        <field name="model">mint.strain</field>
+        <field name="arch" type="xml">
+            <form string="Strain">
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Blue Dream"/></h1>
+                    </div>
+                    <group>
+                        <group string="Classification">
+                            <field name="strain_type"/>
+                            <field name="lineage" placeholder="e.g. Blueberry x Haze"/>
+                            <field name="slug"/>
+                        </group>
+                        <group string="Curation">
+                            <field name="verified"/>
+                            <field name="active"/>
+                            <field name="product_count"/>
+                        </group>
+                    </group>
+                    <group string="Aliases">
+                        <field name="aliases" nolabel="1"
+                               placeholder="One alternate spelling per line, e.g.&#10;BLUE DREAM&#10;Blue Dream (S)&#10;Blue Dream (S/H)"/>
+                        <div class="text-muted">
+                            Every spelling listed here resolves to this strain, so the
+                            Dutchie importer stops creating near-duplicates.
+                        </div>
+                    </group>
+                    <group string="Content">
+                        <field name="effects" placeholder="relaxed, euphoric"/>
+                        <field name="flavors" placeholder="berry, citrus"/>
+                        <field name="description"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_mint_strain_search" model="ir.ui.view">
+        <field name="name">mint.strain.search</field>
+        <field name="model">mint.strain</field>
+        <field name="arch" type="xml">
+            <search string="Strains">
+                <field name="name" string="Strain"
+                       filter_domain="['|', ('name', 'ilike', self), ('aliases', 'ilike', self)]"/>
+                <field name="lineage"/>
+                <filter name="verified" string="Verified" domain="[('verified', '=', True)]"/>
+                <filter name="unverified" string="Needs Review" domain="[('verified', '=', False)]"/>
+                <separator/>
+                <filter name="in_use" string="Used by Products" domain="[('product_count', '>', 0)]"/>
+                <filter name="orphan" string="No Products" domain="[('product_count', '=', 0)]"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_type" string="Strain Type" context="{'group_by': 'strain_type'}"/>
+                    <filter name="group_verified" string="Verified" context="{'group_by': 'verified'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mint_strain" model="ir.actions.act_window">
+        <field name="name">Strains</field>
+        <field name="res_model">mint.strain</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_mint_strain_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create a strain</p>
+            <p>
+                The strain master is the curated list of real strains. Seed it from
+                the catalog's existing free text by running
+                <code>env['mint.strain'].seed_from_products()</code>, then work the
+                "Needs Review" filter to archive values that are not strains.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_mint_strain"
+              name="Strains"
+              parent="menu_mint_discount_root"
+              action="action_mint_strain"
+              sequence="40"/>
+</odoo>

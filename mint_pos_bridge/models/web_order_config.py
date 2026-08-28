@@ -34,11 +34,33 @@ class WebOrderConfig(models.Model):
     dutchie_room_id = fields.Integer(string='Room ID', default=0,
                                       help='POS room for check-in — set to THIS location\'s room; IDs are per-location in Dutchie')
     dutchie_lsp_id = fields.Integer(
-        string='LSP ID', default=0,
+        string='LSP ID',
+        compute='_compute_dutchie_lsp_id', store=False, readonly=True,
         help='Dutchie Licensed Service Provider (tenant) id that owns this '
              'location. Required so POS calls route to the correct tenant — '
              'a wrong or missing LSP sends non-AZ traffic to the default '
-             '(AZ) tenant.')
+             '(AZ) tenant.\n\n'
+             'Read-only: resolved from the store (res.company) via the single '
+             'LSP resolver. Set it on the store, not here.')
+
+    @api.depends('company_id')
+    def _compute_dutchie_lsp_id(self):
+        """Mirror the store's LSP instead of storing a second copy.
+
+        This used to be an independently-editable Integer holding the same
+        fact as res.company.dutchie_lsp_id — a second source of truth for
+        "which Dutchie tenant owns this location", with nothing keeping the
+        two in step. They happened to agree (checked: 0 of 41 rows drifted),
+        but a wrong value here routes POS traffic to the wrong tenant, which
+        is exactly what this field's own help text warns about.
+
+        Now computed through res.company._dutchie_lsp(), so it cannot drift
+        and it inherits the resolver's fail-closed behaviour (0 = unresolved,
+        callers must not push).
+        """
+        for config in self:
+            company = config.company_id
+            config.dutchie_lsp_id = company._dutchie_lsp() if company else 0
 
     # State-to-lane mapping (stored as JSON)
     state_lane_map = fields.Text(
