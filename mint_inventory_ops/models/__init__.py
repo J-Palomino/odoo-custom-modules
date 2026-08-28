@@ -5,3 +5,4 @@ from . import res_company
 from . import dutchie_refs
 from . import dutchie_receive
 from . import dutchie_receive_line
+from . import stock_picking
