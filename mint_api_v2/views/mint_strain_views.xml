@@ -76,14 +76,17 @@
                 <filter name="verified" string="Verified" domain="[('verified', '=', True)]"/>
                 <filter name="unverified" string="Needs Review" domain="[('verified', '=', False)]"/>
                 <separator/>
-                <filter name="in_use" string="Used by Products" domain="[('product_count', '>', 0)]"/>
+                <filter name="in_use" string="Used by Products" domain="[('product_count', '&gt;', 0)]"/>
                 <filter name="orphan" string="No Products" domain="[('product_count', '=', 0)]"/>
                 <separator/>
                 <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_type" string="Strain Type" context="{'group_by': 'strain_type'}"/>
-                    <filter name="group_verified" string="Verified" context="{'group_by': 'verified'}"/>
-                </group>
+                <separator/>
+                <!-- Odoo 19 dropped <group> inside <search>; group-by filters go
+                     directly in the search element. Wrapping them in a <group>
+                     is what made this view invalid and rolled back the whole
+                     mint_api_v2 upgrade (twice). -->
+                <filter name="group_type" string="Strain Type" context="{'group_by': 'strain_type'}"/>
+                <filter name="group_verified" string="Verified" context="{'group_by': 'verified'}"/>
             </search>
         </field>
     </record>
