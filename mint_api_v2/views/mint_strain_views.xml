@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!--
-        PHASE 1: strain master UI only.
+        Strain master UI, plus the product-form picker.
 
-        Deliberately NO inherit of product.product_template_form_view or
-        product_template_search_view. Those add product.template.strain_id,
-        which does not exist yet — see the header of models/mint_strain.py for
-        why the link field is held back to phase 2.
+        ⚠ Odoo 19 removed <group> from inside <search>. Wrapping the group-by
+        filters in one is what made this file invalid and silently rolled back
+        the ENTIRE mint_api_v2 upgrade, twice, behind green deploys. Group-by
+        filters go directly in <search>; every other search view in this repo
+        does it that way.
     -->
 
     <record id="view_mint_strain_list" model="ir.ui.view">
@@ -112,4 +113,40 @@
               parent="menu_mint_discount_root"
               action="action_mint_strain"
               sequence="40"/>
+
+    <!-- ── Strain picker on the product form ──────────────────────────── -->
+    <!-- Anchors verified against the live prod arch before shipping:
+         categ_id sits inside the general_information page of
+         product.product_template_form_view, and the search view carries a
+         categ_id field. A bad xpath here aborts the whole module upgrade. -->
+
+    <record id="view_product_template_form_cannabis" model="ir.ui.view">
+        <field name="name">product.template.form.cannabis</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='general_information']//field[@name='categ_id']" position="after">
+                <field name="strain_id"
+                       options="{'no_quick_create': True}"
+                       placeholder="Search the strain master..."/>
+                <!-- Legacy free text, shown only when it did not resolve to a
+                     master, so an unmatched importer value stays visible
+                     instead of looking like an empty strain. -->
+                <field name="strain" string="Strain (unmatched text)" readonly="1"
+                       invisible="strain_id or not strain"/>
+                <field name="strain_type"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_product_template_search_strain" model="ir.ui.view">
+        <field name="name">product.template.search.strain</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_search_view"/>
+        <field name="arch" type="xml">
+            <field name="categ_id" position="after">
+                <field name="strain_id"/>
+            </field>
+        </field>
+    </record>
 </odoo>
