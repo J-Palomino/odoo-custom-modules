@@ -2,8 +2,6 @@
 """
 Strain master (`mint.strain`) — the curated list behind the Strain dropdown.
 
-PHASE 1 OF TWO. This file deliberately does not touch `product.template`.
-
 `product.template.strain` is free text with no dictionary behind it. Measured
 on prod 2026-08-27: 70,280 of 84,488 templates populated, **4,800 distinct raw
 values**, ~41% of them placeholders ("No Strain" alone is 23,997), and heavy
@@ -15,21 +13,19 @@ This model is that dictionary. It mirrors `mint.brand` on purpose — same
 `aliases`-lines shape, same normalized resolver — so there is one pattern to
 learn for both catalog masters.
 
-**Why the link field is not here.** The first attempt (PR #360) added a stored
-`product.template.strain_id` in the same release. The module upgrade did not
-run on deploy, so the field existed in the registry with no DB column, and
-because the ORM prefetches every stored field, *every* write touching
-`categ_id` on product.template failed in production — the Dutchie sync
-included. The feature was inert and still caused an outage. So phase 1 ships
-only this model: if its upgrade silently skips, nothing references it and
-nothing breaks. `strain_id`, the create/write sync and the product back-link
-land in phase 2, gated on `ir.module.module.latest_version` actually reaching
-19.0.4.28.0 — the version field, not a green deploy.
+**Why the link field shipped separately.** The first attempt (PR #360) added
+`mint.strain` and a stored `product.template.strain_id` in one release. An
+invalid view elsewhere in the module rolled the upgrade back, so the field sat
+in the registry with no DB column — and because the ORM prefetches every
+stored field, *every* write touching `categ_id` on product.template failed in
+production, the Dutchie sync included. An inert feature caused an outage.
 
-Consequently `product_count` here counts templates whose raw `strain` TEXT
-resolves to a master, not rows joined by a foreign key. That is the number a
-curator actually needs while triaging: how many products this entry would
-claim. Phase 2 switches it to the real join.
+So the model shipped alone first (19.0.4.28.0, 4,548 strains seeded), and the
+link field follows here only after `latest_version` confirmed that landed. The
+column is additionally pre-created on every boot by `fix-config.sh`, outside
+the upgrade transaction, so a future rollback cannot reproduce that outage.
+
+`product_count` counts the real `strain_id` join.
 """
 import logging
 import re
@@ -94,7 +90,7 @@ class MintStrain(models.Model):
         string="Active",
         default=True,
         help="Archive instead of deleting. Archived strains drop out of the "
-             "picker; product links (phase 2) survive.",
+             "picker; existing product links survive.",
     )
     verified = fields.Boolean(
         string="Verified",
@@ -104,16 +100,21 @@ class MintStrain(models.Model):
              "mis-typed descriptor ('Rolling Paper', 'Accessory').",
     )
 
-    # Plain stored Integer, NOT a compute. It is derived from raw text on
-    # product.template, which no ORM dependency can express; refreshed by
-    # seed_from_products() and refresh_product_counts(). Stored so the list
-    # view can order and the search view can filter on it.
+    product_ids = fields.One2many(
+        'product.template', 'strain_id', string="Products",
+    )
+
+    # Plain stored Integer, NOT a compute: it is maintained by explicit calls
+    # (the seed, and product.template create/write) rather than an @api.depends
+    # chain, so a bulk SQL back-link can set it without the ORM recomputing
+    # 4.5k records one at a time. Stored so the list view can order and the
+    # search view can filter on it.
     product_count = fields.Integer(
         string="# Products",
         default=0,
         readonly=True,
-        help="Templates whose raw strain text resolves to this master. "
-             "Refreshed by the seed, not live.",
+        help="Products linked to this strain. Maintained by the seed and by "
+             "product.template create/write.",
     )
 
     # Odoo 19: `_sql_constraints` is silently ignored — must use models.Constraint.
@@ -228,16 +229,16 @@ class MintStrain(models.Model):
     # ── seeding ─────────────────────────────────────────────────────────────
 
     @api.model
-    def seed_from_products(self, min_count=1):
+    def seed_from_products(self, min_count=1, link=True):
         """Build the master list from the existing product.template.strain text.
 
-        READ-ONLY with respect to product.template — phase 1 writes nothing
-        there. Idempotent: re-running folds new raw spellings into existing
+        Idempotent: re-running folds new raw spellings into existing
         masters as aliases rather than creating duplicates.
 
         min_count -- only mint a master for normalized values used by at least
                      this many templates. Default 1 (seed everything real);
                      raise it to skip the long tail of one-off typos.
+        link      -- also back-fill product.template.strain_id (phase 2).
 
         Returns a summary dict.
         """
@@ -331,7 +332,8 @@ class MintStrain(models.Model):
                 )
                 aliased += len(new_lines)
 
-        counted = self.refresh_product_counts()
+        linked = self.link_products_to_masters() if link else 0
+        total = self.refresh_product_counts()
 
         summary = {
             'raw_values': len(groups),
@@ -340,7 +342,8 @@ class MintStrain(models.Model):
             'aliases_added': aliased,
             'skipped_thin': skipped_thin,
             'placeholder_rows_skipped': skipped_placeholder,
-            'templates_matched': counted,
+            'strain_id_changed': linked,
+            'templates_linked': total,
         }
         _logger.info("mint.strain.seed_from_products: %s", summary)
         return summary
@@ -365,37 +368,59 @@ class MintStrain(models.Model):
         return dist
 
     @api.model
-    def refresh_product_counts(self):
-        """Recount, per master, the templates whose raw strain text matches it.
+    def link_products_to_masters(self):
+        """Back-fill product.template.strain_id from the raw strain text.
 
-        Phase 1 has no foreign key to join on, so this matches `strain` against
-        each master's name and alias lines. One temp map + one grouped query
-        rather than a statement per strain: `strain` is an unindexed char
-        column on 84k rows.
+        Phase 2. Raw SQL rather than 70k ORM writes: the ORM path would fire
+        the strain/strain_id sync in product.template.write() and rewrite the
+        very text column being read from.
 
-        Returns the total number of templates matched by any master.
+        One temp map + one UPDATE, not one statement per strain — `strain` is
+        an unindexed char column on 84k rows, so per-strain statements would
+        mean ~4.5k sequential scans.
+
+        Returns the number of templates whose strain_id changed.
         """
-        # raw text -> strain id, first writer wins (name beats alias), matching
-        # _build_name_index so the counts agree with what resolve_name() does.
-        owner = {}
-        strains = self.with_context(active_test=False).search([])
-        for strain in strains:
-            if strain.name and strain.name not in owner:
-                owner[strain.name] = strain.id
-        for strain in strains:
-            for line in (strain.aliases or '').splitlines():
-                alias = line.strip()
-                if alias and alias not in owner:
-                    owner[alias] = strain.id
+        owner = self._raw_text_owner_map()
+        if not owner:
+            return 0
 
         cr = self.env.cr
         self.env.flush_all()
-        cr.execute("UPDATE mint_strain SET product_count = 0 WHERE product_count <> 0")
-        if not owner:
-            self.env.invalidate_all()
-            return 0
+        self._load_owner_map(owner)
+        cr.execute("""
+            UPDATE product_template p
+               SET strain_id = m.strain_id
+              FROM mint_strain_map m
+             WHERE p.strain = m.raw_name
+               AND p.strain_id IS DISTINCT FROM m.strain_id
+        """)
+        linked = cr.rowcount
+        self.refresh_product_counts()
+        self.env.invalidate_all()
+        return linked
 
+    def _refresh_counts_for(self):
+        """Recount product_count for just these masters (create/write hook)."""
+        if not self:
+            return
+        self.env.flush_all()
+        self.env.cr.execute("""
+            UPDATE mint_strain s
+               SET product_count = (
+                     SELECT COUNT(*) FROM product_template p WHERE p.strain_id = s.id
+                   )
+             WHERE s.id = ANY(%s)
+        """, (self.ids,))
+        self.invalidate_recordset(['product_count'])
+
+    @api.model
+    def _load_owner_map(self, owner):
+        """Load {raw text: strain id} into a temp table indexed for joining."""
         from psycopg2.extras import execute_values
+        cr = self.env.cr
+        # DROP first: ON COMMIT DROP only fires at commit, so a second call in
+        # one transaction would hit "relation already exists".
         cr.execute("DROP TABLE IF EXISTS mint_strain_map")
         cr.execute("""
             CREATE TEMP TABLE mint_strain_map (raw_name VARCHAR, strain_id INTEGER)
@@ -408,16 +433,39 @@ class MintStrain(models.Model):
             page_size=1000,
         )
         cr.execute("CREATE INDEX ON mint_strain_map (raw_name)")
+
+    @api.model
+    def _raw_text_owner_map(self):
+        """{raw strain text: strain id} from every master's name and aliases."""
+        # First writer wins (name beats alias), matching _build_name_index so
+        # this agrees with what resolve_name() does.
+        owner = {}
+        strains = self.with_context(active_test=False).search([])
+        for strain in strains:
+            if strain.name and strain.name not in owner:
+                owner[strain.name] = strain.id
+        for strain in strains:
+            for line in (strain.aliases or '').splitlines():
+                alias = line.strip()
+                if alias and alias not in owner:
+                    owner[alias] = strain.id
+        return owner
+
+    @api.model
+    def refresh_product_counts(self):
+        """Recount product_count for every master from the strain_id link.
+
+        Phase 2 counts the real foreign key, not a text match — linking is now
+        the source of truth, and a master's count is exactly the products
+        pointing at it. Returns the total linked.
+        """
+        cr = self.env.cr
+        self.env.flush_all()
         cr.execute("""
             UPDATE mint_strain s
-               SET product_count = c.cnt
-              FROM (
-                    SELECT m.strain_id, COUNT(*) AS cnt
-                      FROM product_template p
-                      JOIN mint_strain_map m ON p.strain = m.raw_name
-                     GROUP BY m.strain_id
-              ) c
-             WHERE s.id = c.strain_id
+               SET product_count = (
+                     SELECT COUNT(*) FROM product_template p WHERE p.strain_id = s.id
+                   )
         """)
         cr.execute("SELECT COALESCE(SUM(product_count), 0) FROM mint_strain")
         total = cr.fetchone()[0]

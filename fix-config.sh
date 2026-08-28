@@ -871,5 +871,54 @@ except Exception as e:
     print(f"=== WARNING: consent column pre-create failed: {e} ===")
 PYCONSENT
 
+# ── mint.strain phase 2: pre-create product_template.strain_id ──────────────
+# Same shape and the same reason as the MR#680 block above.
+#
+# On 2026-08-27 this exact field shipped inside a module upgrade that rolled
+# back — one invalid view elsewhere in the module aborted the transaction,
+# behind a green Railway deploy. The field stayed in the registry with no
+# column, and because the ORM prefetches EVERY stored field of a model, that
+# broke every product.template write touching categ_id (the Dutchie sync
+# included) until the release was reverted.
+#
+# A migrations/ pre-migrate cannot protect against that: it runs inside the
+# same upgrade transaction, so a later ParseError rolls the ALTER back with
+# it. This block uses its own autocommit connection BEFORE Odoo starts, so the
+# column is present whatever the upgrade then does. The field DEFINITION lives
+# in mint_api_v2/models/product_template.py.
+echo "=== mint.strain: pre-creating product_template.strain_id ==="
+python3 << 'PYSTRAIN' 2>&1
+import os, sys
+try:
+    import psycopg2
+except ImportError:
+    print("psycopg2 not available, skipping strain_id pre-create"); sys.exit(0)
+host = os.environ.get("ODOO_DB_HOST") or os.environ.get("HOST", "localhost")
+port = os.environ.get("ODOO_DB_PORT") or "5432"
+user = os.environ.get("ODOO_DB_USER") or os.environ.get("USER", "odoo")
+password = os.environ.get("ODOO_DB_PASSWORD") or os.environ.get("PASSWORD", "")
+dbname = os.environ.get("ODOO_DB_NAME", "odoo")
+try:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='product_template' AND column_name='strain_id'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE product_template ADD COLUMN strain_id INTEGER")
+        print("=== Pre-created column product_template.strain_id ===")
+    else:
+        print("=== product_template.strain_id already exists ===")
+    # Matches the ORM field's index=True; the back-link UPDATE and the product
+    # list's strain filter both scan this.
+    cur.execute("CREATE INDEX IF NOT EXISTS product_template_strain_id_index "
+                "ON product_template (strain_id)")
+    cur.close()
+    conn.close()
+    print("=== strain_id pre-create OK ===")
+except Exception as e:
+    print(f"=== WARNING: strain_id pre-create failed: {e} ===")
+PYSTRAIN
+
 # Execute the original entrypoint
 exec /entrypoint.sh "$@" $EXTRA_ARGS
