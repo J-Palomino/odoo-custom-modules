@@ -41,13 +41,29 @@
             "vault/static/src/common/*.js",
             "vault/static/src/frontend/*.js",
         ],
-        "web.assets_backend": [
-            "vault/static/lib/**/*.min.js",
-            "vault/static/src/**/*.xml",
-            "vault/static/src/common/*.js",
-            "vault/static/src/backend/*.scss",
-            "vault/static/src/backend/**/*.js",
-        ],
+        # web.assets_backend intentionally left out — see below.
+        #
+        # This module is UNINSTALLED on production, but Odoo was still pulling
+        # these files into web.assets_backend, so every staff member's browser
+        # loaded vault's JS on every backend page. That JS calls
+        # `/vault/keys/get` on startup; with the module uninstalled the
+        # controller does not serve that route, so Odoo's website returns a
+        # 33 KB HTML 404, the web client tries to JSON.parse it, fails, and
+        # raises ConnectionLostError — surfacing to staff as
+        # "Connection couldn't be established or was interrupted".
+        #
+        # Measured 2026-08-28: ~29 occurrences in a week across 6 named staff,
+        # firing on every action (discuss, all-tasks, spreadsheet). It was the
+        # single most frequent Odoo error, and invisible until backend
+        # telemetry was fixed. Verified the module is genuinely uninstalled,
+        # has no dependents, and owns zero ir.model.data rows; and that of the
+        # 118 modules contributing to the backend bundle it was the ONLY
+        # uninstalled one. Clearing the cached bundle attachments did not help
+        # — the rebuilt bundle still contained it — so the manifest is the
+        # only thing keeping these files in the graph.
+        #
+        # If vault is ever reinstalled, restore this block; the backend UI
+        # needs it. Nothing else references these paths.
         "web.assets_unit_tests": [
             "vault/static/tests/**/*.js",
         ],
