@@ -135,6 +135,16 @@ class ProductTemplate(models.Model):
         help="Dutchie EcomSubcategory, mirrored verbatim.",
     )
 
+    mint_sub_category = fields.Char(
+        string="Mint Sub-Category",
+        help="Governance sub-category — sub_category with the two mechanical drifts "
+             "normalized away: singular/plural ('Preroll' vs 'Prerolls') and word order "
+             "('Distillate Disposable' vs 'Disposables: Distillate'). 855 live rows are "
+             "affected (MO 357, MI 273, IL 213). An allow-list, never a guess: a value "
+             "with no governance equivalent passes through unchanged. Compare across "
+             "states on this; audit against the verbatim sub_category.",
+    )
+
     mint_ops_category = fields.Selection([
         ('flower', 'Flower'),
         ('vape', 'Vape'),

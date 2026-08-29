@@ -950,6 +950,7 @@ COLUMNS = [
     "sub_category",
     "ecom_category",
     "ecom_subcategory",
+    "mint_sub_category",
     "mint_ops_category",
 ]
 try:
