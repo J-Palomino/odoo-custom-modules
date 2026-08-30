@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Strain master UI, plus the product-form picker.
+
+        ⚠ Odoo 19 removed <group> from inside <search>. Wrapping the group-by
+        filters in one is what made this file invalid and silently rolled back
+        the ENTIRE mint_api_v2 upgrade, twice, behind green deploys. Group-by
+        filters go directly in <search>; every other search view in this repo
+        does it that way.
+    -->
+
+    <record id="view_mint_strain_list" model="ir.ui.view">
+        <field name="name">mint.strain.list</field>
+        <field name="model">mint.strain</field>
+        <field name="arch" type="xml">
+            <list string="Strains">
+                <field name="name"/>
+                <field name="strain_type"/>
+                <field name="lineage" optional="hide"/>
+                <field name="product_count" string="# Products"/>
+                <field name="verified" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mint_strain_form" model="ir.ui.view">
+        <field name="name">mint.strain.form</field>
+        <field name="model">mint.strain</field>
+        <field name="arch" type="xml">
+            <form string="Strain">
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Blue Dream"/></h1>
+                    </div>
+                    <group>
+                        <group string="Classification">
+                            <field name="strain_type"/>
+                            <field name="lineage" placeholder="e.g. Blueberry x Haze"/>
+                            <field name="slug"/>
+                        </group>
+                        <group string="Curation">
+                            <field name="verified"/>
+                            <field name="active"/>
+                            <field name="product_count"/>
+                        </group>
+                    </group>
+                    <group string="Aliases">
+                        <field name="aliases" nolabel="1"
+                               placeholder="One alternate spelling per line, e.g.&#10;BLUE DREAM&#10;Blue Dream (S)&#10;Blue Dream (S/H)"/>
+                        <div class="text-muted">
+                            Every spelling listed here resolves to this strain, so the
+                            Dutchie importer stops creating near-duplicates.
+                        </div>
+                    </group>
+                    <group string="Content">
+                        <field name="effects" placeholder="relaxed, euphoric"/>
+                        <field name="flavors" placeholder="berry, citrus"/>
+                        <field name="description"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_mint_strain_search" model="ir.ui.view">
+        <field name="name">mint.strain.search</field>
+        <field name="model">mint.strain</field>
+        <field name="arch" type="xml">
+            <search string="Strains">
+                <field name="name" string="Strain"
+                       filter_domain="['|', ('name', 'ilike', self), ('aliases', 'ilike', self)]"/>
+                <field name="lineage"/>
+                <filter name="verified" string="Verified" domain="[('verified', '=', True)]"/>
+                <filter name="unverified" string="Needs Review" domain="[('verified', '=', False)]"/>
+                <separator/>
+                <filter name="in_use" string="Used by Products" domain="[('product_count', '&gt;', 0)]"/>
+                <filter name="orphan" string="No Products" domain="[('product_count', '=', 0)]"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+                <separator/>
+                <!-- Odoo 19 dropped <group> inside <search>; group-by filters go
+                     directly in the search element. Wrapping them in a <group>
+                     is what made this view invalid and rolled back the whole
+                     mint_api_v2 upgrade (twice). -->
+                <filter name="group_type" string="Strain Type" context="{'group_by': 'strain_type'}"/>
+                <filter name="group_verified" string="Verified" context="{'group_by': 'verified'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mint_strain" model="ir.actions.act_window">
+        <field name="name">Strains</field>
+        <field name="res_model">mint.strain</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_mint_strain_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create a strain</p>
+            <p>
+                The strain master is the curated list of real strains. Seed it from
+                the catalog's existing free text by running
+                <code>env['mint.strain'].seed_from_products()</code>, then work the
+                "Needs Review" filter to archive values that are not strains.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_mint_strain"
+              name="Strains"
+              parent="menu_mint_discount_root"
+              action="action_mint_strain"
+              sequence="40"/>
+
+    <!-- ── Strain picker on the product form ──────────────────────────── -->
+    <!-- Anchors verified against the live prod arch before shipping:
+         categ_id sits inside the general_information page of
+         product.product_template_form_view, and the search view carries a
+         categ_id field. A bad xpath here aborts the whole module upgrade. -->
+
+    <record id="view_product_template_form_cannabis" model="ir.ui.view">
+        <field name="name">product.template.form.cannabis</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='general_information']//field[@name='categ_id']" position="after">
+                <field name="strain_id"
+                       options="{'no_quick_create': True}"
+                       placeholder="Search the strain master..."/>
+                <!-- Legacy free text, shown only when it did not resolve to a
+                     master, so an unmatched importer value stays visible
+                     instead of looking like an empty strain. -->
+                <field name="strain" string="Strain (unmatched text)" readonly="1"
+                       invisible="strain_id or not strain"/>
+                <field name="strain_type"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_product_template_search_strain" model="ir.ui.view">
+        <field name="name">product.template.search.strain</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_search_view"/>
+        <field name="arch" type="xml">
+            <field name="categ_id" position="after">
+                <field name="strain_id"/>
+            </field>
+        </field>
+    </record>
+</odoo>

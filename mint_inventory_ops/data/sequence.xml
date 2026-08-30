@@ -1,9 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
+    <!-- 🚨 company_id MUST stay False on both.
+         ir.sequence.next_by_code() filters on ('company_id','in',[env.company.id, False]).
+         Without this field the record is created against whatever company loaded
+         the module (company 1, Mint Cannabis), and every store EXCEPT that one
+         then gets no sequence back — create() silently falls through to the
+         literal 'New' and the record ships with no reference. Observed live:
+         a receive created under company 86 was named "New" while one created
+         under company 1 got MINT-RCV-00001.
+         These are per-store documents, so the sequence has to be global. -->
     <record id="seq_inventory_adjustment" model="ir.sequence">
         <field name="name">Inventory Adjustment</field>
         <field name="code">mint.inventory.adjustment</field>
         <field name="prefix">MINT-ADJ-</field>
         <field name="padding">5</field>
+        <field name="company_id" eval="False"/>
+    </record>
+    <record id="seq_dutchie_receive" model="ir.sequence">
+        <field name="name">Dutchie Inventory Receive</field>
+        <field name="code">mint.dutchie.receive</field>
+        <field name="prefix">MINT-RCV-</field>
+        <field name="padding">5</field>
+        <field name="company_id" eval="False"/>
     </record>
 </odoo>

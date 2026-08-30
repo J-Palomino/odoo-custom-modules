@@ -576,11 +576,44 @@ except ImportError:
     sys.exit(0)
 
 SERIES = "19.0"
-ADDONS = ("/opt/extra-addons", "/var/lib/odoo/addons/19.0")
+
+# Resolve manifests through Odoo itself. Hand-rolling this is how the
+# 2026-08-24 prod incident happened: the scan globbed /opt/extra-addons first,
+# but Odoo's addons path puts the persistent volume (/var/lib/odoo/addons/19.0)
+# AHEAD of it, and fix-config.sh copies several modules onto that volume. The
+# scan compared the Docker manifest while Odoo loaded the volume copy, so it
+# ordered an upgrade of a stale, view-broken purchase_price_precision and
+# aborted the registry. ir.module.module.installed_version is computed from
+# get_manifest(), so going through the same API cannot disagree with Odoo.
+ODOO_MOD = None
+try:
+    from odoo.tools import config as _odoo_config
+    _odoo_config.parse_config(["-c", "/var/lib/odoo/odoo.conf"])
+    from odoo.modules import module as ODOO_MOD
+    ODOO_MOD.initialize_sys_path()
+    print("  resolving manifests via Odoo get_manifest()", file=sys.stderr)
+except Exception as exc:
+    print("  ! Odoo import failed (%s) — falling back to a path scan" % exc, file=sys.stderr)
+    ODOO_MOD = None
+
+# Fallback only. Mirrors the runtime order Odoo logs:
+# ['<odoo>/addons', '/var/lib/odoo/addons/19.0', '/opt/extra-addons', ...]
+# The volume MUST come before /opt/extra-addons — that is the whole bug.
+ADDONS = (
+    "/usr/lib/python3/dist-packages/odoo/addons",
+    "/var/lib/odoo/addons/19.0",
+    "/opt/extra-addons",
+    "/usr/lib/python3/dist-packages/addons",
+)
 
 
 def normalise(raw):
-    """Mirror Odoo's own manifest-version normalisation."""
+    """Mirror Odoo's own adapt_version()."""
+    if ODOO_MOD is not None and hasattr(ODOO_MOD, "adapt_version"):
+        try:
+            return ODOO_MOD.adapt_version(str(raw or "").strip() or "1.0")
+        except Exception:
+            pass
     v = str(raw or "").strip()
     if not v:
         return ""
@@ -588,6 +621,15 @@ def normalise(raw):
 
 
 def on_disk_version(name):
+    if ODOO_MOD is not None:
+        try:
+            manifest = ODOO_MOD.get_manifest(name)
+        except Exception as exc:
+            print("  ! %s: get_manifest failed (%s)" % (name, exc), file=sys.stderr)
+            return ""
+        if manifest:
+            return normalise(manifest.get("version", ""))
+        return ""
     for base in ADDONS:
         path = os.path.join(base, name, "__manifest__.py")
         if not os.path.isfile(path):
@@ -828,6 +870,97 @@ try:
 except Exception as e:
     print(f"=== WARNING: consent column pre-create failed: {e} ===")
 PYCONSENT
+
+# ── mint.strain phase 2: pre-create product_template.strain_id ──────────────
+# Same shape and the same reason as the MR#680 block above.
+#
+# On 2026-08-27 this exact field shipped inside a module upgrade that rolled
+# back — one invalid view elsewhere in the module aborted the transaction,
+# behind a green Railway deploy. The field stayed in the registry with no
+# column, and because the ORM prefetches EVERY stored field of a model, that
+# broke every product.template write touching categ_id (the Dutchie sync
+# included) until the release was reverted.
+#
+# A migrations/ pre-migrate cannot protect against that: it runs inside the
+# same upgrade transaction, so a later ParseError rolls the ALTER back with
+# it. This block uses its own autocommit connection BEFORE Odoo starts, so the
+# column is present whatever the upgrade then does. The field DEFINITION lives
+# in mint_api_v2/models/product_template.py.
+echo "=== mint.strain: pre-creating product_template.strain_id ==="
+python3 << 'PYSTRAIN' 2>&1
+import os, sys
+try:
+    import psycopg2
+except ImportError:
+    print("psycopg2 not available, skipping strain_id pre-create"); sys.exit(0)
+host = os.environ.get("ODOO_DB_HOST") or os.environ.get("HOST", "localhost")
+port = os.environ.get("ODOO_DB_PORT") or "5432"
+user = os.environ.get("ODOO_DB_USER") or os.environ.get("USER", "odoo")
+password = os.environ.get("ODOO_DB_PASSWORD") or os.environ.get("PASSWORD", "")
+dbname = os.environ.get("ODOO_DB_NAME", "odoo")
+try:
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='product_template' AND column_name='strain_id'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE product_template ADD COLUMN strain_id INTEGER")
+        print("=== Pre-created column product_template.strain_id ===")
+    else:
+        print("=== product_template.strain_id already exists ===")
+    # Matches the ORM field's index=True; the back-link UPDATE and the product
+    # list's strain filter both scan this.
+    cur.execute("CREATE INDEX IF NOT EXISTS product_template_strain_id_index "
+                "ON product_template (strain_id)")
+    cur.close()
+    conn.close()
+    print("=== strain_id pre-create OK ===")
+except Exception as e:
+    print(f"=== WARNING: strain_id pre-create failed: {e} ===")
+PYSTRAIN
+
+# --- post-upgrade verification -------------------------------------------
+#
+# The upgrade runs inside the server process (--update is appended to
+# EXTRA_ARGS below), so there is no point in THIS script that is "after" it —
+# exec never returns. A background watcher is therefore the only place the
+# check can live: it waits for Odoo to answer, which is the signal that the
+# --update pass finished, then compares every installed module's recorded
+# version against the manifest on the addons path.
+#
+# Why this is needed at all: a failed upgrade is invisible from outside.
+# Railway reports SUCCESS because the container started, Odoo serves 200s on
+# the OLD code, and columns for new fields exist anyway because the registry
+# creates them without -u. On 2026-08-28 one bad view left FOUR modules
+# un-upgraded behind a green deploy and nothing surfaced it.
+#
+# The watcher survives the exec below (separate PID) and its output goes to
+# the container log, so Loki can alert on ODOO_UPGRADE_VERIFICATION_FAILED.
+if [ -f /verify-module-upgrade.py ] && [ "${ODOO_VERIFY_UPGRADE:-warn}" != "off" ]; then
+    (
+        port="${ODOO_HTTP_PORT:-8069}"
+        # Up to ~10 min: a cold upgrade of several modules is not quick.
+        for _ in $(seq 1 120); do
+            sleep 5
+            python3 - "$port" <<'PYWAIT' && break
+import socket, sys
+s = socket.socket()
+s.settimeout(2)
+try:
+    s.connect(("127.0.0.1", int(sys.argv[1])))
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+finally:
+    s.close()
+PYWAIT
+        done
+        # Give the registry a moment to settle after the port opens.
+        sleep 10
+        python3 /verify-module-upgrade.py
+    ) &
+fi
 
 # Execute the original entrypoint
 exec /entrypoint.sh "$@" $EXTRA_ARGS

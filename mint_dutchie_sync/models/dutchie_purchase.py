@@ -5,8 +5,9 @@ Prevents duplicate imports and provides a browsable purchase history.
 Awards loyalty points atomically on create so points can never be skipped.
 """
 import logging
+from datetime import timedelta
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 
 from .loyalty_card import SOURCE_CTX
 
@@ -74,6 +75,8 @@ class DutchiePurchase(models.Model):
         a parallel balance forever (see ``REGION_RATES_PARAM``).
         """
         records = super().create(vals_list)
+        records._grant_spin_tickets()
+
         LoyaltyCard = self.env['loyalty.card'].sudo()
         legacy = LoyaltyCard._mint_awards_enabled()
 
@@ -149,3 +152,68 @@ class DutchiePurchase(models.Model):
                 points, rec.partner_id.name, rec.receipt_no,
             )
         return records
+
+    def _grant_spin_tickets(self):
+        """Give the customer spin tickets for a completed purchase.
+
+        ── Off by default, and deliberately hard to switch on wide ────────────
+        Granting a ticket for a purchase is what turns spin-to-win into
+        purchase -> chance -> prize. It is gated behind mint.config key
+        `spin.purchase_grant` (see mint.spin.ticket.purchase_grant_settings)
+        and ships disabled.
+
+        ── Why max_age_days matters more than it looks ────────────────────────
+        This importer runs in bulk and has been observed days behind. Enabling
+        grants without an age limit means the next catch-up run mints a ticket
+        for every backdated receipt at once — a silent, unbudgeted giveaway.
+        The default window is 3 days: a customer who shopped today still gets
+        their spin, a six-month backfill grants nothing.
+
+        Failures never raise. The purchase import is the system of record for
+        revenue; a promotion must not be able to block it.
+        """
+        # mint_api_v2 is not in this module's depends (the sync must install
+        # without it), so probe the registry the same way the redemption push
+        # does elsewhere in this codebase.
+        if 'mint.spin.ticket' not in self.env:
+            return
+
+        Ticket = self.env['mint.spin.ticket'].sudo()
+        try:
+            settings = Ticket.purchase_grant_settings()
+        except Exception:
+            _logger.exception('spin: could not read purchase grant settings')
+            return
+
+        if not settings.get('enabled'):
+            return
+
+        per_purchase = int(settings.get('tickets') or 1)
+        min_spend = float(settings.get('min_spend') or 0.0)
+        max_age_days = int(settings.get('max_age_days') or 0)
+        cutoff = (fields.Date.context_today(self)
+                  - timedelta(days=max_age_days)) if max_age_days else None
+
+        for rec in self:
+            if not rec.partner_id:
+                continue
+            # A return (negative net) must not buy a spin.
+            if (rec.net_total or 0.0) < max(min_spend, 0.01):
+                continue
+            if cutoff and rec.date and rec.date < cutoff:
+                continue
+            # Receipts are unique per store (see _receipt_unique), so this is a
+            # stable idempotency key across re-imports.
+            ref = 'purchase:%s:%s' % (rec.company_id.id, rec.receipt_no)
+            try:
+                Ticket.grant_for_ref(
+                    partner=rec.partner_id,
+                    source_ref=ref,
+                    count=per_purchase,
+                    source='purchase',
+                    note=_('Purchase %s') % (rec.receipt_no or ''),
+                )
+            except Exception:
+                # Never let a promotion break the revenue import.
+                _logger.exception('spin: failed granting tickets for receipt %s',
+                                  rec.receipt_no)

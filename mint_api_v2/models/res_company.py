@@ -10,6 +10,20 @@ from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
 
+# NOTE: there is deliberately NO hardcoded region -> LSP map here.
+#
+# Two used to exist (mint_command_center.dutchie_publish.LSP_BY_REGION, matched
+# against the region's display name, and a code-keyed seed that briefly replaced
+# it). Both are gone. res.company.dutchie_lsp_id is the sole source of truth and
+# mint.region._dutchie_lsp() derives from it.
+#
+# A seed map is not merely redundant, it is harmful: every region in production
+# resolves from its own stores, so the map is dead code — but if those stores
+# ever lost their dutchie_lsp_id, the map would silently answer with a
+# hardcoded guess instead of failing loudly and prompting a backfill. Resolving
+# to 0 and skipping the push is the correct outcome there; publishing a deal
+# into a guessed Dutchie tenant is not.
+
 
 class ResCompany(models.Model):
     # NOTE: We previously inherited website.seo.metadata to get the standard
@@ -72,6 +86,35 @@ class ResCompany(models.Model):
     region_id = fields.Many2one('mint.region', string="Region")
     amenity_ids = fields.Many2many('mint.amenity', string="Amenities")
     service_ids = fields.Many2many('mint.service', string="Services")
+
+    # ===== Dutchie tenancy =====
+
+    def _dutchie_lsp(self, fallback_to_region=True):
+        """THE resolver for "which Dutchie LSP owns this store".
+
+        A Dutchie discount belongs to the LSP (tenant), not the location —
+        verified read-only against Dutchie: the same discount id resolves via
+        any sibling loc under one LSP, and returns HTTP 401 under a different
+        LSP. So the LSP is what scopes discount and inventory writes, and the
+        locId is only the addressing handle the API requires.
+
+        Everything that needs an LSP must come through here. Before this
+        existed there were two independent mechanisms (this field, and a
+        hardcoded map matched against the region's DISPLAY NAME) plus several
+        raw field reads, which agreed only by luck.
+
+        `dutchie_lsp_id` is added to res.company by mint_command_center, so it
+        is read defensively — this module does not depend on that one.
+
+        Returns 0 when unresolvable. Callers treat 0 as "cannot push" and skip
+        with a backfill warning; that fail-closed behaviour is deliberate, as
+        guessing an LSP would write a discount into the wrong tenant.
+        """
+        self.ensure_one()
+        direct = int(getattr(self, 'dutchie_lsp_id', 0) or 0)
+        if direct or not fallback_to_region:
+            return direct
+        return self.region_id._dutchie_lsp() if self.region_id else 0
 
     # ===== SEO (custom fields — see note at class top about why we don't
     # inherit website.seo.metadata) =====
@@ -278,6 +321,42 @@ class MintRegion(models.Model):
             region.store_count = len(region.store_ids.filtered(
                 lambda c: getattr(c, 'is_dispensary', False) and getattr(c, 'is_active', True)
             ))
+
+    def _dutchie_lsp(self):
+        """The Dutchie LSP (tenant) this region publishes into.
+
+        Derived entirely from the region's own stores — res.company.
+        dutchie_lsp_id is the source of truth — so the mapping cannot drift
+        from the data the push actually uses. There is no hardcoded fallback
+        by design; see the note at the top of this module.
+
+        Region <-> LSP is 1:1 in production. Two ways that can fail, both of
+        which return 0 so callers skip with the existing "missing lsp" backfill
+        log rather than publishing into a guessed tenant:
+
+          * more than one LSP among the stores — the 1:1 assumption has broken;
+          * no store carries an LSP at all — the region is not set up yet.
+        """
+        self.ensure_one()
+        lsps = {
+            int(getattr(store, 'dutchie_lsp_id', 0) or 0)
+            for store in self.store_ids
+        }
+        lsps.discard(0)
+        if len(lsps) == 1:
+            return lsps.pop()
+        if len(lsps) > 1:
+            _logger.warning(
+                'mint.region %s (%s) spans %d LSPs (%s) — region<->LSP is '
+                'assumed 1:1; refusing to guess. Fix res.company.dutchie_lsp_id '
+                'on its stores.',
+                self.display_name, self.code or '?', len(lsps), sorted(lsps))
+            return 0
+        _logger.info(
+            'mint.region %s (%s): no store carries dutchie_lsp_id — cannot '
+            'resolve an LSP. Backfill res.company.dutchie_lsp_id on its stores.',
+            self.display_name, self.code or '?')
+        return 0
 
     def write(self, vals):
         res = super().write(vals)
