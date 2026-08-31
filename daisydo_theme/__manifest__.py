@@ -1,6 +1,6 @@
 {
     "name": "DaisyERP Theme",
-    "version": "19.0.1.0.9",
+    "version": "19.0.1.0.10",
     "post_init_hook": "post_init_hook",
     "category": "Theme",
     "summary": "Yellow daisy theme for DaisyERP",
@@ -11,6 +11,7 @@
     "data": [
         "data/res_partner_data.xml",
         "views/webclient_templates.xml",
+        "views/res_users_views.xml",
     ],
     "assets": {
         "web.assets_backend": [
