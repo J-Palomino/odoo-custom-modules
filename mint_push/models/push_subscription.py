@@ -424,6 +424,21 @@ class PushSubscription(models.Model):
         if site_id:
             domain.append(('site_id', '=', site_id))
         subscriptions = self.sudo().search(domain)
+
+        # Say so when there is nothing to send to.
+        #
+        # A customer whose duplicate partner was archived keeps her
+        # subscriptions pointing at the archived row, so a send addressed to the
+        # SURVIVING partner matches nothing and returns 0 — no error, no log,
+        # the notification simply never arrives. That is how this went unnoticed
+        # until someone tested a redemption by hand (Koreena, partner 78175).
+        # Logging is cheap and it is the only signal this failure mode produces.
+        if not subscriptions:
+            _logger.info(
+                'push: no subscriptions for partner %s; %s subscription(s) '
+                'system-wide point at an archived partner',
+                partner_id, len(self.find_orphaned_subscriptions()))
+
         sent = 0
         for sub in subscriptions:
             sub_info = {
@@ -441,6 +456,24 @@ class PushSubscription(models.Model):
                 sub.sudo().unlink()
 
         return sent
+
+    def find_orphaned_subscriptions(self):
+        """Subscriptions whose partner has been archived.
+
+        These are silently unreachable: during a merge the login is repointed to
+        the surviving partner, but partner_id here is left behind, so
+        send_to_partner(surviving_id) finds nothing and returns 0.
+
+        Exposed rather than inlined because the reconciliation cron in
+        Identity-Link T2 (#109605) is the right place to repair these — at the
+        moment of the merge it knows both sides, which this cannot.
+        """
+        subs = self.sudo().search([('partner_id', '!=', False)])
+        if not subs:
+            return subs
+        partners = subs.mapped('partner_id').with_context(active_test=False)
+        archived = set(partners.filtered(lambda p: not p.active).ids)
+        return subs.filtered(lambda s: s.partner_id.id in archived)
 
     def send_to_nearby(self, lat, lng, radius_miles, title, body,
                        url=None, icon=None, image=None, actions=None):

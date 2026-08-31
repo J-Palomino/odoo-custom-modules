@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Push Notifications',
-    'version': '19.0.1.7.0',
+    'version': '19.0.1.7.1',
     'category': 'Website',
     'summary': 'Web Push notification support for MintDeals PWA',
     'description': """MintDeals Push Notifications
