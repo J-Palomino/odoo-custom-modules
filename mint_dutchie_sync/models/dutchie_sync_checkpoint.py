@@ -75,6 +75,8 @@ CHUNK_TIME_BUDGET_S = 90
 
 # Patient Contact Report (ReportId 125) column -> handling. ``Id`` is a
 # per-location row PK (no cross-store overlap) — a reference id, NOT the dedup key.
+from ..identity import identity_key
+
 ROSTER_COLS = {
     'id': 'Id',
     'name': 'Accts_Name',
@@ -308,22 +310,19 @@ class DutchieSyncCheckpoint(models.Model):
         """Stable cross-store identity string: DL > MJ state id > Name+DOB > phone.
 
         Returns None for rows with no stable identifier (skipped, not imported).
+
+        The format lives in ..identity, shared with mint_customer_api's signup
+        path. This method's job is only to pull the right columns out of a
+        roster row; it must not re-implement the key itself.
         """
         get = row.get
-        dl = (get(ROSTER_COLS['dl']) or '').strip()
-        if dl:
-            return 'dl:' + dl.upper()
-        mj = (get(ROSTER_COLS['mj_state_id']) or '').strip()
-        if mj:
-            return 'mj:' + mj.upper()
-        name = (get(ROSTER_COLS['name']) or '').strip().upper()
-        dob = (get(ROSTER_COLS['dob']) or '').strip()
-        if name and dob:
-            return 'nd:%s|%s' % (name, dob)
-        phone = (get(ROSTER_COLS['phone']) or get(ROSTER_COLS['cellphone']) or '').strip()
-        if phone:
-            return 'ph:' + phone
-        return None
+        return identity_key(
+            dl=get(ROSTER_COLS['dl']),
+            mj_state_id=get(ROSTER_COLS['mj_state_id']),
+            name=get(ROSTER_COLS['name']),
+            dob=get(ROSTER_COLS['dob']),
+            phone=get(ROSTER_COLS['phone']) or get(ROSTER_COLS['cellphone']),
+        )
 
     def _upsert_rows(self, rows, cipher):
         """Batch-upsert a slice of report-125 rows; return processed count.
