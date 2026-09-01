@@ -3,6 +3,26 @@
 
 CONFIG_FILE="/var/lib/odoo/odoo.conf"
 
+# ── Boot-time DB maintenance gate ─────────────────────────────────────────
+# Several blocks below run destructive DDL/DML against the configured database
+# on EVERY boot: DELETE FROM ir_model / ir_module_module, DELETE FROM
+# ir_attachment, ALTER TABLE ... ADD COLUMN, and ALTER TABLE ... DROP
+# CONSTRAINT / ADD PRIMARY KEY on the mail tables.
+#
+# That is safe for a single primary that owns its database. It is NOT safe for
+# a SECOND instance sharing the same database: ADD PRIMARY KEY and DROP
+# CONSTRAINT take ACCESS EXCLUSIVE locks, so a second container booting against
+# the live production DB can block queries the primary is serving.
+#
+# Defaults to 1 to preserve existing behaviour on the Railway primary. Set
+# ODOO_DB_MAINTENANCE=0 on any additional replica (e.g. the GKE StatefulSet).
+ODOO_DB_MAINTENANCE="${ODOO_DB_MAINTENANCE:-1}"
+if [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
+    echo "=== Boot DB maintenance: ENABLED (primary) ==="
+else
+    echo "=== Boot DB maintenance: DISABLED (ODOO_DB_MAINTENANCE=$ODOO_DB_MAINTENANCE) ==="
+fi
+
 # Map ODOO_DB_* env vars to what the official Odoo entrypoint expects
 [ -n "$ODOO_DB_HOST" ] && [ -z "$HOST" ] && export HOST="$ODOO_DB_HOST"
 [ -n "$ODOO_DB_PORT" ] && [ -z "$PORT" ] && export PORT="$ODOO_DB_PORT"
@@ -177,7 +197,7 @@ done
 
 # Clean stale model references from uninstalled modules (sign_oca, etc.)
 echo "=== Cleaning stale model references ==="
-if [ -n "$HOST" ]; then
+if [ -n "$HOST" ] && [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
     python3 << 'PYCLEAN' 2>&1
 import os, sys
 try:
@@ -296,7 +316,7 @@ fi
 # Fix mail_message and mail_mail missing primary keys (pre-existing DB issue)
 # Uses Python/psycopg2 since psql may not be installed in the Docker image
 echo "=== Checking mail table primary keys ==="
-if [ -n "$HOST" ]; then
+if [ -n "$HOST" ] && [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
     python3 << 'PYFIX' 2>&1
 import os, sys
 try:
@@ -839,6 +859,7 @@ fi
 # before Odoo) guarantees the column exists before the mint_account field code
 # loads. Field DEFINITIONS live in mint_account (phase 2).
 echo "=== MR#680: pre-creating res.partner consent columns ==="
+if [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
 python3 << 'PYCONSENT' 2>&1
 import os, sys
 try:
@@ -870,6 +891,9 @@ try:
 except Exception as e:
     print(f"=== WARNING: consent column pre-create failed: {e} ===")
 PYCONSENT
+else
+    echo "    skipped (ODOO_DB_MAINTENANCE=0)"
+fi
 
 # ── mint.strain phase 2: pre-create product_template.strain_id ──────────────
 # Same shape and the same reason as the MR#680 block above.
@@ -887,6 +911,7 @@ PYCONSENT
 # column is present whatever the upgrade then does. The field DEFINITION lives
 # in mint_api_v2/models/product_template.py.
 echo "=== mint.strain: pre-creating product_template.strain_id ==="
+if [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
 python3 << 'PYSTRAIN' 2>&1
 import os, sys
 try:
@@ -919,6 +944,9 @@ try:
 except Exception as e:
     print(f"=== WARNING: strain_id pre-create failed: {e} ===")
 PYSTRAIN
+else
+    echo "    skipped (ODOO_DB_MAINTENANCE=0)"
+fi
 
 # --- post-upgrade verification -------------------------------------------
 #
