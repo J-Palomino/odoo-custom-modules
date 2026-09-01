@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            Models whose follower list must stay internal-only. Editable in
+            Settings > Technical > System Parameters, so a model can be added
+            or removed without a code change. noupdate="1" keeps a live edit
+            from being reverted by the next module upgrade.
+        -->
+        <record id="param_ticket_follower_guard_models" model="ir.config_parameter">
+            <field name="key">mint_customer_api.ticket_follower_guard_models</field>
+            <field name="value">maintenance.request,project.task</field>
+        </record>
+
+    </data>
+</odoo>

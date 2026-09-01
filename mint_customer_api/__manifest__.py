@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Customer API',
-    'version': '19.0.2.39.0',
+    'version': '19.0.2.40.0',
     'category': 'Website',
     'summary': 'Customer auth, checkout, and loyalty API for MintDeals frontend',
     'author': 'MintDeals',
@@ -9,6 +9,7 @@
     'license': 'LGPL-3',
     'depends': [
         'base',
+        'mail',
         'portal',
         'auth_signup',
         'sale_management',
@@ -24,6 +25,8 @@
         'security/web_customer_security.xml',
         'views/res_partner_views.xml',
         'views/mint_customer_favorite_views.xml',
+        'views/mail_followers_edit_views.xml',
+        'data/ticket_follower_guard_params.xml',
     ],
     'installable': True,
     'application': False,
