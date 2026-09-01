@@ -3,10 +3,13 @@
 
 import base64
 import json
+import logging
 from typing import Any
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError
+
+_logger = logging.getLogger(__name__)
 
 CollaborationMessage = dict[str, Any]
 
@@ -35,11 +38,26 @@ class SpreadsheetAbstract(models.AbstractModel):
     def _compute_spreadsheet_raw(self):
         for dashboard in self:
             if dashboard.spreadsheet_binary_data:
-                dashboard.spreadsheet_raw = json.loads(
-                    base64.decodebytes(dashboard.spreadsheet_binary_data).decode(
-                        "UTF-8"
+                try:
+                    dashboard.spreadsheet_raw = json.loads(
+                        base64.decodebytes(dashboard.spreadsheet_binary_data).decode(
+                            "UTF-8"
+                        )
                     )
-                )
+                except (UnicodeDecodeError, ValueError):
+                    # The stored file is not the UTF-8 JSON workbook this field
+                    # expects -- e.g. a real .xlsx uploaded under a .json name.
+                    # Degrade to an empty workbook instead of raising: this
+                    # compute runs over the whole recordset being read, so one
+                    # unreadable record would otherwise break the list, kanban
+                    # and search views for every user able to see it.
+                    _logger.warning(
+                        "%s id=%s has spreadsheet_binary_data that is not UTF-8 "
+                        "JSON; rendering it as an empty spreadsheet.",
+                        dashboard._name,
+                        dashboard.id,
+                    )
+                    dashboard.spreadsheet_raw = {}
             else:
                 dashboard.spreadsheet_raw = {}
 
