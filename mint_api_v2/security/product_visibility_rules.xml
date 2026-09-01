@@ -10,10 +10,16 @@
             parent "Mint Cannabis".
 
             Bypasses:
-              - base.group_system (sysadmin)
               - user is NOT in group_warehouse_only
 
-            Sync pipelines run as admin / sudo() and are unaffected.
+            base.group_system is deliberately NOT a bypass. The only member of
+            group_warehouse_only is a full administrator, so exempting sysadmins
+            made the group inert for the one person it was built for: she still
+            saw all 81k cannabis products. Membership is opt-in, so an admin only
+            gets filtered by explicitly joining the group.
+
+            Sync pipelines run as admin / sudo() and are unaffected — sudo()
+            bypasses record rules outright, independent of group membership.
         -->
         <record id="group_warehouse_only" model="res.groups">
             <field name="name">Warehouse Only (hide cannabis products)</field>
@@ -22,7 +28,7 @@
         <record id="rule_product_template_warehouse_hide_cannabis" model="ir.rule">
             <field name="name">Hide cannabis products for warehouse-only users (template)</field>
             <field name="model_id" ref="product.model_product_template"/>
-            <field name="domain_force">[('x_is_cannabis', '=', False)] if (user.has_group('mint_api_v2.group_warehouse_only') and not user.has_group('base.group_system')) else [(1, '=', 1)]</field>
+            <field name="domain_force">[('x_is_cannabis', '=', False)] if user.has_group('mint_api_v2.group_warehouse_only') else [(1, '=', 1)]</field>
             <field name="groups" eval="[(5, 0, 0)]"/>
             <field name="perm_read" eval="1"/>
             <field name="perm_write" eval="1"/>
@@ -33,7 +39,24 @@
         <record id="rule_product_product_warehouse_hide_cannabis" model="ir.rule">
             <field name="name">Hide cannabis products for warehouse-only users (variant)</field>
             <field name="model_id" ref="product.model_product_product"/>
-            <field name="domain_force">[('product_tmpl_id.x_is_cannabis', '=', False)] if (user.has_group('mint_api_v2.group_warehouse_only') and not user.has_group('base.group_system')) else [(1, '=', 1)]</field>
+            <field name="domain_force">[('product_tmpl_id.x_is_cannabis', '=', False)] if user.has_group('mint_api_v2.group_warehouse_only') else [(1, '=', 1)]</field>
+            <field name="groups" eval="[(5, 0, 0)]"/>
+            <field name="perm_read" eval="1"/>
+            <field name="perm_write" eval="1"/>
+            <field name="perm_create" eval="1"/>
+            <field name="perm_unlink" eval="1"/>
+        </record>
+
+        <!--
+            Hiding the products alone is not enough: stock.quant carries only
+            multi-company rules, so an inventory search still returned every
+            dispensary's cannabis stock (198,883 rows for the warehouse user
+            vs 6,126 with this rule).
+        -->
+        <record id="rule_stock_quant_warehouse_hide_cannabis" model="ir.rule">
+            <field name="name">Hide cannabis stock for warehouse-only users (quant)</field>
+            <field name="model_id" ref="stock.model_stock_quant"/>
+            <field name="domain_force">[('product_id.product_tmpl_id.x_is_cannabis', '=', False)] if user.has_group('mint_api_v2.group_warehouse_only') else [(1, '=', 1)]</field>
             <field name="groups" eval="[(5, 0, 0)]"/>
             <field name="perm_read" eval="1"/>
             <field name="perm_write" eval="1"/>
