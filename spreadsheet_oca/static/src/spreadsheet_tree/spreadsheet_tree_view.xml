@@ -27,7 +27,15 @@
         t-inherit="web.ListView.Buttons"
         t-inherit-mode="primary"
     >
-        <xpath expr="//button[hasclass('o_list_button_add')]" position="after">
+        <!-- Odoo 19: web.ListView.Buttons is an EMPTY template
+             (<t t-name="web.ListView.Buttons"/>), so NO xpath anchor exists
+             inside it. The o_list_button_add ("New") button and the
+             o_list_buttons wrapper both live in web.ListView, not here.
+             Core Odoo 19 modules that inherit this template
+             (account.FileuploadListView.Buttons, hr_expense.ListButtons,
+             loyalty.LoyaltyCardListView.buttons, web_tour.TourListController.Buttons)
+             all use expr="." position="inside". Do NOT re-anchor to a class. -->
+        <xpath expr="." position="inside">
             <SpreadsheetFileUploader>
                 <t t-set-slot="toggler">
                     <button
