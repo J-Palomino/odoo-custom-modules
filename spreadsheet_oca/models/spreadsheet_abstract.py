@@ -38,28 +38,46 @@ class SpreadsheetAbstract(models.AbstractModel):
     def _compute_spreadsheet_raw(self):
         for dashboard in self:
             if dashboard.spreadsheet_binary_data:
-                try:
-                    dashboard.spreadsheet_raw = json.loads(
-                        base64.decodebytes(dashboard.spreadsheet_binary_data).decode(
-                            "UTF-8"
-                        )
-                    )
-                except (UnicodeDecodeError, ValueError):
-                    # The stored file is not the UTF-8 JSON workbook this field
-                    # expects -- e.g. a real .xlsx uploaded under a .json name.
-                    # Degrade to an empty workbook instead of raising: this
-                    # compute runs over the whole recordset being read, so one
-                    # unreadable record would otherwise break the list, kanban
-                    # and search views for every user able to see it.
-                    _logger.warning(
-                        "%s id=%s has spreadsheet_binary_data that is not UTF-8 "
-                        "JSON; rendering it as an empty spreadsheet.",
-                        dashboard._name,
-                        dashboard.id,
-                    )
-                    dashboard.spreadsheet_raw = {}
+                dashboard.spreadsheet_raw = dashboard._decode_spreadsheet_binary_data()
             else:
                 dashboard.spreadsheet_raw = {}
+
+    def _decode_spreadsheet_binary_data(self):
+        """Return the stored workbook, or an empty one if it is not readable.
+
+        Never raises. This runs from a compute that Odoo evaluates over the
+        whole recordset being read, so a single unreadable record would
+        otherwise break the list, kanban and search views for every user able
+        to see it -- and a payload that decodes but is not a workbook object
+        crashes o-spreadsheet in the browser instead, while importing cells.
+        """
+        self.ensure_one()
+        try:
+            data = json.loads(
+                base64.decodebytes(self.spreadsheet_binary_data).decode("UTF-8")
+            )
+        except (UnicodeDecodeError, ValueError):
+            # Not the UTF-8 JSON this field expects -- e.g. a real .xlsx
+            # uploaded under a .json name, or corrupted base64.
+            _logger.warning(
+                "%s id=%s: spreadsheet_binary_data is not UTF-8 JSON; "
+                "rendering it as an empty spreadsheet.",
+                self._name,
+                self.id,
+            )
+            return {}
+        if not isinstance(data, dict):
+            # Double-encoded payload: json.dumps() applied twice, so this
+            # decodes to a str holding the workbook rather than the workbook.
+            _logger.warning(
+                "%s id=%s: spreadsheet_binary_data decoded to %s, not a "
+                "workbook object; rendering it as an empty spreadsheet.",
+                self._name,
+                self.id,
+                type(data).__name__,
+            )
+            return {}
+        return data
 
     def _inverse_spreadsheet_raw(self):
         for record in self:
