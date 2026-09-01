@@ -40,16 +40,30 @@ class SpreadsheetAbstract(models.AbstractModel):
             if dashboard.spreadsheet_binary_data:
                 dashboard.spreadsheet_raw = dashboard._decode_spreadsheet_binary_data()
             else:
-                dashboard.spreadsheet_raw = {}
+                dashboard.spreadsheet_raw = dashboard._empty_spreadsheet_data()
+
+    def _spreadsheet_fallback(self, reason):
+        """Log why a stored payload was unusable and return an empty workbook.
+
+        The fallback must be a real workbook, not {}: o-spreadsheet imports
+        whatever this returns, and an object with no "sheets" crashes it in
+        CellPlugin.createCell just as hard as a malformed one would.
+        """
+        _logger.warning(
+            "%s id=%s: spreadsheet_binary_data %s; rendering it empty.",
+            self._name,
+            self.id,
+            reason,
+        )
+        return self._empty_spreadsheet_data()
 
     def _decode_spreadsheet_binary_data(self):
-        """Return the stored workbook, or an empty one if it is not readable.
+        """Return the stored workbook, or an empty one if it is not usable.
 
-        Never raises. This runs from a compute that Odoo evaluates over the
-        whole recordset being read, so a single unreadable record would
-        otherwise break the list, kanban and search views for every user able
-        to see it -- and a payload that decodes but is not a workbook object
-        crashes o-spreadsheet in the browser instead, while importing cells.
+        Never raises, and always returns something o-spreadsheet can import.
+        This runs from a compute Odoo evaluates over the whole recordset being
+        read, so one unusable record would otherwise break the list, kanban and
+        search views for every user able to see it.
         """
         self.ensure_one()
         try:
@@ -59,24 +73,19 @@ class SpreadsheetAbstract(models.AbstractModel):
         except (UnicodeDecodeError, ValueError):
             # Not the UTF-8 JSON this field expects -- e.g. a real .xlsx
             # uploaded under a .json name, or corrupted base64.
-            _logger.warning(
-                "%s id=%s: spreadsheet_binary_data is not UTF-8 JSON; "
-                "rendering it as an empty spreadsheet.",
-                self._name,
-                self.id,
-            )
-            return {}
+            return self._spreadsheet_fallback("is not UTF-8 JSON")
         if not isinstance(data, dict):
-            # Double-encoded payload: json.dumps() applied twice, so this
-            # decodes to a str holding the workbook rather than the workbook.
-            _logger.warning(
-                "%s id=%s: spreadsheet_binary_data decoded to %s, not a "
-                "workbook object; rendering it as an empty spreadsheet.",
-                self._name,
-                self.id,
-                type(data).__name__,
+            # Double-encoded: json.dumps() applied twice, so this decodes to a
+            # str holding the workbook rather than to the workbook itself.
+            return self._spreadsheet_fallback(
+                "decoded to %s, not a workbook object" % type(data).__name__
             )
-            return {}
+        if not data.get("sheets"):
+            # Decodes to a dict, but not an o-spreadsheet workbook -- e.g. an
+            # .xlsx dumped as {"[Content_Types].xml": ..., "xl/workbook.xml":
+            # ...}. Valid JSON and a dict, so only the missing "sheets" tells
+            # it apart, and o-spreadsheet crashes on it in the browser.
+            return self._spreadsheet_fallback("has no 'sheets'; not a workbook")
         return data
 
     def _inverse_spreadsheet_raw(self):
