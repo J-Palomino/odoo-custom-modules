@@ -183,7 +183,13 @@ class PtlDay(models.Model):
         # the Daily Deals page. (Odoo #93649 AC05.)
         self.write({'state': 'published'})
 
-        for deal in self.deal_ids:
+        # Exclude expired deals from publish — a deal whose end date is in the
+        # past must never reach the storefront (Odoo #94502 phase 2). Uses the
+        # is_expired helper on mint.ptl.deal added in phase 1.
+        active_deals = self.deal_ids.filtered(lambda d: not d.is_expired)
+        skipped_expired = len(self.deal_ids) - len(active_deals)
+
+        for deal in active_deals:
             discount = self._ensure_discount(deal)
             Discount._recompute_day_booleans(discount)
             discount_ids.append(discount.id)
@@ -197,7 +203,8 @@ class PtlDay(models.Model):
         self._push_discounts_to_dutchie(discount_ids)
 
         self.message_post(
-            body=f"Published {len(discount_ids)} deal(s) to frontend.",
+            body=f"Published {len(discount_ids)} deal(s) to frontend."
+                 + (f" Skipped {skipped_expired} expired deal(s)." if skipped_expired else ""),
             message_type='comment',
         )
 
