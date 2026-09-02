@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+
+        <record id="view_mint_gift_card_list" model="ir.ui.view">
+            <field name="name">mint.gift.card.list</field>
+            <field name="model">mint.gift.card</field>
+            <field name="arch" type="xml">
+                <list string="Gift Cards" decoration-muted="state in ('void','expired')"
+                      decoration-success="is_spendable" decoration-warning="state == 'depleted'">
+                    <field name="code"/>
+                    <field name="partner_id" optional="show"/>
+                    <field name="issue_reason" optional="show"/>
+                    <field name="face_value" sum="Face Value"/>
+                    <field name="settled_amount" sum="Settled"/>
+                    <field name="held_amount" sum="On Hold"/>
+                    <field name="balance" sum="Balance"/>
+                    <field name="expires_at" optional="show"/>
+                    <field name="state"/>
+                    <field name="is_spendable" optional="hide"/>
+                    <field name="currency_id" column_invisible="True"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_mint_gift_card_form" model="ir.ui.view">
+            <field name="name">mint.gift.card.form</field>
+            <field name="model">mint.gift.card</field>
+            <field name="arch" type="xml">
+                <form string="Gift Card">
+                    <header>
+                        <button name="action_activate" type="object" string="Activate"
+                                class="oe_highlight" invisible="state != 'draft'"/>
+                        <button name="action_void" type="object" string="Void"
+                                confirm="Void this card and release every outstanding hold?"
+                                invisible="state in ('void',)"/>
+                        <field name="state" widget="statusbar"
+                               statusbar_visible="draft,active,depleted"/>
+                    </header>
+                    <sheet>
+                        <div class="oe_title">
+                            <label for="code" string="Card Code"/>
+                            <h1><field name="code" readonly="state != 'draft'"/></h1>
+                        </div>
+                        <div class="alert alert-info" role="alert">
+                            This code is never sent to Dutchie. It is spendable only
+                            through the Mint draw path, which mints a separate
+                            single-use coupon for the exact amount of each draw.
+                        </div>
+                        <group>
+                            <group string="Value">
+                                <field name="face_value" readonly="state != 'draft'"/>
+                                <field name="settled_amount"/>
+                                <field name="held_amount"/>
+                                <field name="balance" class="oe_subtotal_footer_separator"/>
+                                <field name="currency_id" groups="base.group_multi_currency"/>
+                                <field name="is_spendable"/>
+                            </group>
+                            <group string="Issue">
+                                <field name="issue_reason"/>
+                                <field name="partner_id"/>
+                                <field name="issued_by_id"/>
+                                <field name="expires_at"/>
+                                <field name="company_id" groups="base.group_multi_company"/>
+                            </group>
+                        </group>
+                        <group string="Redeemable At">
+                            <field name="store_ids" widget="many2many_tags" nolabel="1"
+                                   placeholder="Leave empty for every store"/>
+                        </group>
+                        <notebook>
+                            <page string="Draws" name="draws">
+                                <field name="line_ids" readonly="1">
+                                    <list decoration-success="state == 'settled'"
+                                          decoration-muted="state in ('released','failed')"
+                                          decoration-info="state == 'held'">
+                                        <field name="held_at"/>
+                                        <field name="child_code"/>
+                                        <field name="draw_amount" sum="Drawn"/>
+                                        <field name="settled_amount" sum="Settled"/>
+                                        <field name="state"/>
+                                        <field name="order_id" optional="show"/>
+                                        <field name="shipment_id" optional="hide"/>
+                                        <field name="loc_id" optional="hide"/>
+                                        <field name="settled_at" optional="hide"/>
+                                        <field name="note" optional="hide"/>
+                                        <field name="currency_id" column_invisible="True"/>
+                                    </list>
+                                </field>
+                            </page>
+                            <page string="Notes" name="notes">
+                                <field name="note" placeholder="Why this card was issued…"/>
+                            </page>
+                        </notebook>
+                    </sheet>
+                    <chatter/>
+                </form>
+            </field>
+        </record>
+
+        <!--
+            Odoo 19 bans <group> inside <search>. One such view aborts the
+            ENTIRE module upgrade and rolls it back behind a green deploy, so
+            group-bys are declared as plain <filter> elements here.
+        -->
+        <record id="view_mint_gift_card_search" model="ir.ui.view">
+            <field name="name">mint.gift.card.search</field>
+            <field name="model">mint.gift.card</field>
+            <field name="arch" type="xml">
+                <search string="Gift Cards">
+                    <field name="code"/>
+                    <field name="partner_id"/>
+                    <field name="issued_by_id"/>
+                    <filter name="filter_spendable" string="Spendable now"
+                            domain="[('is_spendable', '=', True)]"/>
+                    <filter name="filter_has_holds" string="Has open holds"
+                            domain="[('held_amount', '>', 0)]"/>
+                    <separator/>
+                    <filter name="filter_active" string="Active"
+                            domain="[('state', '=', 'active')]"/>
+                    <filter name="filter_depleted" string="Depleted"
+                            domain="[('state', '=', 'depleted')]"/>
+                    <filter name="filter_expired" string="Expired"
+                            domain="[('state', '=', 'expired')]"/>
+                    <separator/>
+                    <filter name="filter_expiring_soon" string="Expires within 30 days"
+                            domain="[('expires_at', '&lt;=', (context_today() + datetime.timedelta(days=30)).strftime('%Y-%m-%d')), ('expires_at', '!=', False)]"/>
+                    <filter name="group_by_state" string="Status"
+                            context="{'group_by': 'state'}"/>
+                    <filter name="group_by_reason" string="Reason Issued"
+                            context="{'group_by': 'issue_reason'}"/>
+                    <filter name="group_by_partner" string="Holder"
+                            context="{'group_by': 'partner_id'}"/>
+                </search>
+            </field>
+        </record>
+
+        <record id="view_mint_gift_card_line_list" model="ir.ui.view">
+            <field name="name">mint.gift.card.line.list</field>
+            <field name="model">mint.gift.card.line</field>
+            <field name="arch" type="xml">
+                <list string="Gift Card Draws" create="false"
+                      decoration-success="state == 'settled'"
+                      decoration-muted="state in ('released','failed')"
+                      decoration-info="state == 'held'">
+                    <field name="held_at"/>
+                    <field name="card_id"/>
+                    <field name="child_code"/>
+                    <field name="draw_amount" sum="Drawn"/>
+                    <field name="settled_amount" sum="Settled"/>
+                    <field name="state"/>
+                    <field name="order_id"/>
+                    <field name="loc_id" optional="show"/>
+                    <field name="currency_id" column_invisible="True"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_mint_gift_card_line_search" model="ir.ui.view">
+            <field name="name">mint.gift.card.line.search</field>
+            <field name="model">mint.gift.card.line</field>
+            <field name="arch" type="xml">
+                <search string="Gift Card Draws">
+                    <field name="card_id"/>
+                    <field name="child_code"/>
+                    <field name="order_id"/>
+                    <filter name="filter_held" string="Held (unsettled)"
+                            domain="[('state', '=', 'held')]"/>
+                    <filter name="filter_settled" string="Settled"
+                            domain="[('state', '=', 'settled')]"/>
+                    <filter name="filter_failed" string="Failed"
+                            domain="[('state', '=', 'failed')]"/>
+                    <separator/>
+                    <filter name="group_by_state" string="Status"
+                            context="{'group_by': 'state'}"/>
+                    <filter name="group_by_card" string="Card"
+                            context="{'group_by': 'card_id'}"/>
+                </search>
+            </field>
+        </record>
+
+        <record id="action_mint_gift_card" model="ir.actions.act_window">
+            <field name="name">Gift Cards</field>
+            <field name="res_model">mint.gift.card</field>
+            <field name="view_mode">list,form</field>
+            <field name="context">{'search_default_filter_spendable': 1}</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">Issue a gift card</p>
+                <p>
+                    A gift card holds a dollar balance that survives partial
+                    redemption. Promotional and comp credit only — cards are
+                    not sold for money.
+                </p>
+            </field>
+        </record>
+
+        <record id="action_mint_gift_card_line" model="ir.actions.act_window">
+            <field name="name">Gift Card Draws</field>
+            <field name="res_model">mint.gift.card.line</field>
+            <field name="view_mode">list</field>
+        </record>
+
+        <menuitem id="menu_mint_gift_card_root"
+                  name="Gift Cards"
+                  sequence="82"
+                  groups="mint_gift_card.group_gift_card_viewer"/>
+        <menuitem id="menu_mint_gift_card"
+                  name="Gift Cards"
+                  parent="menu_mint_gift_card_root"
+                  action="action_mint_gift_card"
+                  sequence="10"/>
+        <menuitem id="menu_mint_gift_card_line"
+                  name="Draws"
+                  parent="menu_mint_gift_card_root"
+                  action="action_mint_gift_card_line"
+                  sequence="20"/>
+
+    </data>
+</odoo>

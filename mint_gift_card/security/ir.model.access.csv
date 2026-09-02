@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mint_gift_card_viewer,mint.gift.card.viewer,model_mint_gift_card,mint_gift_card.group_gift_card_viewer,1,0,0,0
+access_mint_gift_card_manager,mint.gift.card.manager,model_mint_gift_card,mint_gift_card.group_gift_card_manager,1,1,1,0
+access_mint_gift_card_line_viewer,mint.gift.card.line.viewer,model_mint_gift_card_line,mint_gift_card.group_gift_card_viewer,1,0,0,0
+access_mint_gift_card_line_manager,mint.gift.card.line.manager,model_mint_gift_card_line,mint_gift_card.group_gift_card_manager,1,1,1,0

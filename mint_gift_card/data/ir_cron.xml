@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+        <!--
+            Returns holds that nothing ever confirmed, and expires dated-out
+            cards. The release half is the customer-protecting one: without it
+            an abandoned basket quietly keeps the money it never spent.
+            Hourly, to stay in step with the report-10875 settlement sweep.
+        -->
+        <record id="cron_gift_card_expire_and_release" model="ir.cron">
+            <field name="name">Mint Gift Cards: release stale holds and expire cards</field>
+            <field name="model_id" ref="model_mint_gift_card"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_expire_and_release()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>
