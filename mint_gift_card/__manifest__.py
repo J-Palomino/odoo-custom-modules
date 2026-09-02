@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Gift Cards',
-    'version': '19.0.1.1.0',
+    'version': '19.0.1.2.0',
     'category': 'Sales',
     'summary': 'Stored-value gift cards with partial redemption and a remainder',
     'description': """MintDeals Gift Cards
@@ -29,7 +29,12 @@
     # reuses (_push_one_discount, _resolve_pos_loc_id, the invsvc URL/key).
     # Depending on it does not widen the upgrade blast radius: a bad view in
     # this module still only rolls back this module.
-    'depends': ['base', 'mail', 'mint_api_v2', 'mint_command_center'],
+    # mint_dutchie_discount_mirror contributes the 'dollar_off_total'
+    # discount_type the child coupons use — it is NOT in the base selection.
+    'depends': [
+        'base', 'mail', 'mint_api_v2', 'mint_command_center',
+        'mint_dutchie_discount_mirror',
+    ],
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',

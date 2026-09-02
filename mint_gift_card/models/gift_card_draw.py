@@ -21,10 +21,11 @@ real basket with nothing minted than to discover it after a coupon is live.
 """
 import json
 import logging
+import secrets
 import urllib.error
 import urllib.request
 
-from odoo import _, api, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
@@ -220,3 +221,204 @@ class MintGiftCardDraw(models.Model):
             "covers_basket": self.currency_id.compare_amounts(amount, payable) >= 0,
         })
         return result
+
+    # ── Step 3: mint the one-shot child coupon ──────────────────────────
+    #
+    # Shape copied field-for-field from the two coupons already proven to work
+    # at a register (mint.discount 3337/3340 -> Dutchie 385839/385840). Do not
+    # "tidy" these values:
+    #   * discount_type 'dollar_off_total' is contributed by
+    #     mint_dutchie_discount_mirror, not by the base selection.
+    #   * threshold_type 'order_total' + threshold_min 0.01 is load-bearing:
+    #     a 'none' threshold makes invsvc refuse the write with 422
+    #     unscoped_single_item_coupon.
+    #   * item_group_type_id is left at 0 so the payload builder applies its
+    #     own fallback of 5, which is what the live records emit.
+    #   * maximum_usage_count MUST be >= 1. Zero means UNCAPPED in Dutchie.
+    CHILD_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
+    CHILD_CODE_PREFIX = "MINT-GD-"
+
+    @api.model
+    def _generate_child_code(self):
+        Discount = self.env["mint.discount"].sudo()
+        for _attempt in range(12):
+            body = "".join(secrets.choice(self.CHILD_CODE_ALPHABET) for _ in range(6))
+            code = "%s%s" % (self.CHILD_CODE_PREFIX, body)
+            if not Discount.search_count([("dutchie_discount_code", "=", code)]):
+                return code
+        raise UserError(_("Could not generate a unique draw code."))
+
+    @api.model
+    def _store_for_loc(self, loc_id):
+        push = self.env["mint.ptl.day"].sudo()
+        for company in self.env["res.company"].sudo().search(
+                [("dutchie_pos_location_id", "!=", False)]):
+            if push._resolve_pos_loc_id(company) == loc_id:
+                return company
+        return self.env["res.company"].browse()
+
+    def _mint_child(self, amount, loc_id):
+        """Create and publish a single-use Dutchie coupon for exactly `amount`.
+
+        Returns (discount, dutchie_id). Raises if the coupon did not reach
+        Dutchie — a child that exists only in Odoo would let us hold money
+        against a coupon the register has never heard of.
+        """
+        self.ensure_one()
+        store = self._store_for_loc(loc_id)
+        if not store:
+            raise UserError(_("No store is mapped to Dutchie LocId %s.", loc_id))
+
+        today = fields.Date.context_today(self)
+        code = self._generate_child_code()
+        child = self.env["mint.discount"].sudo().create({
+            "name": "Gift card draw %s — %s" % (self.code, code),
+            "description": "lgm | gift card %s draw of %s" % (self.code, amount),
+            "discount_type": "dollar_off_total",
+            "calculation_method_id": 5,
+            "discount_value": amount,
+            "discount_amount": amount,
+            "application_method": "code",
+            "code": code,
+            "dutchie_discount_code": code,
+            "threshold_type": "order_total",
+            "threshold_min": 0.01,
+            "maximum_usage_count": 1,
+            "store_ids": [(6, 0, store.ids)],
+            "valid_from": today,
+            "valid_until": today,
+            "is_published": True,
+            "source": "manual",
+            "monday": True, "tuesday": True, "wednesday": True, "thursday": True,
+            "friday": True, "saturday": True, "sunday": True,
+        })
+
+        child.action_publish_to_dutchie()
+
+        # action_publish_to_dutchie reports success through the push LOG, not
+        # by writing back onto the discount — mint.discount.dutchie_discount_id
+        # is False even on the coupons that demonstrably work at a register.
+        log = self.env["mint.dutchie.discount.push.log"].sudo().search(
+            [("discount_id", "=", child.id)], order="id desc", limit=1)
+        if not log or not log.success or not log.dutchie_discount_id:
+            raise UserError(_(
+                "The draw coupon did not reach Dutchie (%(err)s). Nothing was "
+                "charged to the card.",
+                err=(log.error_message or "no push log")[:200] if log else "no push log"))
+        return child, log.dutchie_discount_id
+
+    def _retire_child(self, child):
+        """Delete a child coupon in Dutchie. Best-effort, never raises.
+
+        Called both when an apply is refused and after settlement. Leaving
+        spent children behind is not cosmetic: one store already carries 521
+        discounts, that list is pulled on every sync, and retired discounts do
+        not expire on their own.
+        """
+        try:
+            push = self.env["mint.ptl.day"].sudo()
+            mode = push._get_dutchie_push_mode()
+            url = push._get_dutchie_push_url()
+            api_key = push._get_dutchie_push_api_key()
+            Log = self.env["mint.dutchie.discount.push.log"].sudo()
+            for store in push._collapse_stores_by_lsp(child.store_ids):
+                push._push_one_discount(child, store, mode, url, api_key, Log, is_delete=True)
+            child.sudo().write({"is_published": False})
+            return True
+        except Exception as e:
+            # A child left alive is a cleanup problem, not a money problem: it
+            # is single-use and expires today. Log loudly, never propagate.
+            _logger.warning("gift_card draw: could not retire child %s: %s",
+                            child.dutchie_discount_code, e)
+            return False
+
+    # ── Step 4: apply it to the basket ──────────────────────────────────
+    def _apply_child(self, code, loc_id, lsp_id, shipment_id, customer_id=None):
+        """Put the child coupon on the customer's live transaction.
+
+        Returns (applied, message). A 409 is Dutchie REFUSING the coupon —
+        expired, already redeemed, wrong store — which is the customer's
+        situation, not a fault. Anything else is ours.
+        """
+        status, body = self._invsvc_post("/api/customer/apply-coupon", {
+            "code": code,
+            "locId": loc_id,
+            "lspId": lsp_id,
+            "shipmentId": shipment_id,
+            "customerId": customer_id or 0,
+        })
+        if status == 200 and body.get("ok"):
+            return True, body.get("message")
+        return False, (body.get("message") or body.get("error")
+                       or "invsvc HTTP %s" % status)
+
+    # ── The whole draw ──────────────────────────────────────────────────
+    def execute_draw(self, loc_id, lsp_id, shipment_id, customer_id=None,
+                     register=None, idempotency_key=None):
+        """Spend part of this card against a live basket.
+
+        Order is deliberate: the HOLD comes before the mint. The hold is the
+        serialized reservation, so taking it first means the money is committed
+        before anything exists in Dutchie. Minting first and failing to hold
+        would leave a live coupon with no ledger backing it — free money.
+
+        Fails closed throughout: any failure after the mint retires the child
+        coupon and frees the hold, so a half-finished draw never leaves a
+        spendable coupon behind.
+        """
+        self.ensure_one()
+        plan = self.plan_draw(loc_id, lsp_id, shipment_id, customer_id, register)
+        if not plan.get("ok"):
+            return plan
+
+        amount = plan["amount"]
+
+        # 1. Reserve the money. Re-checks the balance under a row lock, so a
+        #    concurrent draw between plan and here is refused rather than
+        #    overdrawing.
+        try:
+            line = self.hold(
+                amount, shipment_id=shipment_id, loc_id=loc_id, lsp_id=lsp_id,
+                idempotency_key=idempotency_key,
+            )
+        except UserError as e:
+            return dict(plan, ok=False, error="hold_refused", message=str(e))
+
+        if line.state != "held" or line.child_code:
+            # Idempotency handed back an earlier attempt. Two shapes of that:
+            # a line that already reached a terminal state, and one still held
+            # that had already minted its coupon. Both must return the original
+            # draw — re-minting on a held line would put a SECOND live coupon
+            # into Dutchie for money the ledger has reserved only once.
+            return dict(plan, ok=True, replayed=True, line_id=line.id,
+                        state=line.state, amount=line.draw_amount,
+                        child_code=line.child_code)
+
+        # 2. Mint the one-shot coupon for exactly this amount.
+        try:
+            child, dutchie_id = self._mint_child(amount, loc_id)
+        except Exception as e:
+            line.action_fail(reason=_("Could not mint the draw coupon: %s", e))
+            return dict(plan, ok=False, error="mint_failed", message=str(e))
+
+        line.write({
+            "child_discount_id": child.id,
+            "child_code": child.dutchie_discount_code,
+            "dutchie_discount_id": str(dutchie_id),
+        })
+
+        # 3. Apply it to their transaction.
+        applied, message = self._apply_child(
+            child.dutchie_discount_code, loc_id, lsp_id, shipment_id, customer_id)
+        if not applied:
+            self._retire_child(child)
+            line.action_fail(reason=_("Register refused the coupon: %s", message))
+            return dict(plan, ok=False, error="apply_refused", message=message,
+                        child_code=child.dutchie_discount_code)
+
+        _logger.info("gift_card draw: %s drew %s on shipment %s via %s",
+                     self.code, amount, shipment_id, child.dutchie_discount_code)
+        return dict(plan, ok=True, line_id=line.id, amount=amount,
+                    child_code=child.dutchie_discount_code,
+                    dutchie_discount_id=dutchie_id,
+                    balance_after=self.balance, message=message)

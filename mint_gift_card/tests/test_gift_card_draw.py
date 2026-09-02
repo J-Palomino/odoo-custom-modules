@@ -12,6 +12,7 @@ works.
 """
 from unittest.mock import patch
 
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
@@ -148,3 +149,155 @@ class TestGiftCardDraw(TransactionCase):
             card.plan_draw(2679, 575, "SHIP-1")
         self.assertEqual(len(card.line_ids), before)
         self.assertEqual(card.balance, 100.0)
+
+
+@tagged("post_install", "-at_install")
+class TestGiftCardExecuteDraw(TransactionCase):
+    """The write path, and above all its failure paths.
+
+    A draw that half-succeeds is the dangerous case: a coupon minted and then
+    abandoned is spendable money sitting in Dutchie with nothing on the ledger
+    holding it. Every failure below must end with the balance restored AND the
+    child coupon retired.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Card = cls.env["mint.gift.card"]
+
+    def _card(self, face=100.0):
+        card = self.Card.create({"face_value": face, "issue_reason": "promotion"})
+        card.action_activate()
+        return card
+
+    def _fake_child(self, code="MINT-GD-ABC123"):
+        return self.env["mint.discount"].sudo().create({
+            "name": "test child", "discount_type": "dollar_off_total",
+            "application_method": "code", "code": code,
+            "dutchie_discount_code": code, "maximum_usage_count": 1,
+        })
+
+    def test_successful_draw_holds_and_records_the_child(self):
+        card = self._card(100.0)
+        child = self._fake_child()
+        T = type(card)
+        with patch.object(T, "read_basket", return_value=cart(grand=30.0)), \
+             patch.object(T, "_mint_child", return_value=(child, 999001)), \
+             patch.object(T, "_apply_child", return_value=(True, "applied")):
+            res = card.execute_draw(2679, 575, "SHIP-1")
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["amount"], 30.0)
+        self.assertEqual(card.balance, 70.0, "the remainder survives")
+        line = card.line_ids
+        self.assertEqual(len(line), 1)
+        self.assertEqual(line.state, "held", "held until report 10875 confirms it")
+        self.assertEqual(line.child_code, "MINT-GD-ABC123")
+        self.assertEqual(line.dutchie_discount_id, "999001")
+
+    def test_mint_failure_frees_the_money(self):
+        card = self._card(100.0)
+        T = type(card)
+        with patch.object(T, "read_basket", return_value=cart(grand=30.0)), \
+             patch.object(T, "_mint_child", side_effect=UserError("Dutchie said no")):
+            res = card.execute_draw(2679, 575, "SHIP-1")
+
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], "mint_failed")
+        self.assertEqual(card.balance, 100.0, "nothing was charged")
+        self.assertEqual(card.line_ids.state, "failed")
+
+    def test_refused_apply_retires_the_child_and_frees_the_money(self):
+        """The most dangerous path: a coupon exists but never went on a basket."""
+        card = self._card(100.0)
+        child = self._fake_child("MINT-GD-DEAD01")
+        T = type(card)
+        with patch.object(T, "read_basket", return_value=cart(grand=30.0)), \
+             patch.object(T, "_mint_child", return_value=(child, 999002)), \
+             patch.object(T, "_apply_child", return_value=(False, "Invalid discount code.")), \
+             patch.object(T, "_retire_child", return_value=True) as retire:
+            res = card.execute_draw(2679, 575, "SHIP-1")
+
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], "apply_refused")
+        retire.assert_called_once()
+        self.assertEqual(card.balance, 100.0, "a refused coupon costs nothing")
+        self.assertEqual(card.line_ids.state, "failed")
+
+    def test_hold_is_taken_before_anything_reaches_dutchie(self):
+        """Minting first and failing to hold would leave a live coupon with no
+        ledger backing — free money. The hold must come first."""
+        card = self._card(10.0)
+        order = []
+        T = type(card)
+        real_hold = T.hold
+
+        def spy_hold(self, *a, **kw):
+            order.append("hold")
+            return real_hold(self, *a, **kw)
+
+        def spy_mint(self, *a, **kw):
+            order.append("mint")
+            return self.env["mint.discount"].sudo().create({
+                "name": "c", "discount_type": "dollar_off_total",
+                "application_method": "code", "code": "MINT-GD-ORDER1",
+                "dutchie_discount_code": "MINT-GD-ORDER1", "maximum_usage_count": 1,
+            }), 1
+
+        with patch.object(T, "read_basket", return_value=cart(grand=5.0)), \
+             patch.object(T, "hold", spy_hold), \
+             patch.object(T, "_mint_child", spy_mint), \
+             patch.object(T, "_apply_child", return_value=(True, None)):
+            card.execute_draw(2679, 575, "SHIP-1")
+
+        self.assertEqual(order, ["hold", "mint"])
+
+    def test_replaying_the_same_idempotency_key_does_not_draw_twice(self):
+        card = self._card(100.0)
+        child = self._fake_child("MINT-GD-IDEM01")
+        T = type(card)
+        with patch.object(T, "read_basket", return_value=cart(grand=30.0)), \
+             patch.object(T, "_mint_child", return_value=(child, 999003)), \
+             patch.object(T, "_apply_child", return_value=(True, None)):
+            first = card.execute_draw(2679, 575, "SHIP-1", idempotency_key="k1")
+            second = card.execute_draw(2679, 575, "SHIP-1", idempotency_key="k1")
+
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(len(card.line_ids), 1, "one draw, not two")
+        self.assertEqual(card.balance, 70.0)
+
+    def test_draw_is_refused_when_a_concurrent_hold_ate_the_balance(self):
+        """plan_draw and hold read the balance at different moments; the hold
+        re-checks under a row lock and must win."""
+        card = self._card(50.0)
+        T = type(card)
+        with patch.object(T, "read_basket", return_value=cart(grand=50.0)), \
+             patch.object(T, "hold", side_effect=UserError("Draw of 50.0 exceeds the 0.0 remaining")):
+            res = card.execute_draw(2679, 575, "SHIP-1")
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], "hold_refused")
+
+    def test_replay_of_a_held_line_does_not_mint_a_second_coupon(self):
+        """A retry that lands while the first draw is still held must NOT mint
+        again — that would put two live coupons into Dutchie against one
+        reservation."""
+        card = self._card(100.0)
+        child = self._fake_child("MINT-GD-ONCE01")
+        T = type(card)
+        mint_calls = []
+
+        def counting_mint(self, *a, **kw):
+            mint_calls.append(1)
+            return child, 999004
+
+        with patch.object(T, "read_basket", return_value=cart(grand=30.0)), \
+             patch.object(T, "_mint_child", counting_mint), \
+             patch.object(T, "_apply_child", return_value=(True, None)):
+            card.execute_draw(2679, 575, "SHIP-1", idempotency_key="retry")
+            second = card.execute_draw(2679, 575, "SHIP-1", idempotency_key="retry")
+
+        self.assertEqual(len(mint_calls), 1, "minted exactly once")
+        self.assertTrue(second.get("replayed"))
+        self.assertEqual(card.balance, 70.0)
