@@ -16,8 +16,6 @@ is any doubt at all?
 """
 from odoo.tests.common import TransactionCase, tagged
 
-from ..controllers.order_api import _base_email
-
 
 @tagged('post_install', '-at_install')
 class TestBaseEmail(TransactionCase):
@@ -32,36 +30,36 @@ class TestBaseEmail(TransactionCase):
 
     def test_plus_alias_is_the_same_mailbox(self):
         self.assertEqual(
-            _base_email('jpalomino+123@brightroot.com'),
-            _base_email('jpalomino@brightroot.com'),
+            self.env['res.partner']._identity_base_email('jpalomino+123@brightroot.com'),
+            self.env['res.partner']._identity_base_email('jpalomino@brightroot.com'),
         )
 
     def test_case_and_whitespace_are_not_identity(self):
         self.assertEqual(
-            _base_email('  JPalomino+9@Brightroot.com '),
-            _base_email('jpalomino@brightroot.com'),
+            self.env['res.partner']._identity_base_email('  JPalomino+9@Brightroot.com '),
+            self.env['res.partner']._identity_base_email('jpalomino@brightroot.com'),
         )
 
     def test_different_local_part_is_a_different_person(self):
         self.assertNotEqual(
-            _base_email('someone.else@brightroot.com'),
-            _base_email('jpalomino@brightroot.com'),
+            self.env['res.partner']._identity_base_email('someone.else@brightroot.com'),
+            self.env['res.partner']._identity_base_email('jpalomino@brightroot.com'),
         )
 
     def test_same_local_part_different_domain_is_a_different_person(self):
         """The domain is load-bearing: '+' addressing only aliases within one."""
         self.assertNotEqual(
-            _base_email('jpalomino@gmail.com'),
-            _base_email('jpalomino@brightroot.com'),
+            self.env['res.partner']._identity_base_email('jpalomino@gmail.com'),
+            self.env['res.partner']._identity_base_email('jpalomino@brightroot.com'),
         )
 
     def test_garbage_never_compares_equal_to_a_real_address(self):
         """A blank result must not make two unrelated partners look like one."""
-        self.assertEqual(_base_email(''), '')
-        self.assertEqual(_base_email(None), '')
-        self.assertEqual(_base_email('not-an-address'), '')
-        self.assertNotEqual(_base_email('not-an-address'),
-                            _base_email('jpalomino@brightroot.com'))
+        self.assertEqual(self.env['res.partner']._identity_base_email(''), '')
+        self.assertEqual(self.env['res.partner']._identity_base_email(None), '')
+        self.assertEqual(self.env['res.partner']._identity_base_email('not-an-address'), '')
+        self.assertNotEqual(self.env['res.partner']._identity_base_email('not-an-address'),
+                            self.env['res.partner']._identity_base_email('jpalomino@brightroot.com'))
 
 
 @tagged('post_install', '-at_install')
@@ -173,12 +171,9 @@ class TestIdentityUnion(TransactionCase):
         })
 
     def _union(self, partner):
-        """Call the controller helper with a request env bound to the test cursor."""
-        from unittest.mock import patch
-        from ..controllers import order_api
+        """Exercise the shared resolver directly.
 
-        class _Req:
-            env = self.env
-
-        with patch.object(order_api, 'request', _Req):
-            return order_api._identity_union_partner_ids(partner.id)
+        It is a model method now, so the test no longer has to fake a request —
+        which is itself the point of moving it out of the controller.
+        """
+        return partner.identity_union_ids()

@@ -56,6 +56,30 @@ def normalize_phone_e164(raw):
     return (raw or '').strip()
 
 
+def identity_partner_ids(partner):
+    """Partner rows that are this same human, for the purpose of a READ.
+
+    Delegates to res.partner.identity_union_ids() in mint_dutchie_sync — the
+    one definition of identity resolution, shared with the POS bridge's
+    /orders view and with mintinvsvc's Wallet auto-update. Probed with
+    hasattr because this module does not declare that dependency (it reads
+    x_dutchie_* fields defensively throughout), so it has to keep working on
+    an instance where the module is absent.
+
+    Falls back to [partner.id] on anything unexpected — the behaviour every
+    caller had before this existed.
+    """
+    if not partner:
+        return []
+    try:
+        if hasattr(partner, 'identity_union_ids'):
+            return partner.sudo().identity_union_ids()
+    except Exception:  # noqa: BLE001 — a balance read must not break login
+        _logger.exception(
+            'loyalty: identity resolution failed for partner %s', partner.id)
+    return [partner.id]
+
+
 def _loyalty_points(partner):
     """Current Mint Rewards balance for a partner, 0 when there is no card.
 
@@ -63,8 +87,18 @@ def _loyalty_points(partner):
     auth payloads and falls back to 0, so omitting the field made every
     customer's balance render 0 no matter what their card held. Card resolution
     deliberately mirrors customer.py::get_loyalty (first program_type='loyalty'
-    program, one card per partner) so the ticker and /api/v1/customer/loyalty
-    can never disagree.
+    program) so the ticker and /api/v1/customer/loyalty can never disagree.
+
+    The card is looked up across every partner row that is this human, not just
+    the row they signed into. One customer commonly holds several: on prod,
+    five partners share one licence and only ONE of them carries the card, so
+    the other four logins reported a 0 balance and the Apple Wallet button
+    offered nothing (Odoo task #109604).
+
+    Highest card wins; balances are NOT summed. Summing is the documented
+    inflation bug — the same earnings mirrored onto several rows report 2-3x
+    the real balance (task #109605 AC07). Taking the highest is exact when one
+    row holds the card, which is the observed case, and fails safe otherwise.
     """
     if not partner:
         return 0
@@ -74,9 +108,9 @@ def _loyalty_points(partner):
     if not program:
         return 0
     card = request.env['loyalty.card'].sudo().search([
-        ('partner_id', '=', partner.id),
+        ('partner_id', 'in', identity_partner_ids(partner)),
         ('program_id', '=', program.id),
-    ], limit=1)
+    ], order='points desc', limit=1)
     return card.points or 0
 
 

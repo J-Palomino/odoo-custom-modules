@@ -391,3 +391,126 @@ class ResPartner(models.Model):
                 flagged, cleared,
             )
         return {'flagged': flagged, 'cleared': cleared}
+
+    # ── Query-time identity resolution ───────────────────────────────────
+    #
+    # THE one definition of "which partner rows are this same human, for the
+    # purpose of a read". It lives here because this module owns
+    # x_dutchie_identity_key, and it is a public model method precisely so
+    # every consumer can share it instead of re-deriving identity:
+    #
+    #   * mint_pos_bridge  — /api/v1/pos/orders (the customer's own view)
+    #   * mint_customer_api — loyalty balance behind /api/v1/customer/loyalty,
+    #                         which is also what decides whether the Apple
+    #                         Wallet button offers a card at all
+    #   * mintinvsvc       — the Wallet pass auto-update, over execute_kw
+    #
+    # A fourth implementation of "who is this person?" is exactly the failure
+    # this workstream exists to end, so resist adding one.
+
+    # Only these tiers are ever unioned. 'nd:' (name+DOB) and 'ph:' (phone) are
+    # excluded by construction: 'ph:' keys are built from the raw roster string
+    # and junk numbers like 0000000000 are real rows, while stored 'nd:' keys
+    # include entries such as "nd:* *|08/28/1986".
+    IDENTITY_STRONG_PREFIXES = ('dl:', 'mj:')
+
+    # A key that is only its prefix is a sentinel, not an identity.
+    IDENTITY_SENTINEL_KEYS = frozenset(['', 'dl:', 'mj:', 'nd:', 'ph:', 'nd:|'])
+
+    # Legacy key name: this flag shipped with the /orders change before the
+    # resolver was shared. Renaming a switch that is already set in production
+    # buys nothing and risks a window where neither name is live, so it keeps
+    # its original name and now gates identity resolution everywhere.
+    IDENTITY_UNION_PARAM = 'mint_pos_bridge.orders_identity_union'
+    IDENTITY_UNION_MAX_PARAM = 'mint_pos_bridge.orders_identity_union_max'
+    IDENTITY_UNION_MAX_DEFAULT = 10
+
+    @staticmethod
+    def _identity_base_email(email):
+        """Normalise an address to the mailbox that actually receives it.
+
+        'jpalomino+123@brightroot.com' and 'jpalomino@brightroot.com' are one
+        mailbox, so they are one person for the claimed-account check below.
+        A different local part or domain is a different person.
+        """
+        email = (email or '').strip().lower()
+        if '@' not in email:
+            return ''
+        local, _sep, domain = email.partition('@')
+        return '%s@%s' % (local.split('+', 1)[0], domain)
+
+    def identity_union_ids(self):
+        """Partner ids this record's own view may resolve to, self included.
+
+        Public so it can be called over execute_kw by mintinvsvc.
+
+        Returns [self.id] unless all of these hold: the flag is on, this
+        partner carries a STRONG identity key that is not a sentinel, the key
+        resolves to a small group, and each sibling is either unclaimed or
+        claimed by a login delivering to the same mailbox.
+
+        Never raises. Widening a read must not be able to take down the caller,
+        so anything unexpected degrades to the single id — which is the
+        behaviour every consumer had before this existed.
+        """
+        self.ensure_one()
+        try:
+            ICP = self.env['ir.config_parameter'].sudo()
+            flag = str(ICP.get_param(self.IDENTITY_UNION_PARAM, '0')).strip().lower()
+            if flag not in ('1', 'true', 'yes'):
+                return [self.id]
+
+            Partner = self.env['res.partner'].sudo()
+            me = self.sudo()
+            key = (me.x_dutchie_identity_key or '').strip()
+            if (not key
+                    or key in self.IDENTITY_SENTINEL_KEYS
+                    or not key.startswith(self.IDENTITY_STRONG_PREFIXES)):
+                return [self.id]
+
+            try:
+                max_group = int(ICP.get_param(
+                    self.IDENTITY_UNION_MAX_PARAM, self.IDENTITY_UNION_MAX_DEFAULT))
+            except (TypeError, ValueError):
+                max_group = self.IDENTITY_UNION_MAX_DEFAULT
+
+            # limit+1 so an oversized group is detectable, not silently trimmed.
+            siblings = Partner.search(
+                [('x_dutchie_identity_key', '=', key), ('id', '!=', me.id)],
+                limit=max_group + 1,
+            )
+            if len(siblings) > max_group:
+                _logger.warning(
+                    'identity-union: key held by partner %s resolves to more '
+                    'than %s partners — refusing to union', me.id, max_group)
+                return [self.id]
+
+            my_mailbox = self._identity_base_email(me.email)
+            allowed = []
+            for sib in siblings:
+                if sib.employee or any(not u.share for u in sib.user_ids):
+                    # Staff record — never fold into a customer's view.
+                    continue
+                if sib.user_ids:
+                    # A sibling someone can log into is a separate claimed
+                    # account UNLESS it delivers to the caller's mailbox (a
+                    # '+alias' signup by the same human). No mailbox to
+                    # compare means no proof, so exclude.
+                    if (not my_mailbox
+                            or self._identity_base_email(sib.email) != my_mailbox):
+                        _logger.warning(
+                            'identity-union: sibling %s of partner %s is a '
+                            'separately claimed account — excluded',
+                            sib.id, me.id)
+                        continue
+                allowed.append(sib.id)
+
+            if allowed:
+                _logger.info(
+                    'identity-union: partner %s resolved to %s', me.id, allowed)
+            return [self.id] + allowed
+        except Exception:  # noqa: BLE001 — a read widening must never break a caller
+            _logger.exception(
+                'identity-union: resolution failed for partner %s — '
+                'falling back to strict', self.id)
+            return [self.id]
