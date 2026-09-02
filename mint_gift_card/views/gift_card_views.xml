@@ -31,6 +31,10 @@
                     <header>
                         <button name="action_activate" type="object" string="Activate"
                                 class="oe_highlight" invisible="state != 'draft'"/>
+                        <button name="%(action_gift_card_draw_wizard)d" type="action"
+                                string="Record a Manual Draw" class="oe_highlight"
+                                invisible="not is_spendable"
+                                groups="mint_gift_card.group_gift_card_manager"/>
                         <button name="action_void" type="object" string="Void"
                                 confirm="Void this card and release every outstanding hold?"
                                 invisible="state in ('void',)"/>
@@ -85,6 +89,15 @@
                                         <field name="settled_at" optional="hide"/>
                                         <field name="note" optional="hide"/>
                                         <field name="currency_id" column_invisible="True"/>
+                                        <button name="%(action_gift_card_settle_wizard)d"
+                                                type="action" string="Settle" icon="fa-check"
+                                                invisible="state != 'held'"
+                                                groups="mint_gift_card.group_gift_card_manager"/>
+                                        <button name="action_release" type="object"
+                                                string="Release" icon="fa-undo"
+                                                confirm="Return this hold to the card?"
+                                                invisible="state != 'held'"
+                                                groups="mint_gift_card.group_gift_card_manager"/>
                                     </list>
                                 </field>
                             </page>
@@ -152,6 +165,15 @@
                     <field name="order_id"/>
                     <field name="loc_id" optional="show"/>
                     <field name="currency_id" column_invisible="True"/>
+                    <button name="%(action_gift_card_settle_wizard)d"
+                            type="action" string="Settle" icon="fa-check"
+                            invisible="state != 'held'"
+                            groups="mint_gift_card.group_gift_card_manager"/>
+                    <button name="action_release" type="object"
+                            string="Release" icon="fa-undo"
+                            confirm="Return this hold to the card?"
+                            invisible="state != 'held'"
+                            groups="mint_gift_card.group_gift_card_manager"/>
                 </list>
             </field>
         </record>

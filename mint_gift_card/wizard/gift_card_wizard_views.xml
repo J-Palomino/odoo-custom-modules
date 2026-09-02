@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+
+        <record id="view_gift_card_draw_wizard_form" model="ir.ui.view">
+            <field name="name">mint.gift.card.draw.wizard.form</field>
+            <field name="model">mint.gift.card.draw.wizard</field>
+            <field name="arch" type="xml">
+                <form string="Record a Manual Draw">
+                    <div class="alert alert-warning" role="alert">
+                        This moves the ledger only. No Dutchie coupon is minted and
+                        nothing is applied to a basket, so a draw recorded here
+                        discounts nothing at a register.
+                    </div>
+                    <group>
+                        <field name="card_id"/>
+                        <field name="balance"/>
+                        <field name="amount"/>
+                        <field name="shipment_id"/>
+                        <field name="child_code"/>
+                        <field name="currency_id" invisible="1"/>
+                    </group>
+                    <footer>
+                        <button name="action_confirm" type="object" string="Hold the amount"
+                                class="btn-primary"/>
+                        <button string="Cancel" class="btn-secondary" special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_gift_card_draw_wizard" model="ir.actions.act_window">
+            <field name="name">Record a Manual Draw</field>
+            <field name="res_model">mint.gift.card.draw.wizard</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+            <field name="binding_model_id" ref="model_mint_gift_card"/>
+            <field name="binding_view_types">form</field>
+        </record>
+
+        <record id="view_gift_card_settle_wizard_form" model="ir.ui.view">
+            <field name="name">mint.gift.card.settle.wizard.form</field>
+            <field name="model">mint.gift.card.settle.wizard</field>
+            <field name="arch" type="xml">
+                <form string="Settle Draw">
+                    <div class="alert alert-info" role="alert">
+                        Settling less than was drawn returns the difference to the
+                        card. In production this figure comes from Dutchie report
+                        10875, which carries both the discount code and the dollars.
+                    </div>
+                    <group>
+                        <field name="line_id"/>
+                        <field name="draw_amount"/>
+                        <field name="amount"/>
+                        <field name="order_id"/>
+                        <field name="currency_id" invisible="1"/>
+                    </group>
+                    <footer>
+                        <button name="action_confirm" type="object" string="Settle"
+                                class="btn-primary"/>
+                        <button string="Cancel" class="btn-secondary" special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_gift_card_settle_wizard" model="ir.actions.act_window">
+            <field name="name">Settle Draw</field>
+            <field name="res_model">mint.gift.card.settle.wizard</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+        </record>
+
+    </data>
+</odoo>

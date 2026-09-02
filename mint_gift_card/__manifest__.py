@@ -25,6 +25,10 @@
         'security/security_groups.xml',
         'security/ir.model.access.csv',
         'security/record_rules.xml',
+        # Wizard actions are referenced by buttons in the card views, so they
+        # must be defined first — a %(action_...)d against a record Odoo has
+        # not loaded yet fails the whole module install.
+        'wizard/gift_card_wizard_views.xml',
         'views/gift_card_views.xml',
         'data/ir_cron.xml',
     ],
