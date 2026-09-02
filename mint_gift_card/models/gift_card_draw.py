@@ -3,8 +3,7 @@
 
 Kept in its own file because the ledger deliberately does not know Dutchie
 exists. `gift_card.py` only moves money between held / settled / released; this
-file is what reads a live basket, decides how much to take, and (in the next
-chunk) mints and applies the one-shot coupon that actually delivers it.
+file is everything that reaches out to a register.
 
 The sequence a draw follows:
 
@@ -14,15 +13,24 @@ The sequence a draw follows:
     4. apply    it to their shipment
     5. hold     the amount on the ledger, pending settlement
 
-This chunk implements 1 and 2, plus a dry run that stops before any write. That
-ordering is on purpose: a draw that computes the wrong number is a customer
-being over- or under-charged, and it is far cheaper to find that out against a
-real basket with nothing minted than to discover it after a coupon is live.
+    6. settle   confirm the dollars from Dutchie report 10875, then retire
+                the spent coupon
+
+Two ordering decisions carry the safety of the whole thing. The HOLD is taken
+before anything reaches Dutchie, so money is reserved before a coupon exists;
+minting first and failing to hold would leave a live coupon with no ledger
+entry behind it. And settlement CONFIRMS rather than assumes — the basket can
+change after a coupon goes on, so what the register actually took is read back
+from Dutchie's own report rather than presumed equal to what we drew.
+
+`plan_draw` is a dry run of steps 1-2 that writes nothing, and is safe to run
+against production while the numbers are still being trusted.
 """
 import json
 import logging
 import secrets
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from odoo import _, api, fields, models
@@ -422,3 +430,177 @@ class MintGiftCardDraw(models.Model):
                     child_code=child.dutchie_discount_code,
                     dutchie_discount_id=dutchie_id,
                     balance_after=self.balance, message=message)
+
+    # ── Step 5: settlement ──────────────────────────────────────────────
+    #
+    # Report 10875 ("Discount Detail Report") is the only Dutchie source that
+    # names WHICH discount a transaction used AND how many dollars it took.
+    # Verified live 2026-09-01 — its columns include both `Discount Code` and
+    # `Discounted Amount`. Dutchie's own RedemptionCount is unusable: it still
+    # reads 0 after redemptions confirmed at a register.
+    #
+    # Because every draw mints its OWN single-use code, attribution here is
+    # exact — one code, one order, no disentangling several redemptions that
+    # share an identifier.
+    USAGE_REPORT_ID = 10875
+    USAGE_NEEDLE = "MINT-GD-"
+    _USAGE_CODE_KEYS = ("discountcode",)
+    _USAGE_ORDER_KEYS = ("orderid",)
+    _USAGE_AMOUNT_KEYS = ("discountedamount",)
+
+    @api.model
+    def _invsvc_get(self, path, timeout=240):
+        base, key = self._invsvc()
+        req = urllib.request.Request(
+            "%s%s" % (base, path),
+            headers={"X-API-Key": key,
+                     "User-Agent": "mint-odoo-gift-card-settle/1.0"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, json.loads(resp.read().decode("utf-8", "replace") or "{}")
+        except Exception as e:
+            _logger.warning("gift_card settle: invsvc GET %s failed: %s", path, e)
+            return 0, {"error": str(e)}
+
+    @staticmethod
+    def _row_get(row, candidates):
+        """Read a report column by any of `candidates`, ignoring case, spaces
+        and underscores. Dutchie columns are human-facing labels ("Order ID",
+        "Discount Code"), so matching one exact key is a coin flip — and a
+        miss reads identically to "never redeemed", which is the exact silent
+        failure this whole settlement path exists to avoid."""
+        norm = {str(k).lower().replace(" ", "").replace("_", ""): v
+                for k, v in (row or {}).items()}
+        for cand in candidates:
+            v = norm.get(cand.replace("_", ""))
+            if v not in (None, ""):
+                return v
+        return None
+
+    @api.model
+    def _settlement_targets(self, lines):
+        """Every (loc, lsp) a held draw could have been redeemed at.
+
+        🚨 A Dutchie code is LSP-WIDE while report 10875 is LOCATION-scoped.
+        Measured on the coupon path: MINT-GMXT6F was pushed to 75th Ave (2679)
+        and redeemed at Tempe (1568) and Northern (2272) — querying only the
+        store it was pushed to returns zero rows, silently. So sweep every
+        location in the LSP, not the one we applied at.
+        """
+        push = self.env["mint.ptl.day"].sudo()
+        lsps = {int(l.lsp_id) for l in lines if l.lsp_id}
+        targets = set()
+        for company in self.env["res.company"].sudo().search(
+                [("dutchie_pos_location_id", "!=", False)]):
+            loc = push._resolve_pos_loc_id(company)
+            lsp = push._resolve_lsp_id(company)
+            if loc and lsp and int(lsp) in lsps:
+                targets.add((int(loc), int(lsp)))
+        return targets
+
+    @api.model
+    def _cron_settle_gift_card_draws(self):
+        """Confirm held draws against Dutchie's own report, then retire the
+        spent coupons.
+
+        Runs hourly, comfortably inside the stale-hold window, so a real
+        redemption is settled before the release sweep could reclaim it.
+        Idempotent: it only ever reads rows for codes still in `held`.
+        """
+        Line = self.env["mint.gift.card.line"].sudo()
+        held = Line.search([("state", "=", "held"), ("child_code", "!=", False)])
+        if not held:
+            self._retire_spent_children()
+            return 0
+
+        targets = self._settlement_targets(held)
+        if not targets:
+            _logger.warning("gift_card settle: %d held draw(s) with no resolvable "
+                            "store scope", len(held))
+            return 0
+
+        today = fields.Date.context_today(self)
+        start = min([(l.held_at.date() if l.held_at else today) for l in held])
+        frm = "%d/%d/%d" % (start.month, start.day, start.year)
+        to = "%d/%d/%d" % (today.month, today.day, today.year)
+
+        # code -> {order_id, amount}. One fetch per location, reused across
+        # every held line, rather than one per (line, location).
+        found = {}
+        fetched = 0
+        for loc, lsp in sorted(targets):
+            status, body = self._invsvc_get(
+                "/api/admin/discount-usage?locId=%s&lspId=%s&from=%s&to=%s"
+                "&reportId=%s&needle=%s"
+                % (loc, lsp, urllib.parse.quote(frm), urllib.parse.quote(to),
+                   self.USAGE_REPORT_ID, urllib.parse.quote(self.USAGE_NEEDLE))
+            )
+            if status != 200 or not body.get("ok"):
+                continue
+            fetched += 1
+            for row in body.get("rows") or []:
+                code = self._row_get(row, self._USAGE_CODE_KEYS)
+                oid = self._row_get(row, self._USAGE_ORDER_KEYS)
+                amt = self._row_get(row, self._USAGE_AMOUNT_KEYS)
+                if not code or oid is None:
+                    continue
+                key = str(code).strip().upper()
+                slot = found.setdefault(key, {"order_id": str(oid), "amount": 0.0})
+                # One redemption emits one row per discounted LINE, so the
+                # dollars for a draw are the SUM across that order's rows.
+                try:
+                    slot["amount"] += float(amt or 0.0)
+                except (TypeError, ValueError):
+                    pass
+
+        if not fetched:
+            _logger.warning("gift_card settle: every report fetch failed — "
+                            "leaving %d hold(s) untouched", len(held))
+            return 0
+
+        settled = 0
+        for line in held:
+            hit = found.get((line.child_code or "").strip().upper())
+            if not hit:
+                continue  # not redeemed (yet). The release sweep handles the rest.
+            amount = hit["amount"]
+            if line.currency_id.compare_amounts(amount, line.draw_amount) > 0:
+                # A single-use, exact-amount coupon should never report more
+                # than it was minted for. Cap at what we reserved rather than
+                # draining the card, and make the discrepancy loud.
+                _logger.error(
+                    "gift_card settle: %s reports %s against a %s draw — "
+                    "capping at the draw. Investigate order %s.",
+                    line.child_code, amount, line.draw_amount, hit["order_id"])
+                amount = line.draw_amount
+            line.action_settle(amount, order_id=hit["order_id"])
+            settled += 1
+
+        self._retire_spent_children()
+        _logger.info("gift_card settle: %d of %d held draw(s) settled",
+                     settled, len(held))
+        return settled
+
+    @api.model
+    def _retire_spent_children(self, limit=100):
+        """Delete child coupons in Dutchie once their draw is finished.
+
+        Not housekeeping — load-bearing. One store already carries 521
+        discounts, that list is pulled on every catalogue sync, and retired
+        Dutchie discounts never expire on their own. A gift card programme
+        minting one coupon per transaction would swamp it within weeks.
+        """
+        Line = self.env["mint.gift.card.line"].sudo()
+        done = Line.search([
+            ("state", "in", ["settled", "released", "failed"]),
+            ("child_discount_id", "!=", False),
+            ("child_discount_id.is_published", "=", True),
+        ], limit=limit)
+        retired = 0
+        for line in done:
+            if line.card_id._retire_child(line.child_discount_id):
+                retired += 1
+        if retired:
+            _logger.info("gift_card settle: retired %d spent child coupon(s)", retired)
+        return retired

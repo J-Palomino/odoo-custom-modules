@@ -10,8 +10,11 @@ invsvc is stubbed throughout — the basket read is a network call and these
 assertions are about what we do with the answer, not whether the network
 works.
 """
+from datetime import timedelta
+
 from unittest.mock import patch
 
+from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
@@ -300,4 +303,98 @@ class TestGiftCardExecuteDraw(TransactionCase):
 
         self.assertEqual(len(mint_calls), 1, "minted exactly once")
         self.assertTrue(second.get("replayed"))
+        self.assertEqual(card.balance, 70.0)
+
+
+@tagged("post_install", "-at_install")
+class TestGiftCardSettlement(TransactionCase):
+    """Settlement against Dutchie report 10875.
+
+    The report emits one row per discounted LINE, so a draw's dollars are the
+    SUM across its order's rows — counting rows instead would under-settle a
+    multi-line basket. And a settlement must never exceed what was reserved,
+    or a card drains beyond its balance.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Card = cls.env["mint.gift.card"]
+
+    def _held(self, face=100.0, draw=30.0, code="MINT-GD-SET001"):
+        card = self.Card.create({"face_value": face, "issue_reason": "promotion"})
+        card.action_activate()
+        line = card.hold(draw, shipment_id="SHIP-1", loc_id=2679, lsp_id=575)
+        line.child_code = code
+        return card, line
+
+    def _rows(self, code, amounts, order="178720095"):
+        """Report rows as Dutchie labels them — human-facing, with spaces."""
+        return [{"Discount Code": code, "Order ID": order, "Discounted Amount": a,
+                 "Location Name": "Tempe"} for a in amounts]
+
+    def _run(self, rows, targets=((1568, 575),)):
+        T = type(self.env["mint.gift.card"])
+        with patch.object(T, "_settlement_targets", return_value=set(targets)), \
+             patch.object(T, "_invsvc_get", return_value=(200, {"ok": True, "rows": rows})), \
+             patch.object(T, "_retire_spent_children", return_value=0):
+            return self.env["mint.gift.card"]._cron_settle_gift_card_draws()
+
+    def test_settles_the_summed_dollars_across_the_orders_lines(self):
+        card, line = self._held(draw=30.0)
+        self._run(self._rows("MINT-GD-SET001", [11.0, 14.0, 5.0]))
+        self.assertEqual(line.state, "settled")
+        self.assertEqual(line.settled_amount, 30.0, "summed, not counted")
+        self.assertEqual(line.order_id, "178720095")
+        self.assertEqual(card.balance, 70.0)
+
+    def test_settling_less_than_drawn_returns_the_difference(self):
+        """The basket shrank after the coupon went on."""
+        card, line = self._held(draw=30.0)
+        self._run(self._rows("MINT-GD-SET001", [18.0]))
+        self.assertEqual(line.settled_amount, 18.0)
+        self.assertEqual(card.balance, 82.0, "the unspent $12 came back")
+
+    def test_a_report_overshoot_is_capped_at_the_draw(self):
+        """A single-use exact-amount coupon cannot legitimately exceed its
+        draw. Cap rather than drain the card."""
+        card, line = self._held(draw=30.0)
+        self._run(self._rows("MINT-GD-SET001", [500.0]))
+        self.assertEqual(line.settled_amount, 30.0)
+        self.assertEqual(card.balance, 70.0)
+
+    def test_an_unredeemed_draw_stays_held(self):
+        card, line = self._held(draw=30.0)
+        self._run(self._rows("MINT-GD-SOMEONEELSE", [12.0]))
+        self.assertEqual(line.state, "held", "not redeemed yet — leave it alone")
+        self.assertEqual(card.balance, 70.0)
+
+    def test_column_labels_are_matched_loosely(self):
+        """Dutchie columns are human labels; one exact key is a coin flip, and
+        a miss reads exactly like 'never redeemed'."""
+        card, line = self._held(draw=25.0)
+        self._run([{"discount_code": "MINT-GD-SET001", "orderid": "9",
+                    "DiscountedAmount": 25.0}])
+        self.assertEqual(line.state, "settled")
+        self.assertEqual(line.settled_amount, 25.0)
+
+    def test_a_total_fetch_failure_touches_nothing(self):
+        """Better to leave holds standing than to release money on a report
+        outage — the stale sweep is the backstop, not this."""
+        card, line = self._held(draw=30.0)
+        T = type(self.env["mint.gift.card"])
+        with patch.object(T, "_settlement_targets", return_value={(1568, 575)}), \
+             patch.object(T, "_invsvc_get", return_value=(502, {"error": "down"})), \
+             patch.object(T, "_retire_spent_children", return_value=0):
+            self.env["mint.gift.card"]._cron_settle_gift_card_draws()
+        self.assertEqual(line.state, "held")
+        self.assertEqual(card.balance, 70.0)
+
+    def test_settlement_runs_before_the_release_sweep_could_reclaim_it(self):
+        """A settled draw must survive the stale-hold cron."""
+        card, line = self._held(draw=30.0)
+        self._run(self._rows("MINT-GD-SET001", [30.0]))
+        line.held_at = fields.Datetime.now() - timedelta(hours=48)
+        self.env["mint.gift.card"]._cron_expire_and_release()
+        self.assertEqual(line.state, "settled", "settled money is not released")
         self.assertEqual(card.balance, 70.0)
