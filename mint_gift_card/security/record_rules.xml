@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+        <!--
+            Multi-company visibility. company_id is left empty on issue by
+            default, so a card is visible group-wide: a minted child coupon is
+            LSP-wide at the register, and hiding the card from the store that
+            has to honour it would be worse than useless.
+            Global rule (no group) so it applies to managers too.
+        -->
+        <record id="rule_mint_gift_card_company" model="ir.rule">
+            <field name="name">Gift Card: multi-company</field>
+            <field name="model_id" ref="model_mint_gift_card"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_mint_gift_card_line_company" model="ir.rule">
+            <field name="name">Gift Card Draw: multi-company</field>
+            <field name="model_id" ref="model_mint_gift_card_line"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+    </data>
+</odoo>

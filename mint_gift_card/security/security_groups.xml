@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+        <!--
+            Gift cards carry money and a customer link, so access is
+            DEFAULT-DENY: a plain internal user gets nothing. This is
+            deliberate — a staff-readable balance list is a staff-readable
+            list of who holds credit and how much.
+        -->
+        <record id="group_gift_card_viewer" model="res.groups">
+            <field name="name">Mint Gift Cards / Viewer</field>
+            <field name="comment">Read-only access to gift cards and their draw history.</field>
+        </record>
+
+        <record id="group_gift_card_manager" model="res.groups">
+            <field name="name">Mint Gift Cards / Manager</field>
+            <field name="comment">Issue, activate and void gift cards. Implies Viewer.</field>
+            <field name="implied_ids" eval="[(4, ref('group_gift_card_viewer'))]"/>
+        </record>
+    </data>
+</odoo>

@@ -203,10 +203,18 @@ COPY --chown=odoo:odoo mint_coa_admin /opt/extra-addons/mint_coa_admin
 # ── Store schedule sync (Google Sheets -> spreadsheet.spreadsheet) ───
 COPY --chown=odoo:odoo mint_schedule_sync /opt/extra-addons/mint_schedule_sync
 
+# ── Stored-value gift cards (balance ledger, partial redemption) ─────
+COPY --chown=odoo:odoo mint_gift_card /opt/extra-addons/mint_gift_card
+
 # ── Verify critical modules ─────────────────────────────────────────
 RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_theme/__manifest__.py && echo "MINT_THEME MODULE VERIFIED" || (echo "MINT_THEME MODULE MISSING" && exit 1)
+# A module with no COPY line above is simply absent from the image, and the
+# deploy still goes green — the module just does not exist. Fail the build
+# instead, since a gift card ledger that silently is not there is worse than
+# one that never shipped.
+RUN test -f /opt/extra-addons/mint_gift_card/__manifest__.py && echo "MINT_GIFT_CARD MODULE VERIFIED" || (echo "MINT_GIFT_CARD MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_theme/__manifest__.py && echo "VERSION CHECK PASSED"
 RUN test -f /opt/extra-addons/mint_maintenance_form/__manifest__.py && echo "MINT_MAINTENANCE_FORM MODULE VERIFIED" || (echo "MINT_MAINTENANCE_FORM MODULE MISSING" && exit 1)
 RUN grep "version" /opt/extra-addons/mint_push/__manifest__.py && echo "MINT_PUSH MODULE VERIFIED" || (echo "MINT_PUSH MODULE MISSING" && exit 1)
