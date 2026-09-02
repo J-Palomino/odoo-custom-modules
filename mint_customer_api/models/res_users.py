@@ -4,7 +4,8 @@ import time
 
 import jwt
 
-from odoo import models, fields, api
+from odoo import _, models, fields, api
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -39,6 +40,11 @@ class ResUsers(models.Model):
         if 'password' in vals and not self.env.context.get('mint_skip_session_bump'):
             for user in self:
                 user.sudo().session_version = (user.session_version or 1) + 1
+        # Re-check only when something that can flip a user internal changed.
+        # res.users.write also runs on ordinary login bookkeeping; this keeps
+        # the guard off that path.
+        if {'group_ids', 'partner_id', 'active'} & set(vals):
+            self._mint_check_customer_not_internal()
         return res
 
     def _get_jwt_secret(self):
@@ -91,3 +97,45 @@ class ResUsers(models.Model):
                 _logger.info('JWT revoked (session_version mismatch) for user %s', payload.get('user_id'))
                 return None
         return payload
+
+    # ------------------------------------------------------------------
+    # Customers must never hold an internal user account
+    # ------------------------------------------------------------------
+    # An internal (non-share) user reads the backend: other customers' PII,
+    # tickets, inventory, HR. Customers get portal/share accounts instead.
+    # Beyond the obvious exposure, an internal account also breaks the
+    # customer-isolation rule for everyone else — the partner stops being
+    # hidden, and starts turning up in internal pickers such as ticket
+    # followers.
+    #
+    # Employees who also shop here are unaffected: _mint_is_customer treats
+    # any employee work-contact as staff, so it returns False for them. If a
+    # genuine customer really is being hired, mark their contact as an
+    # employee first — that is the deliberate, auditable escape hatch.
+
+    def _mint_check_customer_not_internal(self):
+        for user in self:
+            # Inactive users are skipped so archiving stays possible: if a
+            # customer ever does end up with an internal account, archiving it
+            # is the fix, and a guard that blocked its own remediation would
+            # be worse than the problem.
+            if user.share or not user.active or not user.partner_id:
+                continue
+            # ignore_users=user: the account being granted already exists at
+            # this point, so it must not count as evidence that its own
+            # partner is staff.
+            if user.partner_id.sudo()._mint_is_customer(ignore_users=user):
+                raise ValidationError(_(
+                    "%(name)s is a customer and cannot be given an internal "
+                    "user account.\n\n"
+                    "Customers get portal access, not backend access. If this "
+                    "person is actually staff, mark their contact as an "
+                    "employee first, then create the account.",
+                    name=user.partner_id.display_name,
+                ))
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        users = super().create(vals_list)
+        users._mint_check_customer_not_internal()
+        return users

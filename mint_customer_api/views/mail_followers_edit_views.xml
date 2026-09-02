@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!--
+        Hide customers from the chatter's "Add Followers" picker on
+        internal-only documents (maintenance tickets, project tasks).
+
+        This is the convenience half of the guard: the partners simply do not
+        appear in the dropdown. The half that actually enforces the rule is in
+        Python — mail_followers_edit.py raises on submit, and mail_thread.py
+        drops customers on every non-interactive subscribe path.
+
+        The domain comes from the wizard's computed `partner_domain` so the
+        list of guarded models stays in one place (an ir.config_parameter)
+        rather than being duplicated into this view.
+    -->
+    <record id="mail_followers_edit_form_no_customers" model="ir.ui.view">
+        <field name="name">mail.followers.edit.form.mint.no.customers</field>
+        <field name="model">mail.followers.edit</field>
+        <field name="inherit_id" ref="mail.mail_followers_edit_form"/>
+        <field name="arch" type="xml">
+            <field name="res_ids" position="after">
+                <field name="guard_customers" invisible="1"/>
+                <field name="partner_domain" invisible="1"/>
+            </field>
+            <field name="partner_ids" position="attributes">
+                <attribute name="domain">partner_domain</attribute>
+            </field>
+        </field>
+    </record>
+
+</odoo>
