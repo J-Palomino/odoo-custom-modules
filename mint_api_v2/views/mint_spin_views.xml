@@ -204,6 +204,11 @@
         <field name="res_model">mint.spin.seed.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
+        <!-- Reached from the Prize Pool list's Actions (gear) menu rather than
+             its own menu entry. A wizard that acts ON the pool listed beside
+             the pool itself reads as two different sections of the app. -->
+        <field name="binding_model_id" ref="model_mint_spin_prize"/>
+        <field name="binding_view_types">list</field>
     </record>
 
     <record id="view_mint_spin_grant_wizard_form" model="ir.ui.view">
@@ -238,6 +243,10 @@
         <field name="res_model">mint.spin.grant.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
+        <!-- Same as the seed wizard: lives in the Spin Tickets list's Actions
+             menu, not as a sibling menu of the list it feeds. -->
+        <field name="binding_model_id" ref="model_mint_spin_ticket"/>
+        <field name="binding_view_types">list</field>
     </record>
 
     <!-- ══ Menus ═══════════════════════════════════════════════════════
@@ -246,13 +255,7 @@
     <menuitem id="menu_mint_spin_prize" name="Spin Prize Pool"
               parent="menu_mint_discount_root"
               action="action_mint_spin_prize" sequence="30"/>
-    <menuitem id="menu_mint_spin_seed" name="Seed Prize Pool"
-              parent="menu_mint_discount_root"
-              action="action_mint_spin_seed_wizard" sequence="31"/>
     <menuitem id="menu_mint_spin_ticket" name="Spin Tickets"
               parent="menu_mint_discount_root"
               action="action_mint_spin_ticket" sequence="32"/>
-    <menuitem id="menu_mint_spin_grant" name="Grant Spin Tickets"
-              parent="menu_mint_discount_root"
-              action="action_mint_spin_grant_wizard" sequence="33"/>
 </odoo>
