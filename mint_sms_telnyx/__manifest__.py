@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint SMS — Telnyx Gateway (Transactional Only)',
-    'version': '19.0.4.3.0',
+    'version': '19.0.4.4.0',
     'category': 'Tools',
     'summary': 'Transactional SMS via Telnyx + gated iMessage (BlueBubbles) — cannabis-content guardrail',
     'description': """
@@ -42,6 +42,7 @@
         'security/sms_security.xml',
         'security/ir.model.access.csv',
         'data/ir_config_parameter.xml',
+        'data/ir_cron.xml',
         'views/res_config_settings_views.xml',
         'views/telnyx_message_log_views.xml',
         'views/mint_sms_message_views.xml',

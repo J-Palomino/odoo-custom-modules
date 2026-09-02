@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Delivery verification: BlueBubbles HTTP 200 = accepted by
+         Messages.app, NOT delivered. Messages can fail afterward (error 4 =
+         SMS relay down, error 22 = handle undeliverable) while the record
+         says 'sent' — observed live 2026-08-13 for every Android recipient.
+         This cron re-reads each sent message and records the true outcome. -->
+    <record id="ir_cron_verify_sms_delivery" model="ir.cron">
+        <field name="name">Mint SMS: verify BlueBubbles delivery</field>
+        <field name="model_id" ref="model_mint_sms_message"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_verify_delivery()</field>
+        <field name="interval_number">10</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>
