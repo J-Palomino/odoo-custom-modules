@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Gift Cards',
-    'version': '19.0.1.3.0',
+    'version': '19.0.1.4.0',
     'category': 'Sales',
     'summary': 'Stored-value gift cards with partial redemption and a remainder',
     'description': """MintDeals Gift Cards
@@ -31,9 +31,12 @@
     # this module still only rolls back this module.
     # mint_dutchie_discount_mirror contributes the 'dollar_off_total'
     # discount_type the child coupons use — it is NOT in the base selection.
+    # mint_customer_api supplies the customer JWT auth + response helpers the
+    # storefront endpoints reuse, so a shopper is authenticated exactly the
+    # same way here as on every other /api/v1/customer route.
     'depends': [
         'base', 'mail', 'mint_api_v2', 'mint_command_center',
-        'mint_dutchie_discount_mirror',
+        'mint_dutchie_discount_mirror', 'mint_customer_api',
     ],
     'data': [
         'security/security_groups.xml',
