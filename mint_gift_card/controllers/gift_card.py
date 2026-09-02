@@ -26,6 +26,7 @@ from odoo.http import request
 from odoo.addons.mint_customer_api.controllers.auth import (
     json_response, error_response, unexpected_error_response,
     _verify_and_get_user,
+    identity_partner_ids,
 )
 
 _logger = logging.getLogger(__name__)
@@ -40,6 +41,21 @@ def _caller():
         return None, error_response('No customer profile linked to this account', 400)
     return user, None
 
+
+def _owner_ids(partner):
+    """Partner rows that are the same human as this caller.
+
+    A gift card is bound to whichever partner row existed when it was issued,
+    and that is routinely NOT the row the customer signs in as: on prod one
+    person holds five partner records sharing a driver's licence. Matching on
+    the signed-in row alone hides a card its owner is holding the phone for.
+
+    Delegates to res.partner.identity_union_ids() via mint_customer_api — the
+    one definition of identity, already used by /orders and the loyalty
+    balance. It resolves only on a STRONG key and excludes separately-claimed
+    accounts, which is what makes it safe to widen a money lookup with.
+    """
+    return identity_partner_ids(partner) or [partner.id]
 
 def _serialize(card):
     return {
@@ -67,7 +83,7 @@ class MintGiftCardController(http.Controller):
             return denied
         try:
             cards = request.env['mint.gift.card'].sudo().search([
-                ('partner_id', '=', user.partner_id.id),
+                ('partner_id', 'in', _owner_ids(user.partner_id)),
                 ('state', 'in', ['active', 'depleted']),
             ], order='balance desc, id desc')
             return json_response({'cards': [_serialize(c) for c in cards]})
@@ -118,11 +134,11 @@ class MintGiftCardController(http.Controller):
             # UNBOUND card is a bearer instrument, so the first customer to
             # spend it takes ownership — the same transfer-on-use rule the
             # promo gift links already follow.
-            if card.partner_id and card.partner_id.id != partner.id:
+            if card.partner_id and card.partner_id.id not in _owner_ids(partner):
                 return error_response('Gift card not found', 404)
         else:
             card = Card.search([
-                ('partner_id', '=', partner.id),
+                ('partner_id', 'in', _owner_ids(partner)),
                 ('state', '=', 'active'),
                 ('is_spendable', '=', True),
             ], order='balance desc, id desc', limit=1)
