@@ -71,7 +71,33 @@ class ProductTemplate(models.Model):
     rec_price = fields.Float(string="Recreational Price")
     med_price = fields.Float(string="Medical Price")
 
-    # Categorization
+    # ── Categorization ───────────────────────────────────────────────────────
+    # Three layers that are deliberately NOT the same axis. Collapsing them is
+    # what produced the drift this replaces.
+    #
+    #   1. CONSUMER FORM — `master_category`. What a shopper filters by (flower
+    #      / vapes / edibles …). Populated by RESOLVING Dutchie's taxonomies,
+    #      never by copying one of them: use
+    #      mint_inventory_ops.models.dutchie_receive_line.master_category_from_dutchie,
+    #      whose three tiers (EcomCategory → POS MasterCategory → POS Category)
+    #      cover 100% of consumer-facing product and return False rather than
+    #      guess. 🚨 Its key list is duplicated as MASTER_CATEGORIES in that
+    #      module — change both or receive lines and products disagree.
+    #
+    #   2. SOURCE MIRROR — the pos_/sub_/ecom_ Chars below. Dutchie's own
+    #      values, verbatim and unnormalized. Char, not Selection, because the
+    #      vocabulary is per-tenant and NOT congruent: measured live
+    #      2026-08-27, FL runs a state MIP scheme ("MIP - Edibles",
+    #      "Vaporization", "Gear") and MI treats "Prerolls" and "Accessories"
+    #      as masters, while AZ/NV/IL/MO use the operational set in layer 3. A
+    #      Selection silently drops whatever it does not enumerate — that is
+    #      how the old mapper lost Bulk, Cultivation and Kitchen. Never
+    #      normalize on the way in.
+    #
+    #   3. OPERATIONAL — `mint_ops_category`. Inventory/merchandising buckets
+    #      per Natalie's "{ST} Dutchie Reference 2026" sheets: eight masters
+    #      shared by all four sheets, plus Kitchen (AZ+NV) and Samples (FL+IL,
+    #      where AZ/NV instead use "Samples (C/E/F/V/M/U)" sub-categories).
     master_category = fields.Selection([
         ('flower', 'Flower'),
         ('vaporizers', 'Vaporizers'),
@@ -82,7 +108,58 @@ class ProductTemplate(models.Model):
         ('accessories', 'Accessories'),
         ('prerolls', 'Pre-Rolls'),
         ('beverages', 'Beverages'),
-    ], string="Master Category")
+    ], string="Master Category",
+       help="Consumer-facing product form. Resolved from Dutchie, not copied from it.")
+
+    pos_master_category = fields.Char(
+        string="Dutchie Master Category (POS)",
+        help="Dutchie MasterCategory, mirrored verbatim. Per-tenant vocabulary — do not normalize.",
+    )
+    sub_category = fields.Char(
+        string="Dutchie Sub-Category",
+        help="Dutchie's POS Category field, mirrored verbatim — this is the vocabulary "
+             "the state Dutchie Reference sheets call 'Sub-Category' (Prepack Flower, "
+             "Cartridge: Live Resin, Infused Prerolls). Verified against 6,618 live rows "
+             "2026-08-28: 116 distinct values carrying 32 of the 56 governance "
+             "sub-categories. NOT Dutchie's `sub_category`, which is its ecom "
+             "subcategory and duplicates ecom_subcategory exactly.",
+    )
+    ecom_category = fields.Char(
+        string="Dutchie Ecom Category",
+        help="Dutchie EcomCategory — the most cross-market-congruent taxonomy available "
+             "(seven values present in all six markets). May also carry Dutchie's "
+             "visibility flags 'Hide' / 'N/A', which are not categories.",
+    )
+    ecom_subcategory = fields.Char(
+        string="Dutchie Ecom Sub-Category",
+        help="Dutchie EcomSubcategory, mirrored verbatim.",
+    )
+
+    mint_sub_category = fields.Char(
+        string="Mint Sub-Category",
+        help="Governance sub-category — sub_category with the two mechanical drifts "
+             "normalized away: singular/plural ('Preroll' vs 'Prerolls') and word order "
+             "('Distillate Disposable' vs 'Disposables: Distillate'). 855 live rows are "
+             "affected (MO 357, MI 273, IL 213). An allow-list, never a guess: a value "
+             "with no governance equivalent passes through unchanged. Compare across "
+             "states on this; audit against the verbatim sub_category.",
+    )
+
+    mint_ops_category = fields.Selection([
+        ('flower', 'Flower'),
+        ('vape', 'Vape'),
+        ('concentrate', 'Concentrate'),
+        ('edible', 'Edible'),
+        ('medicated', 'Medicated'),
+        ('unmedicated', 'Unmedicated'),
+        ('bulk', 'Bulk'),
+        ('cultivation', 'Cultivation'),
+        ('kitchen', 'Kitchen'),
+        ('samples', 'Samples'),
+    ], string="Mint Operational Category",
+       help="Inventory/merchandising master per the state Dutchie Reference sheets. A "
+            "different axis from Master Category — Bulk, Cultivation, Kitchen and Samples "
+            "are operational buckets, not consumer forms.")
 
     # Brand
     brand_id = fields.Many2one('mint.brand', string="Brand")
