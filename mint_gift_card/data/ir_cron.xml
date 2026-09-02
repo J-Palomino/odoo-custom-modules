@@ -16,5 +16,26 @@
             <field name="interval_type">hours</field>
             <field name="active" eval="True"/>
         </record>
+
+        <!--
+            Settlement. Confirms held draws against Dutchie report 10875 —
+            the only source carrying both `Discount Code` and `Discounted
+            Amount` — then retires the spent child coupons.
+
+            Hourly, and deliberately more frequent than the stale-hold window
+            above: a real redemption must be settled before the release sweep
+            could reclaim it, or a customer's spend would silently un-spend
+            itself and the card would be reusable forever.
+        -->
+        <record id="cron_gift_card_settle_draws" model="ir.cron">
+            <field name="name">Mint Gift Cards: settle draws from Dutchie report 10875</field>
+            <field name="model_id" ref="model_mint_gift_card"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_settle_gift_card_draws()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+        </record>
+
     </data>
 </odoo>
