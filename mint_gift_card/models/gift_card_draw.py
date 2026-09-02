@@ -230,6 +230,45 @@ class MintGiftCardDraw(models.Model):
         })
         return result
 
+
+    # ── Resolving a walk-in's transaction ───────────────────────────────
+    @api.model
+    def find_transaction(self, loc_id, lsp_id, phone=None, email=None,
+                         dutchie_customer_id=None):
+        """Find the customer's live checked-in transaction at a store.
+
+        A walk-in has no web order, so nothing on our side knows their shipment
+        id — which is why, before this, a gift card could only be spent against
+        an online order. Dutchie does know: the customer is standing at a
+        register and is in the store's checked-in list.
+
+        Matching is exact-only and refuses ambiguity upstream rather than
+        guessing. Drawing against the wrong open basket would spend one
+        customer's balance on a stranger's order, so "we found two" has to be
+        an error, never a best guess.
+
+        Returns the match dict, or a dict with `error` set.
+        """
+        if not (phone or email or dutchie_customer_id):
+            return {'error': 'no_identity'}
+        status, body = self._invsvc_post('/api/customer/find-transaction', {
+            'locId': loc_id,
+            'lspId': lsp_id,
+            'phone': phone or None,
+            'email': email or None,
+            'dutchieCustomerId': dutchie_customer_id or None,
+        })
+        if status == 200 and body.get('ok'):
+            return {
+                'shipment_id': body.get('shipmentId'),
+                'customer_id': body.get('customerId'),
+                'register': body.get('register') or 0,
+                'matched_on': body.get('matchedOn'),
+                'transaction_status': body.get('transactionStatus'),
+            }
+        return {'error': body.get('error') or 'lookup_failed',
+                'message': body.get('message')}
+
     # ── Step 3: mint the one-shot child coupon ──────────────────────────
     #
     # Shape copied field-for-field from the two coupons already proven to work
