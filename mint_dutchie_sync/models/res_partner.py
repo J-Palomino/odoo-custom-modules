@@ -425,6 +425,13 @@ class ResPartner(models.Model):
     IDENTITY_UNION_MAX_PARAM = 'mint_pos_bridge.orders_identity_union_max'
     IDENTITY_UNION_MAX_DEFAULT = 10
 
+    # Failure bookkeeping for _log_identity_failure. Deliberately plain class
+    # state: it is per-worker under prefork, which is fine — each worker
+    # reports its own rate, and losing it on restart costs one extra traceback,
+    # not correctness. Nothing here may be relied on for behaviour.
+    _identity_failure_state = {'count': 0, 'last_logged': None}
+
+
     @staticmethod
     def _identity_base_email(email):
         """Normalise an address to the mailbox that actually receives it.
@@ -509,8 +516,50 @@ class ResPartner(models.Model):
                 _logger.info(
                     'identity-union: partner %s resolved to %s', me.id, allowed)
             return [self.id] + allowed
-        except Exception:  # noqa: BLE001 — a read widening must never break a caller
-            _logger.exception(
-                'identity-union: resolution failed for partner %s — '
-                'falling back to strict', self.id)
+        except Exception as exc:  # noqa: BLE001 — a read widening must never break a caller
+            self._log_identity_failure(exc)
             return [self.id]
+
+    @api.model
+    def _log_identity_failure(self, exc):
+        """Report a resolution failure loudly once, then quietly with a count.
+
+        Two things make the naive `_logger.exception(...)` here a bad fit.
+
+        It is a HOT path — every authenticated /orders call and every loyalty
+        read goes through it — so a systemic failure (a renamed field, a half
+        applied upgrade) writes one full traceback per request into a log that
+        has no drain. The evidence of the problem buries the evidence of
+        everything else.
+
+        And the fallback is SILENT BY DESIGN: returning [self.id] is exactly
+        what a customer with no siblings looks like. So a total outage renders
+        as "nobody has siblings today" on both /orders and the Wallet balance —
+        correct-looking, quietly wrong, and indistinguishable from healthy.
+        The count below is what tells those two apart.
+
+        First failure gets the traceback. After that, one WARNING a minute
+        carrying how many were swallowed in between, so the signal survives at
+        any failure rate.
+        """
+        state = ResPartner._identity_failure_state
+        now = fields.Datetime.now()
+        state['count'] += 1
+        first = state['last_logged'] is None
+        elapsed = None if first else (now - state['last_logged']).total_seconds()
+
+        if first:
+            state['last_logged'] = now
+            state['count'] = 0
+            _logger.exception(
+                'identity-union: resolution FAILED — falling back to strict '
+                'single-partner. This degrades silently: a caller cannot tell '
+                'it from a customer who genuinely has no siblings.')
+        elif elapsed is not None and elapsed >= 60:
+            swallowed = state['count']
+            state['last_logged'] = now
+            state['count'] = 0
+            _logger.warning(
+                'identity-union: %d further resolution failure(s) in the last '
+                '%ds, all falling back to strict. Latest: %s: %s',
+                swallowed, int(elapsed), type(exc).__name__, exc)
