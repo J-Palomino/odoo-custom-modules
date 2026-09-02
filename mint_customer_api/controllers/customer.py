@@ -18,7 +18,8 @@ from odoo.exceptions import UserError
 from odoo.http import request, Response
 
 from .auth import (json_response, error_response, unexpected_error_response,
-                   _verify_and_get_user, normalize_phone_e164)
+                   _verify_and_get_user, normalize_phone_e164,
+                   identity_partner_ids)
 
 _logger = logging.getLogger(__name__)
 
@@ -352,10 +353,15 @@ class MintCustomerProfile(http.Controller):
         if not program:
             return json_response({'loyalty': {'points': 0, 'program_name': 'Mint Rewards', 'point_name': 'Points', 'available_rewards': []}})
 
+        # Resolved across every partner row that is this human, not just the
+        # one they signed into — see auth.py::_loyalty_points for why (five
+        # prod partners share a licence and only one carries the card, so the
+        # other logins reported 0 and the Wallet button offered nothing).
+        # Highest card, never a sum: summing mirrors the known 2-3x inflation.
         card = request.env['loyalty.card'].sudo().search([
-            ('partner_id', '=', partner.id),
+            ('partner_id', 'in', identity_partner_ids(partner)),
             ('program_id', '=', program.id),
-        ], limit=1)
+        ], order='points desc', limit=1)
 
         points = card.points if card else 0
 

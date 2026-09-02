@@ -96,125 +96,32 @@ def _normalize_datetime(value):
 
 # --- Query-time identity union (T3, Odoo task #109604) -----------------------
 #
-# One human can hold several res.partner rows — a POS roster record, a web
-# signup, and a fragment per bare walk-in. /orders filtered strictly on the
-# caller's own partner id, so whichever record they happened to sign into
-# decided how much of their own history they could see. Measured on prod
-# 2026-09-01: five partners share one driver's licence with 88 orders split
-# 81/7/0/0/0 across them.
+# The resolution itself lives in ONE place: res.partner.identity_union_ids(),
+# defined in mint_dutchie_sync, which owns x_dutchie_identity_key. This module
+# depends on it, the loyalty balance in mint_customer_api uses it, and
+# mintinvsvc calls the same method over execute_kw for the Wallet pass.
 #
-# This resolves the PERSON at read time instead of moving any data. It is
-# deliberately conservative: every branch below fails closed to the single
-# partner id, which is the previous behaviour.
-
-# Off unless explicitly enabled. An ir.config_parameter rather than a constant
-# so it rolls back in seconds — Odoo modules do not auto-deploy, so reverting
-# code would otherwise mean a rebuild plus a module upgrade.
-IDENTITY_UNION_PARAM = 'mint_pos_bridge.orders_identity_union'
-IDENTITY_UNION_MAX_PARAM = 'mint_pos_bridge.orders_identity_union_max'
-IDENTITY_UNION_MAX_DEFAULT = 10
-
-# Only these tiers are ever unioned. 'nd:' (name+DOB) and 'ph:' (phone) are
-# excluded by construction: 'ph:' keys are built from the raw roster string and
-# junk numbers like 0000000000 are real rows, while stored 'nd:' keys include
-# entries such as "nd:* *|08/28/1986". A weak-key union would put a stranger's
-# order history on someone else's screen.
-_STRONG_KEY_PREFIXES = ('dl:', 'mj:')
-
-# A key that is only its prefix is a sentinel, not an identity.
-_SENTINEL_KEYS = frozenset(['', 'dl:', 'mj:', 'nd:', 'ph:', 'nd:|'])
-
-
-def _base_email(email):
-    """Normalise an address to the mailbox that actually receives it.
-
-    'jpalomino+123@brightroot.com' and 'jpalomino@brightroot.com' are the same
-    mailbox, so they are the same person for the purpose of the claimed-account
-    check below. Anything else — a different local part or a different domain —
-    is treated as a different person.
-    """
-    email = (email or '').strip().lower()
-    if '@' not in email:
-        return ''
-    local, _, domain = email.partition('@')
-    return '%s@%s' % (local.split('+', 1)[0], domain)
+# This shim exists only to turn a header string into an int and to keep the
+# controller readable. Do not reimplement the rules here.
 
 
 def _identity_union_partner_ids(self_partner_id):
-    """Partner ids whose orders the caller may see on their OWN /orders view.
+    """Partner ids the caller's OWN /orders view may resolve to.
 
-    Returns [self_partner_id] unless all of these hold:
-      * the union flag is on,
-      * the caller carries a STRONG identity key (dl:/mj:) that is not a
-        sentinel,
-      * that key resolves to a small group, and
-      * each sibling is either unclaimed, or claimed by a login that delivers
-        to the same mailbox as the caller's.
-
-    Never raises: a failure here must not take /orders down, so anything
-    unexpected degrades to the single-partner behaviour.
+    Delegates to res.partner.identity_union_ids(). Falls back to the single id
+    if the field's owning module is not installed, so /orders keeps working on
+    an instance without mint_dutchie_sync.
     """
     try:
-        ICP = request.env['ir.config_parameter'].sudo()
-        if str(ICP.get_param(IDENTITY_UNION_PARAM, '0')).strip().lower() not in ('1', 'true', 'yes'):
-            return [self_partner_id]
-
-        Partner = request.env['res.partner'].sudo()
-        # The field is owned by mint_dutchie_sync; probe before relying on it.
-        if 'x_dutchie_identity_key' not in Partner._fields:
-            return [self_partner_id]
-
-        me = Partner.browse(self_partner_id).exists()
-        if not me:
-            return [self_partner_id]
-
-        key = (me.x_dutchie_identity_key or '').strip()
-        if not key or key in _SENTINEL_KEYS or not key.startswith(_STRONG_KEY_PREFIXES):
-            return [self_partner_id]
-
-        try:
-            max_group = int(ICP.get_param(IDENTITY_UNION_MAX_PARAM, IDENTITY_UNION_MAX_DEFAULT))
-        except (TypeError, ValueError):
-            max_group = IDENTITY_UNION_MAX_DEFAULT
-
-        # limit+1 so an oversized group is detectable rather than silently trimmed.
-        siblings = Partner.search(
-            [('x_dutchie_identity_key', '=', key), ('id', '!=', me.id)],
-            limit=max_group + 1,
-        )
-        if len(siblings) > max_group:
-            _logger.warning(
-                'identity-union: key held by partner %s resolves to more than %s '
-                'partners — refusing to union', me.id, max_group)
-            return [self_partner_id]
-
-        my_mailbox = _base_email(me.email)
-        allowed = []
-        for sib in siblings:
-            if sib.employee or any(not u.share for u in sib.user_ids):
-                # Staff record — never fold into a customer's view.
-                continue
-            if sib.user_ids:
-                # A sibling someone can log into is a separate claimed account
-                # UNLESS it delivers to the same mailbox as the caller (a "+alias"
-                # signup by the same human). Without a mailbox to compare, exclude.
-                sib_mailbox = _base_email(sib.email)
-                if not my_mailbox or sib_mailbox != my_mailbox:
-                    _logger.warning(
-                        'identity-union: sibling %s of partner %s is a separately '
-                        'claimed account — excluded', sib.id, me.id)
-                    continue
-            allowed.append(sib.id)
-
-        if allowed:
-            _logger.info(
-                'identity-union: partner %s unioned with %s', me.id, allowed)
-        return [self_partner_id] + allowed
-    except Exception:  # noqa: BLE001 — a read widening must never 500 /orders
+        partner = request.env['res.partner'].sudo().browse(
+            int(self_partner_id)).exists()
+        if not partner or not hasattr(partner, 'identity_union_ids'):
+            return [int(self_partner_id)]
+        return partner.identity_union_ids()
+    except Exception:  # noqa: BLE001 — never 500 /orders over a widening
         _logger.exception(
-            'identity-union: failed for partner %s — falling back to strict',
-            self_partner_id)
-        return [self_partner_id]
+            'identity-union: shim failed for partner %s', self_partner_id)
+        return [int(self_partner_id)]
 
 
 def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=None):
