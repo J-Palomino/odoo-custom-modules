@@ -101,8 +101,8 @@ class MintGiftCardController(http.Controller):
 
         store_slug = (data.get('store_slug') or '').strip()
         shipment_id = data.get('shipment_id')
-        if not store_slug or not shipment_id:
-            return error_response('store_slug and shipment_id are required', 400)
+        if not store_slug:
+            return error_response('store_slug is required', 400)
 
         Card = request.env['mint.gift.card'].sudo()
         partner = user.partner_id
@@ -141,19 +141,54 @@ class MintGiftCardController(http.Controller):
         if not loc_id or not lsp_id:
             return error_response('That store is not wired to a register', 409)
 
+        # A WALK-IN has no web order, so the caller has no shipment id to give
+        # us. Dutchie does know — the customer is standing at a register and is
+        # in that store's checked-in list — so resolve it from their identity.
+        # Without this a gift card could only ever be spent against an ONLINE
+        # order, which is most of the people holding one unable to use it.
+        customer_id = data.get('customer_id')
+        register = data.get('register')
+        if not shipment_id:
+            match = card.find_transaction(
+                loc_id, lsp_id,
+                phone=partner.mobile or partner.phone or None,
+                email=partner.email or None,
+                dutchie_customer_id=getattr(partner, 'x_dutchie_customer_id', None) or None,
+            )
+            if match.get('error'):
+                # Every one of these is the customer's situation rather than a
+                # fault, so each gets a sentence they can act on standing at a
+                # counter — not a backend error string.
+                said = {
+                    'not_checked_in': "Check in at the store first, then tap again.",
+                    'ambiguous': "You have more than one order open here — ask your budtender.",
+                    'no_identity': "We need a phone number or email on your account to find your order.",
+                    'unknown_store': "We can't reach that store's register.",
+                }
+                return json_response({
+                    'ok': False,
+                    'error': match['error'],
+                    'message': said.get(match['error'],
+                                        "We couldn't find your order at that store."),
+                    'card': _serialize(card),
+                }, status=409 if match['error'] == 'ambiguous' else 404)
+            shipment_id = match['shipment_id']
+            customer_id = customer_id or match.get('customer_id')
+            register = register if register is not None else match.get('register')
+
         try:
             if data.get('dry_run'):
                 # Resolves the basket and the amount, writes nothing. This is
                 # what lets the screen say "uses $30 of your $70" before the
                 # customer commits to anything.
                 result = card.plan_draw(loc_id, lsp_id, shipment_id,
-                                        customer_id=data.get('customer_id'),
-                                        register=data.get('register'))
+                                        customer_id=customer_id,
+                                        register=register)
             else:
                 result = card.execute_draw(
                     loc_id, lsp_id, shipment_id,
-                    customer_id=data.get('customer_id'),
-                    register=data.get('register'),
+                    customer_id=customer_id,
+                    register=register,
                     # Scoped per (card, shipment) by default so an impatient
                     # double-tap replays rather than drawing twice.
                     idempotency_key=(data.get('idempotency_key')

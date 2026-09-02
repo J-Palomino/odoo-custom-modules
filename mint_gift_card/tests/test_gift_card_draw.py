@@ -398,3 +398,59 @@ class TestGiftCardSettlement(TransactionCase):
         self.env["mint.gift.card"]._cron_expire_and_release()
         self.assertEqual(line.state, "settled", "settled money is not released")
         self.assertEqual(card.balance, 70.0)
+
+
+@tagged("post_install", "-at_install")
+class TestFindTransaction(TransactionCase):
+    """Resolving a WALK-IN's live transaction.
+
+    Before this, a gift card could only be spent against an online order: the
+    storefront knew a shipment id only from a web order record, and someone who
+    simply walks in and gets rung up has none. That made the card unusable for
+    most of the people holding one.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Card = cls.env["mint.gift.card"]
+
+    def test_refuses_without_any_identity(self):
+        """No phone, no email, no Dutchie id — there is nothing to match on, and
+        matching loosely would risk drawing against a stranger's basket."""
+        res = self.Card.find_transaction(2679, 575)
+        self.assertEqual(res["error"], "no_identity")
+
+    def test_maps_a_successful_match(self):
+        body = {
+            "ok": True, "shipmentId": 98765, "customerId": 4242,
+            "register": 7, "matchedOn": "phone", "transactionStatus": "Lobby",
+        }
+        with patch.object(type(self.Card), "_invsvc_post", return_value=(200, body)):
+            res = self.Card.find_transaction(2679, 575, phone="6233268655")
+        self.assertEqual(res["shipment_id"], 98765)
+        self.assertEqual(res["customer_id"], 4242)
+        self.assertEqual(res["register"], 7)
+        self.assertEqual(res["matched_on"], "phone")
+        self.assertNotIn("error", res)
+
+    def test_surfaces_not_checked_in_as_an_ordinary_state(self):
+        """Someone who has not reached a register yet is not an error case."""
+        body = {"ok": False, "error": "not_checked_in", "message": "no open transaction"}
+        with patch.object(type(self.Card), "_invsvc_post", return_value=(404, body)):
+            res = self.Card.find_transaction(2679, 575, phone="6233268655")
+        self.assertEqual(res["error"], "not_checked_in")
+
+    def test_surfaces_ambiguity_rather_than_guessing(self):
+        """Two open baskets for one person must refuse — picking wrong spends
+        their balance on someone else's order."""
+        body = {"ok": False, "error": "ambiguous", "message": "matched 2"}
+        with patch.object(type(self.Card), "_invsvc_post", return_value=(409, body)):
+            res = self.Card.find_transaction(2679, 575, email="a@b.com")
+        self.assertEqual(res["error"], "ambiguous")
+
+    def test_a_transport_failure_is_not_a_match(self):
+        with patch.object(type(self.Card), "_invsvc_post", return_value=(0, {"error": "boom"})):
+            res = self.Card.find_transaction(2679, 575, phone="1")
+        self.assertIn("error", res)
+        self.assertNotIn("shipment_id", res)
