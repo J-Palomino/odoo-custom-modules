@@ -287,6 +287,39 @@ def _serialize_favorite(rec):
     }
 
 
+
+def _preferences_payload(partner, has_gift_card_pref):
+    """The one shape /api/v1/customer/preferences ever returns.
+
+    Shared by GET and by a gift-card-only PUT so the two can never drift into
+    reporting different things.
+
+    The sms block is omitted when mint_sms_telnyx is absent, and the gift_card
+    block when mint_gift_card is — neither module is a dependency here, so both
+    are probed rather than assumed.
+    """
+    prefs = {}
+
+    if 'sms_consent_marketing' in partner._fields:
+        def _pref(category):
+            date = partner['sms_consent_%s_date' % category]
+            return {
+                'opted_in': bool(partner['sms_consent_%s' % category]),
+                'date': date.isoformat() if date else None,
+            }
+        prefs['sms'] = {
+            'marketing': _pref('marketing'),
+            'transactional': _pref('transactional'),
+            'opted_out': bool(partner.sms_opt_out),
+        }
+
+    if has_gift_card_pref:
+        # Off means the customer is asked each time, which is the default and
+        # the safer answer for stored value that does not expire.
+        prefs['gift_card'] = {'auto_use': bool(partner.x_gift_card_auto_use)}
+
+    return {'preferences': prefs}
+
 class MintCustomerProfile(http.Controller):
     """Customer profile controller."""
 
@@ -1465,17 +1498,40 @@ class MintCustomerProfile(http.Controller):
             return error_response('No customer profile linked to this account', 400)
 
         partner = user.partner_id.sudo()
-        if 'sms_consent_marketing' not in partner._fields:
-            return error_response('SMS preferences unavailable', 503)
+
+        # The gift-card opt-in lives in mint_gift_card, which this module does
+        # not depend on — probe rather than assume, the same reason the SMS
+        # fields are probed below.
+        has_gift_card_pref = 'x_gift_card_auto_use' in partner._fields
+
+        if 'sms_consent_marketing' not in partner._fields and not has_gift_card_pref:
+            return error_response('Preferences unavailable', 503)
 
         if request.httprequest.method == 'PUT':
             try:
                 data = json.loads(request.httprequest.data)
             except (json.JSONDecodeError, TypeError):
                 return error_response('Invalid JSON body')
+
+            # Mint Bucks auto-use. Independent of the SMS block, so a body may
+            # carry either or both.
+            gift_card = data.get('gift_card')
+            if isinstance(gift_card, dict) and 'auto_use' in gift_card:
+                if not has_gift_card_pref:
+                    return error_response('Gift card preferences unavailable', 503)
+                wanted = gift_card['auto_use']
+                if not isinstance(wanted, bool):
+                    return error_response('"auto_use" must be a boolean')
+                partner.write({'x_gift_card_auto_use': wanted})
+
             sms = data.get('sms')
+            if sms is None and isinstance(gift_card, dict):
+                # A gift-card-only update is a complete request.
+                return json_response(_preferences_payload(partner, has_gift_card_pref))
             if not isinstance(sms, dict):
-                return error_response('Body must carry an "sms" object')
+                return error_response('Body must carry an "sms" or "gift_card" object')
+            if 'sms_consent_marketing' not in partner._fields:
+                return error_response('SMS preferences unavailable', 503)
             # Full stop first (the GUI "Stop all texts" action — MR-1250):
             # equivalent to texting STOP. Sets sms_opt_out, clears both
             # categories, de-whitelists at the proxy. Category keys in the
@@ -1494,22 +1550,7 @@ class MintCustomerProfile(http.Controller):
                     else:
                         partner.clear_sms_consent(category)
 
-        def _pref(category):
-            date = partner['sms_consent_%s_date' % category]
-            return {
-                'opted_in': bool(partner['sms_consent_%s' % category]),
-                'date': date.isoformat() if date else None,
-            }
-
-        return json_response({
-            'preferences': {
-                'sms': {
-                    'marketing': _pref('marketing'),
-                    'transactional': _pref('transactional'),
-                    'opted_out': bool(partner.sms_opt_out),
-                },
-            },
-        })
+        return json_response(_preferences_payload(partner, has_gift_card_pref))
 
     # ------------------------------------------------------------------
     # Favorites — saved products, deals and stores

@@ -2,3 +2,4 @@
 from . import gift_card
 from . import gift_card_line
 from . import gift_card_draw
+from . import res_partner
