@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+      Query-time identity union (T3, Odoo task #109604).
+
+      noupdate="1" on purpose: these are operator switches. Once the flag has
+      been ramped, a later module upgrade must not silently reset it back to off
+      (or, worse, back on) underneath whoever set it.
+    -->
+    <data noupdate="1">
+
+        <!-- Master switch. "0" = /orders behaves exactly as it did before.
+             Set to "1" to let a customer's own view resolve to the person
+             rather than to the single partner row they signed into. -->
+        <record id="param_orders_identity_union" model="ir.config_parameter">
+            <field name="key">mint_pos_bridge.orders_identity_union</field>
+            <field name="value">0</field>
+        </record>
+
+        <!-- Oversized-group guard. A strong key resolving to more than this many
+             partners is treated as suspect and the union is refused. The largest
+             real group observed on prod 2026-09-01 was 5, so 10 leaves headroom
+             while still catching a pathological key. -->
+        <record id="param_orders_identity_union_max" model="ir.config_parameter">
+            <field name="key">mint_pos_bridge.orders_identity_union_max</field>
+            <field name="value">10</field>
+        </record>
+
+    </data>
+</odoo>
