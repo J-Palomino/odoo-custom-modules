@@ -7,8 +7,10 @@
         <field name="code">model.cron_sync_schedules()</field>
         <field name="interval_number">6</field>
         <field name="interval_type">hours</field>
-        <field name="numbercall">-1</field>
-        <field name="doall" eval="False"/>
+        <!-- No numbercall / doall: both fields were REMOVED from ir.cron in
+             Odoo 19 and setting either aborts the install with
+             "Invalid field ... in 'ir.cron'". Verified against this instance
+             with fields_get — do not reinstate them from older Odoo docs. -->
         <!-- Left inactive on install: the Google credentials and the store
              list have to be configured first, and a cron that runs before
              then just logs failures every six hours. -->
