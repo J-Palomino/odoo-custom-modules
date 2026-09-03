@@ -255,3 +255,66 @@ class MintSmsMessage(models.Model):
         if not self.env.context.get("mint_sms_no_autosend"):
             records.filtered(lambda m: m.state == "draft").action_send()
         return records
+
+    # ------------------------------------------------------------------
+    # Proxy health monitor (MR-1250 follow-up). The BlueBubbles proxy rides
+    # a free-ngrok tunnel on an office iMac and has died silently twice
+    # (2026-08-04..11 and 2026-08-21..09-03) — consented customers' texts
+    # fail with HTTP 404 while everything Odoo-side looks green. This cron
+    # probes the delivery hop and tells a human the moment it flips.
+    # ------------------------------------------------------------------
+    @api.model
+    def _cron_check_proxy_health(self):
+        """Probe the proxy; notify on up/down transitions (5-min cron)."""
+        ICP = self.env["ir.config_parameter"].sudo()
+        cfg = self._bb_config()
+        ok, detail = False, ""
+        if not (cfg["enabled"] and cfg["url"]):
+            detail = "iMessage gateway disabled or URL unset"
+        else:
+            try:
+                resp = requests.get(
+                    cfg["url"].rstrip("/") + "/api/v1/server/info",
+                    params={"password": cfg["password"]},
+                    headers={"ngrok-skip-browser-warning": "true"},
+                    timeout=15,
+                )
+                ctype = resp.headers.get("Content-Type", "")
+                # A dead ngrok tunnel serves an HTML error page (ERR_NGROK_3200,
+                # HTTP 404) — JSON is the only healthy answer.
+                ok = resp.status_code < 400 and "json" in ctype
+                detail = "HTTP %s (%s)" % (resp.status_code, ctype.split(";")[0])
+            except requests.RequestException as e:
+                detail = str(e)[:200]
+
+        prev = ICP.get_param("mint_sms_telnyx.proxy_health_status", "unknown")
+        new = "up" if ok else "down"
+        if new == prev:
+            return True
+        ICP.set_param("mint_sms_telnyx.proxy_health_status", new)
+        ICP.set_param(
+            "mint_sms_telnyx.proxy_health_since", str(fields.Datetime.now()))
+        if new == "down":
+            body = (
+                "BlueBubbles proxy is DOWN (%s). Outbound texts to consented "
+                "customers are failing at delivery. Runbook: wake the "
+                "Mint-Marketing-iMac, ensure BlueBubbles + the ngrok tunnel "
+                "are running; this alert clears itself on recovery." % detail
+            )
+            subject = "SMS delivery DOWN — BlueBubbles proxy unreachable"
+        else:
+            body = "BlueBubbles proxy is back UP (%s). Deliveries resume." % detail
+            subject = "SMS delivery recovered"
+        # Runs as OdooBot, so the author-exclusion rule doesn't swallow the
+        # notification (see the tag-Juan chatter recipe in the SDLC contract).
+        try:
+            self.env["mail.thread"].message_notify(
+                partner_ids=[3],  # Juan
+                body=body,
+                subject=subject,
+            )
+        except Exception:
+            _logger.exception("Proxy-health notify failed (state=%s)", new)
+        _logger.warning("BlueBubbles proxy health: %s -> %s (%s)",
+                        prev, new, detail)
+        return True
