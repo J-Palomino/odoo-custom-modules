@@ -280,12 +280,16 @@ class DaisyAgentProvisioning(models.Model):
             return False
         if self.search_count([("user_id", "=", user.id)]):
             return False
+        # Auto-provisioned agents are created in DRAFT and with bot_identity=False
+        # (the field default): they cannot auto-reply until a human reviews them,
+        # gives them a dedicated bot identity, and hires them. This prevents an
+        # agent from ever silently going live on a real person's account.
         agent = self.create({
             "name": user.name or user.login,
             "code": self._derive_code(user),
             "role": "AI Agent",
             "user_id": user.id,
-            "state": "active",
+            "state": "draft",
             "hire_date": fields.Datetime.now(),
         })
         if not agent.mail_project_id:

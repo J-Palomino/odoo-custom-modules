@@ -71,6 +71,7 @@
                                     <field name="daisy_agency_id" string="Chatflow ID"/>
                                 </group>
                                 <group string="Behavior">
+                                    <field name="bot_identity"/>
                                     <field name="ai_personality"/>
                                     <field name="ai_handoff_threshold"/>
                                     <field name="ai_max_turns"/>
