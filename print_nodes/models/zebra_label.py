@@ -59,6 +59,11 @@ class ZebraLabel(models.Model):
     _order = 'name'
 
     name = fields.Char(required=True, default='New Label')
+    company_id = fields.Many2one(
+        'res.company', string='Store',
+        help='Leave empty for a design shared across every store; set it to '
+             'scope the design to one store. Drives multi-company visibility. '
+             'Existing designs default to empty, so they stay shared.')
     kind = fields.Selection(
         [
             ('product', 'Product / Compliance Label'),

@@ -21,6 +21,11 @@
                         <field name="mint_zebra_print_receipt" widget="boolean_toggle"/>
                         <field name="mint_printnode_printer_id"
                                invisible="mint_zebra_transport in ('webusb', 'local_agent')"/>
+                        <field name="mint_zebra_agent_url"
+                               invisible="mint_zebra_transport in ('webusb', 'printnode')"/>
+                        <field name="mint_zebra_agent_token"
+                               password="True"
+                               invisible="mint_zebra_transport in ('webusb', 'printnode')"/>
                     </group>
                 </group>
             </xpath>

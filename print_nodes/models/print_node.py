@@ -33,11 +33,12 @@ class MintPrintNode(models.Model):
     token = fields.Char(
         string='Agent Token', required=True, copy=False,
         default=lambda self: secrets.token_urlsafe(24),
-        help='Secret the local agent uses to register/poll. Keep private.')
+        groups='point_of_sale.group_pos_manager',
+        help='Secret the local agent uses to register/poll. Keep private. '
+             'Manager-only: a cashier who can read this can poll and complete '
+             'that store\'s print queue. The agent controller reads it with '
+             'sudo(), so restricting it here does not affect agent auth.')
     hostname = fields.Char(string='Machine', readonly=True)
-    agent_url = fields.Char(
-        string='Localhost Agent URL', default='http://127.0.0.1:17777',
-        help='Used by the on-node fast path (this machine prints directly).')
     last_seen = fields.Datetime(readonly=True)
     online = fields.Boolean(compute='_compute_online')
     active = fields.Boolean(default=True)
@@ -147,12 +148,24 @@ class MintPrintJob(models.Model):
         return p
 
     @api.model
+    def _check_company_allowed(self, company):
+        """True when the caller may print for ``company``.
+
+        Defence in depth beside the record rules: these enqueue methods are
+        api.model entry points callable over RPC by any POS user, and a later
+        sudo() inside them would silently bypass the rules.
+        """
+        return bool(company) and company.id in self.env.companies.ids
+
+    @api.model
     def enqueue_pos(self, config_id, ref, which='both', printer_id=None):
         """Enqueue label/receipt jobs to the store node (queue path).
 
         Returns {ok, node, online, job_ids} or {ok:False, error}.
         """
         config = self.env['pos.config'].browse(config_id)
+        if not self._check_company_allowed(config.company_id):
+            return {'ok': False, 'error': 'company_not_allowed'}
         node = self._node_for_company(config.company_id.id)
         if not node:
             return {'ok': False, 'error': 'no_node_for_store'}
@@ -186,6 +199,8 @@ class MintPrintJob(models.Model):
         printer = self.env['print.printer'].browse(printer_id)
         if not printer.exists():
             return {'ok': False, 'error': 'printer_not_found'}
+        if not self._check_company_allowed(printer.node_id.company_id):
+            return {'ok': False, 'error': 'company_not_allowed'}
         job = self.create({
             'node_id': printer.node_id.id,
             'printer_id': printer.id,

@@ -29,6 +29,7 @@
     ],
     'data': [
         'security/ir.model.access.csv',
+        'security/record_rules.xml',
         'views/print_node_views.xml',
         'views/zebra_label_views.xml',
         'views/pos_config_views.xml',

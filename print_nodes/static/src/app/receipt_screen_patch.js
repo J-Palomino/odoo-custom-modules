@@ -48,6 +48,11 @@ patch(ReceiptScreen.prototype, {
             transport: config.mint_zebra_transport || "auto",
             printLabel: config.mint_zebra_print_label,
             printReceipt: config.mint_zebra_print_receipt,
+            // Without these the local-agent transport calls 127.0.0.1 with no
+            // token, so any agent started with MINT_AGENT_TOKEN set — as
+            // AGENT_INSTALL.md instructs — answers 401.
+            agentUrl: config.mint_zebra_agent_url,
+            agentToken: config.mint_zebra_agent_token,
             allowRequest,
         });
     },

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+        <!--
+            Multi-company isolation for the print network.
+
+            A print node belongs to exactly one store; its printers and jobs
+            inherit that company through a stored related field. Without these
+            rules any POS user could read every store's nodes (including their
+            agent tokens) and queue jobs to another store's printer via
+            print.job.enqueue_pdf.
+
+            Global rules (no group) so managers are scoped too — a POS manager
+            at one store has no business printing at another. Records with
+            company_id = False stay visible to everyone, which keeps shared
+            label designs working.
+        -->
+
+        <record id="rule_print_node_company" model="ir.rule">
+            <field name="name">Print Node: multi-company</field>
+            <field name="model_id" ref="model_print_node"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_print_printer_company" model="ir.rule">
+            <field name="name">Print Node Printer: multi-company</field>
+            <field name="model_id" ref="model_print_printer"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_print_job_company" model="ir.rule">
+            <field name="name">Print Job: multi-company</field>
+            <field name="model_id" ref="model_print_job"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <!--
+            Label designs are usually shared templates (company_id = False) and
+            stay visible fleet-wide; a design pinned to a store is scoped to it.
+        -->
+        <record id="rule_print_label_company" model="ir.rule">
+            <field name="name">Zebra Label Designer: multi-company</field>
+            <field name="model_id" ref="model_print_label"/>
+            <field name="global" eval="True"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+
+    </data>
+</odoo>
