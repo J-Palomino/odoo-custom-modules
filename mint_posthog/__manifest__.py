@@ -1,13 +1,16 @@
 {
     'name': 'Mint PostHog Analytics',
-    'version': '19.0.3.0.0',
+    'version': '19.0.3.1.0',
     'category': 'Tools',
     'summary': 'PostHog error tracking and session recording for Odoo backend',
     'description': """
         Comprehensive error and experience logging for Odoo, in one place.
 
-        Four capture points, because no single hook in Odoo sees everything:
+        Five capture points, because no single hook in Odoo sees everything:
           - web client: JS crashes, RPC failures, slow RPC, navigation
+          - style compilation: a failed SCSS/asset build, which Odoo reports
+            only as a sticky notification and a console.log — it throws
+            nothing, so no other capture point can see it
           - ir.http._handle_error: every exception raised serving a request,
             including ones Odoo never logs as errors (UserError -> 422,
             session expiry -> redirect)
@@ -36,6 +39,7 @@
     'assets': {
         'web.assets_backend': [
             'mint_posthog/static/src/posthog_boot.js',
+            'mint_posthog/static/src/scss_error_capture.js',
         ],
     },
     'installable': True,
