@@ -9,6 +9,19 @@ _logger = logging.getLogger(__name__)
 
 _AGENT_EMAIL_DOMAIN = os.environ.get('BRAND_AGENT_EMAIL_DOMAIN', 'daisy.plus')
 
+# Brevity directive prepended to every agent question. Agent replies are posted
+# to chatter verbatim, so length has to be constrained on the way IN — and since
+# Agentflow V2 accepts neither overrideConfig.startState nor per-call vars, the
+# question text is the only channel that reaches the model (see
+# _build_context_prefix). Override per-database with the ir.config_parameter
+# `daisydo_agents.reply_style`; set it to an empty string to switch it off.
+_REPLY_STYLE_PARAM = "daisydo_agents.reply_style"
+_DEFAULT_REPLY_STYLE = (
+    "[Reply style: lead with the answer in 1-2 sentences. Bullets only when there "
+    "are genuinely several items. No preamble, no restating the question, no "
+    "closing pleasantries.]"
+)
+
 
 class DaisyAgent(models.Model):
     _name = "daisy.agent"
@@ -333,9 +346,12 @@ class DaisyAgent(models.Model):
         neither ``overrideConfig.startState`` nor per-call ``vars``, so the
         question text is the only channel that reaches the model.
 
-        Lines are omitted individually when unknown, and the whole block is
-        empty when nothing is known — never emit a placeholder, or the agent
-        will address people as "unknown".
+        Identity lines are omitted individually when unknown — never emit a
+        placeholder, or the agent will address people as "unknown".
+
+        The reply-style directive is unconditional: it is an instruction rather
+        than context, so unlike the identity lines it is still correct when
+        nothing about the speaker is known.
         """
         lines = []
         author = message.author_id if message else None
@@ -348,6 +364,20 @@ class DaisyAgent(models.Model):
             lines.append(f"[Session: {session_id}]")
         if page:
             lines.append(page)
+
+        # Last, so it sits closest to the user's text.
+        #
+        # Read the record rather than get_param: get_param ends in
+        # `self._get_param(key) or default`, so a deliberately-empty value is
+        # falsy and silently returns the default — i.e. the documented "set it
+        # to empty to switch it off" would not work through that API.
+        param = self.env["ir.config_parameter"].sudo().search(
+            [("key", "=", _REPLY_STYLE_PARAM)], limit=1
+        )
+        style = param.value if param else _DEFAULT_REPLY_STYLE
+        if style and style.strip():
+            lines.append(style.strip())
+
         return ("\n".join(lines) + "\n\n") if lines else ""
 
     def action_open_user_settings(self):
