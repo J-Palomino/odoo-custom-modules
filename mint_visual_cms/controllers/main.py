@@ -123,6 +123,27 @@ ZONES = [
         'dimensions': '800 x 600 px',
         'description': 'Bottom-right popup overlay on all pages',
     },
+    {
+        # Not a mint.banner slot and not on the store page: the bed is a
+        # committed asset under public/assets/deals/generated/beds/ that ships
+        # by PR, so there is nothing to upload here. It is listed anyway
+        # because this wireframe is where the team looks up artwork sizes, and
+        # having the spec live only in Storybook is how 16:9 keeps getting
+        # submitted for a 4:1 slot.
+        'id': 'deal-card-art',
+        'label': 'Deal Card Artwork',
+        'slot': None,
+        'editable': False,
+        'type': 'info',
+        'dimensions': 'Aspect 4:1 — 1240 x 310 px (WebP)',
+        'description': (
+            'Brand artwork behind a /deals card. Do NOT bake the price in — it '
+            'is drawn over the art as live text. Keep 53.5%-95.5% of the width '
+            'clear for it. object-cover crops anything that is not 4:1. '
+            'Ships by PR, not upload.'
+        ),
+        'preview_path': '/deals',
+    },
 ]
 
 
@@ -271,6 +292,12 @@ class VisualCMSController(http.Controller):
         # (or triggers the deals popup overlay for slot=deals-popup).
         zone_preview_urls = {}
         for z in ZONES:
+            # A zone that lives on another page (the deals grid, say) carries an
+            # explicit path — linking it to the store page would send the team
+            # somewhere the artwork does not appear.
+            if z.get('preview_path'):
+                zone_preview_urls[z['id']] = f"{base_url}{z['preview_path']}"
+                continue
             slot = z.get('slot') or z['id']
             zone_preview_urls[z['id']] = f"{store_url}?preview=1&slot={slot}"
 

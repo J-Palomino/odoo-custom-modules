@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Visual CMS',
-    'version': '19.0.1.5.1',
+    'version': '19.0.1.6.0',
     'category': 'Website',
     'summary': 'Visual wireframe-based banner & image management for marketing',
     'description': """MintDeals Visual CMS
