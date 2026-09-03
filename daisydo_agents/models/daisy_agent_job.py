@@ -7,6 +7,18 @@ from odoo import models, fields, api
 
 _logger = logging.getLogger(__name__)
 
+# SDLC lane (project.task.type id) -> the tab field that lane's output belongs in.
+# Project 104 "Continuous Debugging", verified live 2026-09-03.
+SDLC_LANE_FIELD = {
+    2048: "x_sdlc_functional_analysis",
+    2049: "x_sdlc_research",
+    2050: "x_sdlc_implementation_plan",
+    2051: "x_sdlc_changelog",
+    2052: "x_sdlc_test_plan",
+    2053: "x_sdlc_qa_report",
+    2054: "x_sdlc_pr_deploy",
+}
+
 # Outbound-link lint (MR-954). Discuss renders no markdown, so [label](url)
 # is rewritten to "label — url"; letsgomint Odoo links must match the
 # action-window form and point at a record the posting agent can read.
@@ -325,6 +337,31 @@ class DaisyAgentJob(models.Model):
                     "daisy_intent": ai_result.get("intent", ""),
                     "daisy_conversation_id": ai_result.get("conversation_id", ""),
                 })
+
+                # Mirror the reply into the SDLC tab for this lane.
+                #
+                # The SDLC gates read x_sdlc_* fields, but nothing in this
+                # codebase ever wrote them - the tabs were only ever populated
+                # by the /skills over XML-RPC. That deadlocked the pipeline: an
+                # agent posts a perfectly good Functional Analysis to chatter,
+                # the gate reads an empty tab, and the ticket holds forever
+                # (observed on #109603). The agent cannot write the tab itself
+                # either - its only Odoo tool is a read-only odoo_get_record.
+                #
+                # Best-effort: a failure here must never lose the chatter post
+                # or fail the job, so it is caught and logged.
+                if job.channel_model == "project.task":
+                    try:
+                        field = SDLC_LANE_FIELD.get(target.stage_id.id)
+                        if field and field in target._fields:
+                            target.sudo().write({field: ai_result["response"]})
+                            _logger.info(
+                                "SDLC_TAB_WRITE task=%s stage=%s field=%s",
+                                target.id, target.stage_id.id, field)
+                    except Exception:
+                        _logger.exception(
+                            "Job %s: could not mirror the reply into the SDLC tab",
+                            job.id)
 
                 job.write({
                     "state": "done",
