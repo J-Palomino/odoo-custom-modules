@@ -6,15 +6,21 @@ the same person.
 
 ## Why more than one hook
 
-There is no single place in Odoo where all errors pass. Four capture points
+There is no single place in Odoo where all errors pass. Five capture points
 are needed because each is blind to what the others see:
 
 | Capture point | Where | Catches | Blind to |
 |---|---|---|---|
 | `posthog_boot.js` | web client | JS crashes, RPC failures with the server traceback, slow RPC, session expiry, navigation | anything without a browser |
+| `scss_error_capture.js` | web client | a failed SCSS/asset build — Odoo shows it as a sticky notification and a `console.log`, **raising nothing**, so no other hook sees it | anything without a browser |
 | `ir.http._handle_error` | request | every exception raised serving a request, **including ones Odoo never logs as errors** (`UserError` → 422, session expiry → redirect) | anything outside a request |
 | `ir.cron._callback` | scheduler | cron failures, overruns, and a heartbeat per run | non-cron work |
 | root log handler | process | anything logged at ERROR — boot, mail queue, webhooks, workers — plus allowlisted below-ERROR loggers | anything never logged |
+
+`scss_error_capture.js` reports through `posthog.captureException`, not a
+hand-built `capture("$exception", …)`. Only the `$exception_list` payload
+`captureException` produces earns an `$exception_issue_id`, and the PostHog →
+Odoo ticket cron discards any exception without one.
 
 `ir.http` and the log handler overlap on a genuine 500. The exception is
 flagged once reported, so it is not counted twice; if the flag cannot be set
@@ -34,6 +40,7 @@ the duplicate is allowed, which is the safe direction.
 | `odoo_cron_run` | heartbeat, max one per cron per hour — **alert on its absence** |
 | `odoo_server_error` | ERROR/CRITICAL log record with traceback |
 | `odoo_server_log` | allowlisted below-ERROR record (failed logins) |
+| `odoo_style_compilation_failed` | SCSS/asset build failed — carries the compiler output and the bundle URL |
 | `$exception`, `$pageview` | client-side crashes and navigation |
 
 `odoo_cron_run` exists for a specific failure mode: a cron that stops being
