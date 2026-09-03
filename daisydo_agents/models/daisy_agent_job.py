@@ -354,10 +354,36 @@ class DaisyAgentJob(models.Model):
                     try:
                         field = SDLC_LANE_FIELD.get(target.stage_id.id)
                         if field and field in target._fields:
-                            target.sudo().write({field: ai_result["response"]})
-                            _logger.info(
-                                "SDLC_TAB_WRITE task=%s stage=%s field=%s",
-                                target.id, target.stage_id.id, field)
+                            reply = ai_result["response"] or ""
+                            existing = target[field] or ""
+                            # NEVER shrink an SDLC tab.
+                            #
+                            # The first cut of this wrote the reply
+                            # unconditionally, and agents talk: a "Thanks,
+                            # Devid! Could you let me know who I should reach
+                            # out to..." reply overwrote #123765's real
+                            # 6,392-char Test Plan with 461 chars of chat, and
+                            # both #109603 and #123765 then advanced a lane on
+                            # that filler. These fields are not mail.thread
+                            # tracked, so the artifact was unrecoverable.
+                            #
+                            # Monotonic growth is the invariant: fill an empty
+                            # tab, or replace with something LONGER. A real
+                            # artifact can still supersede earlier filler, but
+                            # no chat reply can destroy real work. Judging
+                            # quality is the gate's job, not this hook's.
+                            if len(reply.strip()) > len(existing.strip()):
+                                target.sudo().write({field: reply})
+                                _logger.info(
+                                    "SDLC_TAB_WRITE task=%s stage=%s field=%s "
+                                    "%s->%s chars", target.id,
+                                    target.stage_id.id, field,
+                                    len(existing), len(reply))
+                            else:
+                                _logger.info(
+                                    "SDLC_TAB_SKIP task=%s field=%s: reply %s "
+                                    "chars would shrink existing %s chars",
+                                    target.id, field, len(reply), len(existing))
                     except Exception:
                         _logger.exception(
                             "Job %s: could not mirror the reply into the SDLC tab",
