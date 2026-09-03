@@ -64,8 +64,9 @@ class TestVisualCMSHelpers(TransactionCase):
         # Info zones
         self.assertIn('hero-image', zone_ids)
         self.assertIn('gallery', zone_ids)
+        self.assertIn('deal-card-art', zone_ids)
 
-        self.assertEqual(len(ZONES), 12)
+        self.assertEqual(len(ZONES), 13)
 
     def test_zones_editable_flags(self):
         """Only banner-slot zones should be editable."""
@@ -75,7 +76,8 @@ class TestVisualCMSHelpers(TransactionCase):
         readonly = [z['id'] for z in ZONES if not z['editable']]
 
         self.assertEqual(len(editable), 8)  # 8 banner slots
-        self.assertEqual(len(readonly), 4)  # hero-image, best-deals, shop-by-category, gallery
+        # hero-image, best-deals, shop-by-category, gallery, deal-card-art
+        self.assertEqual(len(readonly), 5)
 
         for z in ZONES:
             if z['editable']:
@@ -193,7 +195,7 @@ class TestVisualCMSRoutes(HttpCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_wireframe_has_all_zones(self):
-        """Wireframe page should render all 12 zone blocks."""
+        """Wireframe page should render all 13 zone blocks."""
         self.authenticate('admin', 'admin')
         resp = self.url_open('/visual-cms/route-test')
         text = resp.text
@@ -201,7 +203,8 @@ class TestVisualCMSRoutes(HttpCase):
         for label in ['Hero Carousel', 'Brand Spotlight', 'Best Deals',
                       'Shop by Category', 'Flower Section', 'Pre-Rolls Section',
                       'Vapes Section', 'Edibles Section', 'Concentrates Section',
-                      'Photo Gallery', 'Deals Popup', 'Store Hero Image']:
+                      'Photo Gallery', 'Deals Popup', 'Store Hero Image',
+                      'Deal Card Artwork']:
             self.assertIn(label, text, f"Zone '{label}' not found in wireframe")
 
     def test_api_slot_banners(self):
