@@ -76,8 +76,11 @@ class TestMailApprovalGate(TransactionCase):
             'match_model': 'res.users',
         })
         self.Rule.create({'name': 'catch all', 'sequence': 99, 'action': 'hold'})
+        # res.partner rather than e.g. maintenance.request: the criterion only
+        # needs a non-matching model, and it must exist in a minimal registry
+        # (core mail resolves env[model] while building the message).
         matching = self._mail(model='res.users', res_id=self.env.uid)
-        other = self._mail(model='maintenance.request', res_id=1)
+        other = self._mail(model='res.partner', res_id=self.env.user.partner_id.id)
         self._send(matching | other)
         self.assertEqual(matching.approval_state, 'auto')
         self.assertEqual(other.approval_state, 'pending')
