@@ -17,6 +17,7 @@ import datetime
 import json
 import logging
 import re
+import time
 
 import requests
 
@@ -31,6 +32,10 @@ P_SHEETS = 'mint_schedule_sync.sheets'
 P_CLIENT_ID = 'mint_schedule_sync.client_id'
 P_CLIENT_SECRET = 'mint_schedule_sync.client_secret'
 P_REFRESH = 'mint_schedule_sync.refresh_token'
+P_SA_JSON = 'mint_schedule_sync.service_account_json'
+
+SA_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
+JWT_GRANT = 'urn:ietf:params:oauth:grant-type:jwt-bearer'
 P_BACK = 'mint_schedule_sync.back_days'
 P_FORWARD = 'mint_schedule_sync.forward_days'
 
@@ -78,15 +83,55 @@ class MintScheduleSync(models.AbstractModel):
 
     # ------------------------------------------------------------------ auth
     @api.model
+    def _sa_access_token(self, raw):
+        """Mint an access token from a service-account key.
+
+        Signs the JWT with PyJWT rather than google-auth: the Odoo image ships
+        PyJWT and cryptography (both pinned in the Dockerfile) but not
+        google-auth, and adding a dependency to this image has broken `base`
+        before. Preferred over the OAuth path because service-account
+        credentials do not expire — the user credential lapsed three times in
+        four days.
+        """
+        import jwt          # PyJWT, pinned in the image
+        info = json.loads(raw)
+        now = int(time.time())
+        assertion = jwt.encode({
+            'iss': info['client_email'],
+            'scope': SA_SCOPE,
+            'aud': TOKEN_URL,
+            'iat': now,
+            'exp': now + 3600,
+        }, info['private_key'], algorithm='RS256')
+
+        resp = requests.post(TOKEN_URL, timeout=60, data={
+            'grant_type': JWT_GRANT, 'assertion': assertion,
+        })
+        if resp.status_code != 200:
+            raise ValueError('service-account token exchange failed: HTTP %s %s'
+                             % (resp.status_code, resp.text[:200]))
+        _logger.info('schedule sync: authenticated as service account %s',
+                     info.get('client_email'))
+        return resp.json()['access_token']
+
+    @api.model
     def _access_token(self):
         icp = self.env['ir.config_parameter'].sudo()
+
+        # Service account first: it does not expire, and it is scoped to just
+        # the sheets it has been shared onto.
+        sa_raw = icp.get_param(P_SA_JSON)
+        if sa_raw:
+            return self._sa_access_token(sa_raw)
+
         cid = icp.get_param(P_CLIENT_ID)
         secret = icp.get_param(P_CLIENT_SECRET)
         refresh = icp.get_param(P_REFRESH)
         if not (cid and secret and refresh):
             raise ValueError(
-                'Missing Google credentials — set %s, %s and %s'
-                % (P_CLIENT_ID, P_CLIENT_SECRET, P_REFRESH))
+                'Missing Google credentials — set %s (preferred), or all of '
+                '%s, %s and %s'
+                % (P_SA_JSON, P_CLIENT_ID, P_CLIENT_SECRET, P_REFRESH))
         resp = requests.post(TOKEN_URL, timeout=60, data={
             'client_id': cid, 'client_secret': secret,
             'refresh_token': refresh, 'grant_type': 'refresh_token',
