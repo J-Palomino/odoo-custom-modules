@@ -188,6 +188,19 @@ class DaisyAgent(models.Model):
 
     # ---- Lifecycle actions ----
 
+    def _ensure_fleet_group(self):
+        """Every user backing an agent joins the Daisy Agents fleet group —
+        the single marker that a res.users is an AI service account, which
+        agent-only access rules (e.g. link.tracker) key off. Idempotent; the
+        one place that defines fleet membership. Called from every path that
+        links a user to an agent (action_hire here, mint_agent_provisioner's
+        create-hook provisioning) and from the 19.0.5.9.0 backfill migration.
+        """
+        users = self.user_id.filtered("active")
+        if users:
+            group = self.env.ref("daisydo_agents.group_daisy_agents")
+            users.sudo().write({"group_ids": [(4, group.id)]})
+
     def action_hire(self):
         self.ensure_one()
         if self.state != "draft":
@@ -221,6 +234,7 @@ class DaisyAgent(models.Model):
                 "group_ids": [(6, 0, [self.env.ref("base.group_user").id])],
             })
             self.user_id = user
+        self._ensure_fleet_group()
 
         # Add agent's partner to livechat channels as operator
         if self.partner_id:

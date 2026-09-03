@@ -95,6 +95,7 @@ class DaisyAgent(models.Model):
 
         if not self.user_id:
             self.user_id = self._provision_agent_user()
+        self._ensure_fleet_group()
 
         raw_key = self._mint_mcp_key()
         self._post_provision_note(raw_key=raw_key)
