@@ -39,6 +39,7 @@
                                     <field name="name"/>
                                     <field name="system_name"/>
                                     <field name="role"/>
+                                    <field name="printer_lang"/>
                                     <field name="is_default"/>
                                     <field name="active"/>
                                 </list>

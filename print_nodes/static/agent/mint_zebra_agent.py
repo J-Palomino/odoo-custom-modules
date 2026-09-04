@@ -263,8 +263,14 @@ def print_pdf(printer, pdf_bytes):
 def print_doc(job):
     """Print a poll job by its doc_type. Returns (bytes, printer)."""
     printer = job.get('printer') or None
-    if job.get('doc_type') == 'pdf':
+    doc_type = job.get('doc_type')
+    if doc_type == 'pdf':
         return print_pdf(printer, base64.b64decode(job.get('pdf') or ''))
+    if doc_type == 'escpos':
+        # Raw ESC/POS bytes for a Star/Epson receipt printer, carried base64 in
+        # the same field as PDFs (its bytes include NUL, so it cannot ride in the
+        # zpl text field). Send verbatim to the printer, no rendering.
+        return print_raw(printer, base64.b64decode(job.get('pdf') or ''))
     return print_raw(printer, (job.get('zpl') or '').encode('utf-8'))
 
 

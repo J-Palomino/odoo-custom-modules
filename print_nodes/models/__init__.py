@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from . import zebra_zpl
+from . import escpos_receipt
 from . import print_node
 from . import print_document_wizard
 from . import zebra_label

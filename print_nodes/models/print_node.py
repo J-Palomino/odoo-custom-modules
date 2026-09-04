@@ -15,9 +15,12 @@ polls Odoo for that store's pending jobs, prints them, and reports back.
 On-node printing can skip the queue and go straight to the agent's localhost
 endpoint (the "hybrid" fast path); other devices route through this queue.
 """
+import base64
 import secrets
 
 from odoo import api, fields, models
+
+from . import escpos_receipt
 
 
 class MintPrintNode(models.Model):
@@ -79,6 +82,13 @@ class MintPrintPrinter(models.Model):
         default='label', required=True,
         help='Used for default routing: label jobs -> the default label '
              'printer, receipt jobs -> the default receipt printer.')
+    printer_lang = fields.Selection(
+        [('zpl', 'ZPL / Zebra'), ('escpos', 'ESC/POS')],
+        default='zpl', required=True,
+        help='Command language this printer understands. Zebra label printers '
+             'speak ZPL; Star/Epson/Citizen receipt printers speak ESC/POS. '
+             'Receipt jobs are built in the matching language for the target '
+             'printer (see print.job.enqueue_pos).')
     is_default = fields.Boolean(
         string='Default for role',
         help='Default printer for its role on this node.')
@@ -107,13 +117,17 @@ class MintPrintJob(models.Model):
         [('label', 'Label'), ('receipt', 'Receipt'), ('other', 'Other')],
         default='label')
     doc_type = fields.Selection(
-        [('zpl', 'ZPL / raw'), ('pdf', 'PDF (OS driver)')],
+        [('zpl', 'ZPL / raw'), ('pdf', 'PDF (OS driver)'), ('escpos', 'ESC/POS')],
         default='zpl', required=True,
-        help='ZPL/raw bytes go straight to the printer; PDF is rendered by the '
-             'OS print driver (works on non-Zebra printers).')
+        help='ZPL/raw text bytes go straight to the printer; PDF is rendered by '
+             'the OS print driver (works on non-Zebra printers); ESC/POS is raw '
+             'binary carried base64 in pdf_data and printed verbatim (Star/Epson '
+             'receipt printers, whose commands include NUL bytes a text column '
+             'cannot hold).')
     zpl = fields.Text(help='Raw ZPL / printer commands (for doc_type=zpl).')
-    pdf_data = fields.Binary(string='PDF', attachment=True,
-                             help='Base64 PDF (for doc_type=pdf).')
+    pdf_data = fields.Binary(string='PDF / raw', attachment=True,
+                             help='Base64 payload: a PDF for doc_type=pdf, or raw '
+                                  'ESC/POS bytes for doc_type=escpos.')
     state = fields.Selection(
         [('pending', 'Pending'), ('printing', 'Printing'),
          ('done', 'Done'), ('error', 'Error'), ('cancelled', 'Cancelled')],
@@ -159,23 +173,46 @@ class MintPrintJob(models.Model):
         order = self.env['pos.order']._mint_find_order(ref)
         if not order:
             return {'ok': False, 'error': 'order_not_found'}
+
+        # Resolve the target printer per role first: the receipt language depends
+        # on it. A ZPL (Zebra) receipt printer gets the ZPL receipt as before; an
+        # ESC/POS (Star/Epson) receipt printer gets native ESC/POS bytes instead,
+        # since sending it ZPL would print garbage and never fire the drawer.
         zpl = order._mint_zebra_zpl(which)
-        pieces = []
-        if which in ('both', 'label') and zpl.get('label'):
-            pieces.append(('label', zpl['label']))
-        if which in ('both', 'receipt') and zpl.get('receipt'):
-            pieces.append(('receipt', zpl['receipt']))
+        data = None  # order dict, built lazily only if an ESC/POS receipt is needed
+
+        plan = []
+        if which in ('both', 'label'):
+            plan.append(('label', self.env['print.printer'].browse(printer_id)
+                         if printer_id else self._default_printer(node, 'label')))
+        if which in ('both', 'receipt'):
+            plan.append(('receipt', self.env['print.printer'].browse(printer_id)
+                         if printer_id else self._default_printer(node, 'receipt')))
+
         job_ids = []
-        for role, content in pieces:
-            printer = (self.env['print.printer'].browse(printer_id)
-                       if printer_id else self._default_printer(node, role))
-            job = self.create({
+        for role, printer in plan:
+            vals = {
                 'node_id': node.id,
                 'printer_id': printer.id if printer else False,
                 'role': role,
-                'zpl': content,
                 'source': order.pos_reference or order.name,
-            })
+            }
+            if role == 'receipt' and printer and printer.printer_lang == 'escpos':
+                if data is None:
+                    data = order._mint_zebra_data()
+                payload = escpos_receipt.build_receipt_escpos(
+                    data, open_drawer=bool(config.mint_escpos_open_drawer))
+                if not payload:
+                    continue
+                vals['doc_type'] = 'escpos'
+                vals['pdf_data'] = base64.b64encode(payload)
+            else:
+                content = zpl.get(role)
+                if not content:
+                    continue
+                vals['doc_type'] = 'zpl'
+                vals['zpl'] = content
+            job = self.create(vals)
             job_ids.append(job.id)
         return {'ok': True, 'node': node.name, 'online': node.online,
                 'job_ids': job_ids}

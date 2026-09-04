@@ -37,6 +37,13 @@ class PosConfig(models.Model):
         string='Print Receipt',
         default=True,
     )
+    mint_escpos_open_drawer = fields.Boolean(
+        string='Open Cash Drawer on Receipt',
+        default=True,
+        help='For ESC/POS receipt printers (Star/Epson), append a drawer-kick '
+             'pulse to each printed receipt so the connected cash drawer opens. '
+             'No effect on Zebra/ZPL printers.',
+    )
     mint_zebra_dpi = fields.Selection(
         [('203', '203 dpi'), ('300', '300 dpi')],
         string='Zebra DPI',
@@ -61,4 +68,5 @@ class PosConfig(models.Model):
             'mint_zebra_autoprint',
             'mint_zebra_print_label',
             'mint_zebra_print_receipt',
+            'mint_escpos_open_drawer',
         ]

@@ -28,6 +28,16 @@ def _classify_role(name):
     return 'other'
 
 
+def _classify_lang(name):
+    """Command language a reported printer speaks: 'escpos' for receipt-class
+    printers (Star/Epson/Citizen), else 'zpl' (Zebra label printers and the
+    safe default — matches the historical behaviour before ESC/POS support)."""
+    n = (name or '').lower()
+    if any(k in n for k in _RECEIPT_HINTS):
+        return 'escpos'
+    return 'zpl'
+
+
 class MintPrintAgentApi(http.Controller):
 
     def _body(self):
@@ -63,6 +73,7 @@ class MintPrintAgentApi(http.Controller):
             if not sysname or sysname in existing:
                 continue
             role = p.get('role') or _classify_role(p.get('name') or sysname)
+            lang = p.get('printer_lang') or _classify_lang(p.get('name') or sysname)
             # auto-default the first label printer on the node
             make_default = role == 'label' and not has_label_default
             if make_default:
@@ -72,6 +83,7 @@ class MintPrintAgentApi(http.Controller):
                 'system_name': sysname,
                 'name': p.get('name') or sysname,
                 'role': role,
+                'printer_lang': lang,
                 'is_default': make_default,
             })
         printers = [{
