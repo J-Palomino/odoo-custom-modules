@@ -28,6 +28,28 @@ def _classify_role(name):
     return 'other'
 
 
+# Original Star futurePRNT models (TSP100/TSP143 and the ECO/GT/LAN/U variants)
+# are RASTER-only: they speak neither ZPL nor ESC/POS and only print bitmaps
+# their OS driver produces, so their receipts must be rendered to PDF. The
+# StarPRNT-era successors (TSP100III/IV, TSP143III/IV, mC-Print) DO speak ESC/POS
+# and are excluded below.
+_RASTER_HINTS = ('tsp100', 'tsp143', 'futureprnt')
+_STARPRNT_HINTS = ('iii', 'iv', 'mc-print', 'mcprint', 'starprnt')
+
+
+def _classify_lang(name):
+    """Command language a reported printer speaks: 'pdf' for a raster-only Star
+    futurePRNT (TSP100/TSP143 - rendered via the OS driver), 'escpos' for other
+    receipt printers (Epson/Citizen/StarPRNT), else 'zpl' (Zebra labels and the
+    safe default). Ops can override per printer in the Print Nodes UI."""
+    n = (name or '').lower()
+    if any(k in n for k in _RASTER_HINTS) and not any(v in n for v in _STARPRNT_HINTS):
+        return 'pdf'
+    if any(k in n for k in _RECEIPT_HINTS):
+        return 'escpos'
+    return 'zpl'
+
+
 class MintPrintAgentApi(http.Controller):
 
     def _body(self):
@@ -63,6 +85,7 @@ class MintPrintAgentApi(http.Controller):
             if not sysname or sysname in existing:
                 continue
             role = p.get('role') or _classify_role(p.get('name') or sysname)
+            lang = p.get('printer_lang') or _classify_lang(p.get('name') or sysname)
             # auto-default the first label printer on the node
             make_default = role == 'label' and not has_label_default
             if make_default:
@@ -72,6 +95,7 @@ class MintPrintAgentApi(http.Controller):
                 'system_name': sysname,
                 'name': p.get('name') or sysname,
                 'role': role,
+                'printer_lang': lang,
                 'is_default': make_default,
             })
         printers = [{
