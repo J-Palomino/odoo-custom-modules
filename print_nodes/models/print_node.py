@@ -20,6 +20,7 @@ import secrets
 
 from odoo import api, fields, models
 
+from . import zebra_zpl
 from . import escpos_receipt
 from . import pdf_receipt
 
@@ -231,6 +232,45 @@ class MintPrintJob(models.Model):
             job_ids.append(job.id)
         return {'ok': True, 'node': node.name, 'online': node.online,
                 'job_ids': job_ids}
+
+    @api.model
+    def _receipt_content_vals(self, printer, data, dpi=203, open_drawer=False):
+        """Build the {doc_type, zpl|pdf_data} for a receipt in the target
+        printer's language. Empty dict if nothing could be built. Shared by the
+        POS path and the online-order path so both render identically per
+        printer type (Zebra ZPL / Star-Epson ESC/POS / raster PDF)."""
+        lang = (printer and printer.printer_lang) or 'zpl'
+        if lang == 'escpos':
+            payload = escpos_receipt.build_receipt_escpos(data, open_drawer=bool(open_drawer))
+            return {'doc_type': 'escpos', 'pdf_data': base64.b64encode(payload)} if payload else {}
+        if lang == 'pdf':
+            payload = pdf_receipt.build_receipt_pdf(data)
+            return {'doc_type': 'pdf', 'pdf_data': base64.b64encode(payload)} if payload else {}
+        content = zebra_zpl.build_receipt_zpl(data, dpi)
+        return {'doc_type': 'zpl', 'zpl': content} if content else {}
+
+    @api.model
+    def enqueue_receipt(self, company_id, data, source, open_drawer=False):
+        """Enqueue ONE receipt (no label) to a company's store node, rendered in
+        its default receipt printer's language. Used by online orders.
+
+        Safe no-op: returns {ok:False, error} rather than raising when the store
+        has no node or no receipt printer, so it can be called for any order and
+        only stores that are actually set up will print. `data` is the receipt
+        dict consumed by the receipt builders."""
+        node = self._node_for_company(company_id)
+        if not node:
+            return {'ok': False, 'error': 'no_node_for_store'}
+        printer = self._default_printer(node, 'receipt')
+        if not printer:
+            return {'ok': False, 'error': 'no_receipt_printer'}
+        vals = self._receipt_content_vals(printer, data, open_drawer=open_drawer)
+        if not vals:
+            return {'ok': False, 'error': 'nothing_to_print'}
+        vals.update({'node_id': node.id, 'printer_id': printer.id,
+                     'role': 'receipt', 'source': source or 'receipt'})
+        job = self.create(vals)
+        return {'ok': True, 'node': node.name, 'online': node.online, 'job_id': job.id}
 
     @api.model
     def enqueue_pdf(self, printer_id, pdf_b64, title=None):

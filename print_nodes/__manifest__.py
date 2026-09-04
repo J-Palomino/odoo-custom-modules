@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'PrintNodes',
-    'version': '19.0.1.1.0',
+    'version': '19.0.1.2.0',
     'category': 'Point of Sale',
     'summary': 'Self-hosted label/receipt printing for POS — Zebra ZD410, '
                'store print nodes + job queue + label designer',
@@ -26,6 +26,7 @@
     'depends': [
         'point_of_sale',
         'stock',
+        'sale',
     ],
     'data': [
         'security/ir.model.access.csv',
