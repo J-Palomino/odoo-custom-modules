@@ -21,6 +21,7 @@ import secrets
 from odoo import api, fields, models
 
 from . import escpos_receipt
+from . import pdf_receipt
 
 
 class MintPrintNode(models.Model):
@@ -83,12 +84,15 @@ class MintPrintPrinter(models.Model):
         help='Used for default routing: label jobs -> the default label '
              'printer, receipt jobs -> the default receipt printer.')
     printer_lang = fields.Selection(
-        [('zpl', 'ZPL / Zebra'), ('escpos', 'ESC/POS')],
+        [('zpl', 'ZPL / Zebra'), ('escpos', 'ESC/POS'), ('pdf', 'PDF / raster driver')],
         default='zpl', required=True,
         help='Command language this printer understands. Zebra label printers '
-             'speak ZPL; Star/Epson/Citizen receipt printers speak ESC/POS. '
-             'Receipt jobs are built in the matching language for the target '
-             'printer (see print.job.enqueue_pos).')
+             'speak ZPL; Star/Epson/Citizen receipt printers speak ESC/POS; '
+             'raster-only printers (Star TSP100/TSP143 futurePRNT) speak neither '
+             'and take a PDF rendered by their OS driver. Receipt jobs are built '
+             'in the matching form for the target printer (see enqueue_pos). For '
+             'a PDF/raster printer the cash drawer is opened by the driver, not '
+             'the receipt content.')
     is_default = fields.Boolean(
         string='Default for role',
         help='Default printer for its role on this node.')
@@ -205,6 +209,17 @@ class MintPrintJob(models.Model):
                 if not payload:
                     continue
                 vals['doc_type'] = 'escpos'
+                vals['pdf_data'] = base64.b64encode(payload)
+            elif role == 'receipt' and printer and printer.printer_lang == 'pdf':
+                # Raster-only receipt printer (e.g. Star TSP100 futurePRNT): render
+                # the receipt to a PDF the OS driver rasterises. The drawer is fired
+                # by the driver's own setting, not by receipt content.
+                if data is None:
+                    data = order._mint_zebra_data()
+                payload = pdf_receipt.build_receipt_pdf(data)
+                if not payload:
+                    continue
+                vals['doc_type'] = 'pdf'
                 vals['pdf_data'] = base64.b64encode(payload)
             else:
                 content = zpl.get(role)
