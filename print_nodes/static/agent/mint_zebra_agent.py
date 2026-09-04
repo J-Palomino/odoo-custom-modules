@@ -233,9 +233,17 @@ def _win_print_pdf(printer, path):
         if p.returncode != 0:
             raise OSError('ghostscript rc=%s %s' % (p.returncode, p.stderr[:200]))
         return
-    sumatra = shutil.which('SumatraPDF') or shutil.which('SumatraPDF.exe')
+    # SumatraPDF: on PATH, or bundled next to the agent. The register installer
+    # drops SumatraPDF.exe in the agent's own ProgramData dir, which is NOT on
+    # PATH, so look there too.
+    here = os.path.dirname(os.path.abspath(__file__))
+    sumatra = (shutil.which('SumatraPDF') or shutil.which('SumatraPDF.exe') or
+               next((p for p in (os.path.join(here, 'SumatraPDF.exe'),
+                                 r'C:\ProgramData\MintPrintAgent\SumatraPDF.exe')
+                     if os.path.exists(p)), None))
     if sumatra:
-        p = subprocess.run([sumatra, '-print-to', printer, '-silent', path],
+        p = subprocess.run([sumatra, '-print-to', printer, '-silent',
+                            '-exit-when-done', path],
                            capture_output=True, timeout=120)
         if p.returncode != 0:
             raise OSError('SumatraPDF rc=%s' % p.returncode)

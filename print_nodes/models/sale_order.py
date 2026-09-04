@@ -19,7 +19,12 @@ the counter for it.
 """
 from odoo import api, fields, models
 
-_PRINT_STATES = ('paid', 'pay_at_store')
+# Print as soon as an order comes in, regardless of payment: a 'pending'
+# online order (placed, not yet paid) prints on creation, 'pay_at_store' prints
+# on creation, and a pay-online order that lands already 'paid' prints then. The
+# x_receipt_printed guard means each order prints once, so a later pending->paid
+# transition does NOT reprint.
+_PRINT_STATES = ('pending', 'paid', 'pay_at_store')
 
 
 class SaleOrder(models.Model):
