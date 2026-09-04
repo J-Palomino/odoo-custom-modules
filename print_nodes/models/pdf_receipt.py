@@ -14,7 +14,7 @@ The cash drawer on this path is NOT fired from the receipt content (there are no
 ESC/POS bytes) — it is opened by the printer driver's own "open cash drawer on
 print" setting, configured on the register.
 
-Renders an 80 mm-wide (203 pt printable) continuous receipt whose height grows
+Renders a 72 mm-wide (the TSP143 print area on 80 mm paper) continuous receipt whose height grows
 with the order. Uses reportlab, which Odoo already depends on.
 
 Pure function apart from reportlab; no ORM access.
@@ -61,8 +61,8 @@ def _wrap(text, font, size, max_w, c):
     return lines
 
 
-def build_receipt_pdf(data, width_mm=80.0):
-    """Return receipt PDF bytes sized for an 80 mm (or ``width_mm``) roll.
+def build_receipt_pdf(data, width_mm=72.0):
+    """Return receipt PDF bytes sized for the printer print width (default 72 mm, the TSP143 print area; must not exceed it or the OS driver rotates the page to fit).
 
     ``data`` keys: store, address, order_ref, date, cashier, customer,
     items [{name, qty, price, total}], item_count, subtotal, tax, total,
