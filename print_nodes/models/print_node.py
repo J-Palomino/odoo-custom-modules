@@ -15,9 +15,14 @@ polls Odoo for that store's pending jobs, prints them, and reports back.
 On-node printing can skip the queue and go straight to the agent's localhost
 endpoint (the "hybrid" fast path); other devices route through this queue.
 """
+import base64
 import secrets
 
 from odoo import api, fields, models
+
+from . import zebra_zpl
+from . import escpos_receipt
+from . import pdf_receipt
 
 
 class MintPrintNode(models.Model):
@@ -79,6 +84,16 @@ class MintPrintPrinter(models.Model):
         default='label', required=True,
         help='Used for default routing: label jobs -> the default label '
              'printer, receipt jobs -> the default receipt printer.')
+    printer_lang = fields.Selection(
+        [('zpl', 'ZPL / Zebra'), ('escpos', 'ESC/POS'), ('pdf', 'PDF / raster driver')],
+        default='zpl', required=True,
+        help='Command language this printer understands. Zebra label printers '
+             'speak ZPL; Star/Epson/Citizen receipt printers speak ESC/POS; '
+             'raster-only printers (Star TSP100/TSP143 futurePRNT) speak neither '
+             'and take a PDF rendered by their OS driver. Receipt jobs are built '
+             'in the matching form for the target printer (see enqueue_pos). For '
+             'a PDF/raster printer the cash drawer is opened by the driver, not '
+             'the receipt content.')
     is_default = fields.Boolean(
         string='Default for role',
         help='Default printer for its role on this node.')
@@ -107,13 +122,17 @@ class MintPrintJob(models.Model):
         [('label', 'Label'), ('receipt', 'Receipt'), ('other', 'Other')],
         default='label')
     doc_type = fields.Selection(
-        [('zpl', 'ZPL / raw'), ('pdf', 'PDF (OS driver)')],
+        [('zpl', 'ZPL / raw'), ('pdf', 'PDF (OS driver)'), ('escpos', 'ESC/POS')],
         default='zpl', required=True,
-        help='ZPL/raw bytes go straight to the printer; PDF is rendered by the '
-             'OS print driver (works on non-Zebra printers).')
+        help='ZPL/raw text bytes go straight to the printer; PDF is rendered by '
+             'the OS print driver (works on non-Zebra printers); ESC/POS is raw '
+             'binary carried base64 in pdf_data and printed verbatim (Star/Epson '
+             'receipt printers, whose commands include NUL bytes a text column '
+             'cannot hold).')
     zpl = fields.Text(help='Raw ZPL / printer commands (for doc_type=zpl).')
-    pdf_data = fields.Binary(string='PDF', attachment=True,
-                             help='Base64 PDF (for doc_type=pdf).')
+    pdf_data = fields.Binary(string='PDF / raw', attachment=True,
+                             help='Base64 payload: a PDF for doc_type=pdf, or raw '
+                                  'ESC/POS bytes for doc_type=escpos.')
     state = fields.Selection(
         [('pending', 'Pending'), ('printing', 'Printing'),
          ('done', 'Done'), ('error', 'Error'), ('cancelled', 'Cancelled')],
@@ -159,26 +178,99 @@ class MintPrintJob(models.Model):
         order = self.env['pos.order']._mint_find_order(ref)
         if not order:
             return {'ok': False, 'error': 'order_not_found'}
+
+        # Resolve the target printer per role first: the receipt language depends
+        # on it. A ZPL (Zebra) receipt printer gets the ZPL receipt as before; an
+        # ESC/POS (Star/Epson) receipt printer gets native ESC/POS bytes instead,
+        # since sending it ZPL would print garbage and never fire the drawer.
         zpl = order._mint_zebra_zpl(which)
-        pieces = []
-        if which in ('both', 'label') and zpl.get('label'):
-            pieces.append(('label', zpl['label']))
-        if which in ('both', 'receipt') and zpl.get('receipt'):
-            pieces.append(('receipt', zpl['receipt']))
+        data = None  # order dict, built lazily only if an ESC/POS receipt is needed
+
+        plan = []
+        if which in ('both', 'label'):
+            plan.append(('label', self.env['print.printer'].browse(printer_id)
+                         if printer_id else self._default_printer(node, 'label')))
+        if which in ('both', 'receipt'):
+            plan.append(('receipt', self.env['print.printer'].browse(printer_id)
+                         if printer_id else self._default_printer(node, 'receipt')))
+
         job_ids = []
-        for role, content in pieces:
-            printer = (self.env['print.printer'].browse(printer_id)
-                       if printer_id else self._default_printer(node, role))
-            job = self.create({
+        for role, printer in plan:
+            vals = {
                 'node_id': node.id,
                 'printer_id': printer.id if printer else False,
                 'role': role,
-                'zpl': content,
                 'source': order.pos_reference or order.name,
-            })
+            }
+            if role == 'receipt' and printer and printer.printer_lang == 'escpos':
+                if data is None:
+                    data = order._mint_zebra_data()
+                payload = escpos_receipt.build_receipt_escpos(
+                    data, open_drawer=bool(config.mint_escpos_open_drawer))
+                if not payload:
+                    continue
+                vals['doc_type'] = 'escpos'
+                vals['pdf_data'] = base64.b64encode(payload)
+            elif role == 'receipt' and printer and printer.printer_lang == 'pdf':
+                # Raster-only receipt printer (e.g. Star TSP100 futurePRNT): render
+                # the receipt to a PDF the OS driver rasterises. The drawer is fired
+                # by the driver's own setting, not by receipt content.
+                if data is None:
+                    data = order._mint_zebra_data()
+                payload = pdf_receipt.build_receipt_pdf(data)
+                if not payload:
+                    continue
+                vals['doc_type'] = 'pdf'
+                vals['pdf_data'] = base64.b64encode(payload)
+            else:
+                content = zpl.get(role)
+                if not content:
+                    continue
+                vals['doc_type'] = 'zpl'
+                vals['zpl'] = content
+            job = self.create(vals)
             job_ids.append(job.id)
         return {'ok': True, 'node': node.name, 'online': node.online,
                 'job_ids': job_ids}
+
+    @api.model
+    def _receipt_content_vals(self, printer, data, dpi=203, open_drawer=False):
+        """Build the {doc_type, zpl|pdf_data} for a receipt in the target
+        printer's language. Empty dict if nothing could be built. Shared by the
+        POS path and the online-order path so both render identically per
+        printer type (Zebra ZPL / Star-Epson ESC/POS / raster PDF)."""
+        lang = (printer and printer.printer_lang) or 'zpl'
+        if lang == 'escpos':
+            payload = escpos_receipt.build_receipt_escpos(data, open_drawer=bool(open_drawer))
+            return {'doc_type': 'escpos', 'pdf_data': base64.b64encode(payload)} if payload else {}
+        if lang == 'pdf':
+            payload = pdf_receipt.build_receipt_pdf(data)
+            return {'doc_type': 'pdf', 'pdf_data': base64.b64encode(payload)} if payload else {}
+        content = zebra_zpl.build_receipt_zpl(data, dpi)
+        return {'doc_type': 'zpl', 'zpl': content} if content else {}
+
+    @api.model
+    def enqueue_receipt(self, company_id, data, source, open_drawer=False):
+        """Enqueue ONE receipt (no label) to a company's store node, rendered in
+        its default receipt printer's language. Used by online orders.
+
+        Safe no-op: returns {ok:False, error} rather than raising when the store
+        has no node or no receipt printer, so it can be called for any order and
+        only stores that are actually set up will print. `data` is the receipt
+        dict consumed by the receipt builders."""
+        node = self._node_for_company(company_id)
+        if not node:
+            return {'ok': False, 'error': 'no_node_for_store'}
+        printer = self._default_printer(node, 'receipt')
+        if not printer:
+            return {'ok': False, 'error': 'no_receipt_printer'}
+        vals = self._receipt_content_vals(printer, data, open_drawer=open_drawer)
+        if not vals:
+            return {'ok': False, 'error': 'nothing_to_print'}
+        vals.update({'node_id': node.id, 'printer_id': printer.id,
+                     'role': 'receipt', 'source': source or 'receipt'})
+        job = self.create(vals)
+        return {'ok': True, 'node': node.name, 'online': node.online, 'job_id': job.id}
 
     @api.model
     def enqueue_pdf(self, printer_id, pdf_b64, title=None):

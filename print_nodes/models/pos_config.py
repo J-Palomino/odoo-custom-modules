@@ -37,6 +37,13 @@ class PosConfig(models.Model):
         string='Print Receipt',
         default=True,
     )
+    mint_escpos_open_drawer = fields.Boolean(
+        string='Open Cash Drawer on Receipt',
+        default=True,
+        help='For ESC/POS receipt printers (Star/Epson), append a drawer-kick '
+             'pulse to each printed receipt so the connected cash drawer opens. '
+             'No effect on Zebra/ZPL printers.',
+    )
     mint_zebra_dpi = fields.Selection(
         [('203', '203 dpi'), ('300', '300 dpi')],
         string='Zebra DPI',
@@ -55,16 +62,11 @@ class PosConfig(models.Model):
     def _load_pos_data_fields(self, config_id):
         """Expose PrintNodes settings to the POS frontend (not the secret key)."""
         fields_list = super()._load_pos_data_fields(config_id)
-        if not fields_list:
-            # An empty list means "read ALL fields" (pos.load.mixin default for
-            # pos.config), which already includes our custom fields. Appending
-            # ours would narrow the read to only these five and break core's
-            # _load_pos_data_read (KeyError: 'use_pricelist') on POS open.
-            return fields_list
         return fields_list + [
             'mint_zebra_enabled',
             'mint_zebra_transport',
             'mint_zebra_autoprint',
             'mint_zebra_print_label',
             'mint_zebra_print_receipt',
+            'mint_escpos_open_drawer',
         ]
