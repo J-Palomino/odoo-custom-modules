@@ -80,7 +80,10 @@ def _win_default_printer():
     from ctypes import wintypes
     buf = ctypes.create_unicode_buffer(256)
     size = wintypes.DWORD(256)
-    ctypes.windll.winspool.GetDefaultPrinterW(buf, ctypes.byref(size))
+    # The spooler API lives in winspool.drv; ctypes.windll.winspool looks for
+    # winspool.dll, which is not present on modern Windows and raises
+    # "Could not find module 'winspool'". Load winspool.drv explicitly.
+    ctypes.WinDLL('winspool.drv').GetDefaultPrinterW(buf, ctypes.byref(size))
     return buf.value
 
 
@@ -99,7 +102,7 @@ def _win_list_printers():
 def _win_print_raw(printer, data):
     import ctypes
     from ctypes import wintypes
-    winspool = ctypes.windll.winspool
+    winspool = ctypes.WinDLL('winspool.drv')  # not windll.winspool (winspool.dll is absent on modern Windows)
     hPrinter = wintypes.HANDLE()
     if not winspool.OpenPrinterW(printer, ctypes.byref(hPrinter), None):
         raise OSError('OpenPrinter failed for %r' % printer)
