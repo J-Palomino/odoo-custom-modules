@@ -80,7 +80,10 @@ def _win_default_printer():
     from ctypes import wintypes
     buf = ctypes.create_unicode_buffer(256)
     size = wintypes.DWORD(256)
-    ctypes.windll.winspool.GetDefaultPrinterW(buf, ctypes.byref(size))
+    # The spooler API lives in winspool.drv; ctypes.windll.winspool looks for
+    # winspool.dll, which is not present on modern Windows and raises
+    # "Could not find module 'winspool'". Load winspool.drv explicitly.
+    ctypes.WinDLL('winspool.drv').GetDefaultPrinterW(buf, ctypes.byref(size))
     return buf.value
 
 
@@ -99,7 +102,7 @@ def _win_list_printers():
 def _win_print_raw(printer, data):
     import ctypes
     from ctypes import wintypes
-    winspool = ctypes.windll.winspool
+    winspool = ctypes.WinDLL('winspool.drv')  # not windll.winspool (winspool.dll is absent on modern Windows)
     hPrinter = wintypes.HANDLE()
     if not winspool.OpenPrinterW(printer, ctypes.byref(hPrinter), None):
         raise OSError('OpenPrinter failed for %r' % printer)
@@ -230,9 +233,17 @@ def _win_print_pdf(printer, path):
         if p.returncode != 0:
             raise OSError('ghostscript rc=%s %s' % (p.returncode, p.stderr[:200]))
         return
-    sumatra = shutil.which('SumatraPDF') or shutil.which('SumatraPDF.exe')
+    # SumatraPDF: on PATH, or bundled next to the agent. The register installer
+    # drops SumatraPDF.exe in the agent's own ProgramData dir, which is NOT on
+    # PATH, so look there too.
+    here = os.path.dirname(os.path.abspath(__file__))
+    sumatra = (shutil.which('SumatraPDF') or shutil.which('SumatraPDF.exe') or
+               next((p for p in (os.path.join(here, 'SumatraPDF.exe'),
+                                 r'C:\ProgramData\MintPrintAgent\SumatraPDF.exe')
+                     if os.path.exists(p)), None))
     if sumatra:
-        p = subprocess.run([sumatra, '-print-to', printer, '-silent', path],
+        p = subprocess.run([sumatra, '-print-to', printer, '-silent',
+                            '-exit-when-done', path],
                            capture_output=True, timeout=120)
         if p.returncode != 0:
             raise OSError('SumatraPDF rc=%s' % p.returncode)
@@ -263,8 +274,14 @@ def print_pdf(printer, pdf_bytes):
 def print_doc(job):
     """Print a poll job by its doc_type. Returns (bytes, printer)."""
     printer = job.get('printer') or None
-    if job.get('doc_type') == 'pdf':
+    doc_type = job.get('doc_type')
+    if doc_type == 'pdf':
         return print_pdf(printer, base64.b64decode(job.get('pdf') or ''))
+    if doc_type == 'escpos':
+        # Raw ESC/POS bytes for a Star/Epson receipt printer, carried base64 in
+        # the same field as PDFs (its bytes include NUL, so it cannot ride in the
+        # zpl text field). Send verbatim to the printer, no rendering.
+        return print_raw(printer, base64.b64decode(job.get('pdf') or ''))
     return print_raw(printer, (job.get('zpl') or '').encode('utf-8'))
 
 
