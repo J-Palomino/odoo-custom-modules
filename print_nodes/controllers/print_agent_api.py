@@ -28,11 +28,23 @@ def _classify_role(name):
     return 'other'
 
 
+# Original Star futurePRNT models (TSP100/TSP143 and the ECO/GT/LAN/U variants)
+# are RASTER-only: they speak neither ZPL nor ESC/POS and only print bitmaps
+# their OS driver produces, so their receipts must be rendered to PDF. The
+# StarPRNT-era successors (TSP100III/IV, TSP143III/IV, mC-Print) DO speak ESC/POS
+# and are excluded below.
+_RASTER_HINTS = ('tsp100', 'tsp143', 'futureprnt')
+_STARPRNT_HINTS = ('iii', 'iv', 'mc-print', 'mcprint', 'starprnt')
+
+
 def _classify_lang(name):
-    """Command language a reported printer speaks: 'escpos' for receipt-class
-    printers (Star/Epson/Citizen), else 'zpl' (Zebra label printers and the
-    safe default — matches the historical behaviour before ESC/POS support)."""
+    """Command language a reported printer speaks: 'pdf' for a raster-only Star
+    futurePRNT (TSP100/TSP143 - rendered via the OS driver), 'escpos' for other
+    receipt printers (Epson/Citizen/StarPRNT), else 'zpl' (Zebra labels and the
+    safe default). Ops can override per printer in the Print Nodes UI."""
     n = (name or '').lower()
+    if any(k in n for k in _RASTER_HINTS) and not any(v in n for v in _STARPRNT_HINTS):
+        return 'pdf'
     if any(k in n for k in _RECEIPT_HINTS):
         return 'escpos'
     return 'zpl'
