@@ -230,6 +230,16 @@ class MintCheckout(http.Controller):
             order.name, partner.name, store_slug, payment_method,
         )
 
+        # Queue the store receipt now the order + lines exist, so it prints at
+        # the store the moment the order comes in (paid or not). Guarded so a
+        # later pay-online -> paid update does not reprint. A store with no print
+        # node is a safe no-op. Never let a print hiccup fail the checkout.
+        try:
+            if hasattr(order, 'mint_print_store_receipt'):
+                order.mint_print_store_receipt()
+        except Exception:
+            _logger.exception('store receipt enqueue failed for %s', order.name)
+
         return json_response({
             'success': True,
             'order_id': order.id,
@@ -327,6 +337,13 @@ class MintCheckout(http.Controller):
             ], limit=1)
             if order and order.x_checkout_status != 'paid':
                 order.sudo().write({'x_checkout_status': 'paid'})
+                # Backup: print the store receipt if it did not already print at
+                # order creation (guarded by x_receipt_printed, so no reprint).
+                try:
+                    if hasattr(order, 'mint_print_store_receipt'):
+                        order.mint_print_store_receipt()
+                except Exception:
+                    _logger.exception('store receipt enqueue failed for %s', order.name)
                 # Award loyalty on the existing order
                 if order.partner_id:
                     self._award_loyalty(

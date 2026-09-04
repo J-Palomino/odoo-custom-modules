@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Customer API',
-    'version': '19.0.2.18.0',
+    'version': '19.0.2.19.0',
     'category': 'Website',
     'summary': 'Customer auth, checkout, and loyalty API for MintDeals frontend',
     'author': 'MintDeals',
@@ -14,6 +14,7 @@
         'sale_management',
         'loyalty',
         'crm',
+        'print_nodes',   # store-receipt printing for online orders
         'mint_api_v2',
         'mint_dutchie_sync',
         'mint_sms_telnyx',
