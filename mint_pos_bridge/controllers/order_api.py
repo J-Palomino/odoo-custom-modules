@@ -966,6 +966,24 @@ class MintPosOrderAPI(http.Controller):
         if not order.exists():
             return _error('Order not found', 404)
 
+        # ── Ownership enforcement (authenticated callers) ──────────────────
+        # When the frontend forwards X-Partner-Id (derived from the verified
+        # mint_auth JWT), the order must belong to that partner. This is the
+        # server-side authorization boundary: the order *name* comes from a
+        # sequential ir.sequence, so ref-possession alone is enumerable —
+        # without this, a logged-in user could mutate another customer's order
+        # by guessing its reference. Service/sync callers (lane watcher, bulk
+        # sync, admin tools) omit the header and are unaffected. Use 404 rather
+        # than 403 so a mismatch is not an order-existence oracle.
+        partner_hdr = request.httprequest.headers.get('X-Partner-Id')
+        if partner_hdr:
+            try:
+                claimed_partner = int(partner_hdr)
+            except (TypeError, ValueError):
+                claimed_partner = 0
+            if not claimed_partner or order.partner_id.id != claimed_partner:
+                return _error('Order not found', 404)
+
         vals = {'state': new_state}
         if data.get('budtender_id'):
             vals['budtender_id'] = data['budtender_id']
