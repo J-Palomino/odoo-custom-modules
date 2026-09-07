@@ -57,6 +57,15 @@ class DaisyAgent(models.Model):
              "user's messages, and it is hidden from Discuss @mention / new-DM "
              "suggestions for everyone else. Leave empty for a normal shared agent.",
     )
+    x_private_allowed_ids = fields.Many2many(
+        "res.users",
+        "daisy_agent_private_allowed_users_rel",
+        "agent_id",
+        "user_id",
+        string="Also Allowed",
+        help="Additional users allowed to reach this PRIVATE agent, alongside "
+             "the owner. Has no effect unless 'Private To (owner)' is set.",
+    )
     active = fields.Boolean(default=True)
 
     # --- MCP credentials (set by create-agent-for-user wizard) ---
@@ -120,6 +129,42 @@ class DaisyAgent(models.Model):
         "UNIQUE(code)",
         "Agent code must be unique.",
     )
+
+    # --- Private-agent access control -------------------------------------
+    # A private agent answers only its owner plus anyone on x_private_allowed_ids.
+    # Both auto-reply gates (discuss_channel, mail_thread) and the @mention
+    # hide-predicate (res_partner) route through these two helpers, so the
+    # allowlist can never drift between "can see" and "gets a reply".
+
+    def _private_allowed_partners(self):
+        """Partners permitted to reach this agent.
+
+        Returns an EMPTY recordset for a non-private agent, which means
+        "not applicable", not "nobody" — always check ``x_private_owner_id``
+        (or use :meth:`_is_private_blocked`) rather than testing emptiness.
+        """
+        self.ensure_one()
+        if not self.x_private_owner_id:
+            return self.env["res.partner"].browse()
+        return self.x_private_owner_id.partner_id | self.x_private_allowed_ids.partner_id
+
+    def _is_private_blocked(self, author_partner):
+        """True when this agent is private and ``author_partner`` may not reach it.
+
+        A falsy author (inbound email or livechat guest) is never on the
+        allowlist, so this fails CLOSED — matching the original owner-only gate.
+        """
+        self.ensure_one()
+        if not self.x_private_owner_id:
+            return False
+        return author_partner not in self._private_allowed_partners()
+
+    def _is_private_hidden_from_user(self, user):
+        """True when ``user`` should not even see this agent in Discuss pickers."""
+        self.ensure_one()
+        if not self.x_private_owner_id:
+            return False
+        return user != self.x_private_owner_id and user not in self.x_private_allowed_ids
 
     def _compute_feed_count(self):
         for agent in self:

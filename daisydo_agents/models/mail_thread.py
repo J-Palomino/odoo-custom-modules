@@ -43,10 +43,10 @@ class MailThread(models.AbstractModel):
         if getattr(message, 'daisy_ai_generated', False):
             return result
 
-        # Private-agent gate: a private agent only auto-replies to its owner.
-        # (no author — email/guest — is never the owner, so it fails closed)
-        private_owner = agent.sudo().x_private_owner_id
-        if private_owner and message.author_id != private_owner.partner_id:
+        # Private-agent gate: a private agent only auto-replies to its owner and
+        # to anyone on its allowlist.
+        # (no author — email/guest — is never allowed, so it fails closed)
+        if agent.sudo()._is_private_blocked(message.author_id):
             return result
 
         # Build conversation history from the NEWEST messages, chronological
