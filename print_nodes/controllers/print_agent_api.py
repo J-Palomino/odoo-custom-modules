@@ -64,6 +64,26 @@ class MintPrintAgentApi(http.Controller):
         return request.env['print.node'].sudo().search(
             [('token', '=', token), ('active', '=', True)], limit=1)
 
+    @staticmethod
+    def _pdf_str(val):
+        """The job's base64 PDF/raw payload as a str, tolerant of any read shape.
+
+        ``pdf_data`` is a Binary field, so a read normally returns base64 bytes,
+        but an empty or unreadable attachment comes back as ``b''`` or ``None``.
+        The old ``(val or '').decode()`` crashed on ``b''`` -- ``b'' or ''`` is
+        the str ``''`` which has no ``.decode()`` -- and because that ran inside
+        the poll's list comprehension over EVERY pending job, one empty-content
+        job 500'd the whole poll and froze the entire node's print queue. Return
+        a safe '' for those instead so one bad job can never block the others.
+        """
+        if not val:
+            return ''
+        if isinstance(val, memoryview):
+            val = val.tobytes()
+        if isinstance(val, (bytes, bytearray)):
+            return bytes(val).decode('ascii', 'ignore')
+        return str(val)
+
     @http.route('/mint/print/register', type='http', auth='public',
                 methods=['POST'], csrf=False)
     def register(self, **kw):
@@ -125,7 +145,7 @@ class MintPrintAgentApi(http.Controller):
             'role': j.role,
             'doc_type': j.doc_type,
             'zpl': j.zpl or '',
-            'pdf': (j.pdf_data or '').decode() if isinstance(j.pdf_data, bytes) else (j.pdf_data or ''),
+            'pdf': self._pdf_str(j.pdf_data),
         } for j in jobs]
         return request.make_json_response({'jobs': out})
 
