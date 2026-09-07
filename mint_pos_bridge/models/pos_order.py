@@ -316,8 +316,11 @@ class MintPosOrder(models.Model):
 
     # Set once this order's receipt has been queued to its store print node, so
     # it is not auto-printed again on later Dutchie-sync writes.
+    # NOT indexed: a btree on a low-cardinality boolean buys nothing, and its
+    # creation would take a second write-blocking lock on this hot table. The
+    # column itself is added deadlock-safely in migrations/19.0.5.10.0/pre-migrate.py.
     x_receipt_printed = fields.Boolean(
-        string='Store Receipt Printed', default=False, copy=False, index=True)
+        string='Store Receipt Printed', default=False, copy=False)
 
     @api.model_create_multi
     def create(self, vals_list):
