@@ -314,6 +314,14 @@ class MintPosOrder(models.Model):
         """
         return list(CATEGORY_TO_STATE.values())
 
+    # Set once this order's receipt has been queued to its store print node, so
+    # it is not auto-printed again on later Dutchie-sync writes.
+    # NOT indexed: a btree on a low-cardinality boolean buys nothing, and its
+    # creation would take a second write-blocking lock on this hot table. The
+    # column itself is added deadlock-safely in migrations/19.0.5.10.0/pre-migrate.py.
+    x_receipt_printed = fields.Boolean(
+        string='Store Receipt Printed', default=False, copy=False)
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -880,6 +888,63 @@ class MintPosOrder(models.Model):
             count, hours_old,
         )
         return count
+
+    # ── store receipt printing (print_nodes) ────────────────────────────
+    def _mint_receipt_data(self):
+        """Receipt dict for the print_nodes builders, from this POS order."""
+        self.ensure_one()
+        company = self.company_id
+        address = ', '.join(p for p in [
+            company.street, company.city,
+            company.state_id.code if company.state_id else None] if p)
+        when = fields.Datetime.context_timestamp(self, self.create_date) \
+            if self.create_date else None
+        items = []
+        for line in self.line_ids:
+            items.append({
+                'name': line.product_name or '',
+                'qty': line.quantity,
+                'price': line.unit_price,
+                'total': line.line_total,
+            })
+        kind = dict(self._fields['order_type'].selection).get(self.order_type, '')
+        return {
+            'store': company.name,
+            'address': address,
+            'order_ref': self.name,
+            'date': when.strftime('%Y-%m-%d %H:%M') if when else '',
+            'cashier': 'Online Order',
+            'customer': self.partner_id.name or '',
+            'item_count': int(sum(self.line_ids.mapped('quantity'))),
+            'items': items,
+            'subtotal': self.subtotal,
+            'tax': self.tax_total,
+            'total': self.total,
+            'currency': (company.currency_id.symbol or '$'),
+            'footer': ('ONLINE ORDER - %s' % kind) if kind else 'ONLINE ORDER',
+        }
+
+    def mint_print_receipt(self, force=False):
+        """Queue a store receipt to this order's company print node. Guarded by
+        x_receipt_printed unless force=True (manual reprint). Safe no-op when the
+        store has no node, so it can be called for any order/company."""
+        Job = self.env['print.job'].sudo()
+        for order in self:
+            if order.x_receipt_printed and not force:
+                continue
+            if not order.company_id or not order.line_ids:
+                continue
+            res = Job.enqueue_receipt(
+                order.company_id.id, order._mint_receipt_data(),
+                order.name, open_drawer=False)
+            if res.get('ok') and not order.x_receipt_printed:
+                order.sudo().write({'x_receipt_printed': True})
+
+    def action_reprint_receipt(self):
+        """Manual reprint button (order card + form) - always prints, ignoring
+        the printed guard."""
+        self.mint_print_receipt(force=True)
+        return True
 
 
 class MintPosOrderLine(models.Model):
