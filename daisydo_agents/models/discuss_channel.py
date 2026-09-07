@@ -50,11 +50,11 @@ class DiscussChannel(models.Model):
             return result
 
         # Private-agent gate: an agent bound to a private owner only auto-replies
-        # to that owner. Anyone else's message is silently ignored (no job, no
-        # reply). See x_private_owner_id on daisy.agent.
-        # (no author — email/guest — is never the owner, so it fails closed)
-        private_owner = agent.sudo().x_private_owner_id
-        if private_owner and message.author_id != private_owner.partner_id:
+        # to that owner and to anyone on its allowlist. Everyone else is silently
+        # ignored (no job, no reply). See x_private_owner_id /
+        # x_private_allowed_ids on daisy.agent.
+        # (no author — email/guest — is never allowed, so it fails closed)
+        if agent.sudo()._is_private_blocked(message.author_id):
             return result
 
         # Build conversation history from the NEWEST messages, chronological
