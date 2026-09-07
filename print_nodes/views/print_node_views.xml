@@ -30,6 +30,7 @@
                             <field name="agent_url"/>
                             <field name="token" password="True"/>
                             <field name="active"/>
+                            <field name="is_store_default"/>
                         </group>
                     </group>
                     <notebook>
@@ -58,6 +59,7 @@
             <list string="Print Nodes">
                 <field name="name"/>
                 <field name="company_id"/>
+                <field name="is_store_default" string="Store Default" widget="boolean_toggle"/>
                 <field name="hostname"/>
                 <field name="online" widget="boolean_toggle"/>
                 <field name="last_seen"/>
