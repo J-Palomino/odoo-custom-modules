@@ -46,6 +46,12 @@ class MintPrintNode(models.Model):
     last_seen = fields.Datetime(readonly=True)
     online = fields.Boolean(compute='_compute_online')
     active = fields.Boolean(default=True)
+    is_store_default = fields.Boolean(
+        string='Default node for this store',
+        help='When a store has more than one node (e.g. several registers), '
+             'company-scoped receipts — online-order auto-print and the swimlane '
+             'Reprint button — route to the node flagged here. At most one per '
+             'store; if none is flagged, the most-recently-active node is used.')
     printer_ids = fields.One2many('print.printer', 'node_id', string='Printers')
     job_count = fields.Integer(compute='_compute_job_count')
 
@@ -66,6 +72,36 @@ class MintPrintNode(models.Model):
     def action_rotate_token(self):
         for n in self:
             n.token = secrets.token_urlsafe(24)
+
+    @api.onchange('is_store_default')
+    def _onchange_is_store_default(self):
+        # UI feedback: clear the flag on the store's other nodes.
+        if self.is_store_default and self.company_id:
+            others = self.search([
+                ('company_id', '=', self.company_id.id),
+                ('is_store_default', '=', True),
+                ('id', '!=', self._origin.id or 0)])
+            others.is_store_default = False
+
+    def _dedupe_store_default(self):
+        # Enforce at most one default node per store, on the API path too.
+        for node in self.filtered('is_store_default'):
+            self.search([
+                ('company_id', '=', node.company_id.id),
+                ('is_store_default', '=', True),
+                ('id', '!=', node.id)]).write({'is_store_default': False})
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        nodes = super().create(vals_list)
+        nodes._dedupe_store_default()
+        return nodes
+
+    def write(self, vals):
+        res = super().write(vals)
+        if vals.get('is_store_default'):
+            self._dedupe_store_default()
+        return res
 
 
 class MintPrintPrinter(models.Model):
@@ -153,9 +189,12 @@ class MintPrintJob(models.Model):
     # ── routing helpers (used by the POS) ───────────────────────────
     @api.model
     def _node_for_company(self, company_id):
-        return self.env['print.node'].search(
-            [('company_id', '=', company_id), ('active', '=', True)],
-            order='last_seen desc', limit=1)
+        Node = self.env['print.node']
+        base = [('company_id', '=', company_id), ('active', '=', True)]
+        # Prefer the store's designated default node (set when a store has
+        # several registers); otherwise fall back to the most-recently-active.
+        node = Node.search(base + [('is_store_default', '=', True)], limit=1)
+        return node or Node.search(base, order='last_seen desc', limit=1)
 
     @api.model
     def _default_printer(self, node, role):
