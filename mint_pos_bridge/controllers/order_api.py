@@ -230,6 +230,38 @@ def _find_or_upgrade_partner(customer_data, origin='odoo_manual', fallback_ref=N
 _find_or_create_partner = _find_or_upgrade_partner
 
 
+# Order states at which an online order is ready-for-pickup or done AND its line
+# items have synced — the moment to print the store receipt. (Live orders carry
+# no line detail before this, so there is nothing to itemise earlier.)
+_PRINTWORTHY_STATES = ('ready', 'pickup', 'picked_up', 'completed')
+
+
+def _maybe_autoprint(order, old_state, line_added, backfill_mode):
+    """Print an ONLINE (pickup) order's store receipt once it becomes
+    ready/done and its items have landed. Fires on the transition INTO a
+    print-worthy state, or on the sync that first adds items to an already-ready
+    order — so it prints once per order and never mass-prints the historical
+    backlog (a plain re-sync changes neither). mint_print_receipt() is itself
+    guarded by x_receipt_printed, and the whole thing is wrapped in a savepoint
+    so a print hiccup can never poison the bulk_sync batch transaction."""
+    if backfill_mode or order.order_type != 'pickup':
+        return
+    if not hasattr(order, 'mint_print_receipt'):
+        return
+    if order.state not in _PRINTWORTHY_STATES:
+        return
+    entered = old_state not in _PRINTWORTHY_STATES          # just transitioned in
+    if not (entered or line_added):                         # skip re-syncs / backlog
+        return
+    if not (line_added or order.line_ids):                  # need items to itemise
+        return
+    try:
+        with request.env.cr.savepoint():
+            order.mint_print_receipt()                      # once-guarded (x_receipt_printed)
+    except Exception:
+        _logger.exception('store receipt auto-print failed for %s', order.name)
+
+
 def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
                   allow_create=True, backfill_mode=False):
     """Find-or-create a mint.pos.order from a Dutchie payload.
@@ -275,6 +307,7 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
 
     if existing:
         update_vals = {}
+        old_state = existing.state          # pre-write, for the auto-print transition
         is_terminal = existing.state in existing._TERMINAL_STATES
         new_state = order_data.get('state')
         # Guard only against resurrecting a terminal order back into an ACTIVE
@@ -365,6 +398,8 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
                     line_vals.update(_build_rich_line_vals(item))
                     LineForOrder.create(line_vals)
                 line_added = True
+
+        _maybe_autoprint(existing, old_state, line_added, backfill_mode)
 
         if update_vals or line_added:
             return {'created': False, 'updated': True, 'skipped': False,
@@ -478,29 +513,11 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
                 'Redemption consume failed for order %s', order.name,
             )
 
-    # Auto-print a store receipt the moment a live ONLINE (pickup) order comes
-    # in. Scoped tightly: not on historical backfill, and only pickup orders -
-    # never the ~1.4M in-store walk-ins. Routed by company to that store's print
-    # node; a store with no node is a safe no-op, so today only Tempe prints.
-    # Never let a print hiccup fail order intake.
-    if not backfill_mode and order.order_type == 'pickup' \
-            and hasattr(order, 'mint_print_receipt'):
-        # Auto-print only genuinely FRESH online orders. `not backfill_mode`
-        # already excludes intentional backfills, but a routine catch-up sync
-        # can still create old orders for the first time — a freshness window on
-        # the order's own timestamp keeps that from flooding the store printer.
-        # Manual reprint (action_reprint_receipt) bypasses this entirely.
-        ts = order.placed_at or order.create_date
-        if ts and (fields.Datetime.now() - ts) <= timedelta(hours=2):
-            # Best-effort side effect inside the shared bulk_sync transaction:
-            # a savepoint so any failure here rolls back only this enqueue and
-            # can never poison the outer transaction (which would abort every
-            # other order in the batch with InFailedSqlTransaction).
-            try:
-                with request.env.cr.savepoint():
-                    order.mint_print_receipt()
-            except Exception:
-                _logger.exception('store receipt enqueue failed for %s', order.name)
+    # NOTE: store-receipt auto-print is NOT fired here on create. A live online
+    # order lands with no line items (the Dutchie live/checked-in feed carries
+    # only a count, not the cart), so there is nothing to itemise yet. The
+    # receipt is printed later, in the UPDATE path, on the transition into a
+    # ready/completed state once the items have synced. See _maybe_autoprint().
 
     return {'created': True, 'updated': False, 'skipped': False,
             'order_id': order.id, 'order_name': order.name,
