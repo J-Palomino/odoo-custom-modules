@@ -77,15 +77,6 @@
                                     <field name="budtender_id"/>
                                 </span>
                             </div>
-
-                            <!-- Reprint receipt -->
-                            <div class="d-flex justify-content-end mt-1">
-                                <button name="action_reprint_receipt" type="object"
-                                        class="btn btn-sm btn-light py-0 px-1 text-muted"
-                                        title="Reprint receipt">
-                                    <i class="fa fa-print"/>
-                                </button>
-                            </div>
                         </div>
                     </t>
                 </templates>
@@ -172,9 +163,6 @@
                     <button name="action_open_add_item_wizard" string="Add Item"
                             type="object" icon="fa-cart-plus"
                             invisible="not dutchie_shipment_id or state in ('completed', 'cancelled')"/>
-                    <button name="action_reprint_receipt" string="Reprint Receipt"
-                            type="object" icon="fa-print"
-                            invisible="state == 'cancelled'"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="placed,confirmed,preparing,ready,completed"/>
                 </header>
