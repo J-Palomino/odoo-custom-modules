@@ -478,6 +478,18 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
                 'Redemption consume failed for order %s', order.name,
             )
 
+    # Auto-print a store receipt the moment a live ONLINE (pickup) order comes
+    # in. Scoped tightly: not on historical backfill, and only pickup orders -
+    # never the ~1.4M in-store walk-ins. Routed by company to that store's print
+    # node; a store with no node is a safe no-op, so today only Tempe prints.
+    # Never let a print hiccup fail order intake.
+    if not backfill_mode and order.order_type == 'pickup' \
+            and hasattr(order, 'mint_print_receipt'):
+        try:
+            order.mint_print_receipt()
+        except Exception:
+            _logger.exception('store receipt enqueue failed for %s', order.name)
+
     return {'created': True, 'updated': False, 'skipped': False,
             'order_id': order.id, 'order_name': order.name,
             'partner_id': partner.id}
