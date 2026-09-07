@@ -236,15 +236,26 @@ _find_or_create_partner = _find_or_upgrade_partner
 _PRINTWORTHY_STATES = ('ready', 'pickup', 'picked_up', 'completed')
 
 
-def _maybe_autoprint(order, old_state, line_added, backfill_mode):
+_AUTOPRINT_MAX_AGE_H = 24   # only auto-print recently-placed orders (live, not re-imports)
+
+
+def _maybe_autoprint(order, old_state, line_added):
     """Print an ONLINE (pickup) order's store receipt once it becomes
     ready/done and its items have landed. Fires on the transition INTO a
     print-worthy state, or on the sync that first adds items to an already-ready
     order — so it prints once per order and never mass-prints the historical
     backlog (a plain re-sync changes neither). mint_print_receipt() is itself
     guarded by x_receipt_printed, and the whole thing is wrapped in a savepoint
-    so a print hiccup can never poison the bulk_sync batch transaction."""
-    if backfill_mode or order.order_type != 'pickup':
+    so a print hiccup can never poison the bulk_sync batch transaction.
+
+    NB: this deliberately does NOT gate on backfill_mode. The routine Dutchie
+    orderSync runs bulk_sync with backfill=true (to create completed rows without
+    the loyalty/terminal guards), so backfill_mode is NOT a live-vs-historical
+    signal — gating on it blocked every real completion. We gate on order
+    FRESHNESS instead: a live pickup completing was placed within the last day; a
+    genuine historical re-import of NEW orders goes through the create path (which
+    never calls this), and any stray old order it might touch is filtered here."""
+    if order.order_type != 'pickup':
         return
     if not hasattr(order, 'mint_print_receipt'):
         return
@@ -254,6 +265,9 @@ def _maybe_autoprint(order, old_state, line_added, backfill_mode):
     if not (entered or line_added):                         # skip re-syncs / backlog
         return
     if not (line_added or order.line_ids):                  # need items to itemise
+        return
+    placed = order.placed_at or order.create_date           # freshness backstop
+    if not placed or (fields.Datetime.now() - placed) > timedelta(hours=_AUTOPRINT_MAX_AGE_H):
         return
     try:
         with request.env.cr.savepoint():
@@ -399,7 +413,7 @@ def _upsert_order(order_data, Order, Line, default_origin='dutchie_walkin',
                     LineForOrder.create(line_vals)
                 line_added = True
 
-        _maybe_autoprint(existing, old_state, line_added, backfill_mode)
+        _maybe_autoprint(existing, old_state, line_added)
 
         if update_vals or line_added:
             return {'created': False, 'updated': True, 'skipped': False,
