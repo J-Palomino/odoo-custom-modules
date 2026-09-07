@@ -925,10 +925,12 @@ class MintPosOrder(models.Model):
         }
 
     def mint_print_receipt(self, force=False):
-        """Queue a store receipt to this order's company print node. Guarded by
+        """Queue a store receipt to each order's company print node. Guarded by
         x_receipt_printed unless force=True (manual reprint). Safe no-op when the
-        store has no node, so it can be called for any order/company."""
+        store has no node, so it can be called for any order/company. Returns the
+        number of jobs actually enqueued (for caller feedback)."""
         Job = self.env['print.job'].sudo()
+        enqueued = 0
         for order in self:
             if order.x_receipt_printed and not force:
                 continue
@@ -937,14 +939,32 @@ class MintPosOrder(models.Model):
             res = Job.enqueue_receipt(
                 order.company_id.id, order._mint_receipt_data(),
                 order.name, open_drawer=False)
-            if res.get('ok') and not order.x_receipt_printed:
-                order.sudo().write({'x_receipt_printed': True})
+            if res.get('ok'):
+                enqueued += 1
+                if not order.x_receipt_printed:
+                    order.sudo().write({'x_receipt_printed': True})
+        return enqueued
 
     def action_reprint_receipt(self):
-        """Manual reprint button (order card + form) - always prints, ignoring
-        the printed guard."""
-        self.mint_print_receipt(force=True)
-        return True
+        """Manual reprint button (order form + swimlane card). Force-prints,
+        ignoring the once-guard, and tells the budtender what happened -- so a
+        live order with no items yet (which cannot be itemised) gives clear
+        feedback instead of silently doing nothing."""
+        self.ensure_one()
+        enqueued = self.mint_print_receipt(force=True)
+        if enqueued:
+            message, kind = 'Receipt sent to the store printer.', 'success'
+        elif not self.line_ids:
+            message, kind = ('No items on this order yet - the receipt prints '
+                             'automatically once the order is ready.'), 'warning'
+        else:
+            message, kind = ('No printer is set up for this store yet.'), 'warning'
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {'title': 'Reprint Receipt', 'message': message,
+                       'type': kind, 'sticky': False},
+        }
 
 
 class MintPosOrderLine(models.Model):
