@@ -167,7 +167,11 @@ class MintGiftCardController(http.Controller):
         if not shipment_id:
             match = card.find_transaction(
                 loc_id, lsp_id,
-                phone=partner.mobile or partner.phone or None,
+                # `phone` only — res.partner has no `mobile` in Odoo 19, and
+                # reading it here raised before the first walk-in draw could
+                # ever run. Odoo stores the one number a customer gave us, and
+                # Dutchie matches on the sanitized form of exactly that.
+                phone=partner.phone or None,
                 email=partner.email or None,
                 dutchie_customer_id=getattr(partner, 'x_dutchie_customer_id', None) or None,
             )

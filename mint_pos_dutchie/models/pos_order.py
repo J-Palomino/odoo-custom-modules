@@ -144,7 +144,10 @@ class PosOrder(models.Model):
             customer = {
                 'first_name': (partner.name or '').split(' ')[0],
                 'last_name': ' '.join((partner.name or '').split(' ')[1:]) or '',
-                'phone': partner.phone or partner.mobile or '',
+                # No `mobile` field in Odoo 19 — the fallback only ever ran
+                # for a partner with no phone, so it raised exactly when it was
+                # meant to help.
+                'phone': partner.phone or '',
                 'email': partner.email or '',
             }
 

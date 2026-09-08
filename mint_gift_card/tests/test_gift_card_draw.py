@@ -454,3 +454,31 @@ class TestFindTransaction(TransactionCase):
             res = self.Card.find_transaction(2679, 575, phone="1")
         self.assertIn("error", res)
         self.assertNotIn("shipment_id", res)
+
+
+@tagged("post_install", "-at_install")
+class TestWalkInIdentityFields(TransactionCase):
+    """The partner fields the walk-in draw reads must actually exist.
+
+    This is the one thing the rest of this file cannot catch. Every test above
+    stubs invsvc and calls the MODEL, but a walk-in enters through the
+    controller, which reads identity straight off res.partner before any of
+    that runs. Odoo 19 dropped `mobile` and the controller kept asking for it,
+    so the first walk-in draw raised AttributeError — with a live card, a live
+    basket and a correct amount waiting behind it.
+
+    An attribute that no longer exists is not a typo a reviewer sees; it reads
+    exactly like the field it used to be. So assert the names against the
+    registry rather than trusting them.
+    """
+
+    def test_the_fields_the_controller_reads_are_real(self):
+        partner_fields = self.env["res.partner"]._fields
+        # Read bare in mint_gift_card/controllers/gift_card.py — a missing one
+        # raises rather than returning empty, and takes the whole draw with it.
+        for name in ("phone", "email"):
+            self.assertIn(
+                name, partner_fields,
+                "the walk-in draw reads res.partner.%s; it is gone from the "
+                "registry, so resolving a transaction will raise" % name,
+            )
