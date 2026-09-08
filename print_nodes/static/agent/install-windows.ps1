@@ -33,9 +33,15 @@ if (-not $py) { Write-Error "Python 3 not found on PATH. Install Python 3 (or us
 
 $script = Join-Path $dir "mint_zebra_agent.py"
 $action  = New-ScheduledTaskAction -Execute $py -Argument "`"$script`"" -WorkingDirectory $dir
-$trigger = New-ScheduledTaskTrigger -AtLogOn
+# Boot AND logon so it starts whether or not anyone signs in.
+$trigger = @((New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn))
+# Battery flags are ESSENTIAL: a register that reports as "on battery" (mini-PC /
+# UPS-backed / laptop) is otherwise STOPPED by Windows and never restarted
+# (Windows' default is DisallowStartIfOnBatteries + StopIfGoingOnBatteries) --
+# the 2026-09-08 Tempe agent drop-out. IgnoreNew avoids a second polling instance.
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable `
-    -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName "MintPrintAgent" -Action $action -Trigger $trigger `
     -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName "MintPrintAgent"
