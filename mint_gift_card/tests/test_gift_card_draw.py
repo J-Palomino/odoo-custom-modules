@@ -504,28 +504,26 @@ class TestDrawReceiptText(TransactionCase):
         card.action_activate()
         return card
 
-    def test_states_what_was_used_and_what_is_left(self):
+    def test_reads_mb_bal_and_the_remainder(self):
         card = self._card(150.0)
-        self.assertEqual(
-            card._draw_receipt_text(30.0, 120.0),
-            "Mint Bucks $30.00 applied — $120.00 left on card",
-        )
+        self.assertEqual(card._draw_receipt_text(30.0, 120.0), "MB Bal: $120.00")
 
     def test_money_is_always_two_places(self):
-        # The old text interpolated the raw float, so a draw could print
-        # "draw of 30.0" or "draw of 7.5" on a receipt.
+        # The old text interpolated the raw float, so a receipt could read
+        # "draw of 30.0" or "draw of 7.5".
         card = self._card(50.0)
-        self.assertIn("$7.50", card._draw_receipt_text(7.5, 42.5))
-        self.assertIn("$42.50", card._draw_receipt_text(7.5, 42.5))
+        self.assertEqual(card._draw_receipt_text(7.5, 42.5), "MB Bal: $42.50")
 
-    def test_says_mint_bucks_so_it_stays_out_of_the_public_deal_feed(self):
-        # Not cosmetic: the storefront's INTERNAL_DISCOUNT_PATTERN matches
-        # /mint.?bucks/ on the discount name and uses it to keep internal
-        # discounts off the public deal listings. The "lgm |" prefix this
-        # replaced matched nothing there.
+    def test_the_text_stays_out_of_the_public_deal_feed(self):
+        # Not cosmetic. invsvc maps Dutchie's discountDescription -> the
+        # storefront's `discount_name` (discountSync.js:498), and
+        # INTERNAL_DISCOUNT_PATTERN classifies on THAT to keep internal
+        # discounts off /deals. The pattern carries an `mb.?bal` alternative
+        # for exactly this string; if the wording here drifts out of it, every
+        # draw becomes a public deal at that store.
         card = self._card()
-        self.assertIn("Mint Bucks", card._draw_receipt_text(1.0, 1.0))
+        self.assertRegex(card._draw_receipt_text(1.0, 1.0), r"(?i)\bMB.?Bal\b")
 
     def test_a_draw_that_empties_the_card_says_so(self):
         card = self._card(25.0)
-        self.assertIn("$0.00 left", card._draw_receipt_text(25.0, 0.0))
+        self.assertEqual(card._draw_receipt_text(25.0, 0.0), "MB Bal: $0.00")

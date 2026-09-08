@@ -314,8 +314,11 @@ class MintGiftCardDraw(models.Model):
         """
         self.ensure_one()
         symbol = (self.currency_id.symbol or "$") if self.currency_id else "$"
-        return "Mint Bucks %s%.2f applied — %s%.2f left on card" % (
-            symbol, amount, symbol, remaining)
+        # `amount` is deliberately unused: the receipt already prints the
+        # discount taken on its own line, so repeating it here would say the
+        # same number twice and crowd out the one the customer cannot get
+        # anywhere else on paper.
+        return "MB Bal: %s%.2f" % (symbol, remaining)
 
     def _mint_child(self, amount, loc_id):
         """Create and publish a single-use Dutchie coupon for exactly `amount`.
@@ -353,12 +356,13 @@ class MintGiftCardDraw(models.Model):
 
         child = self.env["mint.discount"].sudo().create({
             "name": "Gift card draw %s — %s" % (self.code, code),
-            # Keeps the words "Mint Bucks", which is not decoration: the
-            # storefront's INTERNAL_DISCOUNT_PATTERN matches /mint.?bucks/ and
-            # uses it to keep this out of the public deal listings. The old
-            # "lgm |" prefix matched nothing there — the `lgm_deal_<id>` lookups
-            # are a different, underscored form — so this is a stronger guard
-            # than what it replaces, not a weaker one.
+            # 🚨 This string is ALSO the storefront's `discount_name`
+            # (invsvc discountSync.js maps discountDescription -> discount_name),
+            # and that is what INTERNAL_DISCOUNT_PATTERN classifies on to keep
+            # internal discounts off the public /deals listings. "MB Bal:" is
+            # matched there by an explicit `mb.?bal` alternative added for this
+            # text. Change the wording here and you must change that pattern in
+            # the same breath, or every draw becomes a public deal at that store.
             "description": receipt_text,
             "discount_type": "dollar_off_total",
             "calculation_method_id": 5,
