@@ -136,10 +136,17 @@ MINT_POLL_SECS=2
   if (-not $py) { Log 'agent: python missing, cannot start'; }
   else {
     $action = New-ScheduledTaskAction -Execute $py -Argument ('"' + "$dir\mint_zebra_agent.py" + '"') -WorkingDirectory $dir
-    $trigger = New-ScheduledTaskTrigger -AtStartup
+    # Boot AND logon so it starts whether or not anyone signs in.
+    $trigger = @((New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn))
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    # Battery flags are ESSENTIAL: a register that reports as "on battery"
+    # (mini-PC / UPS-backed / laptop) is otherwise STOPPED by Windows and never
+    # restarted (Windows' default is DisallowStartIfOnBatteries + StopIfGoingOn
+    # Batteries) -- the 2026-09-08 Tempe agent drop-out. IgnoreNew avoids a
+    # second polling instance if the task is also started on demand.
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 999 `
-        -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+        -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName 'MintPrintAgent' -Action $action -Trigger $trigger `
         -Principal $principal -Settings $settings -Force | Out-Null
     Get-Process python,pythonw -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*Python3*' } | Stop-Process -Force -ErrorAction SilentlyContinue
