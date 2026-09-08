@@ -1,0 +1,37 @@
+name: CI
+
+# The only pre-existing check on this repo is a Railway PR-environment deploy,
+# which fails on every PR because PR environments have no Postgres attached. It
+# is not a merge gate and it validates nothing about the code. This workflow is
+# the actual gate: pure-stdlib static validation of the addons, no Odoo and no
+# database, so it finishes in seconds.
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+
+# A new push supersedes an in-flight run on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate-modules:
+    name: Validate Odoo modules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # No pip install on purpose: the script is stdlib-only, so CI cannot break
+      # on a dependency resolution failure unrelated to the change under review.
+      - name: Validate modules
+        run: python3 scripts/ci/check_modules.py
