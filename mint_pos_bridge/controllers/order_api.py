@@ -704,10 +704,25 @@ class MintPosOrderAPI(http.Controller):
                 order='id desc', limit=1,
             )
             if existing:
-                _logger.info(
-                    'POS order %s already exists for shipment %s — returning existing',
-                    existing.name, shipment_id,
-                )
+                # The lane-watcher usually creates this order first, from
+                # Dutchie's checked-in feed, as a count-only stub with NO line
+                # items (that feed doesn't carry the cart). The web-checkout
+                # payload DOES carry the cart, so backfill it here rather than
+                # dropping it — otherwise the order stays un-itemisable (no pick
+                # ticket, no receipt lines) even though we hold the items. Guard
+                # on empty line_ids so a retry / double-submit never dupes lines.
+                did_backfill = bool(items) and not existing.line_ids
+                if did_backfill:
+                    self._create_order_lines(existing, items, company)
+                    _logger.info(
+                        'Backfilled %d line items onto existing shipment %s (%s)',
+                        len(items), shipment_id, existing.name,
+                    )
+                else:
+                    _logger.info(
+                        'POS order %s already exists for shipment %s — returning existing',
+                        existing.name, shipment_id,
+                    )
                 return _json({
                     'success': True,
                     'order_id': existing.id,
@@ -715,6 +730,7 @@ class MintPosOrderAPI(http.Controller):
                     'state': existing.state,
                     'partner_id': existing.partner_id.id if existing.partner_id else None,
                     'existed': True,
+                    'items_backfilled': did_backfill,
                 })
 
         # Resolve customer. Trust an explicit partner_id when the caller
@@ -800,8 +816,26 @@ class MintPosOrderAPI(http.Controller):
         Order = request.env['mint.pos.order'].sudo().with_company(company)
         order = Order.create(order_vals)
 
-        # Create line items — pin to order's company so _check_company_auto resolves
-        # against the store, not env's default company (matches _upsert_order pattern)
+        # Create line items.
+        self._create_order_lines(order, items, company)
+
+        _logger.info(
+            'POS order %s created for store %s (%d items, $%.2f)',
+            order.name, company.name, len(items), order.total,
+        )
+
+        return _json({
+            'success': True,
+            'order_id': order.id,
+            'order_ref': order.name,
+            'state': order.state,
+            'partner_id': order.partner_id.id if order.partner_id else None,
+        })
+
+    def _create_order_lines(self, order, items, company):
+        """Create mint.pos.order.line rows for a web-checkout order. Pinned to
+        the order's company so _check_company_auto resolves against the store,
+        not env's default company (matches the _upsert_order pattern)."""
         Line = request.env['mint.pos.order.line'].sudo().with_company(company)
         for item in items:
             Line.create({
@@ -818,19 +852,6 @@ class MintPosOrderAPI(http.Controller):
                 'strain_type': item.get('strain_type', ''),
                 'weight': item.get('weight', ''),
             })
-
-        _logger.info(
-            'POS order %s created for store %s (%d items, $%.2f)',
-            order.name, company.name, len(items), order.total,
-        )
-
-        return _json({
-            'success': True,
-            'order_id': order.id,
-            'order_ref': order.name,
-            'state': order.state,
-            'partner_id': order.partner_id.id if order.partner_id else None,
-        })
 
     # ── GET /api/v1/pos/orders — List orders ─────────────────────────
 
