@@ -304,6 +304,22 @@ class MintGiftCardDraw(models.Model):
                 return company
         return self.env["res.company"].browse()
 
+    def _draw_receipt_text(self, amount, remaining):
+        """The line the register prints for this draw.
+
+        Split out from _mint_child so it can be asserted without standing up a
+        store mapping and a Dutchie push log — the wording is the part that
+        reaches a customer, so it should not be the part that is hardest to
+        test.
+        """
+        self.ensure_one()
+        symbol = (self.currency_id.symbol or "$") if self.currency_id else "$"
+        # `amount` is deliberately unused: the receipt already prints the
+        # discount taken on its own line, so repeating it here would say the
+        # same number twice and crowd out the one the customer cannot get
+        # anywhere else on paper.
+        return "MB Bal: %s%.2f" % (symbol, remaining)
+
     def _mint_child(self, amount, loc_id):
         """Create and publish a single-use Dutchie coupon for exactly `amount`.
 
@@ -318,9 +334,36 @@ class MintGiftCardDraw(models.Model):
 
         today = fields.Date.context_today(self)
         code = self._generate_child_code()
+
+        # What the customer reads on their receipt.
+        #
+        # `description` is what the push maps to Dutchie's DiscountDescription
+        # (dutchie_discount_push.py: `(discount.description or name)[:500]`),
+        # and DiscountDescription is what the register PRINTS. It used to carry
+        # the internal "lgm | gift card ... draw of ..." string, so the one
+        # moment a customer is handed a statement of their own store credit,
+        # it named an internal system and an unrounded float.
+        #
+        # The remainder is the number they actually want, and this is the only
+        # place it reaches them on paper — the app and the Wallet card both
+        # require opening something.
+        #
+        # `self.balance` is already the POST-draw figure: execute_draw takes the
+        # hold before calling this, and balance is face_value − settled − held.
+        # That ordering is load-bearing; minting before holding would print a
+        # remainder that still included this draw.
+        receipt_text = self._draw_receipt_text(amount, self.balance)
+
         child = self.env["mint.discount"].sudo().create({
             "name": "Gift card draw %s — %s" % (self.code, code),
-            "description": "lgm | gift card %s draw of %s" % (self.code, amount),
+            # 🚨 This string is ALSO the storefront's `discount_name`
+            # (invsvc discountSync.js maps discountDescription -> discount_name),
+            # and that is what INTERNAL_DISCOUNT_PATTERN classifies on to keep
+            # internal discounts off the public /deals listings. "MB Bal:" is
+            # matched there by an explicit `mb.?bal` alternative added for this
+            # text. Change the wording here and you must change that pattern in
+            # the same breath, or every draw becomes a public deal at that store.
+            "description": receipt_text,
             "discount_type": "dollar_off_total",
             "calculation_method_id": 5,
             "discount_value": amount,

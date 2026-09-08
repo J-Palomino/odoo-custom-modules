@@ -1,6 +1,6 @@
 {
     'name': 'MintDeals Gift Cards',
-    'version': '19.0.1.8.0',
+    'version': '19.0.1.9.0',
     'category': 'Sales',
     'summary': 'Stored-value gift cards with partial redemption and a remainder',
     'description': """MintDeals Gift Cards

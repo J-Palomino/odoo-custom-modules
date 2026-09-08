@@ -482,3 +482,48 @@ class TestWalkInIdentityFields(TransactionCase):
                 "the walk-in draw reads res.partner.%s; it is gone from the "
                 "registry, so resolving a transaction will raise" % name,
             )
+
+
+@tagged("post_install", "-at_install")
+class TestDrawReceiptText(TransactionCase):
+    """What the register prints for a draw.
+
+    This is the only place a customer is handed their store-credit balance on
+    paper — the app and the Wallet card both require opening something. It used
+    to read the internal "lgm | gift card ... draw of ..." string, naming a
+    system they have never heard of and an unrounded float.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Card = cls.env["mint.gift.card"]
+
+    def _card(self, face=100.0):
+        card = self.Card.create({"face_value": face, "issue_reason": "promotion"})
+        card.action_activate()
+        return card
+
+    def test_reads_mb_bal_and_the_remainder(self):
+        card = self._card(150.0)
+        self.assertEqual(card._draw_receipt_text(30.0, 120.0), "MB Bal: $120.00")
+
+    def test_money_is_always_two_places(self):
+        # The old text interpolated the raw float, so a receipt could read
+        # "draw of 30.0" or "draw of 7.5".
+        card = self._card(50.0)
+        self.assertEqual(card._draw_receipt_text(7.5, 42.5), "MB Bal: $42.50")
+
+    def test_the_text_stays_out_of_the_public_deal_feed(self):
+        # Not cosmetic. invsvc maps Dutchie's discountDescription -> the
+        # storefront's `discount_name` (discountSync.js:498), and
+        # INTERNAL_DISCOUNT_PATTERN classifies on THAT to keep internal
+        # discounts off /deals. The pattern carries an `mb.?bal` alternative
+        # for exactly this string; if the wording here drifts out of it, every
+        # draw becomes a public deal at that store.
+        card = self._card()
+        self.assertRegex(card._draw_receipt_text(1.0, 1.0), r"(?i)\bMB.?Bal\b")
+
+    def test_a_draw_that_empties_the_card_says_so(self):
+        card = self._card(25.0)
+        self.assertEqual(card._draw_receipt_text(25.0, 0.0), "MB Bal: $0.00")
