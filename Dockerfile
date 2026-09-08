@@ -71,6 +71,7 @@ COPY --chown=odoo:odoo mint_redis_push /opt/extra-addons/mint_redis_push
 COPY --chown=odoo:odoo mint_banner /opt/extra-addons/mint_banner
 COPY --chown=odoo:odoo mint_decision_board /opt/extra-addons/mint_decision_board
 COPY --chown=odoo:odoo mint_visual_cms /opt/extra-addons/mint_visual_cms
+COPY --chown=odoo:odoo mint_tv /opt/extra-addons/mint_tv
 COPY --chown=odoo:odoo mint_recruitment_portal /opt/extra-addons/mint_recruitment_portal
 COPY --chown=odoo:odoo mint_hr_complaints /opt/extra-addons/mint_hr_complaints
 
