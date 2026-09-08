@@ -21,6 +21,7 @@
                         <field name="mint_zebra_print_receipt" widget="boolean_toggle"/>
                         <field name="mint_escpos_open_drawer" widget="boolean_toggle"
                                invisible="not mint_zebra_print_receipt"/>
+                        <field name="mint_print_label_on_scan" widget="boolean_toggle"/>
                         <field name="mint_printnode_printer_id"
                                invisible="mint_zebra_transport in ('webusb', 'local_agent')"/>
                     </group>

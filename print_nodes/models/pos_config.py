@@ -2,6 +2,8 @@
 """Extend pos.config with PrintNodes (Zebra) per-register settings."""
 from odoo import api, fields, models
 
+from . import zebra_zpl
+
 
 class PosConfig(models.Model):
     _inherit = 'pos.config'
@@ -44,6 +46,14 @@ class PosConfig(models.Model):
              'pulse to each printed receipt so the connected cash drawer opens. '
              'No effect on Zebra/ZPL printers.',
     )
+    mint_print_label_on_scan = fields.Boolean(
+        string='Print Label on Barcode Scan',
+        default=False,
+        help='When a product barcode is scanned at this register, also print a '
+             'product/shelf label for it — in addition to Odoo adding the item '
+             'to the order. Uses the register\'s local print agent + label '
+             'printer.',
+    )
     mint_zebra_dpi = fields.Selection(
         [('203', '203 dpi'), ('300', '300 dpi')],
         string='Zebra DPI',
@@ -69,4 +79,35 @@ class PosConfig(models.Model):
             'mint_zebra_print_label',
             'mint_zebra_print_receipt',
             'mint_escpos_open_drawer',
+            'mint_print_label_on_scan',
         ]
+
+    def mint_scan_product_label_zpl(self, barcode):
+        """Return ZPL for a scanned product's label (Print-Label-on-Scan).
+
+        Called from the POS when a product barcode is scanned and
+        ``mint_print_label_on_scan`` is on. Resolves the product by barcode,
+        then by internal reference, and builds a simple product/shelf label
+        from core product fields only. Compliance fields (THC/CBD/lot) are left
+        blank — they need per-catalog product-field mapping and can be added
+        once those fields are confirmed on the live DB. Returns '' when nothing
+        matches, so the POS can stay quiet (Odoo's own not-found note applies).
+        """
+        self.ensure_one()
+        code = (barcode or '').strip()
+        if not code:
+            return ''
+        Product = self.env['product.product']
+        product = (Product.search([('barcode', '=', code)], limit=1)
+                   or Product.search([('default_code', '=', code)], limit=1))
+        if not product:
+            return ''
+        company = self.company_id or self.env.company
+        store_line = ' | '.join(p for p in (company.name, company.street) if p)
+        data = {
+            'store_line': store_line,
+            'product_name': product.display_name,
+            'barcode': code,
+        }
+        dpi = int(self.mint_zebra_dpi or '203')
+        return zebra_zpl.build_product_label_zpl(data, dpi=dpi)
