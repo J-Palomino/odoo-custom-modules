@@ -784,3 +784,15 @@ class TestCustomerScopeAccessor(TransactionCase):
         me = self._partner("Blank")
         for bad in ("", "   ", None):
             self.assertFalse(self.Card.for_customer_by_code(me, bad))
+
+    def test_the_accessor_accepts_a_partner_id_as_well_as_a_recordset(self):
+        # It is the ownership boundary now, so being handed an id must be a
+        # clean answer, not an AttributeError 500 from deep inside.
+        me = self._partner("ById")
+        card = self._card(me)
+        self.assertIn(card, self.Card.for_customer(me.id))
+        self.assertEqual(self.Card.for_customer_by_code(me.id, card.code), card)
+
+    def test_a_bogus_partner_id_fails_closed(self):
+        self._card(self._partner("Somebody Else"))
+        self.assertEqual(len(self.Card.for_customer(999999999)), 0)
