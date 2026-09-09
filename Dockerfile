@@ -89,6 +89,7 @@ COPY --chown=odoo:odoo mint_dutchie_sync /opt/extra-addons/mint_dutchie_sync
 COPY --chown=odoo:odoo mint_pos_bridge /opt/extra-addons/mint_pos_bridge
 COPY --chown=odoo:odoo mint_pos_dutchie /opt/extra-addons/mint_pos_dutchie
 COPY --chown=odoo:odoo mint_account /opt/extra-addons/mint_account
+COPY --chown=odoo:odoo mint_agent_editor /opt/extra-addons/mint_agent_editor
 COPY --chown=odoo:odoo print_nodes /opt/extra-addons/print_nodes
 COPY --chown=odoo:odoo mint_redis_session /opt/extra-addons/mint_redis_session
 COPY --chown=odoo:odoo mint_inventory_ops /opt/extra-addons/mint_inventory_ops
