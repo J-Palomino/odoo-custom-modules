@@ -425,6 +425,25 @@ class ResPartner(models.Model):
     IDENTITY_UNION_MAX_PARAM = 'mint_pos_bridge.orders_identity_union_max'
     IDENTITY_UNION_MAX_DEFAULT = 10
 
+    # How a staff row is recognised.
+    #
+    # `res.partner.employee` alone is NOT sufficient and never was. Measured on
+    # prod 2026-09-09: 8,505 partners are named "(EMP)" and EVERY ONE of them
+    # has employee=False, while only 154 rows in 1.8M carry employee=True at all
+    # against 214 hr.employee records. 535 of those "(EMP)" rows also hold a
+    # strong dl: key — so they were unionable — and only 58 were caught by the
+    # existing internal-user clause. Roughly 477 staff rows were guarded by
+    # nothing, in the check whose entire job is keeping staff records out of a
+    # customer's view.
+    #
+    # The naming convention is the signal this data actually carries, so it is
+    # ORed alongside the others rather than replacing them. Over-matching is
+    # SAFE by construction: a false positive narrows one customer's view of
+    # their OWN rows, while a false negative folds a staff record into it —
+    # which is the thing the policy forbids.
+    STAFF_NAME_MARKERS_PARAM = 'mint_dutchie_sync.staff_name_markers'
+    STAFF_NAME_MARKERS_DEFAULT = '(EMP)'
+
     # Failure bookkeeping for _log_identity_failure. Deliberately plain class
     # state: it is per-worker under prefork, which is fine — each worker
     # reports its own rate, and losing it on restart costs one extra traceback,
@@ -445,6 +464,60 @@ class ResPartner(models.Model):
             return ''
         local, _sep, domain = email.partition('@')
         return '%s@%s' % (local.split('+', 1)[0], domain)
+
+    @api.model
+    def _staff_partner_ids(self, partner_ids):
+        """Which of these partner ids are staff, by ANY signal we hold.
+
+        Returns a set. Batched deliberately — the hr lookup is a search and
+        this runs inside a customer-facing read.
+
+        Fails CLOSED: if any probe raises, every id is reported as staff. The
+        cost of that is a customer briefly seeing only their own row; the cost
+        of the opposite is a staff record inside their view. See
+        STAFF_NAME_MARKERS_PARAM for why `employee` cannot be trusted alone.
+        """
+        ids = [i for i in (partner_ids or []) if i]
+        if not ids:
+            return set()
+        Partner = self.env['res.partner'].sudo()
+        try:
+            staff = set()
+
+            # 1. The flag, for the 154 rows that actually carry it.
+            staff |= set(Partner.search([('id', 'in', ids), ('employee', '=', True)]).ids)
+
+            # 2. An internal (non-share) login — a real Odoo user, not a portal
+            #    customer.
+            staff |= set(Partner.search(
+                [('id', 'in', ids), ('user_ids.share', '=', False)]).ids)
+
+            # 3. The naming convention, which is where the truth lives in this
+            #    data: 8,505 rows are marked and none of them set `employee`.
+            markers = (self.env['ir.config_parameter'].sudo().get_param(
+                self.STAFF_NAME_MARKERS_PARAM, self.STAFF_NAME_MARKERS_DEFAULT) or '')
+            for marker in [m.strip() for m in markers.split(',') if m.strip()]:
+                staff |= set(Partner.search(
+                    [('id', 'in', ids), ('name', 'ilike', marker)]).ids)
+
+            # 4. Reachable from an hr.employee. Registry-guarded because this
+            #    module does not depend on `hr` and must not start to.
+            if 'hr.employee' in self.env:
+                Emp = self.env['hr.employee'].sudo()
+                for field in ('work_contact_id', 'user_partner_id'):
+                    if field not in Emp._fields:
+                        continue
+                    for emp in Emp.search([(field, 'in', ids)]):
+                        linked = emp[field]
+                        if linked:
+                            staff.add(linked.id)
+
+            return staff
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning(
+                'identity-union: staff probe failed (%s) — treating all %d '
+                'candidate sibling(s) as staff', exc, len(ids))
+            return set(ids)
 
     def identity_union_ids(self):
         """Partner ids this record's own view may resolve to, self included.
@@ -493,9 +566,12 @@ class ResPartner(models.Model):
                 return [self.id]
 
             my_mailbox = self._identity_base_email(me.email)
+            # Resolved once for the whole sibling set rather than per row: the
+            # hr lookup is a search, and this runs on a customer-facing read.
+            staff_ids = self._staff_partner_ids(siblings.ids)
             allowed = []
             for sib in siblings:
-                if sib.employee or any(not u.share for u in sib.user_ids):
+                if sib.id in staff_ids:
                     # Staff record — never fold into a customer's view.
                     continue
                 if sib.user_ids:
