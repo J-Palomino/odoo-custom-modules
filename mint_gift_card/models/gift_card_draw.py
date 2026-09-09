@@ -623,7 +623,26 @@ class MintGiftCardDraw(models.Model):
             return 0
 
         today = fields.Date.context_today(self)
-        start = min([(l.held_at.date() if l.held_at else today) for l in held])
+        # 🚨 held_at is stored in UTC; `today` is the STORE's date. Taking
+        # `held_at.date()` raw compares a UTC day against a Phoenix day, and
+        # between 17:00 and midnight MST (00:00-07:00 UTC) those differ — so
+        # `start` came out as TOMORROW while `to` stayed today, and the report
+        # was asked for an inverted range that can only ever return nothing.
+        #
+        # Measured live 2026-09-08: a draw held at 17:14 MST (00:14 UTC the 9th)
+        # produced from=9/9/2026 to=9/8/2026 -> 0 rows, while from=9/8 to=9/9
+        # returned the 5 rows summing $96.00 that were there all along. Every
+        # draw in that seven-hour window never settled, and the stale-hold sweep
+        # would then RETURN money the customer had already spent.
+        start = min([
+            (fields.Datetime.context_timestamp(self, l.held_at).date()
+             if l.held_at else today)
+            for l in held
+        ])
+        # Belt and braces: whatever the arithmetic above does, never emit a
+        # backwards range. An empty report is indistinguishable from "nothing
+        # was redeemed", which is exactly how this hid.
+        start = min(start, today)
         frm = "%d/%d/%d" % (start.month, start.day, start.year)
         to = "%d/%d/%d" % (today.month, today.day, today.year)
 

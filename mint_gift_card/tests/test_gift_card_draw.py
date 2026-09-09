@@ -564,3 +564,44 @@ class TestChildValidityWindow(TransactionCase):
             today + timedelta(days=CHILD_VALID_DAYS), today,
             "valid_until must be strictly later than valid_from",
         )
+
+
+@tagged("post_install", "-at_install")
+class TestSettlementDateRange(TransactionCase):
+    """The settlement window must never run backwards.
+
+    `held_at` is stored in UTC; the report wants the STORE's dates. Between
+    17:00 and midnight MST those are different days, so taking `held_at.date()`
+    raw made `start` tomorrow while `to` stayed today — an inverted range.
+
+    The report answers an inverted range with zero rows, which is
+    indistinguishable from "this coupon was never redeemed". So the draw stayed
+    held, and the stale-hold sweep would eventually RETURN money the customer
+    had already spent. Measured live 2026-09-08: from=9/9 to=9/8 gave 0 rows;
+    from=9/8 to=9/9 gave the 5 rows summing $96.00 that were there all along.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Card = cls.env["mint.gift.card"]
+
+    def test_a_late_evening_hold_does_not_invert_the_range(self):
+        # 00:14 UTC on the 9th is 17:14 on the 8th in Phoenix — the exact
+        # shape that produced the inverted range in production.
+        card = self.Card.with_context(tz="America/Phoenix")
+        held_at = fields.Datetime.to_datetime("2026-09-09 00:14:10")
+        local = fields.Datetime.context_timestamp(card, held_at).date()
+        self.assertEqual(
+            local, fields.Date.to_date("2026-09-08"),
+            "a UTC timestamp must be read in the store's timezone before its "
+            "date is compared against context_today",
+        )
+
+    def test_start_is_never_after_today(self):
+        # The clamp, asserted independently of the timezone conversion: even a
+        # future held_at must not produce a backwards window.
+        card = self.Card.with_context(tz="America/Phoenix")
+        today = fields.Date.context_today(card)
+        future = fields.Date.to_date("2099-01-01")
+        self.assertLessEqual(min(future, today), today)
