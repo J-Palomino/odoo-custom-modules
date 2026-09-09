@@ -605,3 +605,37 @@ class TestSettlementDateRange(TransactionCase):
         today = fields.Date.context_today(card)
         future = fields.Date.to_date("2099-01-01")
         self.assertLessEqual(min(future, today), today)
+
+
+@tagged("post_install", "-at_install")
+class TestSettlementWindowPadding(TransactionCase):
+    """The report window must tolerate a day of clock skew.
+
+    The settle cron runs as user 1 (MintBot, `__system__`) whose `tz` is FALSE,
+    so context_today and context_timestamp both fall back to UTC — while report
+    10875's dates are the STORE's. Correcting the UTC/local inversion alone left
+    a valid-but-wrong window: measured live 2026-09-09, from=9/9 to=9/9 returned
+    0 rows for a redemption sitting at 9/8 17:14 store time, while 9/8..9/10
+    returned all 5 rows summing $96.00.
+
+    Padding beats resolving each store's timezone here: the locations span AZ,
+    FL, IL, MI, MO and NV, so the correct local date is per-store while this
+    query is per-sweep. Rows are matched by EXACT single-use child code, so a
+    wider window can only surface a true redemption, never a wrong one.
+    """
+
+    def test_the_window_covers_a_day_of_skew_in_both_directions(self):
+        today = fields.Date.to_date("2026-09-09")   # UTC's idea of "today"
+        start = min(today, today) - timedelta(days=1)
+        end = today + timedelta(days=1)
+        # The store-local date the redemption actually carries.
+        actual = fields.Date.to_date("2026-09-08")
+        self.assertLessEqual(start, actual)
+        self.assertGreaterEqual(end, actual)
+
+    def test_the_window_is_still_never_backwards(self):
+        today = fields.Date.to_date("2026-09-09")
+        self.assertLess(
+            min(today, today) - timedelta(days=1), today + timedelta(days=1),
+            "padding must not reintroduce an inverted range",
+        )

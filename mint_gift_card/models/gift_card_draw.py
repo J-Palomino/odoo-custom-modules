@@ -643,8 +643,27 @@ class MintGiftCardDraw(models.Model):
         # backwards range. An empty report is indistinguishable from "nothing
         # was redeemed", which is exactly how this hid.
         start = min(start, today)
+
+        # 🚨 Then widen by a day at each end, because BOTH values above are
+        # still the wrong clock. The cron runs as user 1 (MintBot, `__system__`)
+        # whose `tz` is FALSE, so context_today and context_timestamp both fall
+        # back to UTC — while report 10875's dates are the STORE's. Fixing the
+        # UTC/local inversion alone left a valid-but-wrong window: measured live
+        # 2026-09-09, from=9/9 to=9/9 returned 0 rows for a redemption sitting
+        # at 9/8 17:14 store time, while 9/8..9/10 returned all 5 rows ($96.00).
+        #
+        # Padding rather than resolving each store's timezone: these locations
+        # span AZ, FL, IL, MI, MO and NV, so the "right" local date is per-store
+        # and this query is per-sweep. A day either side makes any sub-24h skew
+        # irrelevant in every market at once.
+        #
+        # Over-fetching is safe by construction: rows are matched to a line by
+        # EXACT single-use child code, so a wider window can only ever surface a
+        # true redemption of a code we are already holding — never a wrong one.
+        start = start - timedelta(days=1)
+        end = today + timedelta(days=1)
         frm = "%d/%d/%d" % (start.month, start.day, start.year)
-        to = "%d/%d/%d" % (today.month, today.day, today.year)
+        to = "%d/%d/%d" % (end.month, end.day, end.year)
 
         # code -> {order_id, amount}. One fetch per location, reused across
         # every held line, rather than one per (line, location).
