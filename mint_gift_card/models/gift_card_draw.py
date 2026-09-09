@@ -417,6 +417,38 @@ class MintGiftCardDraw(models.Model):
                 err=(log.error_message or "no push log")[:200] if log else "no push log"))
         return child, log.dutchie_discount_id
 
+    @api.model
+    def _child_confirmed_deleted(self, dutchie_id, loc_id, lsp_id):
+        """Ask Dutchie whether the coupon is actually gone.
+
+        Deliberately a separate READ rather than a reading of the delete's own
+        answer. A successful delete comes back `ok:true` WITH a populated
+        `warnings` array (SOP §5 about ThresholdTypeId/ThresholdMin), so a
+        verification that inspected the write's response would have to decide
+        what a warning means — and getting that wrong in the cautious direction
+        is worse than not checking, because it would never confirm anything.
+
+        Unreachable means UNCONFIRMED, never "deleted". The whole point is that
+        a delete we cannot verify has to stay retryable.
+        """
+        if not dutchie_id or not loc_id or not lsp_id:
+            return False
+        base, key = self._invsvc()
+        req = urllib.request.Request(
+            "%s/api/admin/dutchie-discount/%s?locId=%s&lspId=%s" % (
+                base, dutchie_id, loc_id, lsp_id),
+            headers={"X-API-Key": key, "User-Agent": "mint-odoo-gift-card-draw/1.0"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=INVSVC_TIMEOUT) as resp:
+                body = json.loads(resp.read().decode("utf-8", "replace") or "{}")
+        except Exception as e:
+            _logger.warning("gift_card draw: could not read back child %s: %s",
+                            dutchie_id, e)
+            return False
+        disc = body.get("discount") or body
+        return bool(disc.get("IsDeleted"))
+
     def _retire_child(self, child):
         """Delete a child coupon in Dutchie. Best-effort, never raises.
 
@@ -424,6 +456,18 @@ class MintGiftCardDraw(models.Model):
         spent children behind is not cosmetic: one store already carries 521
         discounts, that list is pulled on every sync, and retired discounts do
         not expire on their own.
+
+        🚨 `is_published` is written ONLY on a delete Dutchie confirms.
+        It used to be set whenever the push call returned without raising, and
+        that is a one-way door: `_retire_spent_children` searches
+        `child_discount_id.is_published = True`, so a delete that did not
+        actually happen marked the row retired locally and made it permanently
+        invisible to the only thing that would ever retry. Observed live
+        2026-09-08 — MINT-GD-HR9AJK sat in Tempe's active list as a $121.25
+        bearer code, valid a further week, with `is_published` already False.
+        Leaving the flag True on an unconfirmed delete costs one repeated
+        attempt an hour; clearing it early costs a live coupon nobody is
+        looking for.
         """
         try:
             push = self.env["mint.ptl.day"].sudo()
@@ -431,8 +475,30 @@ class MintGiftCardDraw(models.Model):
             url = push._get_dutchie_push_url()
             api_key = push._get_dutchie_push_api_key()
             Log = self.env["mint.dutchie.discount.push.log"].sudo()
-            for store in push._collapse_stores_by_lsp(child.store_ids):
+            stores = push._collapse_stores_by_lsp(child.store_ids)
+            for store in stores:
                 push._push_one_discount(child, store, mode, url, api_key, Log, is_delete=True)
+
+            # The Dutchie id is never written back onto mint.discount — the push
+            # reports it through the LOG — so the read-back has to source it the
+            # same way _mint_child does.
+            log = Log.search([("discount_id", "=", child.id),
+                              ("dutchie_discount_id", "!=", False)],
+                             order="id desc", limit=1)
+            dutchie_id = log.dutchie_discount_id if log else None
+            confirmed = any(
+                self._child_confirmed_deleted(
+                    dutchie_id, push._resolve_pos_loc_id(store), push._resolve_lsp_id(store))
+                for store in stores
+            ) if dutchie_id else False
+
+            if not confirmed:
+                _logger.warning(
+                    "gift_card draw: delete of child %s (dutchie %s) NOT confirmed — "
+                    "leaving is_published set so the sweep retries",
+                    child.dutchie_discount_code, dutchie_id)
+                return False
+
             child.sudo().write({"is_published": False})
             return True
         except Exception as e:

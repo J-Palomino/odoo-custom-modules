@@ -639,3 +639,59 @@ class TestSettlementWindowPadding(TransactionCase):
             min(today, today) - timedelta(days=1), today + timedelta(days=1),
             "padding must not reintroduce an inverted range",
         )
+
+
+@tagged("post_install", "-at_install")
+class TestRetireChildVerifies(TransactionCase):
+    """Retirement must be confirmed by Dutchie, not assumed from a 200.
+
+    `_retire_spent_children` searches `child_discount_id.is_published = True`.
+    That filter is the ONLY retry. So clearing is_published on a delete that
+    did not happen is a one-way door: the row becomes permanently invisible and
+    a live bearer coupon is left with nobody looking for it. Seen live
+    2026-09-08 — MINT-GD-HR9AJK stayed in Tempe's active list at $121.25,
+    valid a further week, while Odoo already read is_published False.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Card = cls.env["mint.gift.card"]
+
+    def _child(self):
+        return self.env["mint.discount"].sudo().create({
+            "name": "retire test", "discount_type": "dollar_off_total",
+            "application_method": "code", "code": "MINT-GD-RETIRE",
+            "dutchie_discount_code": "MINT-GD-RETIRE",
+            "maximum_usage_count": 1, "is_published": True,
+        })
+
+    def test_an_unconfirmed_delete_keeps_is_published(self):
+        card = self.Card.create({"face_value": 10.0, "issue_reason": "promotion"})
+        child = self._child()
+        T = type(card)
+        with patch.object(T, "_child_confirmed_deleted", return_value=False):
+            ok = card._retire_child(child)
+        self.assertFalse(ok)
+        self.assertTrue(
+            child.is_published,
+            "an unconfirmed delete must stay visible to _retire_spent_children")
+
+    def test_a_confirmed_delete_clears_is_published(self):
+        card = self.Card.create({"face_value": 10.0, "issue_reason": "promotion"})
+        child = self._child()
+        T = type(card)
+        with patch.object(T, "_child_confirmed_deleted", return_value=True):
+            ok = card._retire_child(child)
+        self.assertTrue(ok)
+        self.assertFalse(child.is_published)
+
+    def test_an_unreachable_invsvc_is_unconfirmed_not_deleted(self):
+        # "We could not ask" and "it is gone" must never be the same answer.
+        with patch.object(type(self.Card), "_invsvc",
+                          side_effect=UserError("invsvc not configured")):
+            self.assertFalse(self.Card._child_confirmed_deleted(386368, 1568, 575))
+
+    def test_no_dutchie_id_is_unconfirmed(self):
+        self.assertFalse(self.Card._child_confirmed_deleted(False, 1568, 575))
+        self.assertFalse(self.Card._child_confirmed_deleted(386368, None, 575))
