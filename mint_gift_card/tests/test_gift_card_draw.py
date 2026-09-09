@@ -695,3 +695,92 @@ class TestRetireChildVerifies(TransactionCase):
     def test_no_dutchie_id_is_unconfirmed(self):
         self.assertFalse(self.Card._child_confirmed_deleted(False, 1568, 575))
         self.assertFalse(self.Card._child_confirmed_deleted(386368, None, 575))
+
+
+@tagged("post_install", "-at_install")
+class TestCustomerScopeAccessor(TransactionCase):
+    """One place decides which cards belong to a customer.
+
+    These models are reachable ONLY through .sudo() — portal users hold no ACL
+    on mint.gift.card, so record rules never fire and cannot be the safety net.
+    The ownership boundary is a domain in application code, and the risk it
+    carries is that a future endpoint retypes it slightly differently or omits
+    it and reads every card on the system.
+
+    for_customer/for_customer_by_code exist so that domain is written once and
+    reviewed here, instead of at every call site.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Card = cls.env["mint.gift.card"]
+
+    def _partner(self, name, **vals):
+        return self.env["res.partner"].create(dict({"name": name}, **vals))
+
+    def _card(self, partner=None, face=50.0, activate=True):
+        card = self.Card.create({
+            "face_value": face, "issue_reason": "promotion",
+            "partner_id": partner.id if partner else False,
+        })
+        if activate:
+            card.action_activate()
+        return card
+
+    def test_a_customer_sees_only_their_own_cards(self):
+        me, other = self._partner("Mine"), self._partner("Theirs")
+        mine, theirs = self._card(me), self._card(other)
+        got = self.Card.for_customer(me)
+        self.assertIn(mine, got)
+        self.assertNotIn(theirs, got)
+
+    def test_no_partner_returns_NOTHING_not_everything(self):
+        # The failure this accessor exists to remove: an empty owner list must
+        # never degrade into an unfiltered search.
+        self._card(self._partner("Somebody"))
+        self.assertEqual(len(self.Card.for_customer(self.env["res.partner"])), 0)
+        self.assertEqual(len(self.Card.for_customer(False)), 0)
+
+    def test_state_and_spendable_filters(self):
+        me = self._partner("Filtered")
+        active = self._card(me)
+        draft = self._card(me, activate=False)
+        self.assertIn(active, self.Card.for_customer(me, states=("active",)))
+        self.assertNotIn(draft, self.Card.for_customer(me, states=("active",)))
+        self.assertNotIn(draft, self.Card.for_customer(me, spendable_only=True))
+
+    def test_by_code_returns_your_own_card(self):
+        me = self._partner("Coded")
+        card = self._card(me)
+        self.assertEqual(self.Card.for_customer_by_code(me, card.code), card)
+
+    def test_by_code_refuses_somebody_elses_card(self):
+        me, other = self._partner("Me"), self._partner("Other")
+        theirs = self._card(other)
+        self.assertFalse(
+            self.Card.for_customer_by_code(me, theirs.code),
+            "a card bound to another partner is not reachable by code",
+        )
+
+    def test_by_code_allows_an_UNBOUND_bearer_card(self):
+        # Transfer-on-use: an unissued card is a bearer instrument.
+        me = self._partner("Bearer")
+        card = self._card(None)
+        self.assertEqual(self.Card.for_customer_by_code(me, card.code), card)
+
+    def test_by_code_is_not_a_code_oracle(self):
+        # "No such code" and "not yours" must be indistinguishable, so a caller
+        # cannot probe which codes exist. Both come back empty; the controller
+        # answers 404 either way.
+        me, other = self._partner("Prober"), self._partner("Victim")
+        theirs = self._card(other)
+        self.assertEqual(
+            self.Card.for_customer_by_code(me, theirs.code),
+            self.Card.for_customer_by_code(me, "MINT-GC-NOSUCHCODE"),
+        )
+
+    def test_by_code_handles_blank_input(self):
+        me = self._partner("Blank")
+        for bad in ("", "   ", None):
+            self.assertFalse(self.Card.for_customer_by_code(me, bad))
