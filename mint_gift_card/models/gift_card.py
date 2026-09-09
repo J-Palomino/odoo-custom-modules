@@ -269,6 +269,14 @@ class MintGiftCard(models.Model):
         the union is unavailable, and returns [] for a falsy partner — an
         empty owner list must yield an empty domain match, never a wide one.
         """
+        # Accept an id as well as a recordset. The controller always passes
+        # `user.partner_id`, but this method IS the ownership boundary now, and
+        # handing it an id raised AttributeError deep inside — a 500 rather than
+        # a clean refusal, and untestable from RPC. browse().exists() also makes
+        # a stale or bogus id fail closed to [] instead of resolving to nothing
+        # silently downstream.
+        if isinstance(partner, int):
+            partner = self.env["res.partner"].browse(partner).exists()
         if not partner:
             return []
         try:
