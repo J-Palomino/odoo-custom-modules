@@ -4,3 +4,4 @@ from . import test_redemption_store_resolution
 from . import test_customer_favorites
 from . import test_claim_history
 from . import test_identity_key_agreement
+from . import test_auth_is_staff
