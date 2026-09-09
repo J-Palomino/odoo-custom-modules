@@ -1,0 +1,90 @@
+// Fixed to the viewport rather than docked into the editor chrome: the
+// builder's own panels move between versions, and a floating panel keeps
+// working when they do.
+.mint-agent-panel {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    width: 340px;
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    // Above page content, deliberately below the editor's own toolbars so it
+    // never covers the Save button.
+    z-index: 1035;
+    background: #fff;
+    border: 1px solid #d6d6d6;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+    font-size: 13px;
+    color: #222;
+
+    &.mint-agent-collapsed {
+        .mint-agent-log, .mint-agent-form { display: none; }
+    }
+}
+
+.mint-agent-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+    font-weight: 600;
+
+    .mint-agent-title { flex: 1; }
+    button {
+        border: 1px solid #d6d6d6;
+        background: #fafafa;
+        border-radius: 4px;
+        padding: 1px 8px;
+        line-height: 1.5;
+        cursor: pointer;
+        &:disabled { opacity: .45; cursor: default; }
+    }
+}
+
+.mint-agent-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.mint-agent-line {
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding-left: 8px;
+    border-left: 3px solid transparent;
+}
+.mint-agent-you   { border-left-color: #9aa0a6; color: #444; }
+.mint-agent-agent { border-left-color: #4c8c4a; }
+.mint-agent-ok    { border-left-color: #4c8c4a; color: #2f6b2d; font-size: 12px; }
+.mint-agent-warn  { border-left-color: #c98a00; color: #8a6100; font-size: 12px; }
+.mint-agent-err   { border-left-color: #c0392b; color: #96271b; font-size: 12px; }
+
+.mint-agent-form {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-top: 1px solid #eee;
+
+    textarea {
+        flex: 1;
+        resize: vertical;
+        border: 1px solid #d6d6d6;
+        border-radius: 4px;
+        padding: 5px 7px;
+        font: inherit;
+    }
+    button {
+        border: 0;
+        border-radius: 4px;
+        background: #4c8c4a;
+        color: #fff;
+        padding: 0 12px;
+        cursor: pointer;
+    }
+}

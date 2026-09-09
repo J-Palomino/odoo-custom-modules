@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Nothing to inject into the page: the panel mounts itself from
+         web.assets_frontend and only for users who can edit. Kept as a
+         declared data file so the manifest has a stable place to grow. -->
+</odoo>
