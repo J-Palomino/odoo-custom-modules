@@ -247,6 +247,87 @@ class MintGiftCard(models.Model):
                 ))
         return super().write(vals)
 
+    # ── Customer scope ──────────────────────────────────────────────────
+    #
+    # These models are reachable ONLY through `.sudo()`. Portal users hold no
+    # ACL on mint.gift.card at all, which means record rules never fire for
+    # them and cannot be the safety net — sudo bypasses rules entirely. The
+    # ownership boundary is therefore a DOMAIN IN APPLICATION CODE, and the
+    # risk is that a future endpoint retypes it slightly differently, or omits
+    # it and reads every card on the system.
+    #
+    # So it is written once, here, and callers ask the model for a scoped
+    # recordset instead of assembling a domain. A reviewer checks these two
+    # methods rather than every call site.
+
+    @api.model
+    def _customer_owner_ids(self, partner):
+        """Partner ids that count as this customer, or [] for no partner.
+
+        Wraps identity_union_ids so a card issued against one of a customer's
+        other partner rows is still theirs. Falls back to the single id when
+        the union is unavailable, and returns [] for a falsy partner — an
+        empty owner list must yield an empty domain match, never a wide one.
+        """
+        if not partner:
+            return []
+        try:
+            # hasattr, not a plain call: this module does NOT depend on
+            # mint_dutchie_sync, so the resolver can legitimately be absent.
+            # sudo, because the caller is a portal user who cannot read the
+            # sibling rows the union is computed from. Both guards are carried
+            # over verbatim from mint_customer_api.identity_partner_ids — this
+            # must resolve identically to /orders and the loyalty balance, or
+            # a customer sees a different set of cards than of orders.
+            if hasattr(partner, "identity_union_ids"):
+                return partner.sudo().identity_union_ids() or [partner.id]
+        except Exception:  # noqa: BLE001 — identity must never break a read
+            _logger.exception(
+                "gift card: identity resolution failed for partner %s — "
+                "narrowing to that row alone", partner.id)
+        return [partner.id]
+
+    @api.model
+    def for_customer(self, partner, states=None, spendable_only=False):
+        """The cards this customer holds. Never widens beyond them.
+
+        `states` defaults to None (no state filter) so the caller states its
+        own intent; `spendable_only` adds the computed spendability gate.
+        Returns an EMPTY recordset when there is no partner rather than
+        everything, which is the failure mode this method exists to remove.
+        """
+        owners = self._customer_owner_ids(partner)
+        if not owners:
+            return self.browse()
+        domain = [("partner_id", "in", owners)]
+        if states:
+            domain.append(("state", "in", list(states)))
+        if spendable_only:
+            domain += [("state", "=", "active"), ("is_spendable", "=", True)]
+        return self.search(domain, order="balance desc, id desc")
+
+    @api.model
+    def for_customer_by_code(self, partner, code):
+        """A specific card this customer may spend, or an empty recordset.
+
+        Ownership rule, unchanged from the controller it replaces: a card bound
+        to somebody else is not theirs, while an UNBOUND card is a bearer
+        instrument the first spender takes ownership of.
+
+        Returning empty for both "no such code" and "not yours" is deliberate —
+        the caller answers 404 either way, so a code cannot be probed for
+        existence.
+        """
+        code = (code or "").strip().upper()
+        if not code:
+            return self.browse()
+        card = self.search([("code", "=", code)], limit=1)
+        if not card:
+            return self.browse()
+        if card.partner_id and card.partner_id.id not in self._customer_owner_ids(partner):
+            return self.browse()
+        return card
+
     # ── State transitions ───────────────────────────────────────────────
     def action_activate(self):
         for card in self:
