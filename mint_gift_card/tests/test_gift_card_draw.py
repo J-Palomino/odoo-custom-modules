@@ -19,6 +19,8 @@ from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.mint_gift_card.models.gift_card_draw import CHILD_VALID_DAYS
+
 
 def cart(grand=0.0, sub=None, items=1):
     return {
@@ -527,3 +529,38 @@ class TestDrawReceiptText(TransactionCase):
     def test_a_draw_that_empties_the_card_says_so(self):
         card = self._card(25.0)
         self.assertEqual(card._draw_receipt_text(25.0, 0.0), "MB Bal: $0.00")
+
+
+@tagged("post_install", "-at_install")
+class TestChildValidityWindow(TransactionCase):
+    """The draw coupon must be valid for a non-zero length of time.
+
+    Dutchie stores validity as midnight instants, so `valid_until = valid_from`
+    lands as ValidDateFrom == ValidDateTo == '<date>T00:00:00' — expired the
+    moment it exists. apply-by-code then answers "Code is not valid today." for
+    EVERY draw, at every hour, for every customer.
+
+    That is not hypothetical: on 2026-09-08 children 386366 and 386367 were both
+    refused live, while a byte-identical child carrying valid_until = today + 7
+    applied on the first attempt. It stayed hidden because "ValidDateTo = today"
+    was adopted as a SAFETY RAIL during the 2026-09-01 mint test — and that
+    coupon was never redeemed, so a dead setting read as proven.
+
+    Asserted as an invariant on the constant rather than by building a child,
+    because minting one needs a store mapping and a live Dutchie push log. The
+    constant is the thing that must never go back to zero.
+    """
+
+    def test_the_window_is_never_zero_length(self):
+        self.assertGreaterEqual(
+            CHILD_VALID_DAYS, 1,
+            "A same-day window is zero-length in Dutchie: the coupon expires "
+            "the instant it is created and every draw fails.",
+        )
+
+    def test_valid_until_lands_after_valid_from(self):
+        today = fields.Date.context_today(self.env["mint.gift.card"])
+        self.assertGreater(
+            today + timedelta(days=CHILD_VALID_DAYS), today,
+            "valid_until must be strictly later than valid_from",
+        )

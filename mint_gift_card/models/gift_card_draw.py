@@ -29,6 +29,7 @@ against production while the numbers are still being trusted.
 import json
 import logging
 import secrets
+from datetime import timedelta
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -40,17 +41,36 @@ _logger = logging.getLogger(__name__)
 
 # Which basket total a gift card draws against.
 #
-# 🚨 UNSETTLED. `readCart` returns both `grandTotal` and `subTotal`, and nobody
-# has yet confirmed on a real basket — one that ALREADY carries a discount —
-# which of them represents what the customer still owes. Getting this wrong
-# mis-spends the card on every single transaction, so it is a switch with a
-# stated default rather than a silent assumption buried in an expression.
+# ✅ SETTLED LIVE 2026-09-08. `grand_total` is correct for what the customer
+# OWES: on a fully-comped basket the register read grandTotal 0.00 while
+# subTotal still read 96.00, so `sub_total` would have spent the card on a bill
+# of nothing. It is PRE-discount and must not be used.
 #
-# Default `grand_total`: a gift card is tender-like, and a customer handing over
-# a $50 card expects it against the number on the pin pad, tax included.
-# Flip to `sub_total` if the live test says otherwise.
+# ⚠️ It does over-hold by the tax, and that is a live accounting question rather
+# than a bug here. A dollar_off_total coupon can only discount PRODUCT value:
+# a $96.00 + $25.25 tax basket drew $121.25, the register went to $0.00 (zeroing
+# the product zeroes the tax), but report 10875 credited the coupon $96.00.
+# Settlement therefore settles 96.00 and returns 25.25 — the ledger self-heals,
+# while the customer keeps $25.25 of value the card was never charged for.
 DRAW_BASIS_PARAM = "mint_gift_card.draw_basis"
 DRAW_BASIS_DEFAULT = "grand_total"
+
+# How long a draw coupon stays valid. MUST be >= 1.
+#
+# Dutchie stores validity as midnight instants, so a same-day window is
+# ZERO-LENGTH and the coupon is dead on arrival — apply-by-code answers
+# "Code is not valid today." for every draw at every hour.
+#
+# 2 rather than 1, deliberately. `valid_until = today + 1` renders ValidDateTo
+# as midnight TONIGHT, so a coupon minted at 23:55 is valid for five minutes and
+# a customer who checks in before midnight and pays after it gets the very error
+# this constant exists to prevent. Stores are open late. 2 covers the crossing.
+#
+# And 2 rather than the 7 used in the live proof: the child is a BEARER code
+# until settlement retires it, so the window is real exposure. What actually
+# caps it is single-use plus retirement, but there is no reason to leave it open
+# for a week.
+CHILD_VALID_DAYS = 2
 
 INVSVC_TIMEOUT = 60
 
