@@ -23,9 +23,29 @@
             </field>
         </record>
 
-        <!-- Admins automatically get web customer access. -->
+        <!--
+            Admins do NOT get web customer access.
+
+            This block previously granted it with (4, ...), so every holder of
+            Access Rights inherited customer PII: 16 internal users against the
+            1 who had been granted it deliberately. Administering Odoo and
+            reading customer names are separate jobs, and bundling them meant
+            the isolation rules above were ORed away for exactly the accounts
+            with the most reach.
+
+            The grant now lives with the POS bridge, whose groups actually
+            handle customers (mint_pos_bridge/security/security_groups.xml).
+
+            (3, ...) rather than deleting the block: implied_ids is a m2m and
+            (4, ...) already wrote the link into base.group_erp_manager on every
+            existing install. Dropping the lines would leave that stored link in
+            place — a module upgrade does not retract what an earlier version
+            added. The explicit unlink re-asserts the revocation on each upgrade
+            (this data section is noupdate="0"), so the access cannot drift back
+            if someone re-adds an implication upstream.
+        -->
         <record id="base.group_erp_manager" model="res.groups">
-            <field name="implied_ids" eval="[(4, ref('mint_customer_api.group_web_customer_access'))]"/>
+            <field name="implied_ids" eval="[(3, ref('mint_customer_api.group_web_customer_access'))]"/>
         </record>
 
         <!--
