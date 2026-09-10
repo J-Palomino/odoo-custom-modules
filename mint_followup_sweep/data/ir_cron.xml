@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+      CUTOVER NOTE - read before activating.
+
+      An equivalent sweep already runs in production as a pair of records created
+      directly in the database and owned by no module: ir.cron 142 plus
+      ir_actions_server 3010. Both post to the same Discuss channel (72, DevOps
+      Alerts).
+
+      This cron therefore ships INACTIVE. Installing or upgrading the module must
+      not start a second sweep - that would double every alert into the same
+      channel, and duplicate alerts are the fastest way to make a channel
+      unreadable.
+
+      To cut over, in this order:
+        1. deactivate ir.cron 142 (Settings > Technical > Scheduled Actions)
+        2. set this cron active
+        3. confirm exactly one digest arrives in channel 72 the next morning
+           (08:00 Phoenix / 15:00 UTC)
+        4. delete ir.cron 142 and ir_actions_server 3010 once step 3 holds
+
+      noupdate is deliberately 0: the code and schedule here should be treated as
+      the source of truth and re-asserted on every module upgrade. The trade-off
+      is that the `active` flag below is re-asserted too, so once cut over, flip
+      active to True in THIS FILE rather than only in the UI - otherwise the next
+      upgrade switches the sweep back off.
+    -->
+    <record id="cron_followup_reconciliation_sweep" model="ir.cron">
+        <field name="name">Follow-up reconciliation sweep (calendar events vs mail.activity)</field>
+        <field name="model_id" ref="mail.model_mail_activity"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_followup_reconciliation_sweep()</field>
+        <field name="user_id" ref="base.user_admin"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="priority">5</field>
+        <field name="active" eval="False"/>
+    </record>
+</odoo>
