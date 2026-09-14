@@ -178,15 +178,32 @@ class MintGiftCardController(http.Controller):
                                         customer_id=customer_id,
                                         register=register)
             else:
-                result = card.execute_draw(
-                    loc_id, lsp_id, shipment_id,
-                    customer_id=customer_id,
-                    register=register,
-                    # Scoped per (card, shipment) by default so an impatient
-                    # double-tap replays rather than drawing twice.
-                    idempotency_key=(data.get('idempotency_key')
-                                     or 'ship:%s' % shipment_id),
-                )
+                # Scoped per shipment by default so an impatient double-tap
+                # replays rather than drawing twice. Same format invsvc's
+                # auto-draw sends, so a tap and an automatic draw collide too.
+                key = data.get('idempotency_key') or 'ship:%s' % shipment_id
+                if code:
+                    result = card.execute_draw(
+                        loc_id, lsp_id, shipment_id,
+                        customer_id=customer_id,
+                        register=register,
+                        idempotency_key=key,
+                    )
+                else:
+                    # "Use my Mint Bucks" with no code: draw at the CUSTOMER.
+                    # The key above is unique per card, so with two cards this
+                    # tap and auto-draw could each take a different one for the
+                    # same basket. draw_for_customer locks all of them and
+                    # replays whatever already hit this shipment.
+                    result = Card.draw_for_customer(
+                        [partner.id], loc_id, lsp_id, shipment_id,
+                        customer_id=customer_id,
+                        register=register,
+                        idempotency_key=key,
+                    )
+                    drawn = result.get('card_code')
+                    if drawn and drawn != card.code:
+                        card = Card.search([('code', '=', drawn)], limit=1) or card
                 if result.get('ok') and not card.partner_id:
                     # Bearer card just spent — bind it, so nobody else can.
                     card.write({'partner_id': partner.id})

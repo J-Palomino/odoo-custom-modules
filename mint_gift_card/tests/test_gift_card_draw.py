@@ -546,9 +546,10 @@ class TestChildValidityWindow(TransactionCase):
     was adopted as a SAFETY RAIL during the 2026-09-01 mint test — and that
     coupon was never redeemed, so a dead setting read as proven.
 
-    Asserted as an invariant on the constant rather than by building a child,
-    because minting one needs a store mapping and a live Dutchie push log. The
-    constant is the thing that must never go back to zero.
+    🚨 This class used to assert only the CONSTANT — and passed for a week while
+    `_mint_child` still wrote `valid_until: today`, because nothing read the
+    child back. The constant was right and never used. So the last test here
+    mints a real child record and reads its dates off it.
     """
 
     def test_the_window_is_never_zero_length(self):
@@ -558,12 +559,152 @@ class TestChildValidityWindow(TransactionCase):
             "the instant it is created and every draw fails.",
         )
 
-    def test_valid_until_lands_after_valid_from(self):
-        today = fields.Date.context_today(self.env["mint.gift.card"])
-        self.assertGreater(
-            today + timedelta(days=CHILD_VALID_DAYS), today,
-            "valid_until must be strictly later than valid_from",
-        )
+    def test_window_starts_before_today_and_ends_after_it(self):
+        """Yesterday → today + CHILD_VALID_DAYS.
+
+        Starting yesterday covers a caller whose `context_today` resolves to
+        the UTC date — tomorrow in Arizona after 17:00 — which Dutchie would
+        refuse exactly like an expired coupon.
+        """
+        Card = self.env["mint.gift.card"]
+        today = fields.Date.context_today(Card)
+        window = Card._child_validity_window(today)
+        self.assertLess(window["valid_from"], today)
+        self.assertEqual(window["valid_until"],
+                         today + timedelta(days=CHILD_VALID_DAYS))
+
+    def test_the_minted_child_carries_the_window(self):
+        """Read the CHILD, not the constant — the regression this replaces."""
+        card = self.env["mint.gift.card"].create(
+            {"face_value": 50.0, "issue_reason": "promotion"})
+        card.action_activate()
+
+        class StopAfterCreate(Exception):
+            pass
+
+        seen = {}
+
+        def capture(child):
+            # Read the dates off the real record HERE: Odoo's assertRaises
+            # rolls back to a savepoint, so the child is gone by the time the
+            # `with` block exits and a search afterwards finds nothing.
+            seen.update(name=child.name, valid_from=child.valid_from,
+                        valid_until=child.valid_until)
+            raise StopAfterCreate()
+
+        T = type(card)
+        D = type(self.env["mint.discount"])
+        # Publishing needs a live Dutchie push; the dates are decided before
+        # it, so stop there and inspect what was written.
+        with patch.object(T, "_store_for_loc", return_value=self.env.company), \
+             patch.object(D, "action_publish_to_dutchie", autospec=True,
+                          side_effect=capture):
+            with self.assertRaises(StopAfterCreate):
+                card._mint_child(12.5, 1568)
+
+        self.assertTrue(seen, "the child should reach publishing")
+        self.assertIn(card.code, seen["name"])
+        today = fields.Date.context_today(card)
+        self.assertGreater(seen["valid_until"], seen["valid_from"],
+                           "a zero-length window is dead on arrival in Dutchie")
+        self.assertLessEqual(seen["valid_from"], today)
+        self.assertEqual(seen["valid_until"], today + timedelta(days=CHILD_VALID_DAYS))
+
+
+@tagged("post_install", "-at_install")
+class TestDrawForCustomer(TransactionCase):
+    """One draw per customer per shipment, however many cards they hold.
+
+    The line idempotency key is unique per CARD, so before this a second card
+    let the same basket be drawn twice — once by auto-draw, once by a tap, or
+    once by each invsvc service. Auto-draw refused multi-card customers
+    outright instead, which is why it never fired for the one opted-in customer.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Card = cls.env["mint.gift.card"]
+        cls.holder = cls.env["res.partner"].create({"name": "MB Holder"})
+        cls.stranger = cls.env["res.partner"].create({"name": "Someone Else"})
+
+    def _card(self, face, partner=None):
+        card = self.Card.create({
+            "face_value": face, "issue_reason": "promotion",
+            "partner_id": (partner or self.holder).id,
+        })
+        card.action_activate()
+        return card
+
+    def _fake_child(self, code):
+        return self.env["mint.discount"].sudo().create({
+            "name": "test child", "discount_type": "dollar_off_total",
+            "application_method": "code", "code": code,
+            "dutchie_discount_code": code, "maximum_usage_count": 1,
+        })
+
+    def _draw(self, grand, child, partner=None, shipment="SHIP-MB-1"):
+        T = type(self.Card)
+        with patch.object(T, "read_basket", return_value=cart(grand=grand)), \
+             patch.object(T, "_mint_child", return_value=(child, 999101)), \
+             patch.object(T, "_apply_child", return_value=(True, "applied")):
+            return self.Card.draw_for_customer(
+                [(partner or self.holder).id], 1568, 575, shipment)
+
+    def test_draws_from_the_highest_balance_card(self):
+        small = self._card(30.0)
+        big = self._card(80.0)
+        res = self._draw(20.0, self._fake_child("MINT-GD-DFC001"))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["card_code"], big.code)
+        self.assertEqual(big.balance, 60.0)
+        self.assertEqual(small.balance, 30.0, "the other card is untouched")
+
+    def test_a_second_request_on_the_same_shipment_replays_across_cards(self):
+        """The double-draw this exists to stop.
+
+        The first draw empties the big card, so the small one becomes the
+        highest-balance spendable card. A second request for the SAME basket
+        must replay the first draw, not take the small card as well.
+        """
+        small = self._card(30.0)
+        big = self._card(80.0)
+        first = self._draw(100.0, self._fake_child("MINT-GD-DFC002"))
+        self.assertTrue(first["ok"], first)
+        self.assertEqual(first["card_code"], big.code)
+
+        second = self._draw(100.0, self._fake_child("MINT-GD-DFC003"))
+        self.assertTrue(second["ok"], second)
+        self.assertTrue(second.get("replayed"), second)
+        self.assertEqual(second["card_code"], big.code)
+        self.assertEqual(small.balance, 30.0, "the second card must not be drawn")
+        self.assertEqual(len((small | big).line_ids), 1)
+
+    def test_someone_else_cannot_draw_these_cards(self):
+        card = self._card(50.0)
+        res = self._draw(20.0, self._fake_child("MINT-GD-DFC004"),
+                         partner=self.stranger)
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], "card_not_spendable")
+        self.assertFalse(card.line_ids)
+
+    def test_a_card_scoped_to_another_store_is_skipped(self):
+        other_store = self.env["res.company"].search([], limit=1)
+        small = self._card(30.0)
+        big = self._card(80.0)
+        big.store_ids = [(6, 0, other_store.ids)]
+        with patch.object(type(self.env["mint.ptl.day"]), "_resolve_pos_loc_id",
+                          return_value=9999):
+            res = self._draw(20.0, self._fake_child("MINT-GD-DFC005"))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["card_code"], small.code)
+        self.assertEqual(big.balance, 80.0)
+
+    def test_no_shipment_is_refused(self):
+        self._card(50.0)
+        res = self.Card.draw_for_customer([self.holder.id], 1568, 575, "")
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], "no_shipment")
 
 
 @tagged("post_install", "-at_install")
@@ -680,8 +821,22 @@ class TestRetireChildVerifies(TransactionCase):
     def test_a_confirmed_delete_clears_is_published(self):
         card = self.Card.create({"face_value": 10.0, "issue_reason": "promotion"})
         child = self._child()
+        # A real child always has a store and a successful push log — that log
+        # is where _retire_child reads the Dutchie id it verifies against.
+        # Without them the delete can never be confirmed, whatever Dutchie says.
+        store = self.env.company
+        child.store_ids = [(6, 0, store.ids)]
+        self.env["mint.dutchie.discount.push.log"].sudo().create({
+            "discount_id": child.id, "company_id": store.id, "mode": "live",
+            "success": True, "dutchie_discount_id": 386368,
+        })
         T = type(card)
-        with patch.object(T, "_child_confirmed_deleted", return_value=True):
+        P = type(self.env["mint.ptl.day"])
+        with patch.object(T, "_child_confirmed_deleted", return_value=True), \
+             patch.object(P, "_push_one_discount", return_value=None), \
+             patch.object(P, "_collapse_stores_by_lsp", return_value=store), \
+             patch.object(P, "_resolve_pos_loc_id", return_value=1568), \
+             patch.object(P, "_resolve_lsp_id", return_value=575):
             ok = card._retire_child(child)
         self.assertTrue(ok)
         self.assertFalse(child.is_published)
