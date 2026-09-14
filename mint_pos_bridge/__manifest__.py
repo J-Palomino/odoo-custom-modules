@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Mint POS Bridge',
-    'version': '19.0.5.13.0',
+    'version': '19.0.5.14.0',
     'category': 'Operations',
     'summary': 'Dutchie POS ↔ Odoo order bridge — unified dispensary operations',
     'description': """
@@ -32,6 +32,9 @@
         'mint_command_center',
         'mint_api_v2',
         'print_nodes',
+        # security_groups.xml refs mint_customer_api.group_web_customer_access:
+        # the POS groups now carry customer PII access instead of Access Rights.
+        'mint_customer_api',
     ],
     'data': [
         'security/security_groups.xml',

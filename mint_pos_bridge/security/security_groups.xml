@@ -23,8 +23,14 @@
          Budtenders must therefore be POS users to see the app + the board.
          group_pos_manager implies budtender, so it inherits this. -->
     <data>
+        <!-- Customer PII access lives here, with the groups that actually serve
+             customers, rather than with Access Rights. See the revocation note
+             in mint_customer_api/security/web_customer_security.xml. Same
+             non-noupdate block so it lands on existing installs; manager
+             implies budtender and so inherits both. -->
         <record id="group_pos_budtender" model="res.groups">
-            <field name="implied_ids" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('point_of_sale.group_pos_user')),
+                                             (4, ref('mint_customer_api.group_web_customer_access'))]"/>
         </record>
     </data>
 </odoo>
