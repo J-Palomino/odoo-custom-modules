@@ -436,13 +436,16 @@ class MintGiftCardDraw(models.Model):
         """
         if not dutchie_id or not loc_id or not lsp_id:
             return False
-        base, key = self._invsvc()
-        req = urllib.request.Request(
-            "%s/api/admin/dutchie-discount/%s?locId=%s&lspId=%s" % (
-                base, dutchie_id, loc_id, lsp_id),
-            headers={"X-API-Key": key, "User-Agent": "mint-odoo-gift-card-draw/1.0"},
-        )
         try:
+            # Inside the try: an unconfigured invsvc raises UserError from
+            # `_invsvc`, and "we could not ask" must answer False like any
+            # other unreachable read — not escape as an exception.
+            base, key = self._invsvc()
+            req = urllib.request.Request(
+                "%s/api/admin/dutchie-discount/%s?locId=%s&lspId=%s" % (
+                    base, dutchie_id, loc_id, lsp_id),
+                headers={"X-API-Key": key, "User-Agent": "mint-odoo-gift-card-draw/1.0"},
+            )
             with urllib.request.urlopen(req, timeout=INVSVC_TIMEOUT) as resp:
                 body = json.loads(resp.read().decode("utf-8", "replace") or "{}")
         except Exception as e:

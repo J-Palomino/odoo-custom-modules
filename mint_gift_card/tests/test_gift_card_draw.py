@@ -582,23 +582,33 @@ class TestChildValidityWindow(TransactionCase):
         class StopAfterCreate(Exception):
             pass
 
+        seen = {}
+
+        def capture(child):
+            # Read the dates off the real record HERE: Odoo's assertRaises
+            # rolls back to a savepoint, so the child is gone by the time the
+            # `with` block exits and a search afterwards finds nothing.
+            seen.update(name=child.name, valid_from=child.valid_from,
+                        valid_until=child.valid_until)
+            raise StopAfterCreate()
+
         T = type(card)
         D = type(self.env["mint.discount"])
         # Publishing needs a live Dutchie push; the dates are decided before
         # it, so stop there and inspect what was written.
         with patch.object(T, "_store_for_loc", return_value=self.env.company), \
-             patch.object(D, "action_publish_to_dutchie", side_effect=StopAfterCreate):
+             patch.object(D, "action_publish_to_dutchie", autospec=True,
+                          side_effect=capture):
             with self.assertRaises(StopAfterCreate):
                 card._mint_child(12.5, 1568)
 
-        child = self.env["mint.discount"].sudo().search(
-            [("name", "=like", "Gift card draw %s%%" % card.code)], limit=1)
-        self.assertTrue(child, "the child should exist before publishing")
+        self.assertTrue(seen, "the child should reach publishing")
+        self.assertIn(card.code, seen["name"])
         today = fields.Date.context_today(card)
-        self.assertGreater(child.valid_until, child.valid_from,
+        self.assertGreater(seen["valid_until"], seen["valid_from"],
                            "a zero-length window is dead on arrival in Dutchie")
-        self.assertLessEqual(child.valid_from, today)
-        self.assertEqual(child.valid_until, today + timedelta(days=CHILD_VALID_DAYS))
+        self.assertLessEqual(seen["valid_from"], today)
+        self.assertEqual(seen["valid_until"], today + timedelta(days=CHILD_VALID_DAYS))
 
 
 @tagged("post_install", "-at_install")
@@ -811,8 +821,22 @@ class TestRetireChildVerifies(TransactionCase):
     def test_a_confirmed_delete_clears_is_published(self):
         card = self.Card.create({"face_value": 10.0, "issue_reason": "promotion"})
         child = self._child()
+        # A real child always has a store and a successful push log — that log
+        # is where _retire_child reads the Dutchie id it verifies against.
+        # Without them the delete can never be confirmed, whatever Dutchie says.
+        store = self.env.company
+        child.store_ids = [(6, 0, store.ids)]
+        self.env["mint.dutchie.discount.push.log"].sudo().create({
+            "discount_id": child.id, "company_id": store.id, "mode": "live",
+            "success": True, "dutchie_discount_id": 386368,
+        })
         T = type(card)
-        with patch.object(T, "_child_confirmed_deleted", return_value=True):
+        P = type(self.env["mint.ptl.day"])
+        with patch.object(T, "_child_confirmed_deleted", return_value=True), \
+             patch.object(P, "_push_one_discount", return_value=None), \
+             patch.object(P, "_collapse_stores_by_lsp", return_value=store), \
+             patch.object(P, "_resolve_pos_loc_id", return_value=1568), \
+             patch.object(P, "_resolve_lsp_id", return_value=575):
             ok = card._retire_child(child)
         self.assertTrue(ok)
         self.assertFalse(child.is_published)
