@@ -16,6 +16,13 @@ class MaintenanceRequest(models.Model):
     # the ~397 portal accounts — as assignable.
     user_id = fields.Many2one(domain="[('share', '=', False)]")
 
+    # Same guard on the ticket's "Created by User". Base maintenance leaves
+    # owner_user_id undomained, so it offered the full res.users list — the one
+    # request already stamped with a portal account got there this way. A
+    # customer never files a ticket through the backend, so the picker has no
+    # reason to list them.
+    owner_user_id = fields.Many2one(domain="[('share', '=', False)]")
+
     # Idempotency key for web-form submissions, stamped by the Fix-It
     # controller. Hash of (submitter, team, company, description) as the user
     # supplied it.
