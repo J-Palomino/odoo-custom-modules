@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Link Tracker is open to every employee (2026-09-15): any internal user
+         can create short links and edit the ones they created. Editing someone
+         else's link stays with the groups that could already do it, so a
+         printed /r/<code> QR code can't be repointed by arbitrary staff.
+
+         ir.rule semantics: group rules are OR-ed across the groups a user holds,
+         and every internal user holds base.group_user. The edit-own rule alone
+         would therefore restrict admins and marketing too — the edit-all rule
+         restores them. Neither rule touches read/create/unlink.
+
+         noupdate stays OFF so every -u of this module re-asserts the policy. -->
+
+    <record id="rule_link_tracker_edit_all" model="ir.rule">
+        <field name="name">Link Tracker: admin/marketing/website/project-admin edit all</field>
+        <field name="model_id" ref="link_tracker.model_link_tracker"/>
+        <field name="groups" eval="[(6, 0, [
+            ref('base.group_system'),
+            ref('project.group_project_manager'),
+            ref('mass_mailing.group_mass_mailing_user'),
+            ref('website.group_website_designer'),
+        ])]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_link_tracker_employee_edit_own" model="ir.rule">
+        <field name="name">Link Tracker: employees edit own links</field>
+        <field name="model_id" ref="link_tracker.model_link_tracker"/>
+        <field name="groups" eval="[(6, 0, [ref('base.group_user')])]"/>
+        <field name="domain_force">[('create_uid', '=', user.id)]</field>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- Show the Link Tracker app to employees. Stock gates both menus on
+         Technical Features (debug mode) + Email Marketing. (4, id) only adds the
+         group, and the stock menuitems also link rather than replace, so an
+         upgrade of utm/link_tracker/mass_mailing never strips it. -->
+    <record id="utm.menu_link_tracker_root" model="ir.ui.menu">
+        <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <record id="link_tracker.link_tracker_menu_main" model="ir.ui.menu">
+        <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+</odoo>
