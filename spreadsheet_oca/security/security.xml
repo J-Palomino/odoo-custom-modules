@@ -12,6 +12,14 @@
         <field name="implied_ids" eval="[(4, ref('group_user'))]" />
         <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]" />
     </record>
+    <!-- Mint: every employee gets Smartsheets. A <function>, not a
+         <record id="base.group_user">: that xmlid is noupdate, so a record
+         override would be skipped on every -u and only apply on fresh installs.
+         (4, id) is idempotent and re-asserts the implication each upgrade. -->
+    <function model="res.groups" name="write">
+        <value eval="[ref('base.group_user')]" />
+        <value eval="{'implied_ids': [(4, ref('spreadsheet_oca.group_user'))]}" />
+    </function>
     <record model="ir.rule" id="spreadsheet_company_rule">
         <field name="name">Spreadsheet Company Rule</field>
         <field name="model_id" ref="model_spreadsheet_spreadsheet" />
