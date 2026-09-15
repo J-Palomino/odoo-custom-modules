@@ -92,6 +92,20 @@ POS_MASTER_CATEGORY_TO_MASTER = {
     # through to False — measured 2026-08-28 against 6,618 live rows.
     'concentrates': 'concentrates',
     'edibles': 'edibles',
+    # Same plural class, missed on the first pass and caught in PRODUCTION by
+    # prod-taxonomy-contract N1: `tinctures` went 111 -> 99 the moment the sync
+    # shipped. Twelve real tinctures (Chronic Health Tincture, Drip Drops,
+    # Canine CBD Relief Tincture) carry POS master `Medicated`/`Unmedicated` —
+    # merchandising flags tier 2 correctly refuses — and no EcomCategory, so
+    # they fall to tier 3, where only the SINGULAR 'tincture' existed. The
+    # "- Unmedicated" forms are the sheets' own Unmedicated sub-categories for
+    # CBD tinctures and topicals; the storefront's categoryMapping already
+    # files all four under Tinctures/Topicals, so this agrees with it rather
+    # than inventing a second opinion.
+    'tinctures': 'tinctures',
+    'topical': 'topicals',
+    'tinctures - unmedicated': 'tinctures',
+    'topicals - unmedicated': 'topicals',
     'inhalable compound concentrate': 'concentrates',
     'edible': 'edibles',
     'infused edible': 'edibles',
