@@ -197,7 +197,7 @@ done
 
 # Clean stale model references from uninstalled modules (sign_oca, etc.)
 echo "=== Cleaning stale model references ==="
-if [ -n "$HOST" ] && [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
+if { [ -n "$HOST" ] || [ -n "$ODOO_DB_HOST" ]; } && [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
     python3 << 'PYCLEAN' 2>&1
 import os, sys
 try:
@@ -206,10 +206,16 @@ except ImportError:
     print("psycopg2 not available, skipping stale model cleanup")
     sys.exit(0)
 
-host = os.environ.get("HOST", "localhost")
-port = os.environ.get("PORT", "5432")
-user = os.environ.get("USER", "odoo")
-password = os.environ.get("PASSWORD", os.environ.get("ODOO_DB_PASSWORD", ""))
+host = os.environ.get("ODOO_DB_HOST") or os.environ.get("HOST", "localhost")
+# NOT os.environ.get("PORT"). On Railway PORT is the HTTP port (8080), and the
+# ODOO_DB_PORT -> PORT mapping near the top of this script is suppressed by its
+# own [ -z "$PORT" ] guard, so PORT never carries the Postgres port here. Reading
+# it dialled the web port and every statement in this block died with
+# "Connection refused ... port 8080" - silently, because the failure is caught
+# and only warned about.
+port = os.environ.get("ODOO_DB_PORT") or os.environ.get("PGPORT") or "5432"
+user = os.environ.get("ODOO_DB_USER") or os.environ.get("USER", "odoo")
+password = os.environ.get("ODOO_DB_PASSWORD") or os.environ.get("PASSWORD", "")
 dbname = os.environ.get("ODOO_DB_NAME", "odoo")
 
 try:
@@ -316,7 +322,7 @@ fi
 # Fix mail_message and mail_mail missing primary keys (pre-existing DB issue)
 # Uses Python/psycopg2 since psql may not be installed in the Docker image
 echo "=== Checking mail table primary keys ==="
-if [ -n "$HOST" ] && [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
+if { [ -n "$HOST" ] || [ -n "$ODOO_DB_HOST" ]; } && [ "$ODOO_DB_MAINTENANCE" = "1" ]; then
     python3 << 'PYFIX' 2>&1
 import os, sys
 try:
@@ -325,10 +331,16 @@ except ImportError:
     print("psycopg2 not available, skipping PK fix")
     sys.exit(0)
 
-host = os.environ.get("HOST", "localhost")
-port = os.environ.get("PORT", "5432")
-user = os.environ.get("USER", "odoo")
-password = os.environ.get("PASSWORD", os.environ.get("ODOO_DB_PASSWORD", ""))
+host = os.environ.get("ODOO_DB_HOST") or os.environ.get("HOST", "localhost")
+# NOT os.environ.get("PORT"). On Railway PORT is the HTTP port (8080), and the
+# ODOO_DB_PORT -> PORT mapping near the top of this script is suppressed by its
+# own [ -z "$PORT" ] guard, so PORT never carries the Postgres port here. Reading
+# it dialled the web port and every statement in this block died with
+# "Connection refused ... port 8080" - silently, because the failure is caught
+# and only warned about.
+port = os.environ.get("ODOO_DB_PORT") or os.environ.get("PGPORT") or "5432"
+user = os.environ.get("ODOO_DB_USER") or os.environ.get("USER", "odoo")
+password = os.environ.get("ODOO_DB_PASSWORD") or os.environ.get("PASSWORD", "")
 dbname = os.environ.get("ODOO_DB_NAME", "odoo")
 
 try:
