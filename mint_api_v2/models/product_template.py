@@ -9,9 +9,13 @@ Admins use this model as the authoring UI. Fields here must map 1:1
 with the Dutchie-shape emitted to Redis; see the Shape Conformance
 mapping table in ARCHITECTURE.md before adding or renaming a field.
 """
+import base64
+import logging
 import re
 
 from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 # The tenant the LEGACY single-value `dutchie_brand_id` column was populated
 # from, back when only AZ existed. Deliberately a literal and NOT resolved via
@@ -381,6 +385,20 @@ class MintBrand(models.Model):
              "free-text brand names vendors type into deal submissions.",
     )
 
+    deal_banner = fields.Binary(
+        string="Deal Banner",
+        help="Per-brand deal banner art, 1240x310 (exactly 4:1). Uploading here "
+             "pushes the file to the mintdeals-cdn R2 bucket and fills in Deal "
+             "Banner URL, which is what the storefront reads. WebP preferred; "
+             "JPG and PNG are accepted.",
+    )
+    deal_banner_url = fields.Char(
+        string="Deal Banner URL",
+        help="Public CDN URL for this brand's deal banner. Filled in automatically "
+             "when Deal Banner is uploaded; may also be pasted directly to point "
+             "at art hosted elsewhere.",
+    )
+
     @staticmethod
     def _norm_brand_name(s):
         """Normalize a brand string for matching: lowercase, '&'->'and',
@@ -461,6 +479,59 @@ class MintBrand(models.Model):
                 ('brand_id', '=', brand.id),
                 ('x_is_cannabis', '=', True),
             ])
+
+    def _deal_banner_slug(self):
+        """Stable path segment for this brand's CDN objects.
+
+        `slug` is populated on only about half the catalogue, so fall back to
+        the same normalization the alias matcher uses instead of skipping the
+        upload the way res.company does -- a brand with no slug still needs its
+        banner to land somewhere predictable.
+        """
+        self.ensure_one()
+        if self.slug:
+            return self.slug
+        norm = re.sub(r"\s+", "-", self._norm_brand_name(self.name))
+        return norm or "brand-%s" % self.id
+
+    def _sync_deal_banner_to_r2(self):
+        """Upload deal_banner to Cloudflare R2 and set deal_banner_url."""
+        self.ensure_one()
+        try:
+            image_bytes = base64.b64decode(self.deal_banner)
+            content_type, ext = self._detect_image_type(image_bytes)
+            key = "brands/%s/deal-banner.%s" % (self._deal_banner_slug(), ext)
+
+            from ..utils.r2_upload import upload_to_r2
+            url = upload_to_r2(image_bytes, key, content_type)
+            super(MintBrand, self).write({'deal_banner_url': url})
+            _logger.info("Synced deal banner to R2 for %s: %s", self.name, url)
+        except Exception:
+            _logger.exception("Failed to sync deal banner to R2 for %s", self.name)
+
+    @staticmethod
+    def _detect_image_type(image_bytes):
+        """Detect image MIME type and extension from magic bytes."""
+        if image_bytes[:3] == b'\xff\xd8\xff':
+            return 'image/jpeg', 'jpg'
+        if image_bytes[:4] == b'RIFF':
+            return 'image/webp', 'webp'
+        return 'image/png', 'png'
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        for record in records:
+            if record.deal_banner:
+                record._sync_deal_banner_to_r2()
+        return records
+
+    def write(self, vals):
+        res = super().write(vals)
+        if vals.get('deal_banner'):
+            for record in self:
+                record._sync_deal_banner_to_r2()
+        return res
 
 
 class ProductCategory(models.Model):
