@@ -1,0 +1,76 @@
+name: Verify prod deploy
+
+# Railway deploys this repo to prod Odoo on every push to main and reports
+# SUCCESS when the container starts — even when the module upgrade inside it
+# rolled back. This proves the deploy: Railway deployed THIS commit, Odoo is
+# healthy, and every module whose version was bumped actually reached it in
+# ir.module.module.latest_version. See scripts/ci/verify_deploy.py.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Full commit SHA to verify (default: the branch head)'
+        required: false
+
+# A newer push supersedes an in-flight verification; that run checks the newer commit.
+concurrency:
+  group: verify-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Odoo deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the script diffs the pushed range to find touched modules.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Fail loudly rather than skip — a verification that silently does nothing
+      # when its secrets are missing is worse than having none.
+      - name: Require secrets
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          ODOO_DB: ${{ secrets.ODOO_DB }}
+          ODOO_USERNAME: ${{ secrets.ODOO_USERNAME }}
+          ODOO_API_KEY: ${{ secrets.ODOO_API_KEY }}
+        run: |
+          missing=""
+          for v in RAILWAY_TOKEN ODOO_DB ODOO_USERNAME ODOO_API_KEY; do
+            [ -z "${!v}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing Actions secret(s):$missing. Add them under Settings → Secrets and variables → Actions. Use a READ-ONLY Odoo user for ODOO_USERNAME/ODOO_API_KEY (it only reads ir.module.module)."
+            exit 1
+          fi
+
+      - name: Verify Railway deploy, health, and module upgrades
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          ODOO_URL: https://letsgomint.us
+          ODOO_DB: ${{ secrets.ODOO_DB }}
+          ODOO_USERNAME: ${{ secrets.ODOO_USERNAME }}
+          ODOO_API_KEY: ${{ secrets.ODOO_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFY_SHA: ${{ inputs.sha || github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          SKIP_SUPERSEDED_CHECK: ${{ github.event_name == 'workflow_dispatch' && inputs.sha != '' }}
+          # Mirror of prod's ODOO_DRIFT_EXCLUDE: modules deliberately pinned behind their manifest.
+          VERIFY_EXCLUDE: purchase_price_precision
+          VERIFY_MODULE_TIMEOUT: '180'
+          # Without this Python block-buffers stdout on the runner, and a job killed
+          # by timeout-minutes loses every line it printed.
+          PYTHONUNBUFFERED: '1'
+        run: python3 scripts/ci/verify_deploy.py
