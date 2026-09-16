@@ -11,6 +11,17 @@
                 <field name="slug" optional="hide"/>
                 <field name="dutchie_brand_id" optional="show"/>
                 <field name="product_count" string="# Products"/>
+                <!-- The thumbnail is the uploaded BINARY: widget="image" is proven on list
+                     views here (res.partner, hr.employee, product.tag all use it), whereas
+                     widget="image_url" has no list precedent on this instance and a bad view
+                     aborts the whole module upgrade.
+                     So read the two columns together: the thumbnail says "art was uploaded",
+                     Banner URL says "the CDN sync landed". A row with a picture and an empty
+                     URL is the silent-failure case — _sync_deal_banner_to_r2 swallows its
+                     exceptions, so that pairing is the only way to see it without the log. -->
+                <field name="deal_banner" widget="image" string="Deal Banner"
+                       options="{'size': [96, 24]}" optional="show"/>
+                <field name="deal_banner_url" string="Banner URL" optional="hide"/>
                 <field name="website" optional="hide"/>
             </list>
         </field>
@@ -34,6 +45,7 @@
                             <field name="slug"/>
                             <field name="website" widget="url"/>
                             <field name="logo_url" widget="url"/>
+                            <field name="deal_banner_url" widget="url"/>
                         </group>
                         <group>
                             <field name="dutchie_brand_id"/>
@@ -46,6 +58,14 @@
                         </page>
                         <page string="Logo">
                             <field name="logo" widget="image"/>
+                        </page>
+                        <page string="Deal Banner">
+                            <div class="text-muted mb-2">
+                                Deal banner art is 1240 x 310 (exactly 4:1). Uploading
+                                here pushes the file to the CDN and fills in Deal Banner
+                                URL, which is what the storefront reads.
+                            </div>
+                            <field name="deal_banner" widget="image"/>
                         </page>
                     </notebook>
                 </sheet>
@@ -67,6 +87,14 @@
                         domain="[('display_emoji', '=', False)]"/>
                 <filter name="has_dutchie" string="Linked to Dutchie"
                         domain="[('dutchie_brand_id', '!=', False)]"/>
+                <separator/>
+                <!-- Both filter on deal_banner_url rather than the binary. A brand whose
+                     upload succeeded but whose CDN sync failed has the image and no URL,
+                     and the storefront would show nothing — so "Missing" must catch it. -->
+                <filter name="has_deal_banner" string="Has Deal Banner"
+                        domain="[('deal_banner_url', '!=', False)]"/>
+                <filter name="missing_deal_banner" string="Missing Deal Banner"
+                        domain="[('deal_banner_url', '=', False)]"/>
             </search>
         </field>
     </record>
