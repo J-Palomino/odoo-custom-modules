@@ -480,13 +480,51 @@ with registry.cursor() as cr:
 
     pw = os.environ.get('ODOO_ADMIN_PASSWORD', '')
     if pw:
-        user.write({'password': pw})
-        cr.commit()
-        print(f'Password set via ORM for uid=2')
+        # Only write when the password has ACTUALLY changed.
+        #
+        # `password` is one of res.users._get_session_token_fields(), and the
+        # session token is an HMAC over those fields. Writing it re-hashes with a
+        # fresh pbkdf2 salt EVEN WHEN THE PLAINTEXT IS IDENTICAL, so the token no
+        # longer matches and every live session for uid=2 dies. This block runs on
+        # every container boot, so an unconditional write logged that user out on
+        # every deploy, every crash-restart and every autoscale event -- observed at
+        # 11 boots in 24h. The stores run 24/7; there is no window where that is free.
+        #
+        # It also emitted a "Security Update: Password Changed" mail.mail per boot
+        # (recognisable by the placeholder IP 111.222.333.444), which fails to send
+        # because ir.mail_server is empty and leaves an `exception` row behind.
+        cr.execute('SELECT password FROM res_users WHERE id = 2')
+        row = cr.fetchone()
+        current_hash = row[0] if row else None
 
-        # Verify hash in DB
-        cr.execute('SELECT SUBSTRING(password, 1, 60) FROM res_users WHERE id = 2')
-        print(f'Hash prefix: {cr.fetchone()[0]}')
+        # Verify against the stored hash. Every strategy is optional: if none is
+        # available we fall through to the original unconditional write, so this
+        # can only ever preserve sessions, never break boot.
+        already_current = False
+        try:
+            from odoo.addons.base.models.res_users import CRYPT_CONTEXT
+            already_current = bool(current_hash) and CRYPT_CONTEXT.verify(pw, current_hash)
+            print('Password check: odoo CRYPT_CONTEXT')
+        except Exception:
+            try:
+                from passlib.context import CryptContext
+                ctx = CryptContext(schemes=['pbkdf2_sha512', 'plaintext'], deprecated=['plaintext'])
+                already_current = bool(current_hash) and ctx.verify(pw, current_hash)
+                print('Password check: passlib fallback')
+            except Exception as exc:
+                print(f'Password check unavailable ({exc.__class__.__name__}); writing unconditionally')
+                already_current = False
+
+        if already_current:
+            print('Password already matches -- SKIPPING write, uid=2 sessions preserved')
+        else:
+            user.write({'password': pw})
+            cr.commit()
+            print(f'Password set via ORM for uid=2')
+
+            # Verify hash in DB
+            cr.execute('SELECT SUBSTRING(password, 1, 60) FROM res_users WHERE id = 2')
+            print(f'Hash prefix: {cr.fetchone()[0]}')
     else:
         print('ODOO_ADMIN_PASSWORD not set in env')
 PYEOF
