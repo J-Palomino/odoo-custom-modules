@@ -483,16 +483,22 @@ class MintBrand(models.Model):
     def _deal_banner_slug(self):
         """Stable path segment for this brand's CDN objects.
 
-        `slug` is populated on only about half the catalogue, so fall back to
-        the same normalization the alias matcher uses instead of skipping the
-        upload the way res.company does -- a brand with no slug still needs its
-        banner to land somewhere predictable.
+        This MIRRORS `brandSlug()` in the frontend's src/lib/deal-art.ts, which
+        is itself the twin of `_brand_slug` in daisydo. Three copies of one rule
+        now; they must agree or the lookup silently misses -- no error, no broken
+        image, the card just falls back and the art is never shown.
+
+        Deliberately NOT `_norm_brand_name()`: that one strips filler tokens
+        (co, cannabis, edibles, ...) for fuzzy alias MATCHING, so "Sativa
+        Cannabis Co" collapses to "sativa" while the frontend asks for
+        "sativa-cannabis-co". Matching and addressing are different jobs.
+
+        Also NOT the `slug` column: it is set on only 816 of 1,623 brands, and
+        where it is set it does not always agree with the slugified name.
         """
         self.ensure_one()
-        if self.slug:
-            return self.slug
-        norm = re.sub(r"\s+", "-", self._norm_brand_name(self.name))
-        return norm or "brand-%s" % self.id
+        slug = re.sub(r"[^a-z0-9]+", "-", (self.name or "").lower()).strip("-")
+        return slug or "brand-%s" % self.id
 
     def _sync_deal_banner_to_r2(self):
         """Upload deal_banner to Cloudflare R2 and set deal_banner_url."""
