@@ -480,8 +480,8 @@ class MintBrand(models.Model):
                 ('x_is_cannabis', '=', True),
             ])
 
-    def _deal_banner_slug(self):
-        """Stable path segment for this brand's CDN objects.
+    def _cdn_slug(self):
+        """Stable path segment for this brand's CDN objects (logo + deal banner).
 
         This MIRRORS `brandSlug()` in the frontend's src/lib/deal-art.ts, which
         is itself the twin of `_brand_slug` in daisydo. Three copies of one rule
@@ -506,7 +506,7 @@ class MintBrand(models.Model):
         try:
             image_bytes = base64.b64decode(self.deal_banner)
             content_type, ext = self._detect_image_type(image_bytes)
-            key = "brands/%s/deal-banner.%s" % (self._deal_banner_slug(), ext)
+            key = "brands/%s/deal-banner.%s" % (self._cdn_slug(), ext)
 
             from ..utils.r2_upload import upload_to_r2
             url = upload_to_r2(image_bytes, key, content_type)
@@ -514,6 +514,28 @@ class MintBrand(models.Model):
             _logger.info("Synced deal banner to R2 for %s: %s", self.name, url)
         except Exception:
             _logger.exception("Failed to sync deal banner to R2 for %s", self.name)
+
+    def _sync_logo_to_r2(self):
+        """Upload logo to Cloudflare R2 and set logo_url.
+
+        Same path as the deal banner. `logo` (binary) was empty on all 1,505
+        live brands while `logo_url` carried Dutchie-sourced URLs on 361 -- so an
+        uploaded logo is a deliberate override, and it becomes the canonical one
+        the storefront reads. The binary is kept at full resolution; the CDN URL
+        is what makes it reusable anywhere.
+        """
+        self.ensure_one()
+        try:
+            image_bytes = base64.b64decode(self.logo)
+            content_type, ext = self._detect_image_type(image_bytes)
+            key = "brands/%s/logo.%s" % (self._cdn_slug(), ext)
+
+            from ..utils.r2_upload import upload_to_r2
+            url = upload_to_r2(image_bytes, key, content_type)
+            super(MintBrand, self).write({'logo_url': url})
+            _logger.info("Synced logo to R2 for %s: %s", self.name, url)
+        except Exception:
+            _logger.exception("Failed to sync logo to R2 for %s", self.name)
 
     @staticmethod
     def _detect_image_type(image_bytes):
@@ -530,6 +552,8 @@ class MintBrand(models.Model):
         for record in records:
             if record.deal_banner:
                 record._sync_deal_banner_to_r2()
+            if record.logo:
+                record._sync_logo_to_r2()
         return records
 
     def write(self, vals):
@@ -537,6 +561,9 @@ class MintBrand(models.Model):
         if vals.get('deal_banner'):
             for record in self:
                 record._sync_deal_banner_to_r2()
+        if vals.get('logo'):
+            for record in self:
+                record._sync_logo_to_r2()
         return res
 
 

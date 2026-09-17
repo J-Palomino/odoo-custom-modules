@@ -6,8 +6,17 @@
         <field name="model">mint.brand</field>
         <field name="arch" type="xml">
             <list string="Brands" editable="bottom">
-                <field name="display_emoji" string="Emoji" optional="show"/>
+                <!-- Logo replaces the emoji as the at-a-glance identifier. The list is
+                     editable="bottom", so this cell is also the upload target: dropping a
+                     full-resolution image here syncs it to the CDN and fills Logo URL, which
+                     is what the storefront reads and what makes the asset reusable.
+                     display_emoji is NOT deleted - it still prefixes the brand name in the
+                     budtender-facing PTL text exports - it is just no longer a default
+                     column. Re-enable it from the column picker if you need it. -->
+                <field name="logo" widget="image" string="Logo"
+                       options="{'size': [40, 40]}" optional="show"/>
                 <field name="name"/>
+                <field name="display_emoji" string="Emoji" optional="hide"/>
                 <field name="slug" optional="hide"/>
                 <field name="dutchie_brand_id" optional="show"/>
                 <field name="product_count" string="# Products"/>
@@ -22,6 +31,7 @@
                 <field name="deal_banner" widget="image" string="Deal Banner"
                        options="{'size': [96, 24]}" optional="show"/>
                 <field name="deal_banner_url" string="Banner URL" optional="hide"/>
+                <field name="logo_url" string="Logo URL" optional="hide"/>
                 <field name="website" optional="hide"/>
             </list>
         </field>
@@ -87,6 +97,14 @@
                         domain="[('display_emoji', '=', False)]"/>
                 <filter name="has_dutchie" string="Linked to Dutchie"
                         domain="[('dutchie_brand_id', '!=', False)]"/>
+                <separator/>
+                <!-- Keyed on logo_url, not the binary: same reasoning as the banner
+                     filters - an upload whose CDN sync failed must read as MISSING,
+                     because logo_url is what the storefront actually renders. -->
+                <filter name="has_logo" string="Has Logo"
+                        domain="[('logo_url', '!=', False)]"/>
+                <filter name="missing_logo" string="Missing Logo"
+                        domain="[('logo_url', '=', False)]"/>
                 <separator/>
                 <!-- Both filter on deal_banner_url rather than the binary. A brand whose
                      upload succeeded but whose CDN sync failed has the image and no URL,
