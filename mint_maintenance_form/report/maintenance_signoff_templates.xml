@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!--
+      Daily sign-off sheet.
+
+      One page-group per (team, technician) via a t-call to web.external_layout
+      per section — the same pattern invoices use to get one page per document.
+      That is what makes the sheet handable: print the team, tear off the pages,
+      each technician gets their own list and their own signature line.
+    -->
+    <template id="report_maintenance_signoff">
+        <t t-call="web.html_container">
+            <t t-if="not sections">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Daily Sign-Off Sheet</h2>
+                        <p class="mt-4">
+                            No open tickets matched this selection.
+                            <t t-if="excluded_count">
+                                <span t-out="excluded_count"/> selected ticket(s) are already
+                                completed or archived and were left off.
+                            </t>
+                        </p>
+                    </div>
+                </t>
+            </t>
+
+            <t t-foreach="sections" t-as="section">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <div class="row">
+                            <div class="col-8">
+                                <h2 class="mb-0">Daily Sign-Off Sheet</h2>
+                                <div class="mt-1">
+                                    <strong t-out="section['team'].name or 'No team'"/>
+                                    <span> &#8212; </span>
+                                    <span t-out="section['technician'].name or 'Unassigned'"/>
+                                </div>
+                            </div>
+                            <div class="col-4 text-end">
+                                <div>Printed <span t-out="printed_on"/></div>
+                                <div>by <span t-out="printed_by.name"/></div>
+                            </div>
+                        </div>
+
+                        <div class="mt-2 mb-2">
+                            <span t-out="len(section['rows'])"/> open ticket(s)
+                            <t t-if="section['overdue_count']">
+                                <span> &#183; </span>
+                                <strong><span t-out="section['overdue_count']"/> past their scheduled date</strong>
+                            </t>
+                            <t t-if="section['blocked_count']">
+                                <span> &#183; </span>
+                                <span t-out="section['blocked_count']"/> blocked
+                            </t>
+                        </div>
+
+                        <table class="table table-sm o_main_table" style="font-size: 11px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 4%;" class="text-center">Done</th>
+                                    <th style="width: 6%;">Ref</th>
+                                    <th style="width: 28%;">Subject</th>
+                                    <th style="width: 13%;">Location</th>
+                                    <th style="width: 10%;">Stage</th>
+                                    <th style="width: 8%;">Priority</th>
+                                    <th style="width: 5%;" class="text-end">Age</th>
+                                    <th style="width: 10%;">Scheduled</th>
+                                    <th style="width: 16%;">Status / Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="section['rows']" t-as="row">
+                                    <td class="text-center">
+                                        <!--
+                                          A drawn box, not a &#9744; glyph: wkhtmltopdf falls
+                                          back to a blank or a tofu box when the font has no
+                                          ballot-box codepoint, which silently removes the one
+                                          thing a technician is meant to tick.
+                                        -->
+                                        <span style="display: inline-block; width: 11px; height: 11px; border: 1px solid #000;"/>
+                                    </td>
+                                    <td>#<span t-out="row['id']"/></td>
+                                    <td>
+                                        <span t-att-style="row['is_high_priority'] and 'font-weight: bold;' or ''"
+                                              t-out="row['name']"/>
+                                        <t t-if="row['blocked']">
+                                            <span class="ms-1" style="border: 1px solid #000; padding: 0 3px; font-size: 9px;">BLOCKED</span>
+                                        </t>
+                                    </td>
+                                    <td t-out="row['location']"/>
+                                    <td t-out="row['stage']"/>
+                                    <td t-out="row['priority']"/>
+                                    <td class="text-end"><span t-out="row['age_days']"/>d</td>
+                                    <td>
+                                        <span t-att-style="row['overdue'] and 'font-weight: bold;' or ''"
+                                              t-out="row['scheduled_on']"/>
+                                    </td>
+                                    <td style="border-bottom: 1px solid #dee2e6;"/>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <t t-if="excluded_count">
+                            <p style="font-size: 10px;">
+                                <span t-out="excluded_count"/> selected ticket(s) are already completed
+                                or archived and were left off this sheet.
+                            </p>
+                        </t>
+
+                        <div class="row mt-4">
+                            <div class="col-5">
+                                <div style="border-top: 1px solid #000; padding-top: 4px; font-size: 11px;">
+                                    Technician signature
+                                </div>
+                            </div>
+                            <div class="col-2"/>
+                            <div class="col-5">
+                                <div style="border-top: 1px solid #000; padding-top: 4px; font-size: 11px;">
+                                    Supervisor signature &#183; date
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>
