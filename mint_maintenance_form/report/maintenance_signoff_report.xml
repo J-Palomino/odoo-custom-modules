@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!--
+      binding_model_id + binding_type="report" is what puts this in the Print
+      menu of the maintenance.request list view. That is the whole delivery
+      mechanism: a lead filters the list (Filters > To Do, optionally + team or
+      technician), selects the rows, and prints what they are looking at.
+
+      No print_report_name on purpose. It is evaluated server-side, where the
+      container clock is UTC, so a date in the filename reads as tomorrow for
+      anyone printing after 5pm Phoenix. The sheet carries a correctly localised
+      timestamp in its header instead.
+    -->
+    <record id="action_report_maintenance_signoff" model="ir.actions.report">
+        <field name="name">Daily Sign-Off Sheet</field>
+        <field name="model">maintenance.request</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">mint_maintenance_form.report_maintenance_signoff</field>
+        <field name="report_file">mint_maintenance_form.report_maintenance_signoff</field>
+        <field name="binding_model_id" ref="maintenance.model_maintenance_request"/>
+        <field name="binding_type">report</field>
+        <!--
+             base.paperformat_us, deliberately, despite its 52mm top margin
+             looking like waste on a dense checklist. A custom format with
+             margin_top=20 was built and tested, and the header overlapped the
+             body: every one of the 71 companies here has a logo, so the
+             letterhead block (logo, name, street, city, phone) runs to roughly
+             40mm and printed straight through the sheet's title. If the margin
+             is ever revisited, render against a company that has a logo AND an
+             address. A text only header clears 20mm fine, and will tell you the
+             change is safe when it is not.
+        -->
+        <field name="paperformat_id" ref="base.paperformat_us"/>
+    </record>
+</odoo>

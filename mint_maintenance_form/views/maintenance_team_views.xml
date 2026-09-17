@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!--
+      The stock team form has no <header>, so one is added before the sheet.
+      This is the one-click daily path; the list-view Print entry remains the
+      way to print a narrower selection.
+    -->
+    <record id="maintenance_team_form_signoff_button" model="ir.ui.view">
+        <field name="name">maintenance.team.form.signoff.button</field>
+        <field name="model">maintenance.team</field>
+        <field name="inherit_id" ref="maintenance.maintenance_team_view_form"/>
+        <field name="arch" type="xml">
+            <sheet position="before">
+                <header>
+                    <button name="action_print_signoff_sheet"
+                            type="object"
+                            string="Print Sign-Off Sheet"
+                            icon="fa-print"
+                            class="btn-primary"/>
+                </header>
+            </sheet>
+        </field>
+    </record>
+</odoo>
