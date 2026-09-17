@@ -52,6 +52,74 @@ class TestMaintenanceSignoffReport(TransactionCase):
     def _sections_for(self, requests):
         return self.report._get_report_values(requests.ids)["sections"]
 
+    def _row_for(self, request):
+        sections = self._sections_for(request)
+        return sections[0]["rows"][0]
+
+    def test_ticket_ref_comes_from_the_name_and_falls_back_to_the_id(self):
+        """MR-<id> is the number people quote; it is already in the title."""
+        stamped = self._make_request(
+            "MR-1511 - AZ - Northern - Restrooms - toilet is down"
+        )
+        raw = self._make_request("Called in by phone, no automation yet")
+
+        self.assertEqual(self._row_for(stamped)["ticket_ref"], "MR-1511")
+        # The automation has not renamed this one, so the column still fills.
+        self.assertEqual(self._row_for(raw)["ticket_ref"], "MR-%s" % raw.id)
+
+    def test_store_is_not_printed_twice_on_a_row(self):
+        """The title embeds the store, and Location prints it already."""
+        request = self._make_request(
+            "MR-1511 - AZ - Northern - Restrooms - toilet is down",
+            x_store_location="AZ - Northern",
+        )
+
+        row = self._row_for(request)
+
+        self.assertEqual(row["location"], "AZ - Northern")
+        self.assertEqual(row["subject"], "Restrooms - toilet is down")
+
+    def test_web_form_boilerplate_is_stripped_from_details(self):
+        """Submitter earns a line; Email/State/Store/Equipment are noise on paper."""
+        request = self._make_request(
+            "MR-1501 - Arcadia Production - Flooring - Compliance team asked for this",
+            x_store_location="Arcadia Production",
+            description=(
+                "<p><strong>Submitted by:</strong> Christopher Smith</p>"
+                "<p><strong>Email:</strong> csmith@letsgomint.com</p>"
+                "<p><strong>State:</strong> Florida</p>"
+                "<p><strong>Store:</strong> Arcadia Production</p>"
+                "<p><strong>Equipment:</strong> Flooring</p><br>"
+                "Compliance team asked for this to be fixed ASAP, the plastic "
+                "sheeting needs to continue down the wall for GMP compliance."
+            ),
+        )
+
+        row = self._row_for(request)
+
+        self.assertEqual(row["reported_by"], "Christopher Smith")
+        self.assertNotIn("csmith@letsgomint.com", row["details"])
+        self.assertNotIn("Florida", row["details"])
+        # The title stops at "asked for this"; the sheet recovers the rest.
+        self.assertIn("GMP compliance", row["details"])
+        self.assertTrue(row["show_details"])
+
+    def test_details_line_is_suppressed_when_it_only_repeats_the_title(self):
+        """The title is built from the description, so short tickets duplicate."""
+        body = "toilet is down needs the flow valve replaced"
+        request = self._make_request(
+            "MR-1511 - AZ - Northern - Restrooms - " + body,
+            x_store_location="AZ - Northern",
+            description="<p><strong>Store:</strong> AZ - Northern</p><br>" + body,
+        )
+
+        row = self._row_for(request)
+
+        self.assertFalse(row["show_details"])
+        # Nothing to add and nobody named, so the row stays one line and the
+        # Done / Manager sign-off cells must not span a row that is not there.
+        self.assertFalse(row["has_second_line"])
+
     def test_completed_and_archived_tickets_are_dropped(self):
         """Selecting everything in a list view must not print finished work."""
         still_open = self._make_request("Open ticket")
