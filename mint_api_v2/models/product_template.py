@@ -13,7 +13,8 @@ import base64
 import logging
 import re
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -352,6 +353,14 @@ class ProductTemplate(models.Model):
         return [t.strip() for t in self.tags.split(',') if t.strip()]
 
 
+# Context key marking a mint.brand create as deliberate. Brands are a curated
+# registry, but every integration (mintinvsvc, scripts) authenticates as uid=2
+# with full CRUD, so ACLs can't tell a sync job from a person -- intent is the
+# only signal left. The Brands menu action sets it; automated writers must
+# match an existing brand instead of inventing one from a product or deal name.
+BRAND_CREATE_CTX = 'mint_brand_allow_create'
+
+
 class MintBrand(models.Model):
     _name = "mint.brand"
     _description = "Cannabis Brand"
@@ -548,6 +557,15 @@ class MintBrand(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        # Superuser covers tests, migrations and odoo-bin shell; RPC as uid=2
+        # and many2one quick-create from other forms are never superuser.
+        if not (self.env.su or self.env.context.get(BRAND_CREATE_CTX)):
+            raise UserError(_(
+                "Brands can only be created from Mint Marketing > Setup > Brands. "
+                "Automated jobs must match an existing brand (name, alias or Dutchie "
+                "brand ID) instead of creating one. Refused: %s",
+                ", ".join(vals.get('name') or '?' for vals in vals_list),
+            ))
         records = super().create(vals_list)
         for record in records:
             if record.deal_banner:

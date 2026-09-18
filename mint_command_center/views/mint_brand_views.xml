@@ -122,6 +122,9 @@
         <field name="res_model">mint.brand</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="mint_brand_view_search"/>
+        <!-- The only UI entry point allowed to create brands; mint.brand.create
+             refuses everything else (see BRAND_CREATE_CTX in mint_api_v2). -->
+        <field name="context">{'mint_brand_allow_create': True}</field>
     </record>
 
 </odoo>
