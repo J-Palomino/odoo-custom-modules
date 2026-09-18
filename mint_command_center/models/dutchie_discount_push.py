@@ -32,7 +32,7 @@ from odoo.addons.mint_api_v2.models.discount_canonical import (
     redemption_fields_for,
 )
 
-from .deal_mixins import coerce_dutchie_ids
+from .deal_mixins import coerce_dutchie_ids, include_non_cannabis
 
 _logger = logging.getLogger(__name__)
 
@@ -402,9 +402,11 @@ class PtlDayDutchiePush(models.Model):
                 'DiscountValue': amount,
                 # An order-level code coupon ("$50 off any transaction")
                 # discounts the whole basket, so non-cannabis lines must count;
-                # `20OFF` carries True. PTL deals keep False — flipping those
-                # would change what every existing deal discounts.
-                'IncludeNonCannabis': is_code_coupon,
+                # `20OFF` carries True. An online automatic deal needs True to
+                # be listed on Dutchie's menu at all, so it gets True when its
+                # restrictions include something (see include_non_cannabis).
+                'IncludeNonCannabis': is_code_coupon or include_non_cannabis(
+                    discount.is_available_online, reward_restrictions),
                 'ItemGroupTypeId': item_group_type_id,
                 'ManualDefaultApplyTo': 1,
                 'Restrictions': reward_restrictions,

@@ -125,6 +125,35 @@ def build_dutchie_restrictions(brand_ids, exc_brand_ids, prod_inc, prod_exc, cat
     return restrictions, warnings
 
 
+def has_inclusion_scope(restrictions):
+    """True when at least one restriction type positively scopes the discount
+    (``IsExclusion`` False with ids). Exclusions only narrow a store-wide
+    discount; they never scope it."""
+    return any(r and not r.get('IsExclusion') and r.get('RestrictionIds')
+               for r in (restrictions or {}).values())
+
+
+def include_non_cannabis(is_online, restrictions):
+    """``Reward.IncludeNonCannabis`` for an automatic Dutchie discount.
+
+    Dutchie drops a discount from its online menu (the specials behind
+    dutchie.com / mintdeals.com) while IncludeNonCannabis is False — even when
+    it is IsAvailableOnline, active and in its dates. Verified 2026-09-18 at
+    AZ-Tempe: all 182 LSP 575 records split 176 on-menu = True / 6 off-menu =
+    False; flipping 385487 False→True listed it within a minute, and an
+    API-created probe (386601) carrying True kept its Product restriction and
+    listed within 83 s. Stores' own online discounts are 293/293 True in LSP
+    575; False appears only on in-store-only ones.
+
+    True lets non-cannabis items *inside the restrictions* count toward the
+    deal, so it is only returned for a discount with an inclusion scope. An
+    online discount scoped only by exclusions would otherwise cover every
+    non-cannabis product in the store; it stays False (off the menu) for a
+    person to decide.
+    """
+    return bool(is_online) and has_inclusion_scope(restrictions)
+
+
 # Dutchie day-of-week field names, Monday-first to match Python's date.weekday()
 # (0=Mon … 6=Sun). NOTE: ALL-FALSE means "active EVERY day" in Dutchie — so a
 # day-scoped deal must never resolve to all-False (see weekday_bools_from_days).
