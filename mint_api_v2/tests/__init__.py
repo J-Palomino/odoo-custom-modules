@@ -6,3 +6,4 @@ from . import test_spin_prize_pool
 from . import test_spin_ticket
 from . import test_spin_purchase_grant
 from . import test_spin_highman_reward
+from . import test_brand_market_banner

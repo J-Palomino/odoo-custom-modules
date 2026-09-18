@@ -71,11 +71,25 @@
                         </page>
                         <page string="Deal Banner">
                             <div class="text-muted mb-2">
-                                Deal banner art is 1240 x 310 (exactly 4:1). Uploading
-                                here pushes the file to the CDN and fills in Deal Banner
-                                URL, which is what the storefront reads.
+                                This is the Arizona deal banner, 1240 x 310 (exactly 4:1).
+                                Uploading here pushes the file to the CDN and fills in Deal
+                                Banner URL, which is what the storefront reads. Art for other
+                                markets goes on the Market Banners tab.
                             </div>
                             <field name="deal_banner" widget="image"/>
+                        </page>
+                        <page string="Market Banners" name="market_banners">
+                            <div class="text-muted mb-2">
+                                One deal banner per market (1240 x 310). A market's cards use
+                                its own banner here; Arizona falls back to the Deal Banner tab.
+                            </div>
+                            <field name="market_banner_ids">
+                                <list editable="bottom">
+                                    <field name="region_id" options="{'no_create': True}"/>
+                                    <field name="banner" widget="image" options="{'size': [96, 24]}"/>
+                                    <field name="banner_url" widget="url" optional="hide"/>
+                                </list>
+                            </field>
                         </page>
                     </notebook>
                 </sheet>
@@ -122,6 +136,49 @@
         <field name="res_model">mint.brand</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="mint_brand_view_search"/>
+    </record>
+
+    <!-- Market Banners: every (brand, market) deal banner in one list, so a
+         market's drop (e.g. the Missouri "Heady Background" set) can be
+         reviewed and filled in place. editable="bottom" makes each Banner cell
+         an upload target, same as the Brands list. -->
+    <record id="mint_brand_market_banner_view_list" model="ir.ui.view">
+        <field name="name">mint.brand.market.banner.list</field>
+        <field name="model">mint.brand.market.banner</field>
+        <field name="arch" type="xml">
+            <list string="Market Banners" editable="bottom">
+                <field name="brand_id" options="{'no_create': True}"/>
+                <field name="region_id" options="{'no_create': True}"/>
+                <field name="banner" widget="image" string="Deal Banner"
+                       options="{'size': [96, 24]}"/>
+                <field name="banner_url" string="Banner URL" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="mint_brand_market_banner_view_search" model="ir.ui.view">
+        <field name="name">mint.brand.market.banner.search</field>
+        <field name="model">mint.brand.market.banner</field>
+        <field name="arch" type="xml">
+            <!-- Keep group elements out of search views: one such view aborts the whole -u. -->
+            <search>
+                <field name="brand_id"/>
+                <field name="region_id"/>
+                <filter string="Missing Banner" name="missing_banner"
+                        domain="[('banner_url', '=', False)]"/>
+                <separator/>
+                <filter string="Market" name="group_region"
+                        context="{'group_by': 'region_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mint_brand_market_banner" model="ir.actions.act_window">
+        <field name="name">Market Banners</field>
+        <field name="res_model">mint.brand.market.banner</field>
+        <field name="view_mode">list</field>
+        <field name="search_view_id" ref="mint_brand_market_banner_view_search"/>
+        <field name="context">{'search_default_group_region': 1}</field>
     </record>
 
 </odoo>
