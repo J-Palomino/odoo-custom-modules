@@ -26,7 +26,7 @@ fixtures are required.
 """
 from odoo.tests import TransactionCase, tagged
 
-from ..models.deal_mixins import build_dutchie_restrictions
+from ..models.deal_mixins import build_dutchie_restrictions, include_non_cannabis
 
 B = [18992]        # brand include (e.g. IO Extracts @ LSP 575)
 EB = [9001]        # brand exclude
@@ -107,3 +107,43 @@ class TestDutchieRestrictions(TransactionCase):
         """Nothing resolved -> every slot empty (caller raises store-wide guard)."""
         restr, warns = build_dutchie_restrictions([], [], [], [], [])
         self.assertFalse(any(r['RestrictionIds'] for r in restr.values()))
+
+
+@tagged('post_install', '-at_install')
+class TestIncludeNonCannabis(TransactionCase):
+    """Reward.IncludeNonCannabis decides whether Dutchie lists an online deal on
+    its menu (False = never listed; verified 2026-09-18, 385487 / 386601)."""
+
+    def test_online_scoped_deal_is_true(self):
+        """The shapes vendor submissions publish -> listed on Dutchie's menu."""
+        for args in ((B, [], [], [], C), ([], [], PI, [], []), (B, [], [], [], [])):
+            restr, _ = build_dutchie_restrictions(*args)
+            self.assertTrue(include_non_cannabis(True, restr), args)
+
+    def test_in_store_deal_is_false(self):
+        """Not an online deal -> unchanged from before (False)."""
+        restr, _ = build_dutchie_restrictions(B, [], [], [], C)
+        self.assertFalse(include_non_cannabis(False, restr))
+
+    def test_exclusion_only_scope_stays_false(self):
+        """Exclusions alone leave the deal store-wide: True would also discount
+        every non-cannabis product, so it stays False."""
+        for args in (([], [], [], PE, []), ([], EB, [], [], [])):
+            restr, _ = build_dutchie_restrictions(*args)
+            self.assertFalse(include_non_cannabis(True, restr), args)
+
+    def test_brand_exclude_beside_an_include_is_true(self):
+        restr, _ = build_dutchie_restrictions([], EB, PI, [], [])
+        self.assertTrue(include_non_cannabis(True, restr))
+
+    def test_unresolved_scope_is_false(self):
+        restr, _ = build_dutchie_restrictions([], [], [], [], [])
+        self.assertFalse(include_non_cannabis(True, restr))
+        self.assertFalse(include_non_cannabis(True, None))
+
+    def test_weight_include_counts_as_scope(self):
+        """PTL push sends a Weight include (grams); no non-cannabis product in
+        LSP 575 carries a gram weight, so it scopes to cannabis."""
+        restr, _ = build_dutchie_restrictions([], [], [], [], [])
+        restr['Weight'] = {'IsExclusion': False, 'RestrictionIds': [3.5]}
+        self.assertTrue(include_non_cannabis(True, restr))
