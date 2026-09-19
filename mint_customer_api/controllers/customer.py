@@ -173,6 +173,25 @@ PROMO_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'
 # dedupe, so a multi-store publish mints N copies of the same code, each
 # separately redeemable. A "single-use" $100 would become $900.
 PROMO_DEFAULT_TTL_DAYS = 30
+# A promo starts YESTERDAY, not today. `context_today(user)` follows the caller's
+# timezone and a portal user has none, so it resolves to the UTC date — which is
+# already TOMORROW in Arizona from 17:00 on. Dutchie refuses a code whose
+# ValidDateFrom is tomorrow exactly like an expired one, so every promo issued
+# in the evening was dead at the register until local midnight (hit live
+# 2026-09-18: MINT-35SFHH / MINT-ESEKXF issued 21:14 MST with ValidDateFrom
+# 9/19). Same slack the welcome, redemption and gift-card-draw issuers carry.
+PROMO_VALID_FROM_SLACK_DAYS = 1
+
+
+def _promo_validity_window(today, days):
+    """(valid_from, valid_until) for a promo issued on `today` for `days` days.
+
+    `today` may be the UTC date; see PROMO_VALID_FROM_SLACK_DAYS for why the
+    window opens a day early. The end is NOT pulled in — starting early must
+    not shorten what the issuer asked for.
+    """
+    return (today - timedelta(days=PROMO_VALID_FROM_SLACK_DAYS),
+            today + timedelta(days=days))
 
 
 def _promo_issuer_partner():
@@ -1064,7 +1083,8 @@ class MintCustomerProfile(http.Controller):
         # single-valued, so the second person to open the link is refused with
         # 409 while the code still redeems N times at the register. Claimable
         # once, spendable N times — incoherent.
-        today = fields.Date.context_today(user)
+        valid_from, valid_until = _promo_validity_window(
+            fields.Date.context_today(user), days)
         Discount = request.env['mint.discount'].sudo()
         minted = []
         for _i in range(uses):
@@ -1086,8 +1106,8 @@ class MintCustomerProfile(http.Controller):
                 # single-use code limits the blast radius of a leaked one.
                 'maximum_usage_count': 1,
                 'max_redemptions': 1,
-                'valid_from': today,
-                'valid_until': today + timedelta(days=days),
+                'valid_from': valid_from,
+                'valid_until': valid_until,
                 'expires_at': fields.Datetime.now() + timedelta(days=days),
                 'source': 'manual',
                 'is_available_online': True,
