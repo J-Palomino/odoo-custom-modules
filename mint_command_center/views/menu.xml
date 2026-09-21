@@ -298,6 +298,11 @@
               parent="menu_command_center_setup"
               action="action_mint_brand"
               sequence="10"/>
+    <menuitem id="menu_setup_market_banners"
+              name="Market Banners"
+              parent="menu_command_center_setup"
+              action="action_mint_brand_market_banner"
+              sequence="11"/>
 
     <!-- ── Inventory Section ── -->
     <menuitem id="menu_command_center_inventory"
