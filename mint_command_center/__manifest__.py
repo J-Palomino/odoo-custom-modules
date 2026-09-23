@@ -1,6 +1,6 @@
 {
     'name': 'Mint Command Center',
-    'version': '19.0.6.79.0',
+    'version': '19.0.6.80.0',
     'category': 'Operations',
     'summary': 'Centralized operations dashboard for Mint Cannabis',
     'description': """
@@ -49,6 +49,7 @@
         'mint_push',
         'mint_banner',
         'mint_api_v2',
+        'survey',
     ],
     'assets': {
         'web.assets_backend': [
@@ -77,6 +78,7 @@
         'data/ptl_cron_data.xml',
         'data/welcome_preroll_cron.xml',
         'data/coupon_usage_cron.xml',
+        'data/survey_brand_options_cron.xml',
         'data/placement_data.xml',
         'data/billboard_data.xml',
         'data/sdlc_stage_automations.xml',
@@ -118,6 +120,7 @@
         'views/dutchie_push_log_views.xml',
         'views/dutchie_publish_review_views.xml',
         'views/project_task_sdlc_views.xml',
+        'views/survey_question_views.xml',
     ],
     'post_init_hook': 'post_init_hook',
     'installable': True,
