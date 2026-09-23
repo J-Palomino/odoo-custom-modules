@@ -1211,47 +1211,10 @@ class MintPosOrderAPI(http.Controller):
         return request.env.company
 
     def _line_brands(self, lines):
-        """Resolve {line id: mint.brand} by ID, never by name.
-
-        Register walk-ins (Backoffice report 1082, which includes every
-        employee-sample ring) import with no brand column, so ``line.brand``
-        is empty on them. Resolve via the Dutchie product ID the line does
-        carry (``product.template.dutchie_product_id``), falling back to the
-        SKU (``product.product.default_code``). Newest record wins when a
-        product ID maps to more than one template.
-        """
-        Tmpl = request.env['product.template'].sudo().with_context(active_test=False)
-        Prod = request.env['product.product'].sudo().with_context(active_test=False)
-        if 'brand_id' not in Tmpl._fields or 'dutchie_product_id' not in Tmpl._fields:
-            return {}
-
-        pids = list({l.dutchie_product_id for l in lines if l.dutchie_product_id})
-        by_pid = {}
-        if pids:
-            for tmpl in Tmpl.search(
-                [('dutchie_product_id', 'in', pids), ('brand_id', '!=', False)],
-                order='id desc',
-            ):
-                by_pid.setdefault(tmpl.dutchie_product_id, tmpl.brand_id)
-
-        skus = list({
-            l.sku for l in lines
-            if l.sku and by_pid.get(l.dutchie_product_id) is None
-        })
-        by_sku = {}
-        if skus:
-            for prod in Prod.search(
-                [('default_code', 'in', skus), ('brand_id', '!=', False)],
-                order='id desc',
-            ):
-                by_sku.setdefault(prod.default_code, prod.brand_id)
-
-        result = {}
-        for line in lines:
-            brand = by_pid.get(line.dutchie_product_id) or by_sku.get(line.sku)
-            if brand:
-                result[line.id] = brand
-        return result
+        """{line id: mint.brand}, resolved by product ID (see
+        ``mint.pos.order.line._resolve_brands``). Also covers lines created
+        before brand was filled on create."""
+        return lines.sudo()._resolve_brands()
 
     def _serialize_order(self, order, brands=None):
         """Serialize a mint.pos.order to a JSON-safe dict.
