@@ -1039,3 +1039,65 @@ class MintPosOrderLine(models.Model):
     def _compute_line_total(self):
         for line in self:
             line.line_total = (line.quantity * line.unit_price) - line.discount
+
+    @api.model
+    def _brands_by_product(self, product_ids, skus):
+        """Map Dutchie product IDs and SKUs to ``mint.brand`` records.
+
+        Resolution is by ID only: ``product.template.dutchie_product_id``
+        first, then ``product.product.default_code`` (master SKU) for
+        whatever the product ID left unresolved. When one key maps to more
+        than one product, the newest record wins.
+        """
+        Tmpl = self.env['product.template'].sudo().with_context(active_test=False)
+        Prod = self.env['product.product'].sudo().with_context(active_test=False)
+        by_pid = {}
+        product_ids = [p for p in set(product_ids) if p]
+        if product_ids:
+            for tmpl in Tmpl.search(
+                [('dutchie_product_id', 'in', product_ids), ('brand_id', '!=', False)],
+                order='id desc',
+            ):
+                by_pid.setdefault(tmpl.dutchie_product_id, tmpl.brand_id)
+        by_sku = {}
+        skus = [s for s in set(skus) if s]
+        if skus:
+            for prod in Prod.search(
+                [('default_code', 'in', skus), ('brand_id', '!=', False)],
+                order='id desc',
+            ):
+                by_sku.setdefault(prod.default_code, prod.brand_id)
+        return by_pid, by_sku
+
+    def _resolve_brands(self):
+        """Return {line id: mint.brand} for the lines in ``self``."""
+        by_pid, by_sku = self._brands_by_product(
+            self.mapped('dutchie_product_id'), self.mapped('sku'),
+        )
+        result = {}
+        for line in self:
+            brand = by_pid.get(line.dutchie_product_id) or by_sku.get(line.sku)
+            if brand:
+                result[line.id] = brand
+        return result
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        # No Dutchie order feed carries brand: report 1082 (walk-ins, incl.
+        # every employee sample) has no brand column and POS-API transaction
+        # items have none either. Fill it from the product the line points
+        # at so every source stores one.
+        missing = [
+            vals for vals in vals_list
+            if not vals.get('brand') and (vals.get('dutchie_product_id') or vals.get('sku'))
+        ]
+        if missing:
+            by_pid, by_sku = self._brands_by_product(
+                [vals.get('dutchie_product_id') for vals in missing],
+                [vals.get('sku') for vals in missing],
+            )
+            for vals in missing:
+                brand = by_pid.get(vals.get('dutchie_product_id')) or by_sku.get(vals.get('sku'))
+                if brand:
+                    vals['brand'] = brand.name
+        return super().create(vals_list)
