@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="my_board" name="My Board">
+        <t t-call="website.layout">
+            <t t-set="additional_title">My Board</t>
+            <div id="wrap" class="o_my_board">
+                <div class="container py-4" style="max-width: 860px;">
+                    <h1 class="h3 mb-1">
+                        <t t-out="(user.name or '').split(' ')[0]"/>, here's what's on your board
+                    </h1>
+                    <p class="text-muted mb-4">
+                        <t t-if="total"><t t-out="total"/> open item<t t-if="total != 1">s</t> across every project.</t>
+                        <t t-else="">Nothing open right now.</t>
+                        Click an item to open it in Odoo.
+                    </p>
+
+                    <t t-foreach="sections" t-as="section">
+                        <section class="mb-5" t-att-data-section="section['key']">
+                            <h2 class="h5 mb-1">
+                                <t t-out="section['title']"/>
+                                <span class="badge rounded-pill text-bg-secondary ms-1" t-out="len(section['tasks'])"/>
+                            </h2>
+                            <p class="text-muted small mb-2" t-out="section['blurb']"/>
+
+                            <div t-if="section['tasks']" class="list-group">
+                                <t t-foreach="section['tasks']" t-as="task">
+                                    <a class="list-group-item list-group-item-action py-3"
+                                       t-att-href="'/mail/view?model=project.task&amp;res_id=%s' % task.id"
+                                       t-att-data-task-id="task.id">
+                                        <div class="fw-semibold" t-out="task.name"/>
+                                        <div class="small text-muted mt-1">
+                                            <t t-out="task.project_id.name or 'No project'"/>
+                                            <t t-if="task.stage_id"> · <t t-out="task.stage_id.name"/></t>
+                                            <t t-if="section['key'] == 'request' and task.user_ids">
+                                                · with <t t-out="', '.join(task.user_ids.mapped('name'))"/>
+                                            </t>
+                                            · updated <t t-out="task.write_date" t-options="{'widget': 'date'}"/>
+                                        </div>
+                                    </a>
+                                </t>
+                            </div>
+                            <p t-else="" class="small fst-italic text-muted">Nothing here right now.</p>
+                        </section>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+</odoo>
