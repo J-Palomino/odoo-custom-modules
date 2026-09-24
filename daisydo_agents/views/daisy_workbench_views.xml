@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="daisy_workbench_token_view_list" model="ir.ui.view">
+        <field name="name">daisy.workbench.token.list</field>
+        <field name="model">daisy.workbench.token</field>
+        <field name="arch" type="xml">
+            <list create="false" edit="false" decoration-muted="state == 'revoked'">
+                <field name="user_id"/>
+                <field name="hostname"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'issued'"
+                       decoration-warning="state == 'pending'"/>
+                <field name="key_name" optional="show"/>
+                <field name="issued_at"/>
+                <field name="revoked_at" optional="hide"/>
+                <button name="action_revoke" type="object" string="Revoke" icon="fa-ban"
+                        invisible="state != 'issued'"
+                        confirm="Revoke this Workbench key? That install stops working immediately."/>
+            </list>
+        </field>
+    </record>
+
+    <record id="daisy_workbench_token_view_search" model="ir.ui.view">
+        <field name="name">daisy.workbench.token.search</field>
+        <field name="model">daisy.workbench.token</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="user_id"/>
+                <field name="hostname"/>
+                <filter name="active_installs" string="Active" domain="[('state', '=', 'issued')]"/>
+                <filter name="revoked" string="Revoked" domain="[('state', '=', 'revoked')]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="daisy_workbench_token_action" model="ir.actions.act_window">
+        <field name="name">Workbench Installs</field>
+        <field name="res_model">daisy.workbench.token</field>
+        <field name="view_mode">list</field>
+        <field name="context">{'search_default_active_installs': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No Workbench installs yet</p>
+            <p>Each Daisy Workbench that signs in with an LGM account gets its own Daisy+ key, listed here.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_digital_employees_workbench"
+              name="Workbench Installs"
+              parent="menu_digital_employees_root"
+              action="daisy_workbench_token_action"
+              sequence="25"
+              groups="daisydo_agents.group_daisy_admin"/>
+</odoo>
