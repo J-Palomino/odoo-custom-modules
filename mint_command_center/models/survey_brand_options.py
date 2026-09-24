@@ -158,6 +158,30 @@ class SurveyQuestion(models.Model):
         for question in questions:
             question._mint_sync_brand_options(by_key)
 
+    def _mint_brand_answer_map(self):
+        """``{str(mint.brand id): answer id}`` for this question's options.
+
+        Options only carry the *canonical* brand of each folded group, but an
+        order line's product can point at any member ('Wana Brands', a
+        '[DUP → n]' tombstone, a Dutchie-id twin). Every brand whose name key
+        folds into a sampled group maps to that group's option, using the same
+        fold as the sync, so the survey prefill can pick the option by id.
+        """
+        self.ensure_one()
+        if not self.mint_brand_catalog_options:
+            return {}
+        by_brand = {
+            answer.mint_brand_id.id: answer.id
+            for answer in self.sudo().suggested_answer_ids if answer.mint_brand_id
+        }
+        result = {str(brand_id): answer_id for brand_id, answer_id in by_brand.items()}
+        by_key = self.env['mint.brand']._mint_sample_survey_brand_keys()
+        for brand in self.env['mint.brand'].sudo().search([]):
+            canonical = by_key.get(brand_key(brand.name))
+            if canonical and canonical.id in by_brand:
+                result.setdefault(str(brand.id), by_brand[canonical.id])
+        return result
+
     def _mint_sync_brand_options(self, by_key):
         self.ensure_one()
         Answer = self.env['survey.question.answer'].sudo()
