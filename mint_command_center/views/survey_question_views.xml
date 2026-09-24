@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="survey_question_form_brand_catalog" model="ir.ui.view">
+        <field name="name">survey.question.form.brand.catalog</field>
+        <field name="model">survey.question</field>
+        <field name="inherit_id" ref="survey.survey_question_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='constr_mandatory']" position="after">
+                <field name="mint_brand_catalog_options"
+                       invisible="question_type not in ['simple_choice', 'multiple_choice']"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
