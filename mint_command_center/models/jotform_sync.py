@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 
 from odoo import _, api, models
 from odoo.exceptions import AccessError
+from odoo.tools import html_escape
 
 _logger = logging.getLogger(__name__)
 
@@ -39,7 +40,8 @@ PARAM_API_KEY = 'mint_cc.jotform.api_key'
 PARAM_MODE = 'mint_cc.jotform.mode'                    # off | dry | live (default off)
 PARAM_FORMS = 'mint_cc.jotform.forms'                  # JSON [{"code","form_id"}]; blank = DEFAULT_FORMS
 PARAM_LOOKBACK_HOURS = 'mint_cc.jotform.lookback_hours'  # overlap re-scanned each run (default 24)
-PARAM_REVIEWER_USER = 'mint_cc.jotform.reviewer_user_id'  # res.users id for a To-Do per new row; blank = none
+PARAM_REVIEWER_USER = 'mint_cc.jotform.reviewer_user_id'  # To-Do assignee; blank = Vendor Promos team leader
+PARAM_CRM_LEAD = 'mint_cc.jotform.crm_lead'            # '0' disables the Vendor Promos CRM lead (default on)
 
 # The active intake forms, one per market (region code on mint.region). The
 # disabled legacy form 251327636084155 and the disabled IL duplicate are
@@ -291,6 +293,48 @@ class MintDealSubmissionJotform(models.Model):
             vals['store_ids'] = [(6, 0, stores.ids)]
         return vals
 
+    @api.model
+    def _jotform_vendor_promos_team(self):
+        """The CRM team vendor deals are worked from — same lookup as the
+        /vendor-deals controller."""
+        return self.env.ref('sales_team.salesteam_vendor_promos', raise_if_not_found=False) \
+            or self.env['crm.team'].sudo().search([('name', '=', 'Vendor Promos')], limit=1)
+
+    def _jotform_create_crm_lead(self, team, form_code):
+        """Mirror this submission as a Vendor Promos opportunity and link it,
+        the way the /vendor-deals controller does for web-form submissions, so
+        marketing works JotForm and web deals from one CRM pipeline."""
+        self.ensure_one()
+        body = [
+            '<p><strong>Imported from JotForm</strong> (%s form, submission %s, submitted %s).</p>'
+            % (html_escape(form_code), html_escape(self.external_id or ''),
+               html_escape(self.external_created_at or '')),
+        ]
+        for label, value in (('Deal details', self.sales_details),
+                             ('Products', self.product_list),
+                             ('Frequency', self.deal_frequency),
+                             ('Excluded SKUs', self.excluded_skus)):
+            if value:
+                body.append('<p><strong>%s:</strong><br/>%s</p>' % (
+                    label, html_escape(value).replace('\n', '<br/>')))
+        vals = {
+            'name': ('Promo - %s: %s' % (self.vendor_name, self.name))[:250],
+            'type': 'opportunity',
+            'contact_name': self.vendor_contact or self.vendor_name,
+            'partner_name': self.vendor_name,
+            'email_from': self.vendor_email or False,
+            'phone': self.vendor_phone or False,
+            'vendor_brand_id': self.brand_id.id or False,
+            'description': ''.join(body),
+        }
+        if team:
+            vals['team_id'] = team.id
+            if team.user_id:
+                vals['user_id'] = team.user_id.id
+        lead = self.env['crm.lead'].sudo().create(vals)
+        self.sudo().write({'crm_lead_id': lead.id})
+        return lead
+
     # ------------------------------------------------------------------
     # Entry point
     # ------------------------------------------------------------------
@@ -339,10 +383,16 @@ class MintDealSubmissionJotform(models.Model):
             lookback = int(self._jotform_param(PARAM_LOOKBACK_HOURS, '24'))
         except ValueError:
             lookback = 24
+        team = self._jotform_vendor_promos_team()
+        make_lead = self._jotform_param(PARAM_CRM_LEAD, '1').strip() not in ('0', 'false', 'no', 'off')
         reviewer = False
         reviewer_id = self._jotform_param(PARAM_REVIEWER_USER)
         if reviewer_id and reviewer_id.isdigit():
             reviewer = self.env['res.users'].sudo().browse(int(reviewer_id)).exists()
+        if not reviewer and team:
+            reviewer = team.user_id
+        summary['leads_created'] = 0
+        summary['todos_created'] = 0
 
         Sub = self.sudo()
         Region = self.env['mint.region'].sudo()
@@ -399,14 +449,6 @@ class MintDealSubmissionJotform(models.Model):
                     # only, not the batch.
                     with self.env.cr.savepoint():
                         rec = Sub.create(vals)
-                        if reviewer:
-                            rec.activity_schedule(
-                                'mail.mail_activity_data_todo',
-                                user_id=reviewer.id,
-                                summary='Review JotForm deal submission',
-                                note='New %s vendor deal from %s via JotForm.' % (
-                                    code, vals['vendor_name']),
-                            )
                     fs['created'] += 1
                     summary['created'] += 1
                 except Exception as e:
@@ -416,6 +458,33 @@ class MintDealSubmissionJotform(models.Model):
                     else:
                         fs['errors'] += 1
                         _err('%s sub %s create failed: %s' % (code, ext_id, e))
+                    continue
+
+                # Follow-ups each get their own savepoint: the submission is
+                # already safe, so a CRM or activity hiccup must not undo it
+                # (same stance as the /vendor-deals controller).
+                if make_lead:
+                    try:
+                        with self.env.cr.savepoint():
+                            rec._jotform_create_crm_lead(team, code)
+                        summary['leads_created'] += 1
+                    except Exception as e:
+                        fs['errors'] += 1
+                        _err('%s sub %s saved, CRM lead failed: %s' % (code, ext_id, e))
+                if reviewer:
+                    try:
+                        with self.env.cr.savepoint():
+                            rec.activity_schedule(
+                                'mail.mail_activity_data_todo',
+                                user_id=reviewer.id,
+                                summary='Review JotForm deal submission',
+                                note='New %s vendor deal from %s via JotForm.' % (
+                                    code, vals['vendor_name']),
+                            )
+                        summary['todos_created'] += 1
+                    except Exception as e:
+                        fs['errors'] += 1
+                        _err('%s sub %s saved, To-Do failed: %s' % (code, ext_id, e))
 
         summary['status'] = 'ok' if not summary['errors'] else 'partial'
         summary['duration_s'] = round(time.monotonic() - started, 2)

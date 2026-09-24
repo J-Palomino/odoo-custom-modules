@@ -66,6 +66,12 @@ class TestJotformSync(TransactionCase):
             {'code': 'ZT', 'form_id': 'F1'},
             {'code': 'ZZ', 'form_id': 'F2'},
         ]))
+        # Vendor Promos team, led by an existing user (creating res.users in
+        # this module's tests costs ~30s each — see the staging test traps).
+        cls.leader = cls.env.ref('base.user_admin')
+        cls.team = cls.Sub._jotform_vendor_promos_team() \
+            or cls.env['crm.team'].create({'name': 'Vendor Promos'})
+        cls.team.user_id = cls.leader
 
     def _run(self, pages, dry_run=None):
         """Run the sync with the JotForm HTTP call stubbed. `pages` maps
@@ -154,3 +160,53 @@ class TestJotformSync(TransactionCase):
         public = self.env.ref('base.public_user')
         with self.assertRaises(AccessError):
             self.Sub.with_user(public).action_jotform_sync(dry_run=True)
+
+    # --- CRM lead + reviewer To-Do (JotForm now matches /vendor-deals) ---
+
+    def _todos(self, rec):
+        todo = self.env.ref('mail.mail_activity_data_todo')
+        return rec.activity_ids.filtered(lambda a: a.activity_type_id == todo)
+
+    def test_creates_linked_vendor_promos_lead_and_todo(self):
+        summary, _ = self._run({'F1': [_sub('9101', '2026-09-23 12:00:00')]})
+        self.assertEqual(summary['leads_created'], 1, summary)
+        self.assertEqual(summary['todos_created'], 1, summary)
+        rec = self._imported('9101')
+        lead = rec.crm_lead_id
+        self.assertTrue(lead)
+        self.assertEqual(lead.type, 'opportunity')
+        self.assertEqual(lead.team_id, self.team)
+        self.assertEqual(lead.user_id, self.leader)
+        self.assertEqual(lead.email_from, 'pat@vendor.test')
+        self.assertIn('Test Brand', lead.name)
+        self.assertIn('30% off all carts', lead.description)
+        self.assertIn('9101', lead.description)
+        # No reviewer configured -> the team leader gets the To-Do.
+        self.assertEqual(self._todos(rec).user_id, self.leader)
+
+    def test_reviewer_param_overrides_team_leader(self):
+        reviewer = self.env.ref('base.user_root')
+        self.env['ir.config_parameter'].sudo().set_param(js.PARAM_REVIEWER_USER, str(reviewer.id))
+        self._run({'F1': [_sub('9102', '2026-09-23 12:00:00')]})
+        self.assertEqual(self._todos(self._imported('9102')).user_id, reviewer)
+
+    def test_lead_can_be_switched_off(self):
+        self.env['ir.config_parameter'].sudo().set_param(js.PARAM_CRM_LEAD, '0')
+        summary, _ = self._run({'F1': [_sub('9103', '2026-09-23 12:00:00')]})
+        self.assertEqual(summary['leads_created'], 0)
+        self.assertFalse(self._imported('9103').crm_lead_id)
+
+    def test_lead_failure_keeps_submission(self):
+        def boom(_self, team, form_code):
+            raise ValueError('crm down')
+
+        with patch.object(type(self.Sub), '_jotform_create_crm_lead', boom):
+            summary, _ = self._run({'F1': [_sub('9104', '2026-09-23 12:00:00')]})
+        self.assertEqual(summary['created'], 1, summary)
+        self.assertEqual(summary['errors'], 1, summary)
+        self.assertEqual(summary['status'], 'partial')
+        rec = self._imported('9104')
+        self.assertTrue(rec)
+        self.assertFalse(rec.crm_lead_id)
+        # The To-Do still lands even though the lead did not.
+        self.assertTrue(self._todos(rec))
