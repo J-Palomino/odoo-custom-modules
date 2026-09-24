@@ -74,4 +74,19 @@
             ('id', '!=', -1) if user.has_group('daisydo_agents.group_daisy_admin') else ('id', '=', 0)]</field>
     </record>
 
+    <!-- Workbench installs: employees see their own, Daisy admins see all. -->
+    <record id="daisy_workbench_token_rule_own" model="ir.rule">
+        <field name="name">Daisy Workbench: own installs</field>
+        <field name="model_id" ref="model_daisy_workbench_token"/>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        <field name="domain_force">[('user_id', '=', user.id)]</field>
+    </record>
+
+    <record id="daisy_workbench_token_rule_admin" model="ir.rule">
+        <field name="name">Daisy Workbench: administrator all installs</field>
+        <field name="model_id" ref="model_daisy_workbench_token"/>
+        <field name="groups" eval="[(4, ref('group_daisy_admin'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
 </odoo>
