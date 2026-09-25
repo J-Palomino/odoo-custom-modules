@@ -208,6 +208,9 @@ COPY --chown=odoo:odoo mint_schedule_sync /opt/extra-addons/mint_schedule_sync
 # ── Stored-value gift cards (balance ledger, partial redemption) ─────
 COPY --chown=odoo:odoo mint_gift_card /opt/extra-addons/mint_gift_card
 
+# ── Per-person task board at /my/board ──────────────────────────────
+COPY --chown=odoo:odoo mint_my_board /opt/extra-addons/mint_my_board
+
 # ── Verify critical modules ─────────────────────────────────────────
 RUN grep -q "identifier" /opt/extra-addons/avancir_inventory/models/avancir_sync.py && echo "AVANCIR MODULE VERIFIED" || (echo "AVANCIR MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_api_v2/__manifest__.py && echo "MINT_API_V2 MODULE VERIFIED" || (echo "MINT_API_V2 MODULE MISSING" && exit 1)
@@ -225,6 +228,7 @@ RUN grep "push_subscription_views" /opt/extra-addons/mint_push/__manifest__.py |
 RUN test -f /opt/extra-addons/mint_banner/__manifest__.py && echo "MINT_BANNER MODULE VERIFIED" || (echo "MINT_BANNER MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_schedule_sync/__manifest__.py && echo "MINT_SCHEDULE_SYNC MODULE VERIFIED" || (echo "MINT_SCHEDULE_SYNC MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_decision_board/__manifest__.py && echo "MINT_DECISION_BOARD VERIFIED" || (echo "MINT_DECISION_BOARD MISSING" && exit 1)
+RUN test -f /opt/extra-addons/mint_my_board/__manifest__.py && echo "MINT_MY_BOARD VERIFIED" || (echo "MINT_MY_BOARD MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_visual_cms/__manifest__.py && echo "MINT_VISUAL_CMS MODULE VERIFIED" || (echo "MINT_VISUAL_CMS MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_embed/__manifest__.py && echo "MINT_EMBED MODULE VERIFIED" || (echo "MINT_EMBED MODULE MISSING" && exit 1)
 RUN test -f /opt/extra-addons/mint_customer_api/__manifest__.py && echo "MINT_CUSTOMER_API VERIFIED" || (echo "MINT_CUSTOMER_API MISSING" && exit 1)

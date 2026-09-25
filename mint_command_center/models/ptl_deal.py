@@ -105,7 +105,9 @@ class PtlDeal(models.Model):
         readonly=False,
         help='Auto-linked from the deal name when null (matches the segment '
              'before " - " / " · " / ":" against existing mint.brand records, '
-             'creating a new brand only if no match). Manually editable.',
+             'by name or alias). Never creates a brand: if nothing matches the '
+             'deal is left unlinked and a warning is logged -- add an alias to '
+             'the correct brand instead. Manually editable.',
     )
     brand_ids = fields.Many2many(
         'mint.brand',
@@ -643,16 +645,40 @@ class PtlDeal(models.Model):
         for b in Brand.search([]):
             if b.name and b.name.startswith('[MERGED→'):
                 continue
-            k = _brand_lookup_key(b.name)
-            if k and k not in by_norm:
-                by_norm[k] = b
+            # Index the canonical name FIRST so it wins over any alias, then the
+            # aliases. `aliases` is the sanctioned escape hatch for a vendor
+            # spelling we do not already carry -- adding a line there is how a
+            # new variant gets absorbed, instead of spawning another brand row.
+            for candidate in [b.name] + (b.aliases or '').splitlines():
+                k = _brand_lookup_key(candidate)
+                if k and k not in by_norm:
+                    by_norm[k] = b
+        unresolved = []
         for rec, text in candidates:
             key = _brand_lookup_key(text)
             brand = by_norm.get(key)
             if not brand:
-                brand = Brand.create({'name': text})
-                by_norm[key] = brand
+                # Deliberately do NOT create the brand. Auto-creating here is
+                # what produced the duplicate estate: every casing or whitespace
+                # variant Dutchie sent became its own mint.brand row ("drip" /
+                # "Drip" / "DRiP " were five separate records, one of which had
+                # drifted to 2,094 products while another held the artwork).
+                # mint.brand is a curated table -- deals match INTO it, they do
+                # not extend it. Leaving brand_id unset is recoverable; a wrong
+                # new brand silently splits a brand's products and artwork.
+                unresolved.append(text)
+                continue
             rec.brand_id = brand.id
+        if unresolved:
+            # Surfaced loudly because the failure is otherwise invisible: the
+            # deal just renders unbranded. The fix is a mint.brand alias line,
+            # not a new record.
+            _logger.warning(
+                'mint.ptl.deal: %d deal(s) matched no mint.brand and were left '
+                'unlinked (add an alias to the right brand rather than creating '
+                'a new one): %s',
+                len(unresolved), sorted(set(unresolved))[:20],
+            )
 
     @api.depends('discount_type', 'discount_value', 'original_price',
                  'sales_details', 'bogo_buy_qty', 'bogo_get_qty',

@@ -36,7 +36,7 @@ from odoo.exceptions import UserError
 from odoo.addons.mint_api_v2.models.discount_canonical import application_method_id_for
 
 from .deal_mixins import (format_bundle_tiers_text, build_dutchie_restrictions,
-                          normalize_publish_mode)
+                          include_non_cannabis, normalize_publish_mode)
 
 _logger = logging.getLogger(__name__)
 
@@ -604,6 +604,16 @@ class DealSubmissionDutchiePublish(models.Model):
                 + ("; ".join(warnings) or "")
             )
 
+        # Vendor submissions are online deals; Dutchie lists one on its menu
+        # only with IncludeNonCannabis=True (see include_non_cannabis).
+        is_online = True
+        inc_non_cannabis = include_non_cannabis(is_online, restrictions)
+        if is_online and not inc_non_cannabis:
+            warnings.append(
+                "Only exclusions scope this deal, so it publishes with "
+                "IncludeNonCannabis=False and will NOT appear on Dutchie's online "
+                "menu. Add a Brand, Category or Product include to list it.")
+
         label = (("BOGO" if value >= 1.0 else f"BOGO {value * 100:g}% Off") if is_bogo
                  else f"{value * 100:g}% Off" if calc == 2
                  else f"{threshold_min} for ${value:g}" if calc == 6
@@ -635,7 +645,7 @@ class DealSubmissionDutchiePublish(models.Model):
                 'ExternalId': external_id,
                 'FirstTimeCustomerOnly': 0,
                 'IgnoreNetTax': False,
-                'IsAvailableOnline': True,
+                'IsAvailableOnline': is_online,
                 'IsBundledDiscount': calc == 6,
                 # Filled at dispatch with every target store (one multi-store
                 # record per span); empty here so the build stays loc-agnostic.
@@ -658,7 +668,7 @@ class DealSubmissionDutchiePublish(models.Model):
                     'ApplyToOnlyOneItem': apply_to_one,
                     'CalculationMethodId': calc,
                     'DiscountValue': value,
-                    'IncludeNonCannabis': False,
+                    'IncludeNonCannabis': inc_non_cannabis,
                     # 5 = single-item discount, 6 = bundle grouping (see
                     # dutchie_discount_push.py docs). Live BOGO records use 5.
                     'ItemGroupTypeId': 5 if is_bogo else 6,

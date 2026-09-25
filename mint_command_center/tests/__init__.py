@@ -15,3 +15,4 @@ from . import test_weight_parse
 from . import test_ptl_market_scoping
 from . import test_dutchie_lsp_scope
 from . import test_lsp_resolver
+from . import test_jotform_sync

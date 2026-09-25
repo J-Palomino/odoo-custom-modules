@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'MintDeals Link Tracker QR',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.1.0',
     'category': 'Marketing',
     'summary': 'Generate a downloadable QR code for every tracked short link',
     'description': """MintDeals Link Tracker QR
@@ -14,8 +14,12 @@
     'author': 'MintDeals',
     'website': 'https://letsgomint.us',
     'license': 'LGPL-3',
-    'depends': ['link_tracker', 'web'],
+    # mass_mailing/project/website own the groups that keep edit-all on links
+    # (security/link_tracker_security.xml).
+    'depends': ['link_tracker', 'web', 'mass_mailing', 'project', 'website'],
     'data': [
+        'security/ir.model.access.csv',
+        'security/link_tracker_security.xml',
         'views/link_tracker_views.xml',
     ],
     'installable': True,

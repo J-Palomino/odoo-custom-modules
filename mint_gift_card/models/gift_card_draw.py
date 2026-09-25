@@ -395,8 +395,11 @@ class MintGiftCardDraw(models.Model):
             "threshold_min": 0.01,
             "maximum_usage_count": 1,
             "store_ids": [(6, 0, store.ids)],
-            "valid_from": today,
-            "valid_until": today,
+            # Never inline these two again. `CHILD_VALID_DAYS` existed for a
+            # week while this dict still wrote `valid_until: today`, and a test
+            # that asserted the constant passed the whole time — every draw was
+            # refused "Code is not valid today." Tests now read the child back.
+            **self._child_validity_window(today),
             "is_published": True,
             "source": "manual",
             "monday": True, "tuesday": True, "wednesday": True, "thursday": True,
@@ -433,13 +436,16 @@ class MintGiftCardDraw(models.Model):
         """
         if not dutchie_id or not loc_id or not lsp_id:
             return False
-        base, key = self._invsvc()
-        req = urllib.request.Request(
-            "%s/api/admin/dutchie-discount/%s?locId=%s&lspId=%s" % (
-                base, dutchie_id, loc_id, lsp_id),
-            headers={"X-API-Key": key, "User-Agent": "mint-odoo-gift-card-draw/1.0"},
-        )
         try:
+            # Inside the try: an unconfigured invsvc raises UserError from
+            # `_invsvc`, and "we could not ask" must answer False like any
+            # other unreachable read — not escape as an exception.
+            base, key = self._invsvc()
+            req = urllib.request.Request(
+                "%s/api/admin/dutchie-discount/%s?locId=%s&lspId=%s" % (
+                    base, dutchie_id, loc_id, lsp_id),
+                headers={"X-API-Key": key, "User-Agent": "mint-odoo-gift-card-draw/1.0"},
+            )
             with urllib.request.urlopen(req, timeout=INVSVC_TIMEOUT) as resp:
                 body = json.loads(resp.read().decode("utf-8", "replace") or "{}")
         except Exception as e:
@@ -598,6 +604,109 @@ class MintGiftCardDraw(models.Model):
                     child_code=child.dutchie_discount_code,
                     dutchie_discount_id=dutchie_id,
                     balance_after=self.balance, message=message)
+
+    @api.model
+    def _child_validity_window(self, today):
+        """valid_from / valid_until for a draw coupon.
+
+        `valid_from` is YESTERDAY, not today: `context_today` follows the
+        caller's timezone, and a portal or cron env with no tz resolves to the
+        UTC date — which is TOMORROW in Arizona from 17:00 on. A child starting
+        tomorrow is refused exactly like one that already expired. Starting a
+        day early costs nothing: the child is single-use, backed by a hold, and
+        retired after settlement.
+
+        `valid_until` is `today + CHILD_VALID_DAYS` (see the constant for why 2).
+        """
+        return {
+            "valid_from": today - timedelta(days=1),
+            "valid_until": today + timedelta(days=CHILD_VALID_DAYS),
+        }
+
+    # ── One draw per customer per transaction ───────────────────────────
+    def _allowed_at_loc(self, loc_id):
+        """True if this card may be drawn at Dutchie LocId `loc_id`."""
+        self.ensure_one()
+        if not self.store_ids:
+            return True
+        push = self.env["mint.ptl.day"].sudo()
+        return loc_id in {push._resolve_pos_loc_id(s) for s in self.store_ids}
+
+    @api.model
+    def draw_for_customer(self, partner_ids, loc_id, lsp_id, shipment_id,
+                          customer_id=None, register=None, idempotency_key=None):
+        """Spend a customer's Mint Bucks on a live basket, whichever card holds them.
+
+        The idempotency key on a draw line is unique per CARD, so with two cards
+        the same shipment could be drawn once on each: the lane watchers run on
+        two invsvc services with separate Redis, and a customer can tap "Use at
+        the register" while auto-draw is mid-flight. Refusing multi-card
+        customers outright (the old `ambiguous_cards`) meant the one customer
+        who opted in could never auto-draw at all.
+
+        So the guard lives at the CUSTOMER: lock every card they hold, replay
+        any held/settled draw already on this shipment, otherwise draw from the
+        highest-balance card allowed at this store. Returns exactly what
+        `execute_draw` returns, plus `card_code`.
+        """
+        shipment = str(shipment_id or "").strip()
+        if not shipment:
+            return {"ok": False, "error": "no_shipment",
+                    "message": _("There is no transaction to draw against.")}
+
+        owners = set()
+        ids = [int(p) for p in (partner_ids or []) if p]
+        for partner in self.env["res.partner"].sudo().browse(ids).exists():
+            owners.update(self._customer_owner_ids(partner))
+        cards = (self.sudo().search([("partner_id", "in", list(owners))], order="id")
+                 if owners else self.browse())
+        if not cards:
+            return {"ok": False, "error": "card_not_spendable",
+                    "shipment_id": shipment_id,
+                    "message": _("There are no Mint Bucks on this account.")}
+
+        # Every card, in id order, so two callers can never deadlock on each
+        # other. Taken before the replay lookup for the same reason `hold`
+        # locks before its own: two simultaneous requests must not both miss.
+        self.env.cr.execute(
+            "SELECT id FROM mint_gift_card WHERE id IN %s ORDER BY id FOR UPDATE",
+            (tuple(cards.ids),))
+        cards.invalidate_recordset(
+            ["balance", "held_amount", "settled_amount", "is_spendable", "state"])
+
+        prior = self.env["mint.gift.card.line"].sudo().search([
+            ("card_id", "in", cards.ids),
+            ("shipment_id", "=", shipment),
+            ("state", "in", ["held", "settled"]),
+        ], order="id desc", limit=1)
+        if prior:
+            return {
+                "ok": True, "replayed": True,
+                "card": prior.card_id.code, "card_code": prior.card_id.code,
+                "shipment_id": shipment_id, "line_id": prior.id,
+                "state": prior.state, "amount": prior.draw_amount,
+                "child_code": prior.child_code,
+                "balance_after": prior.card_id.balance,
+            }
+
+        spendable = cards.filtered(
+            lambda c: c.is_spendable
+            and c.currency_id.compare_amounts(c.balance, 0.0) > 0
+            and c._allowed_at_loc(loc_id)
+        ).sorted(key=lambda c: (-c.balance, -c.id))
+        if not spendable:
+            return {"ok": False, "error": "card_not_spendable",
+                    "shipment_id": shipment_id,
+                    "message": _("No Mint Bucks on this account can be used here.")}
+
+        card = spendable[0]
+        result = card.execute_draw(
+            loc_id, lsp_id, shipment_id,
+            customer_id=customer_id, register=register,
+            idempotency_key=idempotency_key or "ship:%s" % shipment,
+        )
+        result["card_code"] = card.code
+        return result
 
     # ── Step 5: settlement ──────────────────────────────────────────────
     #

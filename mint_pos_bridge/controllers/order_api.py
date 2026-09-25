@@ -957,9 +957,10 @@ class MintPosOrderAPI(http.Controller):
             domain, limit=limit, offset=offset, order='placed_at desc',
         )
         total = request.env['mint.pos.order'].sudo().search_count(domain)
+        brands = self._line_brands(orders.line_ids)
 
         return _json({
-            'orders': [self._serialize_order(o) for o in orders],
+            'orders': [self._serialize_order(o, brands) for o in orders],
             'total': total,
             'limit': limit,
             'offset': offset,
@@ -1209,8 +1210,20 @@ class MintPosOrderAPI(http.Controller):
 
         return request.env.company
 
-    def _serialize_order(self, order):
-        """Serialize a mint.pos.order to a JSON-safe dict."""
+    def _line_brands(self, lines):
+        """{line id: mint.brand}, resolved by product ID (see
+        ``mint.pos.order.line._resolve_brands``). Also covers lines created
+        before brand was filled on create."""
+        return lines.sudo()._resolve_brands()
+
+    def _serialize_order(self, order, brands=None):
+        """Serialize a mint.pos.order to a JSON-safe dict.
+
+        ``brands`` is a precomputed ``_line_brands`` map so list endpoints
+        resolve every page in one query; single-order callers omit it.
+        """
+        if brands is None:
+            brands = self._line_brands(order.line_ids)
         return {
             'id': order.id,
             'name': order.name,
@@ -1255,7 +1268,8 @@ class MintPosOrderAPI(http.Controller):
                 'discount': l.discount,
                 'line_total': l.line_total,
                 'category': l.category or '',
-                'brand': l.brand or '',
+                'brand': l.brand or (brands[l.id].name if l.id in brands else ''),
+                'brand_id': brands[l.id].id if l.id in brands else None,
             } for l in order.line_ids],
         }
 

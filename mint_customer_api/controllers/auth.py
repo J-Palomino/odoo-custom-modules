@@ -114,6 +114,51 @@ def _loyalty_points(partner):
     return card.points or 0
 
 
+def _is_staff_partner(user, partner):
+    """Is this account staff rather than a customer?
+
+    Feeds the storefront's PostHog `is_staff` person property so internal
+    traffic can be filtered out of customer metrics. Measured 2026-09-08:
+    26 internal-domain accounts logged 185 sessions / 1,971 events in 30 days
+    with nothing separating them from shoppers - and that only counts the ones
+    on a company domain. Roughly half of staff shop under a personal address
+    (of 199 employee work emails, 101 are gmail/yahoo/icloud/relay), so no
+    domain rule can do this job.
+
+    Delegates to mint_dutchie_sync's `_staff_partner_ids()`, the one place that
+    knows every staff signal: the `employee` flag, an internal non-share login,
+    the `(EMP)` name marker, and hr.employee reachability. Do NOT reimplement
+    those here, and do NOT read `partner.employee` directly - only 154 partners
+    carry that flag against 8,505 named `(EMP)`, so it reads False for most
+    staff and would silently under-report.
+
+    hasattr, not a plain call: this module does NOT depend on mint_dutchie_sync,
+    so the resolver can legitimately be absent - the same guard
+    mint_gift_card._customer_owner_ids carries. sudo, because the caller is a
+    portal user who cannot read the rows the probe searches. Env comes off the
+    partner rather than `request` so this stays callable from a test.
+
+    Inherits the resolver's fail-CLOSED contract: a probe that raises marks the
+    account staff, which drops it from customer metrics rather than polluting
+    them. Falls back to the internal-login signal, the only one computable in
+    this module. Never raises - an auth response must not fail over a
+    segmentation flag.
+
+    Cost: up to four id-filtered queries, on the /api/v1/auth/verify hot path.
+    """
+    if not partner:
+        return not user.share
+    try:
+        Partner = partner.env['res.partner'].sudo()
+        if hasattr(Partner, '_staff_partner_ids'):
+            return partner.id in Partner._staff_partner_ids([partner.id])
+    except Exception:  # noqa: BLE001 - analytics must never break auth
+        _logger.exception(
+            'auth: staff probe failed for partner %s - falling back to the '
+            'login signal', partner.id)
+    return not user.share
+
+
 def _user_json(user):
     """Shared `user` payload for the login/register/google/verify responses.
 
@@ -132,6 +177,7 @@ def _user_json(user):
         'phone': partner.phone or '',
         'partner_id': partner.id,
         'is_internal': not user.share,
+        'is_staff': _is_staff_partner(user, partner),
         'loyalty_points': _loyalty_points(partner),
         'date_of_birth': fields.Date.to_string(dob) if dob else '',
     }
