@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+      Employee sample reviews (see models/sample_review.py).
+
+      noupdate="1": which survey collects the reviews is an operator choice.
+      194 is "Employee Sample Product Review" on prod; on any other database
+      set this to the right survey id, or to 0 to switch the review links off
+      (the signed-link route then 404s and /orders shows no review state).
+    -->
+    <data noupdate="1">
+        <record id="param_sample_review_survey_id" model="ir.config_parameter">
+            <field name="key">mint_pos_bridge.sample_review_survey_id</field>
+            <field name="value">194</field>
+        </record>
+    </data>
+</odoo>

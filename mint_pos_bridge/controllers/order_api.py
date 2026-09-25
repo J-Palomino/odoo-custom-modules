@@ -953,14 +953,35 @@ class MintPosOrderAPI(http.Controller):
         limit = min(int(kw.get('limit', 50)), 200)
         offset = int(kw.get('offset', 0))
 
+        # "Samples to review": the caller's orders that still hold a sample
+        # line with no completed review. Independent of the recent-N window,
+        # which is the point — heavy shoppers' samples fall off that list.
+        # Refused unscoped: it is a per-person list, not a report, and without
+        # a customer filter it would scan every order in the database.
+        if kw.get('pending_sample_review'):
+            if not (self_partner_id or admin_partner_id
+                    or kw.get('email') or kw.get('phone')):
+                return _error('pending_sample_review requires a customer filter')
+            pending = request.env['mint.pos.order']._pending_sample_review_orders(domain)
+            page = pending[offset:offset + limit]
+            brands = self._line_brands(page.line_ids)
+            reviewed = page.line_ids._sample_reviewed_ids()
+            return _json({
+                'orders': [self._serialize_order(o, brands, reviewed) for o in page],
+                'total': len(pending),
+                'limit': limit,
+                'offset': offset,
+            })
+
         orders = request.env['mint.pos.order'].sudo().search(
             domain, limit=limit, offset=offset, order='placed_at desc',
         )
         total = request.env['mint.pos.order'].sudo().search_count(domain)
         brands = self._line_brands(orders.line_ids)
+        reviewed = orders.line_ids._sample_reviewed_ids()
 
         return _json({
-            'orders': [self._serialize_order(o, brands) for o in orders],
+            'orders': [self._serialize_order(o, brands, reviewed) for o in orders],
             'total': total,
             'limit': limit,
             'offset': offset,
@@ -1216,14 +1237,18 @@ class MintPosOrderAPI(http.Controller):
         before brand was filled on create."""
         return lines.sudo()._resolve_brands()
 
-    def _serialize_order(self, order, brands=None):
+    def _serialize_order(self, order, brands=None, reviewed=None):
         """Serialize a mint.pos.order to a JSON-safe dict.
 
-        ``brands`` is a precomputed ``_line_brands`` map so list endpoints
-        resolve every page in one query; single-order callers omit it.
+        ``brands`` is a precomputed ``_line_brands`` map and ``reviewed`` a
+        precomputed ``_sample_reviewed_ids`` set, so list endpoints resolve
+        every page in one query each; single-order callers omit them.
         """
         if brands is None:
             brands = self._line_brands(order.line_ids)
+        if reviewed is None:
+            reviewed = order.line_ids._sample_reviewed_ids()
+        review_on = bool(order.line_ids._sample_review_survey())
         return {
             'id': order.id,
             'name': order.name,
@@ -1261,6 +1286,7 @@ class MintPosOrderAPI(http.Controller):
             'budtender': order.budtender_id.name if order.budtender_id else None,
             'notes': order.notes or '',
             'items': [{
+                'id': l.id,
                 'product_name': l.product_name,
                 'sku': l.sku or '',
                 'quantity': l.quantity,
@@ -1270,6 +1296,12 @@ class MintPosOrderAPI(http.Controller):
                 'category': l.category or '',
                 'brand': l.brand or (brands[l.id].name if l.id in brands else ''),
                 'brand_id': brands[l.id].id if l.id in brands else None,
+                # Employee samples: whether a completed survey response points
+                # at this line, and the signed link that opens one bound to it.
+                'is_sample': l._is_sample_line(),
+                'sample_reviewed': l.id in reviewed,
+                'review_path': (l._sample_review_path()
+                                if review_on and l._is_sample_line() else ''),
             } for l in order.line_ids],
         }
 
