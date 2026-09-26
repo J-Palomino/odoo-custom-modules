@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- The three tags that put a task on someone's board. noupdate so
+         renames or colour changes made in the UI survive an upgrade. -->
+    <data noupdate="1">
+        <record id="tag_decision" model="project.tags">
+            <field name="name">Board · Decision needed</field>
+            <field name="color">2</field>
+        </record>
+        <record id="tag_needs_you" model="project.tags">
+            <field name="name">Board · Needs you</field>
+            <field name="color">1</field>
+        </record>
+        <record id="tag_request" model="project.tags">
+            <field name="name">Board · Your request</field>
+            <field name="color">4</field>
+        </record>
+    </data>
+
+    <!-- Usable as a user's Home Action (Preferences), so login lands on the board. -->
+    <record id="action_my_board" model="ir.actions.act_url">
+        <field name="name">My Board</field>
+        <field name="url">/my/board</field>
+        <field name="target">self</field>
+    </record>
+</odoo>
