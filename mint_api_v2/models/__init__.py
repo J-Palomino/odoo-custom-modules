@@ -6,6 +6,7 @@ from . import mint_brand_market_banner  # per-market deal banners (mint.brand.ma
 from . import mint_strain  # mint.strain master (phase 1: no product.template link)
 from . import mint_discount_weight
 from . import mint_discount
+from . import mint_discount_deal_photo  # deal card photo override (after mint_discount: _inherit)
 from . import mint_blog
 from . import mint_event
 from . import mint_config
