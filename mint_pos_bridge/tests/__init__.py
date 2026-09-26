@@ -4,3 +4,4 @@ from . import test_upsert_backfill
 from . import test_duplicate_flagging
 from . import test_order_union
 from . import test_line_brand
+from . import test_sample_review

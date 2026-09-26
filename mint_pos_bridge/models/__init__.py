@@ -6,3 +6,4 @@ from . import pos_partner
 from . import web_order_config
 from . import product_category
 from . import pos_add_item_wizard
+from . import sample_review
