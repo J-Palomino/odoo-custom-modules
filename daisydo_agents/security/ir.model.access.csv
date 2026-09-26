@@ -18,3 +18,5 @@ access_daisy_scheduled_job_user,daisy.scheduled.job user,model_daisy_scheduled_j
 access_daisy_scheduled_job_officer,daisy.scheduled.job officer,model_daisy_scheduled_job,daisydo_agents.group_daisy_officer,1,1,1,1
 access_daisy_scheduled_job_admin,daisy.scheduled.job admin,model_daisy_scheduled_job,daisydo_agents.group_daisy_admin,1,1,1,1
 access_daisy_orchestrator_command_admin,daisy.orchestrator.command,model_daisy_orchestrator_command,daisydo_agents.group_daisy_admin,1,1,1,1
+access_daisy_workbench_token_employee,daisy.workbench.token employee,model_daisy_workbench_token,base.group_user,1,0,0,0
+access_daisy_workbench_token_admin,daisy.workbench.token admin,model_daisy_workbench_token,daisydo_agents.group_daisy_admin,1,0,0,1
