@@ -34,7 +34,8 @@ class _SampleReviewFixture:
             'partner_id': (partner or self.partner).id,
             'state': 'completed',
             'placed_at': placed_at,
-            'line_ids': [(0, 0, {'product_name': n}) for n in names],
+            'line_ids': [(0, 0, n if isinstance(n, dict) else {'product_name': n})
+                         for n in names],
         })
 
     def _review(self, line, state='done'):
@@ -98,6 +99,48 @@ class TestSampleReviewModel(_SampleReviewFixture, TransactionCase):
         pending = self.Order._pending_sample_review_orders(
             [('partner_id', '=', self.partner.id)])
         self.assertEqual(pending, order)
+
+    def _kg(self, **extra):
+        """The same sample SKU, as it was rung 17 times for one employee on prod."""
+        return dict({'product_name': 'Extreme Exotics - Employee Sample - Flower - KG OG (H) (3.5g)',
+                     'dutchie_product_id': '13822997', 'sku': '15186876'}, **extra)
+
+    def test_one_review_covers_identical_samples_across_orders(self):
+        first = self._order(self._kg(), self._kg(), placed_at='2026-09-15 10:00:00')
+        second = self._order(self._kg(), 'Other - Sample Employee - Gummies',
+                             placed_at='2026-09-16 10:00:00')
+        self._review(first.line_ids[0])
+        lines = (first | second).line_ids
+        kg = lines.filtered(lambda l: l.dutchie_product_id == '13822997')
+        self.assertEqual(lines._sample_reviewed_ids(), set(kg.ids),
+                         'every KG OG line is covered; the gummies are not')
+        self.assertEqual(second.line_ids._sample_reviewed_ids(), {second.line_ids[0].id},
+                         'coverage holds when only the later order is evaluated (the /orders page case)')
+
+    def test_identity_is_the_product_id_not_the_name(self):
+        reviewed = self._order(self._kg())
+        renamed = self._order(self._kg(product_name='KG OG - Sample Employee (renamed)'))
+        other_id = self._order(self._kg(dutchie_product_id='99999999', sku='99999999'))
+        self._review(reviewed.line_ids)
+        self.assertIn(renamed.line_ids.id, renamed.line_ids._sample_reviewed_ids())
+        self.assertNotIn(other_id.line_ids.id, other_id.line_ids._sample_reviewed_ids())
+
+    def test_another_persons_review_never_covers_my_sample(self):
+        stranger = self.env['res.partner'].sudo().create({'name': 'Other Employee'})
+        theirs = self._order(self._kg(), partner=stranger)
+        mine = self._order(self._kg())
+        self._review(theirs.line_ids)
+        self.assertFalse(mine.line_ids._sample_reviewed_ids())
+        self.assertEqual(self.Order._pending_sample_review_orders(
+            [('partner_id', '=', self.partner.id)]), mine)
+
+    def test_order_whose_samples_are_all_covered_is_not_pending(self):
+        first = self._order(self._kg(), placed_at='2026-09-15 10:00:00')
+        repeat = self._order(self._kg(), self._kg(), placed_at='2026-09-16 10:00:00')
+        self._review(first.line_ids)
+        self.assertFalse(self.Order._pending_sample_review_orders(
+            [('partner_id', '=', self.partner.id)]))
+        self.assertTrue(repeat)
 
     def test_unconfigured_survey_disables_reviews(self):
         self.env['ir.config_parameter'].sudo().set_param(

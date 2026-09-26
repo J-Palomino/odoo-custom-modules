@@ -58,15 +58,44 @@ class MintPosOrderLine(models.Model):
         self.ensure_one()
         return '/mint/sample-review/%d/%s' % (self.id, self._sample_review_token())
 
+    def _sample_product_key(self):
+        """The product a sample line is, by ID: Dutchie product id, else SKU."""
+        self.ensure_one()
+        return self.dutchie_product_id or self.sku or False
+
     def _sample_reviewed_ids(self):
-        """Ids of the lines in ``self`` with at least one completed review."""
+        """Ids of the lines in ``self`` counted as reviewed.
+
+        A line is reviewed when a completed response is bound to it, OR to an
+        identical sample (same product, by ID) on an order of the same
+        customer. One review covers the product for that person: an employee
+        rung the same sample 17 times (seen on prod) reviews it once, not 17
+        times. "Same customer" is the partners behind ``self`` — callers pass
+        one person's lines (the /orders scope), so this never lets one
+        employee's review clear another's samples.
+        """
         if not self:
             return set()
-        done = self.env['survey.user_input'].sudo().search([
+        Input = self.env['survey.user_input'].sudo()
+        done = Input.search([
             ('mint_order_line_id', 'in', self.ids),
             ('state', '=', 'done'),
         ])
-        return set(done.mint_order_line_id.ids)
+        reviewed = set(done.mint_order_line_id.ids)
+
+        rest = self.filtered(lambda l: l.id not in reviewed and l._sample_product_key())
+        if not rest:
+            return reviewed
+        covering = Input.search([
+            ('state', '=', 'done'),
+            ('mint_order_line_id.order_id.partner_id', 'in', self.order_id.partner_id.ids),
+        ])
+        covered_keys = {
+            ui.mint_order_line_id._sample_product_key()
+            for ui in covering if ui.mint_order_line_id
+        } - {False}
+        reviewed |= {l.id for l in rest if l._sample_product_key() in covered_keys}
+        return reviewed
 
     @api.model
     def _sample_review_survey(self):
